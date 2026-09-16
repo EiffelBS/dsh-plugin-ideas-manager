@@ -1,0 +1,7 @@
+packages:
+  - .
+
+# pnpm 12 per-package build approval: esbuild needs its postinstall to
+# fetch/link its platform binary for vitest.
+allowBuilds:
+  esbuild: true
