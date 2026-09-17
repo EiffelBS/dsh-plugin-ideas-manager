@@ -345,14 +345,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                       <div
                         key={idea.id}
                         className={classes.cardWrapper}
-                        draggable={!client.pending}
-                        onDragStart={(event) => {
-                          // Carry the idea id on the drag payload (task-board
-                          // family contract) so the drop target can read it.
-                          event.dataTransfer.setData('text/plain', idea.id)
-                          event.dataTransfer.effectAllowed = 'move'
-                          startDrag(idea)
-                        }}
                         onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
                         onDragOver={event => {
                           if (drag !== undefined) {
@@ -360,10 +352,29 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                             event.dataTransfer.dropEffect = 'move'
                           }
                         }}
-                        onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
                       >
                         <div className={classes.card} data-dsh-idea-id={idea.id}>
-                          <div className={classes.cardTitle}>{idea.title}</div>
+                          <div className={classes.cardHeader}>
+                            <div className={classes.cardTitle}>{idea.title}</div>
+                            <div
+                              className={classes.cardGrip}
+                              draggable={!client.pending}
+                              title={t('card.drag')}
+                              aria-label={t('card.drag')}
+                              onDragStart={(event) => {
+                                // Carry the idea id on the drag payload
+                                // (task-board family contract) so the drop
+                                // target can read it. Only the grip starts a
+                                // drag: the card body stays selectable.
+                                event.dataTransfer.setData('text/plain', idea.id)
+                                event.dataTransfer.effectAllowed = 'move'
+                                startDrag(idea)
+                              }}
+                              onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
+                            >
+                              <span aria-hidden="true">⠿</span>
+                            </div>
+                          </div>
                           {idea.body.trim() !== '' && <div className={classes.cardBody}>{idea.body}</div>}
                           {(idea.tags !== undefined && idea.tags.length > 0) || idea.value !== undefined || idea.effort !== undefined
                             ? (

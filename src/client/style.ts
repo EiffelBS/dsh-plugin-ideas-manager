@@ -18,12 +18,15 @@ const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped)
 
 /*
  * Theme fallback palette. The shell always provides the --dsw-alias-* tokens,
- * but a skin-center skin may only redefine a subset; without a fallback the
- * var() resolves to "transparent" and the board lets the conversation bleed
- * through. These hard values live on the plugin container and mirror the
- * shell's own boot palette (light/dark switched the same way the shell does).
+ * but a skin-center skin may only redefine a subset — and a background-enabled
+ * skin defines them as semi-transparent rgba that resolves to see-through
+ * (alpha 0 when --dsw-skin-scrim is 0), which a var() fallback never fixes
+ * because the token exists. These hard values mirror the shell's own boot
+ * palette (light/dark switched the same way the shell does) and live on body
+ * — not on the plugin container — so the sidebar entry, the board takeover and
+ * the fixed modals all inherit them regardless of where they are mounted.
  */
-[data-dsh-ideas-view] {
+body {
   --dsh-ideas-fb-bg: #ffffff;
   --dsh-ideas-fb-layer1: #f2f3f5;
   --dsh-ideas-fb-layer2: #e9eaed;
@@ -36,7 +39,7 @@ const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped)
   --dsh-ideas-fb-danger: #d04a4a;
 }
 
-body[data-ds-dark-theme] [data-dsh-ideas-view] {
+body[data-ds-dark-theme] {
   --dsh-ideas-fb-bg: #151517;
   --dsh-ideas-fb-layer1: #1c1c1f;
   --dsh-ideas-fb-layer2: #232327;
@@ -56,7 +59,13 @@ body[data-ds-dark-theme] [data-dsh-ideas-view] {
   inset: 0;
   display: none;
   z-index: 60;
-  background: var(--dsw-alias-bg-base, var(--dsh-ideas-fb-bg));
+  /* Two stacked layers: the skin token on top (a background-enabled skin
+     defines every --dsw-alias-bg-* token as semi-transparent rgba, so the
+     var() fallback never fires), the fixed fallback base underneath. The
+     total is always opaque, so the page behind never bleeds through. */
+  background:
+    linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
+    var(--dsh-ideas-fb-bg);
 }
 
 /* The center column is single-occupant; the :not() guard keeps the ideas and
@@ -87,20 +96,20 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   background: transparent;
   border: none;
   border-radius: 8px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
   cursor: pointer;
   font-size: 13px;
   white-space: nowrap;
 }
 
 .dsh-ideas-entry:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-entry[data-active] {
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-weight: 600;
 }
 
@@ -156,7 +165,10 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   min-height: 0;
   padding: 14px 16px 16px;
   gap: 12px;
-  background: var(--dsw-alias-bg-base, var(--dsh-ideas-fb-bg));
+  /* Skin token tinted over the opaque fallback base (see container rule). */
+  background:
+    linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
+    var(--dsh-ideas-fb-bg);
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-family: var(--dsw-font-family);
 }
@@ -306,9 +318,18 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
-  background: var(--dsw-alias-card-bg, var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2)));
+  background:
+    linear-gradient(var(--dsw-alias-card-bg, var(--dsw-alias-bg-layer-2, transparent)), var(--dsw-alias-card-bg, var(--dsw-alias-bg-layer-2, transparent))),
+    var(--dsh-ideas-fb-layer2);
   box-shadow: 0 1px 2px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
-  cursor: default;
+}
+
+/* Title row: the title grows, the drag grip stays put at the far right. */
+.dsh-ideas-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
 }
 
 .dsh-ideas-card-title {
@@ -316,6 +337,33 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   font-weight: 600;
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   overflow-wrap: anywhere;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Explicit drag grip: the only draggable zone of a card. The body stays
+   selectable, so without a dedicated handle HTML5 drag would fight the text
+   selection on mousedown. grab/grabbing follow the OS drag convention. */
+.dsh-ideas-card-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dsh-ideas-card-grip:hover {
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+}
+
+.dsh-ideas-card-grip:active {
+  cursor: grabbing;
 }
 
 .dsh-ideas-card-body {
@@ -372,7 +420,11 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   overflow-y: auto;
   padding: 18px;
   border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
+  /* Fixed overlay over the whole page: same opaque-base treatment, so a
+     translucent skin token never makes the form see-through. */
+  background:
+    linear-gradient(var(--dsw-alias-bg-layer-2, transparent), var(--dsw-alias-bg-layer-2, transparent)),
+    var(--dsh-ideas-fb-layer2);
   border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
@@ -470,11 +522,9 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 }
 
 .dsh-ideas-card-wrapper {
-  cursor: grab;
-}
-
-.dsh-ideas-card-wrapper[draggable='true']:active {
-  cursor: grabbing;
+  /* Cards are drop targets (intra-column reorder); the drag source is the
+     dedicated grip, which carries its own grab cursor. */
+  cursor: default;
 }
 
 .dsh-ideas-card-actions {
@@ -539,7 +589,9 @@ export const classes = {
   columnBody: 'dsh-ideas-column-body',
   empty: 'dsh-ideas-empty',
   card: 'dsh-ideas-card',
+  cardHeader: 'dsh-ideas-card-header',
   cardTitle: 'dsh-ideas-card-title',
+  cardGrip: 'dsh-ideas-card-grip',
   cardBody: 'dsh-ideas-card-body',
   cardMeta: 'dsh-ideas-card-meta',
   tag: 'dsh-ideas-tag',
