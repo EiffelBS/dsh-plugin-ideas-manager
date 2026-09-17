@@ -1,0 +1,94 @@
+/**
+ * Ideas board copy: French-first dictionary with an English fallback, selected
+ * by the document language. Kept dependency-free (no dsh locale service) so
+ * the DOM-injected entry row and the standalone board tree share one lookup.
+ */
+export declare const fr: {
+    'entry.label': string;
+    'entry.tooltip': string;
+    'board.title': string;
+    'board.close': string;
+    'board.new': string;
+    'board.search': string;
+    'board.revision': string;
+    'board.status.open': string;
+    'board.status.archived': string;
+    'board.status.declined': string;
+    'board.empty': string;
+    'board.hostError': string;
+    'board.retryHost': string;
+    'board.tagFilter': string;
+    'board.tagFilterClear': string;
+    'board.dragHint': string;
+    'new.title': string;
+    'new.titlePlaceholder': string;
+    'new.body': string;
+    'new.bodyPlaceholder': string;
+    'new.tags': string;
+    'new.tagsPlaceholder': string;
+    'new.value': string;
+    'new.effort': string;
+    'new.submit': string;
+    'new.cancel': string;
+    'new.required': string;
+    'card.drag': string;
+    'card.value': string;
+    'card.effort': string;
+    'card.edit': string;
+    'card.archive': string;
+    'card.decline': string;
+    'card.restore': string;
+    'card.delete': string;
+    'card.confirmDelete': string;
+    'card.deleteYes': string;
+    'card.deleteNo': string;
+    'edit.title': string;
+    'edit.save': string;
+};
+export declare const en: {
+    'entry.label': string;
+    'entry.tooltip': string;
+    'board.title': string;
+    'board.close': string;
+    'board.new': string;
+    'board.search': string;
+    'board.revision': string;
+    'board.status.open': string;
+    'board.status.archived': string;
+    'board.status.declined': string;
+    'board.empty': string;
+    'board.hostError': string;
+    'board.retryHost': string;
+    'board.tagFilter': string;
+    'board.tagFilterClear': string;
+    'board.dragHint': string;
+    'new.title': string;
+    'new.titlePlaceholder': string;
+    'new.body': string;
+    'new.bodyPlaceholder': string;
+    'new.tags': string;
+    'new.tagsPlaceholder': string;
+    'new.value': string;
+    'new.effort': string;
+    'new.submit': string;
+    'new.cancel': string;
+    'new.required': string;
+    'card.drag': string;
+    'card.value': string;
+    'card.effort': string;
+    'card.edit': string;
+    'card.archive': string;
+    'card.decline': string;
+    'card.restore': string;
+    'card.delete': string;
+    'card.confirmDelete': string;
+    'card.deleteYes': string;
+    'card.deleteNo': string;
+    'edit.title': string;
+    'edit.save': string;
+};
+export type IdeasKey = keyof typeof fr;
+/** Interpolate {placeholders} with the given params. */
+export declare function translate(key: IdeasKey, params?: Record<string, string | number>): string;
+/** Short alias used across the board/entry code. */
+export declare const t: typeof translate;
