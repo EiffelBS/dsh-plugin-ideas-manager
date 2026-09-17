@@ -1,3 +1,7 @@
 node_modules/
 lib/
 *.log
+
+# Local runtime artifacts — never commit these
+.migration-review/
+.test-*-url.txt

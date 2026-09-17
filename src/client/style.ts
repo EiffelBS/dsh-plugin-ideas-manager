@@ -380,6 +380,102 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   justify-content: flex-end;
   gap: 8px;
 }
+
+.dsh-ideas-field-row {
+  display: flex;
+  gap: 10px;
+}
+
+.dsh-ideas-field-row > .dsh-ideas-field {
+  flex: 1 1 0;
+}
+
+/* --- P1 CRUD: filter chips, card actions, drag affordance --- */
+
+.dsh-ideas-tag-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: none;
+}
+
+.dsh-ideas-tag-filter-label {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-ideas-filter-chip,
+.dsh-ideas-filter-chip-active {
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-ideas-filter-chip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.dsh-ideas-filter-chip-active {
+  background: var(--dsw-alias-accent-bg);
+  color: var(--dsw-alias-accent-fg, #fff);
+}
+
+.dsh-ideas-drag-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.dsh-ideas-card-wrapper {
+  cursor: grab;
+}
+
+.dsh-ideas-card-wrapper[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.dsh-ideas-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.dsh-ideas-action-button,
+.dsh-ideas-danger-button {
+  padding: 2px 9px;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.dsh-ideas-action-button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.dsh-ideas-danger-button {
+  color: var(--dsw-alias-danger-fg, #d04a4a);
+}
+
+.dsh-ideas-danger-button:hover {
+  background: var(--dsw-alias-danger-bg, rgba(220, 60, 60, 0.12));
+}
+
+.dsh-ideas-confirm-label {
+  font-size: 11px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
 `
 
 /** Class map consumed by the sidebar core and the board JSX. */
@@ -414,10 +510,21 @@ export const classes = {
   modal: 'dsh-ideas-modal',
   modalTitle: 'dsh-ideas-modal-title',
   field: 'dsh-ideas-field',
+  fieldRow: 'dsh-ideas-field-row',
   fieldLabel: 'dsh-ideas-field-label',
   input: 'dsh-ideas-input',
   textarea: 'dsh-ideas-textarea',
   modalActions: 'dsh-ideas-modal-actions',
+  tagFilterRow: 'dsh-ideas-tag-filter-row',
+  tagFilterLabel: 'dsh-ideas-tag-filter-label',
+  filterChip: 'dsh-ideas-filter-chip',
+  filterChipActive: 'dsh-ideas-filter-chip-active',
+  dragHint: 'dsh-ideas-drag-hint',
+  cardWrapper: 'dsh-ideas-card-wrapper',
+  cardActions: 'dsh-ideas-card-actions',
+  actionButton: 'dsh-ideas-action-button',
+  dangerButton: 'dsh-ideas-danger-button',
+  confirmLabel: 'dsh-ideas-confirm-label',
 } as const
 
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */

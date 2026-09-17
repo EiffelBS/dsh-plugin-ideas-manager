@@ -1,47 +1,90 @@
 /**
  * Board view: the 3-column kanban (open / archived / declined) that replaces
- * the center column while active. P0 scope: render the Host state, a
- * "Nouvelle idée" capture modal, and the empty state — triage (drag, edit,
- * decline, restore, search, tags filter) lands in P1.
+ * the center column while active. P1 scope: full CRUD — capture and edit
+ * modals, per-card archive/restore/decline/delete, manual drag between Open
+ * and Archived (+ intra-column reorder), search and a conjunctive tag filter.
  */
 
 import { useEffect, useState, type FormEvent } from 'react'
-import type { IdeasClient } from './ideas-client.ts'
-import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts'
-import { t } from './locales.ts'
+import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
+import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
+import { t, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 
-const COLUMNS: readonly { status: IdeaStatus; labelKey: 'board.status.open' | 'board.status.archived' | 'board.status.declined' }[] = [
-  { status: 'open', labelKey: 'board.status.open' },
-  { status: 'archived', labelKey: 'board.status.archived' },
-  { status: 'declined', labelKey: 'board.status.declined' },
-]
-
-function IdeaCard({ idea }: { idea: IdeaRecord }) {
-  return (
-    <div className={classes.card} data-dsh-idea-id={idea.id}>
-      <div className={classes.cardTitle}>{idea.title}</div>
-      {idea.body.trim() !== '' && <div className={classes.cardBody}>{idea.body}</div>}
-      {(idea.tags !== undefined && idea.tags.length > 0) || idea.value !== undefined || idea.effort !== undefined
-        ? (
-          <div className={classes.cardMeta}>
-            {idea.tags?.map(tag => (
-              <span key={tag.name} className={classes.tag}>{tag.name}</span>
-            ))}
-            {idea.value !== undefined && <span className={classes.score}>{t('card.value', { value: idea.value })}</span>}
-            {idea.effort !== undefined && <span className={classes.score}>{t('card.effort', { effort: idea.effort })}</span>}
-          </div>
-        )
-        : null}
-    </div>
-  )
+const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
+  open: 'board.status.open',
+  archived: 'board.status.archived',
+  declined: 'board.status.declined',
 }
 
-function NewIdeaModal({ client, onClose }: { client: IdeasClient; onClose: () => void }) {
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [tags, setTags] = useState('')
+function orderKey(idea: IdeaRecord): number {
+  return idea.rank ?? Number.MAX_SAFE_INTEGER
+}
+
+function orderIdeas(ideas: readonly IdeaRecord[]): IdeaRecord[] {
+  return [...ideas].sort((a, b) => orderKey(a) - orderKey(b))
+}
+
+function matchesFilter(idea: IdeaRecord, filter: string): boolean {
+  if (filter.trim() === '') return true
+  const needle = filter.trim().toLowerCase()
+  const haystacks = [idea.title, idea.body, ...(idea.tags ?? []).map(tag => tag.name)]
+  return haystacks.some(text => text.toLowerCase().includes(needle))
+}
+
+/** Conjunctive tag filter: adding a label narrows the board. */
+function matchesTags(idea: IdeaRecord, selected: readonly string[]): boolean {
+  if (selected.length === 0) return true
+  const names = new Set((idea.tags ?? []).map(tag => tag.name))
+  return selected.every(name => names.has(name))
+}
+
+/** Every label in use across the ledger, sorted (for the filter chips). */
+function collectKnownTags(ideas: readonly IdeaRecord[]): string[] {
+  const names = new Set<string>()
+  for (const idea of ideas) for (const tag of idea.tags ?? []) names.add(tag.name)
+  return [...names].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Rebuild the global rank order with `movedId` placed at the drop position of
+ * its target column: after `beforeId` when given, else at the column end.
+ * Columns are always laid out open, archived, declined, each rank-sorted.
+ */
+function rebuildOrder(all: readonly IdeaRecord[], movedId: string, targetStatus: IdeaStatus, beforeId: string | undefined): string[] {
+  const columns: string[] = []
+  for (const status of IDEA_COLUMNS) {
+    const ids = orderIdeas(all.filter(idea => idea.status === status && idea.id !== movedId)).map(idea => idea.id)
+    if (status === targetStatus) {
+      let index = ids.length
+      if (beforeId !== undefined) {
+        const at = ids.indexOf(beforeId)
+        if (at >= 0) index = at
+      }
+      ids.splice(index, 0, movedId)
+    }
+    columns.push(...ids)
+  }
+  return columns
+}
+
+function tagsText(idea: IdeaRecord | undefined): string {
+  return idea?.tags === undefined ? '' : idea.tags.map(tag => tag.name).join(', ')
+}
+
+/** Shared capture/edit modal. */
+function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?: IdeaRecord; onClose: () => void }) {
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [body, setBody] = useState(initial?.body ?? '')
+  const [value, setValue] = useState(initial?.value === undefined ? '' : String(initial.value))
+  const [effort, setEffort] = useState(initial?.effort === undefined ? '' : String(initial.effort))
+  const [tags, setTags] = useState(tagsText(initial))
   const [error, setError] = useState<string | undefined>(undefined)
+
+  const toNumber = (raw: string): number | undefined => {
+    const parsed = Number(raw)
+    return raw.trim() === '' ? undefined : Number.isFinite(parsed) ? parsed : undefined
+  }
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
@@ -50,11 +93,18 @@ function NewIdeaModal({ client, onClose }: { client: IdeasClient; onClose: () =>
       return
     }
     try {
-      await client.createIdea({
-        title: title.trim(),
-        body: body.trim(),
-        tags: tags.split(','),
-      })
+      if (initial === undefined) {
+        await client.createIdea({ title: title.trim(), body: body.trim(), tags: tags.split(',') })
+      } else {
+        const patch: IdeaClientPatch = {
+          title: title.trim(),
+          body: body.trim(),
+          ...(toNumber(value) === undefined ? {} : { value: toNumber(value)! }),
+          ...(toNumber(effort) === undefined ? {} : { effort: toNumber(effort)! }),
+          tags: tags.split(','),
+        }
+        await client.updateIdea(initial.id, patch)
+      }
       onClose()
     } catch {
       // The client carries the Host error; the modal stays open for a retry.
@@ -64,11 +114,11 @@ function NewIdeaModal({ client, onClose }: { client: IdeasClient; onClose: () =>
   return (
     <div className={classes.overlay} onClick={onClose}>
       <form className={classes.modal} onClick={event => { event.stopPropagation() }} onSubmit={submit}>
-        <h3 className={classes.modalTitle}>{t('board.new')}</h3>
+        <h3 className={classes.modalTitle}>{initial === undefined ? t('board.new') : t('edit.title')}</h3>
         <div className={classes.field}>
-          <label className={classes.fieldLabel} htmlFor="dsh-ideas-new-title">{t('new.title')}</label>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-title">{t('new.title')}</label>
           <input
-            id="dsh-ideas-new-title"
+            id="dsh-ideas-title"
             className={classes.input}
             type="text"
             value={title}
@@ -78,19 +128,43 @@ function NewIdeaModal({ client, onClose }: { client: IdeasClient; onClose: () =>
           />
         </div>
         <div className={classes.field}>
-          <label className={classes.fieldLabel} htmlFor="dsh-ideas-new-body">{t('new.body')}</label>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
           <textarea
-            id="dsh-ideas-new-body"
+            id="dsh-ideas-body"
             className={classes.textarea}
             value={body}
             placeholder={t('new.bodyPlaceholder')}
             onChange={event => { setBody(event.target.value) }}
           />
         </div>
+        <div className={classes.fieldRow}>
+          <div className={classes.field}>
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-value">{t('new.value')}</label>
+            <input
+              id="dsh-ideas-value"
+              className={classes.input}
+              type="number"
+              min={0}
+              value={value}
+              onChange={event => { setValue(event.target.value) }}
+            />
+          </div>
+          <div className={classes.field}>
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-effort">{t('new.effort')}</label>
+            <input
+              id="dsh-ideas-effort"
+              className={classes.input}
+              type="number"
+              min={0}
+              value={effort}
+              onChange={event => { setEffort(event.target.value) }}
+            />
+          </div>
+        </div>
         <div className={classes.field}>
-          <label className={classes.fieldLabel} htmlFor="dsh-ideas-new-tags">{t('new.tags')}</label>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-tags">{t('new.tags')}</label>
           <input
-            id="dsh-ideas-new-tags"
+            id="dsh-ideas-tags"
             className={classes.input}
             type="text"
             value={tags}
@@ -101,17 +175,28 @@ function NewIdeaModal({ client, onClose }: { client: IdeasClient; onClose: () =>
         {error !== undefined && <div className={classes.error}>{error}</div>}
         <div className={classes.modalActions}>
           <button type="button" className={classes.ghostButton} onClick={onClose}>{t('new.cancel')}</button>
-          <button type="submit" className={classes.primaryButton} disabled={client.pending}>{t('new.submit')}</button>
+          <button type="submit" className={classes.primaryButton} disabled={client.pending}>
+            {initial === undefined ? t('new.submit') : t('edit.save')}
+          </button>
         </div>
       </form>
     </div>
   )
 }
 
+type DragState = { id: string; source: IdeaStatus } | undefined
+type DragTarget = { status: IdeaStatus; beforeId?: string } | undefined
+
 /** Board component; subscribes to the client snapshot. */
 export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [snapshot, setSnapshot] = useState(client.snapshot)
+  const [filter, setFilter] = useState('')
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   const [showNew, setShowNew] = useState(false)
+  const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
+  const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
+  const [drag, setDrag] = useState<DragState>(undefined)
+  const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
 
   useEffect(
     () => client.subscribe(() => setSnapshot(client.snapshot)),
@@ -120,6 +205,39 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
+  const knownTags = collectKnownTags(ideas)
+  const visible = ideas.filter(idea => matchesFilter(idea, filter) && matchesTags(idea, tagFilter))
+  const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
+
+  const toggleTag = (name: string): void => {
+    setTagFilter(current => current.includes(name)
+      ? current.filter(entry => entry !== name)
+      : [...current, name])
+  }
+
+  const performDrop = async (): Promise<void> => {
+    const draggedId = drag?.id
+    const target = dragTarget
+    if (draggedId === undefined || target === undefined || drag === undefined) return
+    const source = drag.source
+    try {
+      if (source !== target.status) {
+        await client.moveIdea(draggedId, target.status as Extract<IdeaStatus, 'open' | 'archived'>)
+      }
+      const all = client.snapshot?.ideas ?? []
+      const ordered = rebuildOrder(all, draggedId, target.status, target.beforeId)
+      await client.reorderIdea(ordered)
+    } catch {
+      // The board reflects the Host verdict; a failed drop needs no retry UI.
+    }
+    setDrag(undefined)
+    setDragTarget(undefined)
+  }
+
+  const openEdit = (idea: IdeaRecord): void => {
+    setConfirmId(undefined)
+    setEditing(idea)
+  }
 
   return (
     <div className={classes.board} data-dsh-ideas-board="" data-dsh-plugin="ideas">
@@ -136,6 +254,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </button>
         <h2 className={classes.boardTitle}>{t('board.title')}</h2>
         {revision !== undefined && <span className={classes.detailMeta}>{t('board.revision', { revision })}</span>}
+        <input
+          className={classes.search}
+          type="search"
+          placeholder={t('board.search')}
+          value={filter}
+          aria-label={t('board.search')}
+          onChange={event => { setFilter(event.target.value) }}
+        />
         <button
           type="button"
           className={classes.primaryButton}
@@ -155,28 +281,151 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
+      {knownTags.length > 0 && (
+        <div className={classes.tagFilterRow}>
+          <span className={classes.tagFilterLabel}>{t('board.tagFilter')}</span>
+          {knownTags.map(name => (
+            <button
+              key={name}
+              type="button"
+              className={tagFilter.includes(name) ? classes.filterChipActive : classes.filterChip}
+              onClick={() => { toggleTag(name) }}
+            >
+              {name}
+            </button>
+          ))}
+          {tagFilter.length > 0 && (
+            <button type="button" className={classes.ghostButton} onClick={() => { setTagFilter([]) }}>
+              {t('board.tagFilterClear')}
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className={classes.dragHint}>{t('board.dragHint')}</div>
+
       <div className={classes.columns}>
-        {COLUMNS.map(column => {
-          const columnIdeas = ideas
-            .filter(idea => idea.status === column.status)
-            .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
+        {IDEA_COLUMNS.map(status => {
+          const columnIdeas = byStatus(status)
           return (
-            <section className={classes.column} key={column.status}>
+            <section
+              key={status}
+              className={classes.column}
+              onDragEnter={() => { if (drag !== undefined) setDragTarget({ status }) }}
+              onDragOver={event => { event.preventDefault() }}
+              onDrop={event => { event.preventDefault(); void performDrop() }}
+            >
               <div className={classes.columnHeader}>
-                <span className={classes.columnTitle}>{t(column.labelKey)}</span>
+                <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
                 <span className={classes.columnCount}>{columnIdeas.length}</span>
               </div>
               <div className={classes.columnBody}>
                 {columnIdeas.length === 0
                   ? <div className={classes.empty}>{t('board.empty')}</div>
-                  : columnIdeas.map(idea => <IdeaCard key={idea.id} idea={idea} />)}
+                  : columnIdeas.map(idea => {
+                    const confirm = confirmId === idea.id
+                    return (
+                      <div
+                        key={idea.id}
+                        className={classes.cardWrapper}
+                        draggable={!client.pending}
+                        onDragStart={() => { setDrag({ id: idea.id, source: idea.status }) }}
+                        onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
+                        onDragOver={event => { event.preventDefault() }}
+                        onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
+                      >
+                        <div className={classes.card} data-dsh-idea-id={idea.id}>
+                          <div className={classes.cardTitle}>{idea.title}</div>
+                          {idea.body.trim() !== '' && <div className={classes.cardBody}>{idea.body}</div>}
+                          {(idea.tags !== undefined && idea.tags.length > 0) || idea.value !== undefined || idea.effort !== undefined
+                            ? (
+                              <div className={classes.cardMeta}>
+                                {idea.tags?.map(tag => (
+                                  <span key={tag.name} className={classes.tag} onClick={() => { toggleTag(tag.name) }}>{tag.name}</span>
+                                ))}
+                                {idea.value !== undefined && <span className={classes.score}>{t('card.value', { value: idea.value })}</span>}
+                                {idea.effort !== undefined && <span className={classes.score}>{t('card.effort', { effort: idea.effort })}</span>}
+                              </div>
+                            )
+                            : null}
+                          <div className={classes.cardActions}>
+                            <button type="button" className={classes.actionButton} onClick={() => { openEdit(idea) }}>
+                              {t('card.edit')}
+                            </button>
+                            {idea.status === 'open' && (
+                              <button
+                                type="button"
+                                className={classes.actionButton}
+                                onClick={() => { void client.moveIdea(idea.id, 'archived') }}
+                              >
+                                {t('card.archive')}
+                              </button>
+                            )}
+                            {idea.status === 'open' && (
+                              <button
+                                type="button"
+                                className={classes.actionButton}
+                                onClick={() => { void client.declineIdea(idea.id) }}
+                              >
+                                {t('card.decline')}
+                              </button>
+                            )}
+                            {idea.status !== 'open' && (
+                              <button
+                                type="button"
+                                className={classes.actionButton}
+                                onClick={() => { void client.restoreIdea(idea.id) }}
+                              >
+                                {t('card.restore')}
+                              </button>
+                            )}
+                            {!confirm
+                              ? (
+                                <button
+                                  type="button"
+                                  className={classes.dangerButton}
+                                  onClick={() => { setConfirmId(idea.id) }}
+                                >
+                                  {t('card.delete')}
+                                </button>
+                              )
+                              : (
+                                <>
+                                  <span className={classes.confirmLabel}>{t('card.confirmDelete')}</span>
+                                  <button
+                                    type="button"
+                                    className={classes.dangerButton}
+                                    onClick={() => {
+                                      setConfirmId(undefined)
+                                      void client.deleteIdea(idea.id)
+                                    }}
+                                  >
+                                    {t('card.deleteYes')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={classes.ghostButton}
+                                    onClick={() => { setConfirmId(undefined) }}
+                                  >
+                                    {t('card.deleteNo')}
+                                  </button>
+                                </>
+                              )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
               </div>
             </section>
           )
         })}
       </div>
 
-      {showNew && <NewIdeaModal client={client} onClose={() => { setShowNew(false) }} />}
+      {showNew && <IdeaModal client={client} onClose={() => { setShowNew(false) }} />}
+      {editing !== undefined && (
+        <IdeaModal client={client} initial={editing} onClose={() => { setEditing(undefined) }} />
+      )}
     </div>
   )
 }

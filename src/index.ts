@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from 'schemastery'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IdeasHostService } from './host-service.ts'
+import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
 import { makeIdeasRoutes } from './host-routes.ts'
 import { mountOnce } from './mount-once.ts'
 
@@ -60,7 +61,12 @@ const DEFAULT_ANNOUNCE = false
 export const apply = mountOnce('dsh-plugin-ideas-manager', applyImpl)
 
 function applyImpl(ctx: Context, config?: Config): void {
-  const host = new IdeasHostService()
+  // P2: the optional TaskBoard mirror. Feature-detected at runtime against the
+  // Host's own origin over loopback — no hard import of the task-board plugin.
+  const mirror = new TaskBoardMirror({
+    transport: new HttpTaskBoardTransport(() => `http://127.0.0.1:${ctx.webServer.port}`),
+  })
+  const host = new IdeasHostService({ mirror, autoMirror: config?.autoMirror ?? true })
   host.setActive(config?.enabled ?? true)
   ctx.effect(() => {
     const disposers: Array<() => void> = []

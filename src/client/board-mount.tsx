@@ -30,6 +30,14 @@ export function mountBoard(client: IdeasClient): () => void {
     siblingActiveAttribute: 'data-dsh-taskboard-active',
     panelName: 'ideas',
     siblingPanelName: 'taskboard',
+    // The task-board is a sibling we do not own: it only self-closes on its
+    // own declared sibling ("ssh"). A board opened earlier therefore keeps
+    // its controller open when we take the column and re-asserts its active
+    // attribute on the next host tick — evicting this board minutes later.
+    // Broadcasting "ssh" on open closes that controller through the existing
+    // family contract, making the takeover symmetric and the re-assert
+    // impossible.
+    evictDetails: ['ssh'],
     isOpen: () => client.boardOpen,
     close: () => client.closeBoard(),
     subscribe: listener => client.subscribe(listener),

@@ -5,11 +5,22 @@
  * the DOM mounts at the edges only.
  */
 
-import type { IdeasSnapshot } from '../protocol.ts'
+import type { IdeaStatus } from '../core/ideas.ts'
+import type { IdeasAction, IdeasSnapshot } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 
 function uuid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+/** Client-side patch accepted by `updateIdea`. */
+export interface IdeaClientPatch {
+  title?: string
+  body?: string
+  value?: number
+  effort?: number
+  /** Present means "replace the label set"; an empty array clears it. */
+  tags?: string[]
 }
 
 export class IdeasClient {
@@ -64,25 +75,62 @@ export class IdeasClient {
     this.emit()
   }
 
-  /** Create an idea through the Host and adopt the returned snapshot. */
   async createIdea(input: { title: string; body: string; tags?: string[] }): Promise<void> {
+    const tags = tagNames(input.tags).map(name => ({ name }))
+    await this.run({
+      kind: 'create',
+      id: uuid(),
+      input: {
+        title: input.title,
+        body: input.body,
+        ...(tags.length === 0 ? {} : { tags }),
+      },
+    })
+  }
+
+  async updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void> {
+    const tags = patch.tags === undefined ? undefined : tagNames(patch.tags)
+    await this.run({
+      kind: 'update',
+      ideaId,
+      patch: {
+        ...(patch.title === undefined ? {} : { title: patch.title }),
+        ...(patch.body === undefined ? {} : { body: patch.body }),
+        ...(patch.value === undefined ? {} : { value: patch.value }),
+        ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+        // An empty tag set clears the labels (null on the wire); a non-empty
+        // set replaces them.
+        ...(tags === undefined ? {} : { tags: tags.length === 0 ? null : tags.map(name => ({ name })) }),
+      },
+    })
+  }
+
+  async moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void> {
+    await this.run({ kind: 'move', ideaId, status })
+  }
+
+  async declineIdea(ideaId: string): Promise<void> {
+    await this.run({ kind: 'decline', ideaId })
+  }
+
+  async restoreIdea(ideaId: string): Promise<void> {
+    await this.run({ kind: 'restore', ideaId })
+  }
+
+  async deleteIdea(ideaId: string): Promise<void> {
+    await this.run({ kind: 'delete', ideaId })
+  }
+
+  async reorderIdea(orderedIds: string[]): Promise<void> {
+    await this.run({ kind: 'reorder', orderedIds })
+  }
+
+  /** Post one action, adopt the Host snapshot, and expose errors. */
+  private async run(action: IdeasAction): Promise<void> {
     this.pending = true
     this.emit()
     try {
-      const tags = (input.tags ?? [])
-        .map(tag => tag.trim())
-        .filter(tag => tag !== '')
-        .map(name => ({ name }))
-      const snapshot = await this.transport.action({
-        kind: 'create',
-        id: uuid(),
-        input: {
-          title: input.title,
-          body: input.body,
-          ...(tags.length === 0 ? {} : { tags }),
-        },
-      })
-      this.snapshot = snapshot
+      this.snapshot = await this.transport.action(action)
       this.error = undefined
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
@@ -96,4 +144,12 @@ export class IdeasClient {
   private emit(): void {
     for (const listener of [...this.listeners]) listener()
   }
+}
+
+/** Trim a comma-separated input into clean tag names. */
+function tagNames(raw: string[] | undefined): string[] {
+  return (raw ?? [])
+    .flatMap(line => line.split(','))
+    .map(tag => tag.trim())
+    .filter(tag => tag !== '')
 }

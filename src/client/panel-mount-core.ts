@@ -32,6 +32,14 @@ export interface CenterPanelMountOptions {
   panelName: string
   /** sibling detail value whose activation closes this panel. */
   siblingPanelName: string
+  /**
+   * Extra detail values broadcast on open, besides `panelName`. A family
+   * panel we do not own (e.g. the task-board) only self-closes on its own
+   * declared sibling, so broadcasting its value here closes that controller
+   * when this panel takes the column — otherwise a stale open state
+   * re-asserts its active attribute later and evicts this panel.
+   */
+  evictDetails?: readonly string[]
   /** open flag of the owning controller. */
   isOpen: () => boolean
   /** close the panel, handing the center column back to the conversation. */
@@ -96,7 +104,11 @@ export function mountCenterPanel(options: CenterPanelMountOptions): () => void {
       // otherwise the two panels' visibility rules fight.
       document.documentElement.removeAttribute(options.siblingActiveAttribute)
       document.documentElement.setAttribute(options.activeAttribute, '')
-      document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail: options.panelName }))
+      // Broadcast this panel's own activation plus every extra eviction
+      // detail (see evictDetails), so non-sibling occupants self-close.
+      for (const detail of [options.panelName, ...(options.evictDetails ?? [])]) {
+        document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail }))
+      }
     } else {
       document.documentElement.removeAttribute(options.activeAttribute)
     }
