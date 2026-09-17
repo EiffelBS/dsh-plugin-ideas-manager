@@ -215,8 +215,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : [...current, name])
   }
 
-  const performDrop = async (): Promise<void> => {
-    const draggedId = drag?.id
+  const performDrop = async (event?: { dataTransfer: { getData(format: string): string } }): Promise<void> => {
+    // The dropped task id is carried on the dataTransfer (like the
+    // task-board family); the drag state is a fallback for browsers that
+    // do not share the payload with the drop target.
+    const transferId = event?.dataTransfer?.getData('text/plain')
+    const draggedId = transferId !== undefined && transferId !== '' ? transferId : drag?.id
     const target = dragTarget
     if (draggedId === undefined || target === undefined || drag === undefined) return
     const source = drag.source
@@ -232,6 +236,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     }
     setDrag(undefined)
     setDragTarget(undefined)
+  }
+
+  /** Start an HTML5 drag carrying the idea id, exactly like the task-board family. */
+  const startDrag = (idea: IdeaRecord): void => {
+    setDrag({ id: idea.id, source: idea.status })
   }
 
   const openEdit = (idea: IdeaRecord): void => {
@@ -312,8 +321,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               key={status}
               className={classes.column}
               onDragEnter={() => { if (drag !== undefined) setDragTarget({ status }) }}
-              onDragOver={event => { event.preventDefault() }}
-              onDrop={event => { event.preventDefault(); void performDrop() }}
+              onDragOver={event => {
+                if (drag !== undefined) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }
+              }}
+              onDrop={event => {
+                event.preventDefault()
+                void performDrop(event)
+              }}
             >
               <div className={classes.columnHeader}>
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
@@ -329,9 +346,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                         key={idea.id}
                         className={classes.cardWrapper}
                         draggable={!client.pending}
-                        onDragStart={() => { setDrag({ id: idea.id, source: idea.status }) }}
+                        onDragStart={(event) => {
+                          // Carry the idea id on the drag payload (task-board
+                          // family contract) so the drop target can read it.
+                          event.dataTransfer.setData('text/plain', idea.id)
+                          event.dataTransfer.effectAllowed = 'move'
+                          startDrag(idea)
+                        }}
                         onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
-                        onDragOver={event => { event.preventDefault() }}
+                        onDragOver={event => {
+                          if (drag !== undefined) {
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'move'
+                          }
+                        }}
                         onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
                       >
                         <div className={classes.card} data-dsh-idea-id={idea.id}>

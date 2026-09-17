@@ -16,6 +16,39 @@ const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped)
   position: relative;
 }
 
+/*
+ * Theme fallback palette. The shell always provides the --dsw-alias-* tokens,
+ * but a skin-center skin may only redefine a subset; without a fallback the
+ * var() resolves to "transparent" and the board lets the conversation bleed
+ * through. These hard values live on the plugin container and mirror the
+ * shell's own boot palette (light/dark switched the same way the shell does).
+ */
+[data-dsh-ideas-view] {
+  --dsh-ideas-fb-bg: #ffffff;
+  --dsh-ideas-fb-layer1: #f2f3f5;
+  --dsh-ideas-fb-layer2: #e9eaed;
+  --dsh-ideas-fb-layer3: #e0e2e5;
+  --dsh-ideas-fb-border: #d3d6da;
+  --dsh-ideas-fb-fg: #0f1115;
+  --dsh-ideas-fb-fg-soft: #61666b;
+  --dsh-ideas-fb-accent: #0f6fbe;
+  --dsh-ideas-fb-accent-fg: #ffffff;
+  --dsh-ideas-fb-danger: #d04a4a;
+}
+
+body[data-ds-dark-theme] [data-dsh-ideas-view] {
+  --dsh-ideas-fb-bg: #151517;
+  --dsh-ideas-fb-layer1: #1c1c1f;
+  --dsh-ideas-fb-layer2: #232327;
+  --dsh-ideas-fb-layer3: #2a2a2f;
+  --dsh-ideas-fb-border: #3a3a40;
+  --dsh-ideas-fb-fg: #f9fafb;
+  --dsh-ideas-fb-fg-soft: #cfd3d6;
+  --dsh-ideas-fb-accent: #3b82f6;
+  --dsh-ideas-fb-accent-fg: #0f1115;
+  --dsh-ideas-fb-danger: #e5484d;
+}
+
 /* The board container rides inside the conversation grid item as an extra
    trailing child; hidden unless the ideas panel is active. */
 [data-dsh-ideas-view] {
@@ -23,7 +56,7 @@ const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped)
   inset: 0;
   display: none;
   z-index: 60;
-  background: var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-bg-base, var(--dsh-ideas-fb-bg));
 }
 
 /* The center column is single-occupant; the :not() guard keeps the ideas and
@@ -110,7 +143,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 /* --- board frame --- */
 
 .dsh-ideas-board-view {
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-family: var(--dsw-font-family);
 }
 
@@ -123,8 +156,8 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   min-height: 0;
   padding: 14px 16px 16px;
   gap: 12px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base, var(--dsh-ideas-fb-bg));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-family: var(--dsw-font-family);
 }
 
@@ -139,7 +172,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   white-space: nowrap;
 }
 
@@ -152,7 +185,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 
 .dsh-ideas-detail-meta {
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
   white-space: nowrap;
 }
 
@@ -161,9 +194,9 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   width: 200px;
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-strong);
-  background: var(--dsw-alias-input-bg);
-  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-size: 13px;
 }
 
@@ -181,26 +214,30 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 }
 
 .dsh-ideas-primary-button {
-  background: var(--dsw-alias-accent-bg);
-  color: var(--dsw-alias-accent-fg, #fff);
+  background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  color: var(--dsw-alias-label-primary-foreground, var(--dsh-ideas-fb-accent-fg));
   font-weight: 600;
+}
+
+.dsh-ideas-primary-button:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-button-primary-fill, var(--dsh-ideas-fb-accent)));
 }
 
 .dsh-ideas-ghost-button {
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-ghost-button:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-error {
   padding: 8px 12px;
   border-radius: 8px;
-  background: var(--dsw-alias-danger-bg, rgba(220, 60, 60, 0.12));
-  color: var(--dsw-alias-danger-fg, #d04a4a);
+  background: var(--dsw-alias-danger-bg, color-mix(in srgb, var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger)) 12%, transparent));
+  color: var(--dsw-alias-danger-fg, var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger)));
   font-size: 12px;
 }
 
@@ -222,7 +259,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   max-width: 420px;
   min-height: 0;
   border-radius: 10px;
-  background: var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-base));
+  background: var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
   padding: 10px;
   gap: 8px;
 }
@@ -238,12 +275,12 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 .dsh-ideas-column-title {
   font-size: 13px;
   font-weight: 700;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-column-count {
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-column-body {
@@ -259,7 +296,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   padding: 18px 10px;
   text-align: center;
   font-size: 12px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
 /* --- cards --- */
@@ -268,22 +305,23 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-weak);
-  background: var(--dsw-alias-card-bg, var(--dsw-alias-bg-base));
+  border: 1px solid var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-card-bg, var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2)));
+  box-shadow: 0 1px 2px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
   cursor: default;
 }
 
 .dsh-ideas-card-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   overflow-wrap: anywhere;
 }
 
 .dsh-ideas-card-body {
   margin-top: 4px;
   font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -298,14 +336,14 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   flex-wrap: wrap;
   margin-top: 8px;
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-tag {
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
   font-size: 11px;
 }
 
@@ -322,7 +360,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--dsw-alias-bg-mask-1, rgba(0, 0, 0, 0.45));
 }
 
 .dsh-ideas-modal {
@@ -334,8 +372,8 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   overflow-y: auto;
   padding: 18px;
   border-radius: 12px;
-  background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-strong);
+  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
@@ -343,7 +381,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-field {
@@ -354,7 +392,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 
 .dsh-ideas-field-label {
   font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-input,
@@ -363,9 +401,9 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-strong);
-  background: var(--dsw-alias-input-bg);
-  color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-size: 13px;
   font-family: inherit;
 }
@@ -402,7 +440,7 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 
 .dsh-ideas-tag-filter-label {
   font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-filter-chip,
@@ -413,22 +451,22 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   font-size: 11px;
   cursor: pointer;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-filter-chip:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
 }
 
 .dsh-ideas-filter-chip-active {
-  background: var(--dsw-alias-accent-bg);
-  color: var(--dsw-alias-accent-fg, #fff);
+  background: var(--dsw-alias-button-ghost-active-fill, var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2)));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-drag-hint {
   flex: none;
   font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-card-wrapper {
@@ -455,25 +493,25 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   font-size: 11px;
   cursor: pointer;
   background: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-action-button:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-danger-button {
-  color: var(--dsw-alias-danger-fg, #d04a4a);
+  color: var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger));
 }
 
 .dsh-ideas-danger-button:hover {
-  background: var(--dsw-alias-danger-bg, rgba(220, 60, 60, 0.12));
+  background: var(--dsw-alias-danger-bg, color-mix(in srgb, var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger)) 12%, transparent));
 }
 
 .dsh-ideas-confirm-label {
   font-size: 11px;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-weight: 600;
 }
 `
