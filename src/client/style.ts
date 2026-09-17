@@ -59,13 +59,15 @@ body[data-ds-dark-theme] {
   inset: 0;
   display: none;
   z-index: 60;
-  /* Two stacked layers: the skin token on top (a background-enabled skin
-     defines every --dsw-alias-bg-* token as semi-transparent rgba, so the
-     var() fallback never fires), the fixed fallback base underneath. The
-     total is always opaque, so the page behind never bleeds through. */
+  /* The skin token on top (a background-enabled skin defines every
+     --dsw-alias-bg-* token as semi-transparent rgba, so the var() fallback
+     never fires), the fixed fallback base underneath. The base stays
+     translucent (88 %) so a wallpaper-owning skin keeps its look through
+     the panel while the opaque fallback palette keeps text readable. The
+     board child is transparent — this container alone carries the surface. */
   background:
     linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
-    var(--dsh-ideas-fb-bg);
+    color-mix(in srgb, var(--dsh-ideas-fb-bg) 88%, transparent);
 }
 
 /* The center column is single-occupant; the :not() guard keeps the ideas and
@@ -165,10 +167,10 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   min-height: 0;
   padding: 14px 16px 16px;
   gap: 12px;
-  /* Skin token tinted over the opaque fallback base (see container rule). */
-  background:
-    linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
-    var(--dsh-ideas-fb-bg);
+  /* The container [data-dsh-ideas-view] already carries the surface; the
+     board itself stays transparent so its background cannot stack an extra
+     opaque layer on top (which would kill the panel translucency). */
+  background: transparent;
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-family: var(--dsw-font-family);
 }
@@ -188,11 +190,18 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   white-space: nowrap;
 }
 
-.dsh-ideas-back-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+/* Rest-state surface for the "back to chat" button. The compound selector
+   outranks the plain .dsh-ideas-ghost-button rule below it, so the button
+   never looks like bare text under a skin (same issue the "New idea"
+   button had). */
+.dsh-ideas-ghost-button.dsh-ideas-back-button {
+  background: var(--dsw-alias-interactive-bg-subtle, var(--dsh-ideas-fb-layer2));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  border-radius: 8px;
+}
+
+.dsh-ideas-ghost-button.dsh-ideas-back-button:hover {
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer3));
 }
 
 .dsh-ideas-detail-meta {
@@ -356,6 +365,9 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  /* The pointer-based drag owns the gesture; suppress the browser's own
+     pan/scroll handling on touch so pointermove keeps firing. */
+  touch-action: none;
 }
 
 .dsh-ideas-card-grip:hover {
@@ -502,12 +514,15 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   border: none;
   font-size: 11px;
   cursor: pointer;
-  background: transparent;
+  /* Rest state carries a visible surface (it is a toggle button, not plain
+     text): the alias token when present, the opaque fallback layer
+     otherwise, so the chip reads as a button under any skin. */
+  background: var(--dsw-alias-interactive-bg-subtle, var(--dsh-ideas-fb-layer2));
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-filter-chip:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer3));
 }
 
 .dsh-ideas-filter-chip-active {
@@ -525,6 +540,28 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   /* Cards are drop targets (intra-column reorder); the drag source is the
      dedicated grip, which carries its own grab cursor. */
   cursor: default;
+}
+
+/* --- pointer-based drag (custom, not HTML5 DnD) --- */
+
+/* While a drag is in flight the whole board refuses text selection, and the
+   droppable zones (columns + every card wrapper) show a hand cursor so the
+   user sees where the card can land — HTML5 drag's own cursor cannot be
+   styled, hence the custom pointer drag. */
+[data-dsh-ideas-dragging] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+[data-dsh-ideas-dragging] .dsh-ideas-column,
+[data-dsh-ideas-dragging] .dsh-ideas-card-wrapper,
+[data-dsh-ideas-dragging] .dsh-ideas-empty {
+  cursor: pointer;
+}
+
+/* The column currently hovered as a drop zone gains a subtle accent ring. */
+.dsh-ideas-column-drop-target {
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill, var(--dsh-ideas-fb-accent));
 }
 
 .dsh-ideas-card-actions {
@@ -583,6 +620,7 @@ export const classes = {
   error: 'dsh-ideas-error',
   columns: 'dsh-ideas-columns',
   column: 'dsh-ideas-column',
+  columnDropTarget: 'dsh-ideas-column-drop-target',
   columnHeader: 'dsh-ideas-column-header',
   columnTitle: 'dsh-ideas-column-title',
   columnCount: 'dsh-ideas-column-count',
