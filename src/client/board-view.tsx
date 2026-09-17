@@ -226,7 +226,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     const source = drag.source
     try {
       if (source !== target.status) {
-        await client.moveIdea(draggedId, target.status as Extract<IdeaStatus, 'open' | 'archived'>)
+        if (target.status === 'declined') {
+          // The wire protocol only moves open <-> archived; declining is its
+          // own action (sets archivedAt, mirrors decline on the task board).
+          await client.declineIdea(draggedId)
+        } else {
+          await client.moveIdea(draggedId, target.status as Extract<IdeaStatus, 'open' | 'archived'>)
+        }
       }
       const all = client.snapshot?.ideas ?? []
       const ordered = rebuildOrder(all, draggedId, target.status, target.beforeId)
@@ -368,6 +374,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 // drag: the card body stays selectable.
                                 event.dataTransfer.setData('text/plain', idea.id)
                                 event.dataTransfer.effectAllowed = 'move'
+                                // Default drag image would be the small grip;
+                                // ghost the whole card instead, anchored so
+                                // the pointer keeps its position on the card.
+                                const card = event.currentTarget.closest<HTMLElement>('.dsh-ideas-card')
+                                if (card !== null) {
+                                  const rect = card.getBoundingClientRect()
+                                  event.dataTransfer.setDragImage(
+                                    card,
+                                    event.clientX - rect.left,
+                                    event.clientY - rect.top,
+                                  )
+                                }
                                 startDrag(idea)
                               }}
                               onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
