@@ -5,7 +5,7 @@
  * and Archived (+ intra-column reorder), search and a conjunctive tag filter.
  */
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
 import { t, type IdeasKey } from './locales.ts'
@@ -44,6 +44,76 @@ function collectKnownTags(ideas: readonly IdeaRecord[]): string[] {
   const names = new Set<string>()
   for (const idea of ideas) for (const tag of idea.tags ?? []) names.add(tag.name)
   return [...names].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * Deterministic per-name hue (0–359) so every tag keeps a stable,
+ * distinct color on the cards. FNV-1a then maps onto 15 well-spaced hues.
+ */
+function tagHue(name: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < name.length; i++) {
+    h ^= name.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return ((h >>> 0) % 15) * 24
+}
+
+/* --- tiny action icons (feather-style strokes, currentColor) --- */
+
+const actionIcon = {
+  'aria-hidden': true,
+  width: 12,
+  height: 12,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.6,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const
+
+function IconEdit() {
+  return <svg {...actionIcon}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" /></svg>
+}
+
+function IconArchive() {
+  return (
+    <svg {...actionIcon}>
+      <polyline points="21 8 21 21 3 21 3 8" />
+      <rect x="1" y="3" width="22" height="5" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  )
+}
+
+function IconDecline() {
+  return (
+    <svg {...actionIcon}>
+      <path d="M10 15v4a3 3 0 0 1-3 3l-4-9V2h11.28a2 2 0 0 1 2 1.7l1.38 9a2 2 0 0 1-2 2.3z" />
+      <path d="M7 22v-11" />
+    </svg>
+  )
+}
+
+function IconRestore() {
+  return (
+    <svg {...actionIcon}>
+      <polyline points="1 4 1 10 7 10" />
+      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+    </svg>
+  )
+}
+
+function IconDelete() {
+  return (
+    <svg {...actionIcon}>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  )
 }
 
 /**
@@ -304,6 +374,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               key={name}
               type="button"
               className={tagFilter.includes(name) ? classes.filterChipActive : classes.filterChip}
+              style={{ '--dsh-ideas-tag-hue': tagHue(name) } as CSSProperties}
+              aria-pressed={tagFilter.includes(name)}
               onClick={() => { toggleTag(name) }}
             >
               {name}
@@ -393,20 +465,30 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               <span aria-hidden="true">⠿</span>
                             </div>
                           </div>
+                          {idea.tags !== undefined && idea.tags.length > 0 && (
+                            <div className={classes.cardMeta}>
+                              {idea.tags.map(tag => (
+                                <span
+                                  key={tag.name}
+                                  className={classes.tag}
+                                  style={{ '--dsh-ideas-tag-hue': tagHue(tag.name) } as CSSProperties}
+                                  onClick={() => { toggleTag(tag.name) }}
+                                >
+                                  {tag.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           {idea.body.trim() !== '' && <div className={classes.cardBody}>{idea.body}</div>}
-                          {(idea.tags !== undefined && idea.tags.length > 0) || idea.value !== undefined || idea.effort !== undefined
-                            ? (
-                              <div className={classes.cardMeta}>
-                                {idea.tags?.map(tag => (
-                                  <span key={tag.name} className={classes.tag} onClick={() => { toggleTag(tag.name) }}>{tag.name}</span>
-                                ))}
-                                {idea.value !== undefined && <span className={classes.score}>{t('card.value', { value: idea.value })}</span>}
-                                {idea.effort !== undefined && <span className={classes.score}>{t('card.effort', { effort: idea.effort })}</span>}
-                              </div>
-                            )
-                            : null}
+                          {(idea.value !== undefined || idea.effort !== undefined) && (
+                            <div className={classes.cardMeta}>
+                              {idea.value !== undefined && <span className={classes.score}>{t('card.value', { value: idea.value })}</span>}
+                              {idea.effort !== undefined && <span className={classes.score}>{t('card.effort', { effort: idea.effort })}</span>}
+                            </div>
+                          )}
                           <div className={classes.cardActions}>
                             <button type="button" className={classes.actionButton} onClick={() => { openEdit(idea) }}>
+                              <IconEdit />
                               {t('card.edit')}
                             </button>
                             {idea.status === 'open' && (
@@ -415,6 +497,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 className={classes.actionButton}
                                 onClick={() => { void client.moveIdea(idea.id, 'archived') }}
                               >
+                                <IconArchive />
                                 {t('card.archive')}
                               </button>
                             )}
@@ -424,6 +507,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 className={classes.actionButton}
                                 onClick={() => { void client.declineIdea(idea.id) }}
                               >
+                                <IconDecline />
                                 {t('card.decline')}
                               </button>
                             )}
@@ -433,6 +517,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 className={classes.actionButton}
                                 onClick={() => { void client.restoreIdea(idea.id) }}
                               >
+                                <IconRestore />
                                 {t('card.restore')}
                               </button>
                             )}
@@ -443,6 +528,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   className={classes.dangerButton}
                                   onClick={() => { setConfirmId(idea.id) }}
                                 >
+                                  <IconDelete />
                                   {t('card.delete')}
                                 </button>
                               )
@@ -457,6 +543,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                       void client.deleteIdea(idea.id)
                                     }}
                                   >
+                                    <IconDelete />
                                     {t('card.deleteYes')}
                                   </button>
                                   <button

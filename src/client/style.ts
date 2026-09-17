@@ -62,12 +62,12 @@ body[data-ds-dark-theme] {
   /* The skin token on top (a background-enabled skin defines every
      --dsw-alias-bg-* token as semi-transparent rgba, so the var() fallback
      never fires), the fixed fallback base underneath. The base stays
-     translucent (88 %) so a wallpaper-owning skin keeps its look through
+     translucent (70 %) so a wallpaper-owning skin keeps its look through
      the panel while the opaque fallback palette keeps text readable. The
      board child is transparent — this container alone carries the surface. */
   background:
     linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
-    color-mix(in srgb, var(--dsh-ideas-fb-bg) 88%, transparent);
+    color-mix(in srgb, var(--dsh-ideas-fb-bg) 70%, transparent);
 }
 
 /* The center column is single-occupant; the :not() guard keeps the ideas and
@@ -195,13 +195,20 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
    never looks like bare text under a skin (same issue the "New idea"
    button had). */
 .dsh-ideas-ghost-button.dsh-ideas-back-button {
-  background: var(--dsw-alias-interactive-bg-subtle, var(--dsh-ideas-fb-layer2));
+  /* Skin voile over the opaque base (same pattern as the card action
+     pills), so the button follows the active skin yet always has a
+     visible surface. */
+  background:
+    linear-gradient(var(--dsw-alias-interactive-bg-active, transparent), var(--dsw-alias-interactive-bg-active, transparent)),
+    var(--dsh-ideas-fb-layer2);
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   border-radius: 8px;
 }
 
 .dsh-ideas-ghost-button.dsh-ideas-back-button:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer3));
+  background:
+    linear-gradient(var(--dsw-alias-interactive-bg-active, transparent), var(--dsw-alias-interactive-bg-active, transparent)),
+    var(--dsh-ideas-fb-layer3);
 }
 
 .dsh-ideas-detail-meta {
@@ -327,10 +334,26 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
+  /* Card surface: the skin card token over the opaque fallback layer. The
+     base is stepped one tone DARKER than the column surface so cards read
+     as raised slots (light shell shades the layer, dark shell pulls toward
+     the darker page base — see the theme rules below). */
   background:
     linear-gradient(var(--dsw-alias-card-bg, var(--dsw-alias-bg-layer-2, transparent)), var(--dsw-alias-card-bg, var(--dsw-alias-bg-layer-2, transparent))),
     var(--dsh-ideas-fb-layer2);
   box-shadow: 0 1px 2px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+}
+
+/* Light shell: shade layer2 toward the (dark) foreground, roughly one step
+   below layer1, so the card is a touch darker than its column. */
+body:not([data-ds-dark-theme]) .dsh-ideas-card {
+  background-color: color-mix(in srgb, var(--dsh-ideas-fb-layer2) 96%, var(--dsh-ideas-fb-fg));
+}
+
+/* Dark shell: elevation normally lightens upward, so pull the card DOWN
+   toward the page base to make it darker than the column instead. */
+body[data-ds-dark-theme] .dsh-ideas-card {
+  background-color: color-mix(in srgb, var(--dsh-ideas-fb-layer2) 35%, var(--dsh-ideas-fb-bg));
 }
 
 /* Title row: the title grows, the drag grip stays put at the far right. */
@@ -397,10 +420,14 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 }
 
 .dsh-ideas-tag {
+  /* Per-name hue arrives inline as --dsh-ideas-tag-hue; mixing it with the
+     surface keeps the pill visible on the card in both light and dark
+     shells, unlike the old interactive-bg-active token (often transparent). */
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2));
-  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  background: color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 72% 48%) 16%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 75% 48%) 75%, var(--dsh-ideas-fb-fg));
+  border: 1px solid color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 75% 52%) 38%, transparent);
   font-size: 11px;
 }
 
@@ -508,23 +535,31 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 .dsh-ideas-filter-chip-active {
   padding: 2px 10px;
   border-radius: 999px;
-  border: none;
+  border: 1px solid transparent;
   font-size: 11px;
   cursor: pointer;
-  /* Rest state carries a visible surface (it is a toggle button, not plain
-     text): the alias token when present, the opaque fallback layer
-     otherwise, so the chip reads as a button under any skin. */
-  background: var(--dsw-alias-interactive-bg-subtle, var(--dsh-ideas-fb-layer2));
-  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  /* Each chip carries the hue of its tag (--dsh-ideas-tag-hue, injected per
+     chip like on the cards): soft tinted rest state, matching the tag color
+     family. The border is the activation indicator — see -active below. */
+  background: color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 72% 48%) 12%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 75% 48%) 78%, var(--dsh-ideas-fb-fg));
 }
 
 .dsh-ideas-filter-chip:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer3));
+  background: color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 72% 48%) 18%, var(--dsh-ideas-fb-layer2));
 }
 
 .dsh-ideas-filter-chip-active {
-  background: var(--dsw-alias-button-ghost-active-fill, var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2)));
-  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  /* Active filter: full hue outline + stronger tint so the state reads
+     at a glance, same hue as the chip's tag on the cards. */
+  border-color: hsl(var(--dsh-ideas-tag-hue, 210) 78% 55%);
+  background: color-mix(in srgb, hsl(var(--dsh-ideas-tag-hue, 210) 72% 48%) 26%, var(--dsh-ideas-fb-layer2));
+  color: hsl(var(--dsh-ideas-tag-hue, 210) 60% 30%);
+  font-weight: 600;
+}
+
+body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
+  color: hsl(var(--dsh-ideas-tag-hue, 210) 75% 72%);
 }
 
 .dsh-ideas-drag-hint {
@@ -549,17 +584,29 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 
 .dsh-ideas-action-button,
 .dsh-ideas-danger-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 9px;
   border: none;
   border-radius: 6px;
   font-size: 11px;
   cursor: pointer;
-  background: transparent;
+  /* Surface = the skin's interactive voile over the opaque fallback base.
+     The --dsw-alias-interactive-bg-* tokens are translucent by design
+     (shell + skins define them as rgba overlays), so on their own they are
+     near-invisible; laid over the solid layer they tint the pill with the
+     active skin/theme while keeping it readable. */
+  background:
+    linear-gradient(var(--dsw-alias-interactive-bg-active, transparent), var(--dsw-alias-interactive-bg-active, transparent)),
+    var(--dsh-ideas-fb-layer2);
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-action-button:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+  background:
+    linear-gradient(var(--dsw-alias-interactive-bg-active, transparent), var(--dsw-alias-interactive-bg-active, transparent)),
+    var(--dsh-ideas-fb-layer3);
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
@@ -568,7 +615,16 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 }
 
 .dsh-ideas-danger-button:hover {
-  background: var(--dsw-alias-danger-bg, color-mix(in srgb, var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger)) 12%, transparent));
+  /* The danger voile (also translucent) over the same opaque base. */
+  background:
+    linear-gradient(var(--dsw-alias-interactive-bg-hover-danger, transparent), var(--dsw-alias-interactive-bg-hover-danger, transparent)),
+    var(--dsh-ideas-fb-layer2);
+}
+
+/* Action icons: fixed size, never squeezed by the label. */
+.dsh-ideas-action-button svg,
+.dsh-ideas-danger-button svg {
+  flex: none;
 }
 
 .dsh-ideas-confirm-label {
