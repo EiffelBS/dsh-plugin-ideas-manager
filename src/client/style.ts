@@ -365,9 +365,6 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
-  /* The pointer-based drag owns the gesture; suppress the browser's own
-     pan/scroll handling on touch so pointermove keeps firing. */
-  touch-action: none;
 }
 
 .dsh-ideas-card-grip:hover {
@@ -542,28 +539,6 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   cursor: default;
 }
 
-/* --- pointer-based drag (custom, not HTML5 DnD) --- */
-
-/* While a drag is in flight the whole board refuses text selection, and the
-   droppable zones (columns + every card wrapper) show a hand cursor so the
-   user sees where the card can land — HTML5 drag's own cursor cannot be
-   styled, hence the custom pointer drag. */
-[data-dsh-ideas-dragging] {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-[data-dsh-ideas-dragging] .dsh-ideas-column,
-[data-dsh-ideas-dragging] .dsh-ideas-card-wrapper,
-[data-dsh-ideas-dragging] .dsh-ideas-empty {
-  cursor: pointer;
-}
-
-/* The column currently hovered as a drop zone gains a subtle accent ring. */
-.dsh-ideas-column-drop-target {
-  box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill, var(--dsh-ideas-fb-accent));
-}
-
 .dsh-ideas-card-actions {
   display: flex;
   align-items: center;
@@ -620,7 +595,6 @@ export const classes = {
   error: 'dsh-ideas-error',
   columns: 'dsh-ideas-columns',
   column: 'dsh-ideas-column',
-  columnDropTarget: 'dsh-ideas-column-drop-target',
   columnHeader: 'dsh-ideas-column-header',
   columnTitle: 'dsh-ideas-column-title',
   columnCount: 'dsh-ideas-column-count',

@@ -5,7 +5,7 @@
  * and Archived (+ intra-column reorder), search and a conjunctive tag filter.
  */
 
-import { useEffect, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
 import { t, type IdeasKey } from './locales.ts'
@@ -187,18 +187,7 @@ function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?
 type DragState = { id: string; source: IdeaStatus } | undefined
 type DragTarget = { status: IdeaStatus; beforeId?: string } | undefined
 
-/** Minimum pointer travel (px) before a grip press becomes a drag. */
-const DRAG_START_THRESHOLD_PX = 4
-
-/**
- * Board component; subscribes to the client snapshot.
- *
- * Drag model: a custom pointer-based drag, NOT the HTML5 drag & drop API.
- * HTML5 DnD owns its drag cursor (arrow + selection square) and cannot show
- * a hand over the drop zones; pointer events keep full cursor control
- * (grab on the grip -> grabbing while dragging -> hand over droppable
- * columns/cards).
- */
+/** Board component; subscribes to the client snapshot. */
 export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [snapshot, setSnapshot] = useState(client.snapshot)
   const [filter, setFilter] = useState('')
@@ -208,15 +197,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
-  // Authoritative drag state, read synchronously by the pointer handlers;
-  // the React states above only drive rendering (cursor/drop-target styles).
-  const dragRef = useRef<{
-    idea: IdeaRecord
-    startX: number
-    startY: number
-    moved: boolean
-    target: DragTarget
-  } | undefined>(undefined)
 
   useEffect(
     () => client.subscribe(() => setSnapshot(client.snapshot)),
@@ -235,14 +215,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : [...current, name])
   }
 
-  /** Commit the drop described by dragRef at pointer-up time. */
-  const performDrop = async (): Promise<void> => {
-    const current = dragRef.current
-    if (current === undefined || !current.moved) return
-    const draggedId = current.idea.id
-    const target = current.target
-    if (draggedId === undefined || target === undefined) return
-    const source = current.idea.status
+  const performDrop = async (event?: { dataTransfer: { getData(format: string): string } }): Promise<void> => {
+    // The dropped task id is carried on the dataTransfer (like the
+    // task-board family); the drag state is a fallback for browsers that
+    // do not share the payload with the drop target.
+    const transferId = event?.dataTransfer?.getData('text/plain')
+    const draggedId = transferId !== undefined && transferId !== '' ? transferId : drag?.id
+    const target = dragTarget
+    if (draggedId === undefined || target === undefined || drag === undefined) return
+    const source = drag.source
     try {
       if (source !== target.status) {
         await client.moveIdea(draggedId, target.status as Extract<IdeaStatus, 'open' | 'archived'>)
@@ -253,78 +234,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     } catch {
       // The board reflects the Host verdict; a failed drop needs no retry UI.
     }
-    endDrag()
-  }
-
-  /** Reset the drag (called on drop, pointer cancel and grip release). */
-  const endDrag = (): void => {
-    dragRef.current = undefined
     setDrag(undefined)
     setDragTarget(undefined)
   }
 
-  /** Grip press: capture the pointer and remember the start position. */
-  const onGripPointerDown = (idea: IdeaRecord, event: ReactPointerEvent<HTMLDivElement>): void => {
-    if (client.pending) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    dragRef.current = {
-      idea,
-      startX: event.clientX,
-      startY: event.clientY,
-      moved: false,
-      target: undefined,
-    }
-  }
-
-  /** Grip move (pointer is captured): arm the drag after the threshold, then
-      resolve the hovered drop zone through elementFromPoint. */
-  const onGripPointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const current = dragRef.current
-    if (current === undefined) return
-    if (!current.moved) {
-      const travel = Math.hypot(event.clientX - current.startX, event.clientY - current.startY)
-      if (travel < DRAG_START_THRESHOLD_PX) return
-      current.moved = true
-      setDrag({ id: current.idea.id, source: current.idea.status })
-    }
-    const under = event.currentTarget.ownerDocument.elementFromPoint(event.clientX, event.clientY)
-    const columnEl = under?.closest<HTMLElement>('[data-dsh-ideas-status]')
-    if (columnEl === null || columnEl === undefined) {
-      current.target = undefined
-      setDragTarget(undefined)
-      return
-    }
-    const status = (columnEl.dataset.dshIdeasStatus ?? 'open') as IdeaStatus
-    const cardEl = under?.closest<HTMLElement>('[data-dsh-idea-id]')
-    const beforeId = cardEl === null || cardEl === undefined ? undefined : cardEl.dataset.dshIdeaId
-    // Keep the hovered column following the pointer near its edges (the
-    // HTML5 drag API auto-scrolled drop containers; pointer drag does not).
-    const columnBody = columnEl.querySelector<HTMLElement>('.dsh-ideas-column-body')
-    if (columnBody !== null) {
-      const rect = columnBody.getBoundingClientRect()
-      const edge = 40
-      if (event.clientY < rect.top + edge) columnBody.scrollTop -= 12
-      else if (event.clientY > rect.bottom - edge) columnBody.scrollTop += 12
-    }
-    const next: DragTarget = { status, ...(beforeId === undefined ? {} : { beforeId }) }
-    const previous = current.target
-    if (previous === next || (previous !== undefined && previous.status === next.status && previous.beforeId === next.beforeId)) return
-    current.target = next
-    setDragTarget(next)
-  }
-
-  /** Grip release: commit the drop (or just reset when nothing moved). */
-  const onGripPointerUp = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    const current = dragRef.current
-    if (current === undefined) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-    if (!current.moved) {
-      endDrag()
-      return
-    }
-    void performDrop()
+  /** Start an HTML5 drag carrying the idea id, exactly like the task-board family. */
+  const startDrag = (idea: IdeaRecord): void => {
+    setDrag({ id: idea.id, source: idea.status })
   }
 
   const openEdit = (idea: IdeaRecord): void => {
@@ -333,12 +249,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   return (
-    <div
-      className={classes.board}
-      data-dsh-ideas-board=""
-      data-dsh-plugin="ideas"
-      {...(drag !== undefined ? { 'data-dsh-ideas-dragging': '' } : {})}
-    >
+    <div className={classes.board} data-dsh-ideas-board="" data-dsh-plugin="ideas">
       <header className={classes.boardHeader}>
         <button
           type="button"
@@ -405,12 +316,21 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       <div className={classes.columns}>
         {IDEA_COLUMNS.map(status => {
           const columnIdeas = byStatus(status)
-          const isDropTarget = dragTarget?.status === status
           return (
             <section
               key={status}
-              className={`${classes.column}${isDropTarget ? ` ${classes.columnDropTarget}` : ''}`}
-              data-dsh-ideas-status={status}
+              className={classes.column}
+              onDragEnter={() => { if (drag !== undefined) setDragTarget({ status }) }}
+              onDragOver={event => {
+                if (drag !== undefined) {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }
+              }}
+              onDrop={event => {
+                event.preventDefault()
+                void performDrop(event)
+              }}
             >
               <div className={classes.columnHeader}>
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
@@ -422,18 +342,35 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                   : columnIdeas.map(idea => {
                     const confirm = confirmId === idea.id
                     return (
-                      <div key={idea.id} className={classes.cardWrapper}>
+                      <div
+                        key={idea.id}
+                        className={classes.cardWrapper}
+                        onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
+                        onDragOver={event => {
+                          if (drag !== undefined) {
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'move'
+                          }
+                        }}
+                      >
                         <div className={classes.card} data-dsh-idea-id={idea.id}>
                           <div className={classes.cardHeader}>
                             <div className={classes.cardTitle}>{idea.title}</div>
                             <div
                               className={classes.cardGrip}
+                              draggable={!client.pending}
                               title={t('card.drag')}
                               aria-label={t('card.drag')}
-                              onPointerDown={event => { onGripPointerDown(idea, event) }}
-                              onPointerMove={event => { onGripPointerMove(event) }}
-                              onPointerUp={event => { onGripPointerUp(event) }}
-                              onPointerCancel={() => { endDrag() }}
+                              onDragStart={(event) => {
+                                // Carry the idea id on the drag payload
+                                // (task-board family contract) so the drop
+                                // target can read it. Only the grip starts a
+                                // drag: the card body stays selectable.
+                                event.dataTransfer.setData('text/plain', idea.id)
+                                event.dataTransfer.effectAllowed = 'move'
+                                startDrag(idea)
+                              }}
+                              onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
                             >
                               <span aria-hidden="true">⠿</span>
                             </div>
