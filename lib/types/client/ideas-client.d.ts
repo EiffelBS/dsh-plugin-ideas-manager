@@ -36,6 +36,8 @@ export declare class IdeasClient {
         title: string;
         body: string;
         tags?: string[];
+        value?: number;
+        effort?: number;
     }): Promise<void>;
     updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void>;
     moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void>;

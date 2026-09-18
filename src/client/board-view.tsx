@@ -3,6 +3,10 @@
  * the center column while active. P1 scope: full CRUD — capture and edit
  * modals, per-card archive/restore/decline/delete, manual drag between Open
  * and Archived (+ intra-column reorder), search and a conjunctive tag filter.
+ *
+ * UI polish: per-column surface tints, markdown-rendered descriptions with a
+ * raw/MD toggle, value/effort as named-level comboboxes, and a single click
+ * on a card title or body opening the edit modal.
  */
 
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
@@ -10,6 +14,8 @@ import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
 import { t, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
+import { renderMarkdown } from './markdown.ts'
+import { IDEA_LEVELS, levelForValue, levelLabelKey } from './levels.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
@@ -57,6 +63,10 @@ function tagHue(name: string): number {
     h = Math.imul(h, 0x01000193)
   }
   return ((h >>> 0) % 15) * 24
+}
+
+function shortDate(epoch: number): string {
+  return new Date(epoch).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 /* --- tiny action icons (feather-style strokes, currentColor) --- */
@@ -142,19 +152,56 @@ function tagsText(idea: IdeaRecord | undefined): string {
   return idea?.tags === undefined ? '' : idea.tags.map(tag => tag.name).join(', ')
 }
 
+/** Named-level combobox options for value/effort plus the unset choice. */
+function LevelSelect({ id, label, value, onChange, disabled }: {
+  id: string
+  label: string
+  value: string
+  onChange: (next: string) => void
+  disabled: boolean
+}) {
+  return (
+    <div className={classes.field}>
+      <label className={classes.fieldLabel} htmlFor={id}>{label}</label>
+      <select
+        id={id}
+        className={classes.select}
+        value={value}
+        disabled={disabled}
+        onChange={event => { onChange(event.target.value) }}
+      >
+        <option value="">{t('new.levelNone')}</option>
+        {IDEA_LEVELS.map(level => (
+          <option key={level.value} value={String(level.value)}>{t(level.labelKey)}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 /** Shared capture/edit modal. */
 function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?: IdeaRecord; onClose: () => void }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
-  const [value, setValue] = useState(initial?.value === undefined ? '' : String(initial.value))
-  const [effort, setEffort] = useState(initial?.effort === undefined ? '' : String(initial.effort))
+  const [valueLevel, setValueLevel] = useState(initial?.value === undefined ? '' : String(levelForValue(initial.value)))
+  const [effortLevel, setEffortLevel] = useState(initial?.effort === undefined ? '' : String(levelForValue(initial.effort)))
   const [tags, setTags] = useState(tagsText(initial))
   const [error, setError] = useState<string | undefined>(undefined)
+  const [preview, setPreview] = useState(false)
 
-  const toNumber = (raw: string): number | undefined => {
-    const parsed = Number(raw)
-    return raw.trim() === '' ? undefined : Number.isFinite(parsed) ? parsed : undefined
-  }
+  // Escape closes the modal (Echo the overlay-click behaviour), without
+  // closing anything behind it: the listener runs in the capture phase and
+  // stops the event from reaching the shell's own handlers.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('keydown', onKey, true) }
+  }, [onClose])
 
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
@@ -162,15 +209,23 @@ function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?
       setError(t('new.required'))
       return
     }
+    const value = valueLevel === '' ? undefined : Number(valueLevel)
+    const effort = effortLevel === '' ? undefined : Number(effortLevel)
     try {
       if (initial === undefined) {
-        await client.createIdea({ title: title.trim(), body: body.trim(), tags: tags.split(',') })
+        await client.createIdea({
+          title: title.trim(),
+          body: body.trim(),
+          tags: tags.split(','),
+          ...(value === undefined ? {} : { value }),
+          ...(effort === undefined ? {} : { effort }),
+        })
       } else {
         const patch: IdeaClientPatch = {
           title: title.trim(),
           body: body.trim(),
-          ...(toNumber(value) === undefined ? {} : { value: toNumber(value)! }),
-          ...(toNumber(effort) === undefined ? {} : { effort: toNumber(effort)! }),
+          ...(value === undefined ? {} : { value }),
+          ...(effort === undefined ? {} : { effort }),
           tags: tags.split(','),
         }
         await client.updateIdea(initial.id, patch)
@@ -198,38 +253,50 @@ function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?
           />
         </div>
         <div className={classes.field}>
-          <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
-          <textarea
-            id="dsh-ideas-body"
-            className={classes.textarea}
-            value={body}
-            placeholder={t('new.bodyPlaceholder')}
-            onChange={event => { setBody(event.target.value) }}
-          />
+          <span className={classes.fieldRowBetween}>
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
+            <button
+              type="button"
+              className={classes.ghostButton}
+              aria-pressed={preview}
+              onClick={() => { setPreview(current => !current) }}
+            >
+              {preview ? t('edit.previewOff') : t('edit.preview')}
+            </button>
+          </span>
+          {preview
+            ? (
+              <div
+                className={classes.preview}
+                data-dsh-ideas-preview=""
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+              />
+            )
+            : (
+              <textarea
+                id="dsh-ideas-body"
+                className={classes.textarea}
+                value={body}
+                placeholder={t('new.bodyPlaceholder')}
+                onChange={event => { setBody(event.target.value) }}
+              />
+            )}
         </div>
         <div className={classes.fieldRow}>
-          <div className={classes.field}>
-            <label className={classes.fieldLabel} htmlFor="dsh-ideas-value">{t('new.value')}</label>
-            <input
-              id="dsh-ideas-value"
-              className={classes.input}
-              type="number"
-              min={0}
-              value={value}
-              onChange={event => { setValue(event.target.value) }}
-            />
-          </div>
-          <div className={classes.field}>
-            <label className={classes.fieldLabel} htmlFor="dsh-ideas-effort">{t('new.effort')}</label>
-            <input
-              id="dsh-ideas-effort"
-              className={classes.input}
-              type="number"
-              min={0}
-              value={effort}
-              onChange={event => { setEffort(event.target.value) }}
-            />
-          </div>
+          <LevelSelect
+            id="dsh-ideas-value"
+            label={t('new.value')}
+            value={valueLevel}
+            onChange={setValueLevel}
+            disabled={client.pending}
+          />
+          <LevelSelect
+            id="dsh-ideas-effort"
+            label={t('new.effort')}
+            value={effortLevel}
+            onChange={setEffortLevel}
+            disabled={client.pending}
+          />
         </div>
         <div className={classes.field}>
           <label className={classes.fieldLabel} htmlFor="dsh-ideas-tags">{t('new.tags')}</label>
@@ -267,6 +334,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
+  // Rendered-markdown view of descriptions (raw text is one click away).
+  const [mdMode, setMdMode] = useState(true)
+  // Columns the user collapsed to focus on the open backlog.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<IdeaStatus>>(new Set())
 
   useEffect(
     () => client.subscribe(() => setSnapshot(client.snapshot)),
@@ -276,6 +347,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
   const knownTags = collectKnownTags(ideas)
+  const filtering = filter.trim() !== '' || tagFilter.length > 0
   const visible = ideas.filter(idea => matchesFilter(idea, filter) && matchesTags(idea, tagFilter))
   const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
 
@@ -283,6 +355,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     setTagFilter(current => current.includes(name)
       ? current.filter(entry => entry !== name)
       : [...current, name])
+  }
+
+  const toggleCollapse = (status: IdeaStatus): void => {
+    setCollapsed(current => {
+      const next = new Set(current)
+      if (next.has(status)) next.delete(status)
+      else next.add(status)
+      return next
+    })
   }
 
   const performDrop = async (event?: { dataTransfer: { getData(format: string): string } }): Promise<void> => {
@@ -347,6 +428,24 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           aria-label={t('board.search')}
           onChange={event => { setFilter(event.target.value) }}
         />
+        <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
+          <button
+            type="button"
+            className={mdMode ? classes.mdToggleActive : classes.mdToggleButton}
+            aria-pressed={mdMode}
+            onClick={() => { setMdMode(true) }}
+          >
+            {t('board.mdView')}
+          </button>
+          <button
+            type="button"
+            className={mdMode ? classes.mdToggleButton : classes.mdToggleActive}
+            aria-pressed={!mdMode}
+            onClick={() => { setMdMode(false) }}
+          >
+            {t('board.textView')}
+          </button>
+        </div>
         <button
           type="button"
           className={classes.primaryButton}
@@ -394,9 +493,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       <div className={classes.columns}>
         {IDEA_COLUMNS.map(status => {
           const columnIdeas = byStatus(status)
+          const isCollapsed = collapsed.has(status)
           return (
             <section
               key={status}
+              data-status={status}
               className={classes.column}
               onDragEnter={() => { if (drag !== undefined) setDragTarget({ status }) }}
               onDragOver={event => {
@@ -411,156 +512,240 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               }}
             >
               <div className={classes.columnHeader}>
+                <span className={classes.columnDot} data-status={status} aria-hidden="true" />
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
                 <span className={classes.columnCount}>{columnIdeas.length}</span>
+                <button
+                  type="button"
+                  className={classes.columnCollapse}
+                  aria-label={isCollapsed ? t('board.expand') : t('board.collapse')}
+                  aria-expanded={!isCollapsed}
+                  onClick={() => { toggleCollapse(status) }}
+                >
+                  <span aria-hidden="true">{isCollapsed ? '›' : '⌄'}</span>
+                </button>
               </div>
-              <div className={classes.columnBody}>
-                {columnIdeas.length === 0
-                  ? <div className={classes.empty}>{t('board.empty')}</div>
-                  : columnIdeas.map(idea => {
-                    const confirm = confirmId === idea.id
-                    return (
-                      <div
-                        key={idea.id}
-                        className={classes.cardWrapper}
-                        onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
-                        onDragOver={event => {
-                          if (drag !== undefined) {
-                            event.preventDefault()
-                            event.dataTransfer.dropEffect = 'move'
-                          }
-                        }}
-                      >
-                        <div className={classes.card} data-dsh-idea-id={idea.id}>
-                          <div className={classes.cardHeader}>
-                            <div className={classes.cardTitle}>{idea.title}</div>
-                            <div
-                              className={classes.cardGrip}
-                              draggable={!client.pending}
-                              title={t('card.drag')}
-                              aria-label={t('card.drag')}
-                              onDragStart={(event) => {
-                                // Carry the idea id on the drag payload
-                                // (task-board family contract) so the drop
-                                // target can read it. Only the grip starts a
-                                // drag: the card body stays selectable.
-                                event.dataTransfer.setData('text/plain', idea.id)
-                                event.dataTransfer.effectAllowed = 'move'
-                                // Default drag image would be the small grip;
-                                // ghost the whole card instead, anchored so
-                                // the pointer keeps its position on the card.
-                                const card = event.currentTarget.closest<HTMLElement>('.dsh-ideas-card')
-                                if (card !== null) {
-                                  const rect = card.getBoundingClientRect()
-                                  event.dataTransfer.setDragImage(
-                                    card,
-                                    event.clientX - rect.left,
-                                    event.clientY - rect.top,
-                                  )
-                                }
-                                startDrag(idea)
-                              }}
-                              onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
-                            >
-                              <span aria-hidden="true">⠿</span>
+              {!isCollapsed && (
+                <div className={classes.columnBody}>
+                  {status === 'open' && (
+                    <button type="button" className={classes.quickAdd} onClick={() => { setShowNew(true) }}>
+                      <span aria-hidden="true">＋</span>
+                      {t('board.new')}
+                    </button>
+                  )}
+                  {columnIdeas.length === 0
+                    ? <div className={classes.empty}>{t(filtering ? 'board.emptyFiltered' : 'board.empty')}</div>
+                    : columnIdeas.map(idea => {
+                      const confirm = confirmId === idea.id
+                      return (
+                        <div
+                          key={idea.id}
+                          className={classes.cardWrapper}
+                          onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
+                          onDragOver={event => {
+                            if (drag !== undefined) {
+                              event.preventDefault()
+                              event.dataTransfer.dropEffect = 'move'
+                            }
+                          }}
+                        >
+                          <div className={classes.card} data-dsh-idea-id={idea.id}>
+                            <div className={classes.cardHeader}>
+                              <div
+                                className={classes.cardTitle}
+                                role="button"
+                                tabIndex={0}
+                                title={t('card.clickToEdit')}
+                                onClick={() => { openEdit(idea) }}
+                                onKeyDown={event => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    openEdit(idea)
+                                  }
+                                }}
+                              >
+                                {idea.title}
+                              </div>
+                              <div
+                                className={classes.cardGrip}
+                                draggable={!client.pending}
+                                title={t('card.drag')}
+                                aria-label={t('card.drag')}
+                                onDragStart={(event) => {
+                                  // Carry the idea id on the drag payload
+                                  // (task-board family contract) so the drop
+                                  // target can read it. Only the grip starts a
+                                  // drag: the card body stays selectable.
+                                  event.dataTransfer.setData('text/plain', idea.id)
+                                  event.dataTransfer.effectAllowed = 'move'
+                                  // Default drag image would be the small grip;
+                                  // ghost the whole card instead, anchored so
+                                  // the pointer keeps its position on the card.
+                                  const card = event.currentTarget.closest<HTMLElement>('.dsh-ideas-card')
+                                  if (card !== null) {
+                                    const rect = card.getBoundingClientRect()
+                                    event.dataTransfer.setDragImage(
+                                      card,
+                                      event.clientX - rect.left,
+                                      event.clientY - rect.top,
+                                    )
+                                  }
+                                  startDrag(idea)
+                                }}
+                                onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
+                              >
+                                <span aria-hidden="true">⠿</span>
+                              </div>
                             </div>
-                          </div>
-                          {idea.tags !== undefined && idea.tags.length > 0 && (
+                            {idea.tags !== undefined && idea.tags.length > 0 && (
+                              <div className={classes.cardMeta}>
+                                {idea.tags.map(tag => (
+                                  <span
+                                    key={tag.name}
+                                    className={classes.tag}
+                                    style={{ '--dsh-ideas-tag-hue': tagHue(tag.name) } as CSSProperties}
+                                    onClick={() => { toggleTag(tag.name) }}
+                                  >
+                                    {tag.name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {idea.body.trim() !== '' && (
+                              mdMode
+                                ? (
+                                  <div
+                                    className={`${classes.markdownBody} ${classes.bodyClickable}`}
+                                    tabIndex={0}
+                                    title={t('card.clickToEdit')}
+                                    data-dsh-ideas-md=""
+                                    dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.body) }}
+                                    onClick={event => {
+                                      // A link inside the rendered body opens
+                                      // the target; anything else edits.
+                                      if ((event.target as HTMLElement).closest('a') !== null) return
+                                      openEdit(idea)
+                                    }}
+                                    onKeyDown={event => {
+                                      if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        openEdit(idea)
+                                      }
+                                    }}
+                                  />
+                                )
+                                : (
+                                  <div
+                                    className={`${classes.cardBody} ${classes.bodyClickable}`}
+                                    role="button"
+                                    tabIndex={0}
+                                    title={t('card.clickToEdit')}
+                                    onClick={() => { openEdit(idea) }}
+                                    onKeyDown={event => {
+                                      if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        openEdit(idea)
+                                      }
+                                    }}
+                                  >
+                                    {idea.body}
+                                  </div>
+                                )
+                            )}
+                            {(idea.value !== undefined || idea.effort !== undefined) && (
+                              <div className={classes.cardMeta}>
+                                {idea.value !== undefined && (
+                                  <span className={classes.score}>{t('card.value', { level: t(levelLabelKey(idea.value)!) })}</span>
+                                )}
+                                {idea.effort !== undefined && (
+                                  <span className={classes.score}>{t('card.effort', { level: t(levelLabelKey(idea.effort)!) })}</span>
+                                )}
+                              </div>
+                            )}
                             <div className={classes.cardMeta}>
-                              {idea.tags.map(tag => (
-                                <span
-                                  key={tag.name}
-                                  className={classes.tag}
-                                  style={{ '--dsh-ideas-tag-hue': tagHue(tag.name) } as CSSProperties}
-                                  onClick={() => { toggleTag(tag.name) }}
-                                >
-                                  {tag.name}
-                                </span>
-                              ))}
+                              <span className={classes.updated}>{t('card.updated', { date: shortDate(idea.updatedAt) })}</span>
                             </div>
-                          )}
-                          {idea.body.trim() !== '' && <div className={classes.cardBody}>{idea.body}</div>}
-                          {(idea.value !== undefined || idea.effort !== undefined) && (
-                            <div className={classes.cardMeta}>
-                              {idea.value !== undefined && <span className={classes.score}>{t('card.value', { value: idea.value })}</span>}
-                              {idea.effort !== undefined && <span className={classes.score}>{t('card.effort', { effort: idea.effort })}</span>}
-                            </div>
-                          )}
-                          <div className={classes.cardActions}>
-                            <button type="button" className={classes.actionButton} onClick={() => { openEdit(idea) }}>
-                              <IconEdit />
-                              {t('card.edit')}
-                            </button>
-                            {idea.status === 'open' && (
-                              <button
-                                type="button"
-                                className={classes.actionButton}
-                                onClick={() => { void client.moveIdea(idea.id, 'archived') }}
-                              >
-                                <IconArchive />
-                                {t('card.archive')}
+                            <div className={classes.cardActions}>
+                              <button type="button" className={classes.actionButton} disabled={client.pending} onClick={() => { openEdit(idea) }}>
+                                <IconEdit />
+                                {t('card.edit')}
                               </button>
-                            )}
-                            {idea.status === 'open' && (
-                              <button
-                                type="button"
-                                className={classes.actionButton}
-                                onClick={() => { void client.declineIdea(idea.id) }}
-                              >
-                                <IconDecline />
-                                {t('card.decline')}
-                              </button>
-                            )}
-                            {idea.status !== 'open' && (
-                              <button
-                                type="button"
-                                className={classes.actionButton}
-                                onClick={() => { void client.restoreIdea(idea.id) }}
-                              >
-                                <IconRestore />
-                                {t('card.restore')}
-                              </button>
-                            )}
-                            {!confirm
-                              ? (
+                              {idea.status === 'open' && (
                                 <button
                                   type="button"
-                                  className={classes.dangerButton}
-                                  onClick={() => { setConfirmId(idea.id) }}
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  onClick={() => { void client.moveIdea(idea.id, 'archived') }}
                                 >
-                                  <IconDelete />
-                                  {t('card.delete')}
+                                  <IconArchive />
+                                  {t('card.archive')}
                                 </button>
-                              )
-                              : (
-                                <>
-                                  <span className={classes.confirmLabel}>{t('card.confirmDelete')}</span>
+                              )}
+                              {idea.status === 'open' && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  onClick={() => { void client.declineIdea(idea.id) }}
+                                >
+                                  <IconDecline />
+                                  {t('card.decline')}
+                                </button>
+                              )}
+                              {idea.status !== 'open' && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  onClick={() => { void client.restoreIdea(idea.id) }}
+                                >
+                                  <IconRestore />
+                                  {t('card.restore')}
+                                </button>
+                              )}
+                              {!confirm
+                                ? (
                                   <button
                                     type="button"
                                     className={classes.dangerButton}
-                                    onClick={() => {
-                                      setConfirmId(undefined)
-                                      void client.deleteIdea(idea.id)
-                                    }}
+                                    disabled={client.pending}
+                                    onClick={() => { setConfirmId(idea.id) }}
                                   >
                                     <IconDelete />
-                                    {t('card.deleteYes')}
+                                    {t('card.delete')}
                                   </button>
-                                  <button
-                                    type="button"
-                                    className={classes.ghostButton}
-                                    onClick={() => { setConfirmId(undefined) }}
-                                  >
-                                    {t('card.deleteNo')}
-                                  </button>
-                                </>
-                              )}
+                                )
+                                : (
+                                  <>
+                                    <span className={classes.confirmLabel}>{t('card.confirmDelete')}</span>
+                                    <button
+                                      type="button"
+                                      className={classes.dangerButton}
+                                      disabled={client.pending}
+                                      onClick={() => {
+                                        setConfirmId(undefined)
+                                        void client.deleteIdea(idea.id)
+                                      }}
+                                    >
+                                      <IconDelete />
+                                      {t('card.deleteYes')}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={classes.ghostButton}
+                                      onClick={() => { setConfirmId(undefined) }}
+                                    >
+                                      {t('card.deleteNo')}
+                                    </button>
+                                  </>
+                                )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })}
-              </div>
+                      )
+                    })}
+                </div>
+              )}
             </section>
           )
         })}

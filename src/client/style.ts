@@ -156,6 +156,9 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 .dsh-ideas-board-view {
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-family: var(--dsw-font-family);
+  /* Native form controls (level combobox popups, scrollbars) follow the
+     board theme instead of the OS scheme. */
+  color-scheme: light dark;
 }
 
 .dsh-ideas-board {
@@ -228,6 +231,72 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   font-size: 13px;
 }
 
+/* Raw/MD description view toggle (segmented pair in the board header). */
+.dsh-ideas-md-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  flex: none;
+}
+
+.dsh-ideas-md-toggle-button,
+.dsh-ideas-md-toggle-active {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-md-toggle-active {
+  background: var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-weight: 600;
+}
+
+/* Level comboboxes (value/effort) share the input look. */
+.dsh-ideas-select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Modal preview: rendered markdown of the draft description, in a read-only
+   box matching the textarea footprint. */
+.dsh-ideas-preview {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 90px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+}
+
+.dsh-ideas-field-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .dsh-ideas-primary-button,
 .dsh-ideas-ghost-button {
   display: inline-flex;
@@ -292,6 +361,28 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   gap: 8px;
 }
 
+/* Distinct surface tint per column so the board reads as three zones at a
+   glance. The base stays the column surface; a low-alpha status hue is mixed
+   on top (same recipe as the tag pills: the hue token over the opaque layer,
+   light enough to stay contrast-safe in both themes). */
+.dsh-ideas-column[data-status='open'] {
+  background:
+    linear-gradient(color-mix(in srgb, hsl(210 80% 55%) 7%, transparent), color-mix(in srgb, hsl(210 80% 55%) 7%, transparent)),
+    var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
+}
+
+.dsh-ideas-column[data-status='archived'] {
+  background:
+    linear-gradient(color-mix(in srgb, hsl(30 60% 50%) 6%, transparent), color-mix(in srgb, hsl(30 60% 50%) 6%, transparent)),
+    var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
+}
+
+.dsh-ideas-column[data-status='declined'] {
+  background:
+    linear-gradient(color-mix(in srgb, hsl(0 70% 55%) 7%, transparent), color-mix(in srgb, hsl(0 70% 55%) 7%, transparent)),
+    var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
+}
+
 .dsh-ideas-column-header {
   display: flex;
   align-items: center;
@@ -309,6 +400,69 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 .dsh-ideas-column-count {
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+/* Status dot: the same hue family as the column tint, at full saturation, so
+   the column identity survives even when the surface tint is subtle. */
+.dsh-ideas-column-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dsh-ideas-column-dot[data-status='open'] {
+  background: hsl(210 80% 55%);
+}
+
+.dsh-ideas-column-dot[data-status='archived'] {
+  background: hsl(30 60% 50%);
+}
+
+.dsh-ideas-column-dot[data-status='declined'] {
+  background: hsl(0 70% 55%);
+}
+
+.dsh-ideas-column-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.dsh-ideas-column-collapse:hover {
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+}
+
+/* Quick capture row at the top of the Open column. */
+.dsh-ideas-quick-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dsh-ideas-quick-add:hover {
+  border-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
 }
 
 .dsh-ideas-column-body {
@@ -373,6 +527,24 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   min-width: 0;
 }
 
+/* Single click on the title opens the edit modal: the title reads as a
+   link-like affordance on hover. */
+.dsh-ideas-card-title {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.dsh-ideas-card-title:hover {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft)) 60%, transparent);
+  text-underline-offset: 2px;
+}
+
+.dsh-ideas-card-title:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  outline-offset: 1px;
+}
+
 /* Explicit drag grip: the only draggable zone of a card. The body stays
    selectable, so without a dedicated handle HTML5 drag would fight the text
    selection on mousedown. grab/grabbing follow the OS drag convention. */
@@ -407,6 +579,104 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+/* Raw text view of the description: clicking the card body opens the editor.
+   The pointer affordance mirrors the title (both are edit targets). */
+.dsh-ideas-body-clickable {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.dsh-ideas-body-clickable:hover {
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
+}
+
+.dsh-ideas-body-clickable:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  outline-offset: 1px;
+}
+
+/* Rendered markdown description on the card (kept compact like the raw
+   view). Markdown typography is deliberately subdued so cards stay dense. */
+.dsh-ideas-markdown-body {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dsh-ideas-markdown-body > :first-child {
+  margin-top: 0;
+}
+
+.dsh-ideas-markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.dsh-ideas-markdown-body p {
+  margin: 4px 0;
+}
+
+.dsh-ideas-markdown-body h1,
+.dsh-ideas-markdown-body h2,
+.dsh-ideas-markdown-body h3,
+.dsh-ideas-markdown-body h4,
+.dsh-ideas-markdown-body h5,
+.dsh-ideas-markdown-body h6 {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  line-height: 1.3;
+}
+
+.dsh-ideas-markdown-body ul,
+.dsh-ideas-markdown-body ol {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.dsh-ideas-markdown-body li {
+  margin: 2px 0;
+}
+
+.dsh-ideas-markdown-body code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  font-family: var(--dsw-font-mono, monospace);
+  font-size: 11px;
+}
+
+.dsh-ideas-markdown-body pre {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  overflow-x: auto;
+}
+
+.dsh-ideas-markdown-body pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.dsh-ideas-markdown-body a {
+  color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dsh-ideas-markdown-body a:hover {
+  text-decoration-thickness: 2px;
+}
+
+.dsh-ideas-updated {
+  white-space: nowrap;
 }
 
 .dsh-ideas-card-meta {
@@ -646,6 +916,9 @@ export const classes = {
   backButton: 'dsh-ideas-back-button',
   detailMeta: 'dsh-ideas-detail-meta',
   search: 'dsh-ideas-search',
+  mdToggle: 'dsh-ideas-md-toggle',
+  mdToggleButton: 'dsh-ideas-md-toggle-button',
+  mdToggleActive: 'dsh-ideas-md-toggle-active',
   primaryButton: 'dsh-ideas-primary-button',
   ghostButton: 'dsh-ideas-ghost-button',
   error: 'dsh-ideas-error',
@@ -654,6 +927,9 @@ export const classes = {
   columnHeader: 'dsh-ideas-column-header',
   columnTitle: 'dsh-ideas-column-title',
   columnCount: 'dsh-ideas-column-count',
+  columnDot: 'dsh-ideas-column-dot',
+  columnCollapse: 'dsh-ideas-column-collapse',
+  quickAdd: 'dsh-ideas-quick-add',
   columnBody: 'dsh-ideas-column-body',
   empty: 'dsh-ideas-empty',
   card: 'dsh-ideas-card',
@@ -661,17 +937,23 @@ export const classes = {
   cardTitle: 'dsh-ideas-card-title',
   cardGrip: 'dsh-ideas-card-grip',
   cardBody: 'dsh-ideas-card-body',
+  bodyClickable: 'dsh-ideas-body-clickable',
+  markdownBody: 'dsh-ideas-markdown-body',
   cardMeta: 'dsh-ideas-card-meta',
   tag: 'dsh-ideas-tag',
   score: 'dsh-ideas-score',
+  updated: 'dsh-ideas-updated',
   overlay: 'dsh-ideas-overlay',
   modal: 'dsh-ideas-modal',
   modalTitle: 'dsh-ideas-modal-title',
   field: 'dsh-ideas-field',
   fieldRow: 'dsh-ideas-field-row',
+  fieldRowBetween: 'dsh-ideas-field-row-between',
   fieldLabel: 'dsh-ideas-field-label',
   input: 'dsh-ideas-input',
   textarea: 'dsh-ideas-textarea',
+  select: 'dsh-ideas-select',
+  preview: 'dsh-ideas-preview',
   modalActions: 'dsh-ideas-modal-actions',
   tagFilterRow: 'dsh-ideas-tag-filter-row',
   tagFilterLabel: 'dsh-ideas-tag-filter-label',

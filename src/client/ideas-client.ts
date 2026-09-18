@@ -75,7 +75,7 @@ export class IdeasClient {
     this.emit()
   }
 
-  async createIdea(input: { title: string; body: string; tags?: string[] }): Promise<void> {
+  async createIdea(input: { title: string; body: string; tags?: string[]; value?: number; effort?: number }): Promise<void> {
     const tags = tagNames(input.tags).map(name => ({ name }))
     await this.run({
       kind: 'create',
@@ -83,6 +83,8 @@ export class IdeasClient {
       input: {
         title: input.title,
         body: input.body,
+        ...(input.value === undefined ? {} : { value: input.value }),
+        ...(input.effort === undefined ? {} : { effort: input.effort }),
         ...(tags.length === 0 ? {} : { tags }),
       },
     })
