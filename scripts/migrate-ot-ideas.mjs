@@ -11,7 +11,9 @@
  *   in the heading; `archivedAt` (non-open) from the first
  *   `DELIVERED`/`DECLINED YYYY-MM-DD` date; both fall back to "now" when the
  *   heading carries no parseable date
- * - `workspaceId: "ot"` (the OpenTimbre convention pinned in the docs)
+ * - `workspaceId`: the target workspace resolved by TITLE in the target
+ *   registry (default title "OpenTimbre"); `--workspace <id>` overrides;
+ *   the legacy "ot" id remains the fallback when no registry/title match
  * - `rank`: from the "Suggested priority" table when it ranks the idea
  * - the body is kept verbatim (the recipe is the value)
  *
@@ -27,9 +29,13 @@ import { randomUUID } from 'node:crypto'
 import { request as httpRequest } from 'node:http'
 import { pathToFileURL } from 'node:url'
 import process from 'node:process'
+import { homedir } from 'node:os'
 
 export const OT_IMPORT_SOURCE_ID = 'ot-ideas-v1'
 const OT_WORKSPACE_ID = 'ot'
+const OT_WORKSPACE_TITLE = 'OpenTimbre'
+/** Default target workspace registry (DSH storages) for title resolution. */
+const DEFAULT_REGISTRY = join(homedir(), '.dsh', 'storages', 'workspace.json')
 const DATE_RE = /\b(\d{4})-(\d{2})-(\d{2})\b/
 const HEADING_RE = /^## Idea #(\d+)/
 const PRIORITY_ROW_RE = /^\|\s*(\d+)\s*\|\s*#(\d+)(?:\s*\([^)]*\))*\s*\|/
@@ -148,6 +154,51 @@ export function parseOtMigration(ideasMd, archiveMd, options = {}) {
   }
 }
 
+/**
+ * Resolve the target workspace id for the OT migration.
+ * Precedence: explicit `--workspace` id > a single TITLE match in the target
+ * workspace registry (`tables.workspaces`, DSH storages) > the legacy "ot"
+ * fallback. Ambiguous titles pick the first match and warn; a missing or
+ * unreadable registry warns and falls back.
+ * @param {{ explicit?: string, registryPath?: string, title?: string }} options
+ * @returns {{ workspaceId: string, via: string }}
+ */
+export function resolveWorkspaceId(options) {
+  const explicit = options.explicit === undefined ? undefined : options.explicit.trim()
+  if (explicit !== undefined && explicit !== '') {
+    return { workspaceId: explicit, via: '--workspace' }
+  }
+  const registryPath = options.registryPath === undefined ? undefined : options.registryPath.trim()
+  const title = (options.title ?? OT_WORKSPACE_TITLE).trim()
+  if (registryPath === undefined || registryPath === '') {
+    console.error(`[migrate-ot-ideas] no --registry supplied; using legacy workspace "${OT_WORKSPACE_ID}"`)
+    return { workspaceId: OT_WORKSPACE_ID, via: 'legacy fallback ("ot")' }
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(registryPath, 'utf8'))
+    const table = parsed?.tables?.workspaces
+    if (table !== null && typeof table === 'object' && !Array.isArray(table)) {
+      const wanted = title.toLowerCase()
+      const matches = Object.entries(table)
+        .filter(([, row]) => row !== null && typeof row === 'object' && typeof row.title === 'string' && row.title.trim().toLowerCase() === wanted)
+        .map(([id, row]) => ({ id, title: row.title }))
+      if (matches.length === 1) {
+        return { workspaceId: matches[0].id, via: `title "${title}" in ${registryPath}` }
+      }
+      if (matches.length > 1) {
+        console.error(`[migrate-ot-ideas] ${matches.length} workspaces titled "${title}"; using ${matches[0].id} (pass --workspace to disambiguate)`)
+        return { workspaceId: matches[0].id, via: 'first title match (ambiguous)' }
+      }
+      console.error(`[migrate-ot-ideas] no workspace titled "${title}" in ${registryPath}; using legacy "${OT_WORKSPACE_ID}"`)
+    } else {
+      console.error(`[migrate-ot-ideas] registry ${registryPath} has no tables.workspaces map; using legacy "${OT_WORKSPACE_ID}"`)
+    }
+  } catch (error) {
+    console.error(`[migrate-ot-ideas] workspace registry unreadable (${error instanceof Error ? error.message : String(error)}); using legacy "${OT_WORKSPACE_ID}"`)
+  }
+  return { workspaceId: OT_WORKSPACE_ID, via: 'legacy fallback ("ot")' }
+}
+
 function flagOf(argv, name) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
@@ -192,12 +243,17 @@ async function main(argv) {
   const ideasPath = flagOf(argv, '--ideas')
   const archivePath = flagOf(argv, '--archive')
   const base = flagOf(argv, '--base') ?? 'http://127.0.0.1:3101'
+  const workspace = resolveWorkspaceId({
+    explicit: flagOf(argv, '--workspace'),
+    registryPath: flagOf(argv, '--registry') ?? DEFAULT_REGISTRY,
+    title: flagOf(argv, '--workspace-title'),
+  })
   if (ideasPath === undefined || archivePath === undefined) {
-    console.error('usage: migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> [--base <origin>] [--apply]')
+    console.error('usage: migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> [--base <origin>] [--registry <workspace.json>] [--workspace-title <title>] [--workspace <id>] [--export-out <dir>] [--apply]')
     return 1
   }
-  const parsed = parseOtMigration(readFileSync(ideasPath, 'utf8'), readFileSync(archivePath, 'utf8'))
-  console.log(`OT migration: ${parsed.ideas.length} ideas (${parsed.open.length} open, ${parsed.archived.length} archived, ${parsed.declined.length} declined${parsed.collisions > 0 ? `; ${parsed.collisions} split-idea collision(s) resolved toward the open backlog` : ''})`)
+  const parsed = parseOtMigration(readFileSync(ideasPath, 'utf8'), readFileSync(archivePath, 'utf8'), { workspaceId: workspace.workspaceId })
+  console.log(`OT migration: ${parsed.ideas.length} ideas (${parsed.open.length} open, ${parsed.archived.length} archived, ${parsed.declined.length} declined${parsed.collisions > 0 ? `; ${parsed.collisions} split-idea collision(s) resolved toward the open backlog` : ''}) -> workspace "${workspace.workspaceId}" (${workspace.via})`)
   for (const row of parsed.ideas) {
     const rank = row.rank === undefined ? '-' : String(row.rank)
     console.log(`  ${row.id.padEnd(7)} rank ${rank.padEnd(3)} ${row.status.padEnd(8)} ${row.title}`)
@@ -219,7 +275,7 @@ async function main(argv) {
     // returns the state without the markdown payload.
     const result = await postJson(`${base}/api/ideas/action`, {
       requestId: `ot-export-review-${randomUUID()}`,
-      action: { kind: 'export', workspaceId: 'ot' },
+      action: { kind: 'export', workspaceId: workspace.workspaceId },
     })
     if (result.status < 200 || result.status >= 300) {
       console.error(`export POST -> HTTP ${result.status}: ${result.body}`)

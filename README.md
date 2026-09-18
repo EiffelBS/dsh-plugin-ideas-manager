@@ -38,8 +38,9 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   ledger with the DSH Workspace registry when the shell service is up, and
   degrades gracefully (ledger ids only) when it is not. Protocol/model
   already carried `workspaceId`, so this phase is UI-only.
-- **P3 (in progress)** — OpenTimbre one-shot migration via `import`
-  (`scripts/migrate-ot-ideas.mjs`) + export-golden diff.
+- **P3 (done)** — OpenTimbre one-shot migration via `import`
+  (`scripts/migrate-ot-ideas.mjs`: workspace resolved by title against the
+  target registry, legacy `ot` fallback) + export-golden diff.
 
 ## Contract (Host API)
 
@@ -82,12 +83,29 @@ One-shot import of the OpenTimbre `docs/IDEAS.md` / `docs/IDEAS-ARCHIVE.md`
 capture documents into the ledger:
 
 ```powershell
-# dry-run first (counts + per-idea summary, nothing posted)
+# dry-run first (counts + per-idea summary + workspace resolution, nothing posted)
 node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md>
 
 # apply after review (isolated/ledger home), then review the export golden diff
 node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --base http://127.0.0.1:3101 --apply
+
+# target a specific workspace id / registry / title explicitly
+node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --workspace <id>
+node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --registry <workspace.json> --workspace-title "OpenTimbre"
 ```
+
+Workspace resolution (highest wins):
+
+1. `--workspace <id>` — explicit target workspace id.
+2. title lookup — `--registry <workspace.json>` (default
+   `~/.dsh/storages/workspace.json`) is scanned for `tables.workspaces` rows
+   whose title equals `--workspace-title` (default `OpenTimbre`,
+   case-insensitive); a single match wins, several matches warn and pick the
+   first.
+3. legacy fallback — the `ot` slug, with a warning.
+
+The `--export-out <dir>` review export is filtered with the SAME resolved id,
+so the golden diff matches the imported workspace.
 
 Mapping:
 
@@ -95,11 +113,25 @@ Mapping:
   `IDEAS-ARCHIVE.md` → `archived`, `DECLINED` sections → `declined`
 - `rank` from the Suggested-priority table; `createdAt`/`archivedAt` from the
   `captured` / `DELIVERED` / `DECLINED` dates in the headings (fallback: now)
-- `workspaceId: ot`; bodies kept verbatim
+- `workspaceId` = the resolved id above (on the author machine this is the
+  OpenTimbre registry id `c34460c8-…`, never the `ot` slug); bodies kept
+  verbatim
 - An idea id living in both docs (a hard split — e.g. #15 has an open
   `(remaining)` slice AND a delivered `(slice)` record) resolves toward the
   **open backlog**; the collision is reported, and the archive doc stays the
   history of record.
+
+## Ledger recovery (2026-09-18)
+
+A test instance sharing the SAME DSH home as the production web profile held
+`~/.dsh/ideas/ledger-v2.lock` and overwrote `ledger-v2.json` with its own
+smoke-test cards, so the live board's edits only lived in memory. Recovery:
+capture the live board first (`GET /api/ideas/state` with the loopback
+same-origin markers), then run
+`node scripts/restore-3080-ideas.mjs <backup.json> --apply` with the server
+stopped — it rewrites the ledger (remapping the `ot` slug to the registry
+OpenTimbre id by default) and clears stale locks; the previous file is kept as
+a `.bak-…` sibling.
 
 ## Architecture
 
@@ -116,7 +148,8 @@ src/
   core/ideas.ts       # IdeaRecord, statuses, tag validation
   client/             # sidebar entry + 3-column kanban (React 18) + workspace scoping
 scripts/
-  migrate-ot-ideas.mjs  # P3 one-shot OT migration (parse + dry-run/--apply)
+  migrate-ot-ideas.mjs  # P3 one-shot OT migration (parse + dry-run/--apply; workspace by title)
+  restore-3080-ideas.mjs # recover an overwritten ledger from an API-state backup
 tests/                  # vitest suites per module
   HANDOVER.md / SKILL.md / README.md
 ```
