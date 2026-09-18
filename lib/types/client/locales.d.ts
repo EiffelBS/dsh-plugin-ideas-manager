@@ -24,6 +24,9 @@ export declare const fr: {
     'board.mdToggleLabel': string;
     'board.mdView': string;
     'board.textView': string;
+    'board.workspace': string;
+    'board.allWorkspaces': string;
+    'board.workspaceHint': string;
     'new.title': string;
     'new.titlePlaceholder': string;
     'new.body': string;
@@ -36,6 +39,8 @@ export declare const fr: {
     'new.submit': string;
     'new.cancel': string;
     'new.required': string;
+    'new.workspace': string;
+    'new.workspaceNone': string;
     'card.drag': string;
     'card.clickToEdit': string;
     'card.value': string;
@@ -49,10 +54,12 @@ export declare const fr: {
     'card.confirmDelete': string;
     'card.deleteYes': string;
     'card.deleteNo': string;
+    'card.workspaceHint': string;
     'edit.title': string;
     'edit.save': string;
     'edit.preview': string;
     'edit.previewOff': string;
+    'edit.workspaceUnknown': string;
     'level.low': string;
     'level.medium': string;
     'level.high': string;
@@ -78,6 +85,9 @@ export declare const en: {
     'board.mdToggleLabel': string;
     'board.mdView': string;
     'board.textView': string;
+    'board.workspace': string;
+    'board.allWorkspaces': string;
+    'board.workspaceHint': string;
     'new.title': string;
     'new.titlePlaceholder': string;
     'new.body': string;
@@ -87,6 +97,8 @@ export declare const en: {
     'new.value': string;
     'new.effort': string;
     'new.levelNone': string;
+    'new.workspace': string;
+    'new.workspaceNone': string;
     'new.submit': string;
     'new.cancel': string;
     'new.required': string;
@@ -103,10 +115,12 @@ export declare const en: {
     'card.confirmDelete': string;
     'card.deleteYes': string;
     'card.deleteNo': string;
+    'card.workspaceHint': string;
     'edit.title': string;
     'edit.save': string;
     'edit.preview': string;
     'edit.previewOff': string;
+    'edit.workspaceUnknown': string;
     'level.low': string;
     'level.medium': string;
     'level.high': string;

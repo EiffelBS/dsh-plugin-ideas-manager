@@ -10,7 +10,11 @@
 - The user mentions ideas / backlog / idees / notes / ideas board, or wants a
   capture + triage surface independent of the task board.
 - Any workspace can host ideas: tag them with `workspaceId` and scope the
-  export with `workspaceId` to get one document per workspace.
+  export with `workspaceId` to get one document per workspace. The board
+  itself is workspace-aware: the header selector scopes the columns to one
+  workspace, the New/Edit modal carries a workspace field (a capture lands
+  in the currently-selected scope), and cards with a workspace show a chip
+  you can click to jump the board to that scope.
 
 ## Contract (copy of `src/protocol.ts`)
 

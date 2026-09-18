@@ -16,6 +16,7 @@ import { t, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IDEA_LEVELS, levelForValue, levelLabelKey } from './levels.ts'
+import { buildWorkspaceCatalog } from './workspaces.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
@@ -180,14 +181,30 @@ function LevelSelect({ id, label, value, onChange, disabled }: {
 }
 
 /** Shared capture/edit modal. */
-function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?: IdeaRecord; onClose: () => void }) {
+function IdeaModal({ client, initial, initialWorkspace, onClose }: {
+  client: IdeasClient
+  initial?: IdeaRecord
+  /** Board scope preselected for a new capture ('' when the board shows all). */
+  initialWorkspace?: string
+  onClose: () => void
+}) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
   const [valueLevel, setValueLevel] = useState(initial?.value === undefined ? '' : String(levelForValue(initial.value)))
   const [effortLevel, setEffortLevel] = useState(initial?.effort === undefined ? '' : String(levelForValue(initial.effort)))
   const [tags, setTags] = useState(tagsText(initial))
+  const [workspace, setWorkspace] = useState(initial?.workspaceId ?? initialWorkspace ?? '')
   const [error, setError] = useState<string | undefined>(undefined)
   const [preview, setPreview] = useState(false)
+
+  // Shape the workspace picker options once per open: the DSH registry rows
+  // plus every workspace id present in the ledger (a scoped board and an edit
+  // of an idea whose workspace the registry does not know both keep working).
+  const catalog = buildWorkspaceCatalog(client.snapshot?.ideas ?? [], client.workspaceOptions)
+  const editingUnknownWorkspace =
+    initial?.workspaceId !== undefined
+    && initial.workspaceId !== ''
+    && !catalog.some(entry => entry.workspaceId === initial.workspaceId)
 
   // Escape closes the modal (Echo the overlay-click behaviour), without
   // closing anything behind it: the listener runs in the capture phase and
@@ -219,6 +236,10 @@ function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?
           tags: tags.split(','),
           ...(value === undefined ? {} : { value }),
           ...(effort === undefined ? {} : { effort }),
+          // The create path omits an empty workspace (stays generic); the
+          // edit path below always sends the field, '' moving the idea back
+          // to generic through the Host's blank-to-undefined mapping.
+          workspaceId: workspace,
         })
       } else {
         const patch: IdeaClientPatch = {
@@ -227,6 +248,7 @@ function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?
           ...(value === undefined ? {} : { value }),
           ...(effort === undefined ? {} : { effort }),
           tags: tags.split(','),
+          workspaceId: workspace,
         }
         await client.updateIdea(initial.id, patch)
       }
@@ -251,6 +273,28 @@ function IdeaModal({ client, initial, onClose }: { client: IdeasClient; initial?
             autoFocus
             onChange={event => { setTitle(event.target.value) }}
           />
+        </div>
+        <div className={classes.field}>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-workspace">{t('new.workspace')}</label>
+          <select
+            id="dsh-ideas-workspace"
+            className={classes.select}
+            value={workspace}
+            disabled={client.pending}
+            onChange={event => { setWorkspace(event.target.value) }}
+          >
+            <option value="">{t('new.workspaceNone')}</option>
+            {editingUnknownWorkspace && initial !== undefined && (
+              <option value={initial.workspaceId!}>
+                {initial.workspaceId} {t('edit.workspaceUnknown')}
+              </option>
+            )}
+            {catalog.map(entry => (
+              <option key={entry.workspaceId} value={entry.workspaceId}>
+                {entry.title}{entry.knownToApp ? '' : ` (${entry.workspaceId})`}
+              </option>
+            ))}
+          </select>
         </div>
         <div className={classes.field}>
           <span className={classes.fieldRowBetween}>
@@ -329,6 +373,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [snapshot, setSnapshot] = useState(client.snapshot)
   const [filter, setFilter] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
+  // '': all workspaces; a concrete id scopes the columns + search to it.
+  const [workspaceFilter, setWorkspaceFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
@@ -345,8 +391,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
   const knownTags = collectKnownTags(ideas)
+  const catalog = buildWorkspaceCatalog(ideas, client.workspaceOptions)
+  const workspaceTitle = (workspaceId: string): string =>
+    catalog.find(entry => entry.workspaceId === workspaceId)?.title ?? workspaceId
+  // The scope alone does not count as "filtered": an empty workspace shows the
+  // plain empty message, while an active search/tag filter explains itself.
   const filtering = filter.trim() !== '' || tagFilter.length > 0
-  const visible = ideas.filter(idea => matchesFilter(idea, filter) && matchesTags(idea, tagFilter))
+  const visible = ideas.filter(idea =>
+    (workspaceFilter === '' || idea.workspaceId === workspaceFilter)
+    && matchesFilter(idea, filter)
+    && matchesTags(idea, tagFilter))
   const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
 
   const toggleTag = (name: string): void => {
@@ -409,6 +463,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </button>
         <h2 className={classes.boardTitle}>{t('board.title')}</h2>
         {revision !== undefined && <span className={classes.detailMeta}>{t('board.revision', { revision })}</span>}
+        <select
+          className={classes.workspaceSelect}
+          value={workspaceFilter}
+          aria-label={t('board.workspace')}
+          title={t('board.workspaceHint')}
+          onChange={event => { setWorkspaceFilter(event.target.value) }}
+        >
+          <option value="">{t('board.allWorkspaces')}</option>
+          {catalog.map(entry => (
+            <option key={entry.workspaceId} value={entry.workspaceId}>
+              {entry.title}{entry.knownToApp ? '' : ` (${entry.workspaceId})`}
+            </option>
+          ))}
+        </select>
         <input
           className={classes.search}
           type="search"
@@ -513,6 +581,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                     ? <div className={classes.empty}>{t(filtering ? 'board.emptyFiltered' : 'board.empty')}</div>
                     : columnIdeas.map(idea => {
                       const confirm = confirmId === idea.id
+                      const workspaceId = idea.workspaceId
                       return (
                         <div
                           key={idea.id}
@@ -573,6 +642,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 <span aria-hidden="true">⠿</span>
                               </div>
                             </div>
+                            {workspaceId !== undefined && (
+                              <div className={classes.cardMeta}>
+                                <button
+                                  type="button"
+                                  className={classes.workspaceChip}
+                                  title={t('card.workspaceHint', { workspace: workspaceTitle(workspaceId) })}
+                                  onClick={() => { setWorkspaceFilter(workspaceId) }}
+                                >
+                                  {workspaceTitle(workspaceId)}
+                                </button>
+                              </div>
+                            )}
                             {idea.tags !== undefined && idea.tags.length > 0 && (
                               <div className={classes.cardMeta}>
                                 {idea.tags.map(tag => (
@@ -726,7 +807,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         })}
       </div>
 
-      {showNew && <IdeaModal client={client} onClose={() => { setShowNew(false) }} />}
+      {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (
         <IdeaModal client={client} initial={editing} onClose={() => { setEditing(undefined) }} />
       )}

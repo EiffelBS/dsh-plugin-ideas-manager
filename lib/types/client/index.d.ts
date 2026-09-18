@@ -8,4 +8,10 @@
  * plugin must not take the GUI down.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis';
+/**
+ * Cordis services this plugin consumes. Declared so apply runs once the DSH
+ * shell Workspace registry (dsh-api-workspace-controller) is up; the board
+ * still works without it (ledger-derived workspace ids only).
+ */
+export declare const inject: readonly ["workspaces"];
 export declare function apply(ctx: ClientContext): void;

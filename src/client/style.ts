@@ -231,6 +231,25 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   font-size: 13px;
 }
 
+/* Board header workspace scope selector (compact, fixed width so the header
+   does not reflow when the selection label changes). */
+.dsh-ideas-workspace-select {
+  box-sizing: border-box;
+  width: 170px;
+  max-width: 170px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  flex: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* Raw/MD description view toggle (segmented pair in the board header). */
 .dsh-ideas-md-toggle {
   display: inline-flex;
@@ -641,6 +660,24 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   white-space: nowrap;
 }
 
+/* Workspace chip on cards (the "All workspaces" view): neutral pill, distinct
+   from the hued tag pills; clicking it scopes the whole board to that
+   workspace. */
+.dsh-ideas-workspace-chip {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.dsh-ideas-workspace-chip:hover {
+  background: color-mix(in srgb, var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent))) 14%, var(--dsh-ideas-fb-layer3));
+  color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
 /* --- new-idea modal --- */
 
 .dsh-ideas-overlay {
@@ -852,6 +889,7 @@ export const classes = {
   backButton: 'dsh-ideas-back-button',
   detailMeta: 'dsh-ideas-detail-meta',
   search: 'dsh-ideas-search',
+  workspaceSelect: 'dsh-ideas-workspace-select',
   mdToggle: 'dsh-ideas-md-toggle',
   mdToggleButton: 'dsh-ideas-md-toggle-button',
   mdToggleActive: 'dsh-ideas-md-toggle-active',
@@ -876,6 +914,7 @@ export const classes = {
   cardMeta: 'dsh-ideas-card-meta',
   tag: 'dsh-ideas-tag',
   score: 'dsh-ideas-score',
+  workspaceChip: 'dsh-ideas-workspace-chip',
   updated: 'dsh-ideas-updated',
   overlay: 'dsh-ideas-overlay',
   modal: 'dsh-ideas-modal',

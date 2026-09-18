@@ -17,6 +17,7 @@ export declare const classes: {
     readonly backButton: "dsh-ideas-back-button";
     readonly detailMeta: "dsh-ideas-detail-meta";
     readonly search: "dsh-ideas-search";
+    readonly workspaceSelect: "dsh-ideas-workspace-select";
     readonly mdToggle: "dsh-ideas-md-toggle";
     readonly mdToggleButton: "dsh-ideas-md-toggle-button";
     readonly mdToggleActive: "dsh-ideas-md-toggle-active";
@@ -41,6 +42,7 @@ export declare const classes: {
     readonly cardMeta: "dsh-ideas-card-meta";
     readonly tag: "dsh-ideas-tag";
     readonly score: "dsh-ideas-score";
+    readonly workspaceChip: "dsh-ideas-workspace-chip";
     readonly updated: "dsh-ideas-updated";
     readonly overlay: "dsh-ideas-overlay";
     readonly modal: "dsh-ideas-modal";

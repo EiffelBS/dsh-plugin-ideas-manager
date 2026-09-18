@@ -14,6 +14,14 @@ import { HttpIdeasHostTransport } from './host-api.ts'
 import { mountBoard } from './board-mount.tsx'
 import { mountSidebarEntry } from './sidebar-entry.ts'
 import { ensureIdeasStyle } from './style.ts'
+import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
+
+/**
+ * Cordis services this plugin consumes. Declared so apply runs once the DSH
+ * shell Workspace registry (dsh-api-workspace-controller) is up; the board
+ * still works without it (ledger-derived workspace ids only).
+ */
+export const inject = [WORKSPACES_SERVICE] as const
 
 // A duplicated client injection (module factory executed twice in one page
 // lifetime) would otherwise mount a second sidebar entry and board view.
@@ -29,7 +37,8 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => {
     ensureIdeasStyle()
-    const client = new IdeasClient(new HttpIdeasHostTransport())
+    const workspaces = resolveWorkspacesSource(ctx)
+    const client = new IdeasClient(new HttpIdeasHostTransport(), workspaces)
     client.start()
     const disposers: Array<() => void> = []
     try {

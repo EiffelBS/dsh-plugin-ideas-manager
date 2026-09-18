@@ -29,6 +29,15 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   empty-filter state, Escape-to-close modals, pending-disabled actions,
   quick-add row in Open, updated date on cards, 50 % panel translucency.
   12 new unit tests (markdown XSS subset + levels).
+- **Workspace UI (done)** — `workspaceId` now surfaces in the board: a
+  header selector scopes the columns (and the search/tag filters inside
+  them) to one workspace, and the New/Edit modal carries a workspace field
+  so a capture lands in the right workspace immediately (preselected from
+  the board scope) and an edit can move an idea to another workspace or
+  back to generic. The picker merges every `workspaceId` present in the
+  ledger with the DSH Workspace registry when the shell service is up, and
+  degrades gracefully (ledger ids only) when it is not. Protocol/model
+  already carried `workspaceId`, so this phase is UI-only.
 - **P3 (in progress)** — OpenTimbre one-shot migration via `import`
   (`scripts/migrate-ot-ideas.mjs`) + export-golden diff.
 
@@ -105,7 +114,7 @@ src/
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # task-board family discipline
   core/ideas.ts       # IdeaRecord, statuses, tag validation
-  client/             # sidebar entry + 3-column kanban (React 18)
+  client/             # sidebar entry + 3-column kanban (React 18) + workspace scoping
 scripts/
   migrate-ot-ideas.mjs  # P3 one-shot OT migration (parse + dry-run/--apply)
 tests/                  # vitest suites per module

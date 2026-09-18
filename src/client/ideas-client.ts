@@ -8,6 +8,7 @@
 import type { IdeaStatus } from '../core/ideas.ts'
 import type { IdeasAction, IdeasSnapshot } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
+import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts'
 
 function uuid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
@@ -21,6 +22,8 @@ export interface IdeaClientPatch {
   effort?: number
   /** Present means "replace the label set"; an empty array clears it. */
   tags?: string[]
+  /** Present (including an empty string) replaces the workspace; '' = generic. */
+  workspaceId?: string
 }
 
 export class IdeasClient {
@@ -30,8 +33,25 @@ export class IdeasClient {
   pending = false
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
+  private workspaces: WorkspaceViewLite[] = []
+  private readonly workspacesSource: WorkspacesSource | undefined
+  private unsubscribeWorkspaces: (() => void) | undefined
 
-  constructor(private readonly transport: IdeasHostTransport) {}
+  constructor(
+    private readonly transport: IdeasHostTransport,
+    workspacesSource: WorkspacesSource | undefined,
+  ) {
+    this.workspacesSource = workspacesSource
+    if (this.workspacesSource !== undefined) {
+      this.syncWorkspaces()
+      this.unsubscribeWorkspaces = this.workspacesSource.subscribe(() => { this.syncWorkspaces() })
+    }
+  }
+
+  /** Current DSH registry rows (id + label); empty when the service is absent. */
+  get workspaceOptions(): readonly WorkspaceViewLite[] {
+    return this.workspaces
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -62,6 +82,8 @@ export class IdeasClient {
 
   dispose(): void {
     this.unsubscribeEvents?.()
+    this.unsubscribeWorkspaces?.()
+    this.workspacesSource?.dispose()
     this.listeners.clear()
   }
 
@@ -75,7 +97,14 @@ export class IdeasClient {
     this.emit()
   }
 
-  async createIdea(input: { title: string; body: string; tags?: string[]; value?: number; effort?: number }): Promise<void> {
+  async createIdea(input: {
+    title: string
+    body: string
+    tags?: string[]
+    value?: number
+    effort?: number
+    workspaceId?: string
+  }): Promise<void> {
     const tags = tagNames(input.tags).map(name => ({ name }))
     await this.run({
       kind: 'create',
@@ -85,6 +114,9 @@ export class IdeasClient {
         body: input.body,
         ...(input.value === undefined ? {} : { value: input.value }),
         ...(input.effort === undefined ? {} : { effort: input.effort }),
+        // An empty string (the modal's "no workspace" choice) stays generic by
+        // omitting the field, matching the ledger's normalizeOptionalId.
+        ...(input.workspaceId === undefined || input.workspaceId === '' ? {} : { workspaceId: input.workspaceId }),
         ...(tags.length === 0 ? {} : { tags }),
       },
     })
@@ -100,6 +132,9 @@ export class IdeasClient {
         ...(patch.body === undefined ? {} : { body: patch.body }),
         ...(patch.value === undefined ? {} : { value: patch.value }),
         ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+        // The modal always sends the workspace: '' moves the idea back to
+        // generic (the Host maps a blank trimmed string to undefined).
+        ...(patch.workspaceId === undefined ? {} : { workspaceId: patch.workspaceId }),
         // An empty tag set clears the labels (null on the wire); a non-empty
         // set replaces them.
         ...(tags === undefined ? {} : { tags: tags.length === 0 ? null : tags.map(name => ({ name })) }),
@@ -125,6 +160,12 @@ export class IdeasClient {
 
   async reorderIdea(orderedIds: string[]): Promise<void> {
     await this.run({ kind: 'reorder', orderedIds })
+  }
+
+  /** Republish the DSH registry rows and wake the board (catalog refresh). */
+  private syncWorkspaces(): void {
+    this.workspaces = this.workspacesSource?.list() ?? []
+    this.emit()
   }
 
   /** Post one action, adopt the Host snapshot, and expose errors. */

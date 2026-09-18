@@ -7,6 +7,7 @@
 import type { IdeaStatus } from '../core/ideas.ts';
 import type { IdeasSnapshot } from '../protocol.ts';
 import type { IdeasHostTransport } from './host-api.ts';
+import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts';
 /** Client-side patch accepted by `updateIdea`. */
 export interface IdeaClientPatch {
     title?: string;
@@ -15,6 +16,8 @@ export interface IdeaClientPatch {
     effort?: number;
     /** Present means "replace the label set"; an empty array clears it. */
     tags?: string[];
+    /** Present (including an empty string) replaces the workspace; '' = generic. */
+    workspaceId?: string;
 }
 export declare class IdeasClient {
     private readonly transport;
@@ -24,7 +27,12 @@ export declare class IdeasClient {
     pending: boolean;
     private readonly listeners;
     private unsubscribeEvents;
-    constructor(transport: IdeasHostTransport);
+    private workspaces;
+    private readonly workspacesSource;
+    private unsubscribeWorkspaces;
+    constructor(transport: IdeasHostTransport, workspacesSource: WorkspacesSource | undefined);
+    /** Current DSH registry rows (id + label); empty when the service is absent. */
+    get workspaceOptions(): readonly WorkspaceViewLite[];
     subscribe(listener: () => void): () => void;
     toggleBoard(): void;
     closeBoard(): void;
@@ -38,6 +46,7 @@ export declare class IdeasClient {
         tags?: string[];
         value?: number;
         effort?: number;
+        workspaceId?: string;
     }): Promise<void>;
     updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void>;
     moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void>;
@@ -45,6 +54,8 @@ export declare class IdeasClient {
     restoreIdea(ideaId: string): Promise<void>;
     deleteIdea(ideaId: string): Promise<void>;
     reorderIdea(orderedIds: string[]): Promise<void>;
+    /** Republish the DSH registry rows and wake the board (catalog refresh). */
+    private syncWorkspaces;
     /** Post one action, adopt the Host snapshot, and expose errors. */
     private run;
     private emit;
