@@ -62,12 +62,12 @@ body[data-ds-dark-theme] {
   /* The skin token on top (a background-enabled skin defines every
      --dsw-alias-bg-* token as semi-transparent rgba, so the var() fallback
      never fires), the fixed fallback base underneath. The base stays
-     translucent (70 %) so a wallpaper-owning skin keeps its look through
+     translucent (50 %) so a wallpaper-owning skin keeps its look through
      the panel while the opaque fallback palette keeps text readable. The
      board child is transparent — this container alone carries the surface. */
   background:
     linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
-    color-mix(in srgb, var(--dsh-ideas-fb-bg) 70%, transparent);
+    color-mix(in srgb, var(--dsh-ideas-fb-bg) 50%, transparent);
 }
 
 /* The center column is single-occupant; the :not() guard keeps the ideas and
@@ -361,28 +361,6 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
   gap: 8px;
 }
 
-/* Distinct surface tint per column so the board reads as three zones at a
-   glance. The base stays the column surface; a low-alpha status hue is mixed
-   on top (same recipe as the tag pills: the hue token over the opaque layer,
-   light enough to stay contrast-safe in both themes). */
-.dsh-ideas-column[data-status='open'] {
-  background:
-    linear-gradient(color-mix(in srgb, hsl(210 80% 55%) 7%, transparent), color-mix(in srgb, hsl(210 80% 55%) 7%, transparent)),
-    var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
-}
-
-.dsh-ideas-column[data-status='archived'] {
-  background:
-    linear-gradient(color-mix(in srgb, hsl(30 60% 50%) 6%, transparent), color-mix(in srgb, hsl(30 60% 50%) 6%, transparent)),
-    var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
-}
-
-.dsh-ideas-column[data-status='declined'] {
-  background:
-    linear-gradient(color-mix(in srgb, hsl(0 70% 55%) 7%, transparent), color-mix(in srgb, hsl(0 70% 55%) 7%, transparent)),
-    var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
-}
-
 .dsh-ideas-column-header {
   display: flex;
   align-items: center;
@@ -400,48 +378,6 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'
 .dsh-ideas-column-count {
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
-}
-
-/* Status dot: the same hue family as the column tint, at full saturation, so
-   the column identity survives even when the surface tint is subtle. */
-.dsh-ideas-column-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex: none;
-}
-
-.dsh-ideas-column-dot[data-status='open'] {
-  background: hsl(210 80% 55%);
-}
-
-.dsh-ideas-column-dot[data-status='archived'] {
-  background: hsl(30 60% 50%);
-}
-
-.dsh-ideas-column-dot[data-status='declined'] {
-  background: hsl(0 70% 55%);
-}
-
-.dsh-ideas-column-collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-}
-
-.dsh-ideas-column-collapse:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
 }
 
 /* Quick capture row at the top of the Open column. */
@@ -927,8 +863,6 @@ export const classes = {
   columnHeader: 'dsh-ideas-column-header',
   columnTitle: 'dsh-ideas-column-title',
   columnCount: 'dsh-ideas-column-count',
-  columnDot: 'dsh-ideas-column-dot',
-  columnCollapse: 'dsh-ideas-column-collapse',
   quickAdd: 'dsh-ideas-quick-add',
   columnBody: 'dsh-ideas-column-body',
   empty: 'dsh-ideas-empty',

@@ -24,8 +24,6 @@ export declare const fr: {
     'board.mdToggleLabel': string;
     'board.mdView': string;
     'board.textView': string;
-    'board.collapse': string;
-    'board.expand': string;
     'new.title': string;
     'new.titlePlaceholder': string;
     'new.body': string;
@@ -80,8 +78,6 @@ export declare const en: {
     'board.mdToggleLabel': string;
     'board.mdView': string;
     'board.textView': string;
-    'board.collapse': string;
-    'board.expand': string;
     'new.title': string;
     'new.titlePlaceholder': string;
     'new.body': string;

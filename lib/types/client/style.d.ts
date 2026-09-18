@@ -28,8 +28,6 @@ export declare const classes: {
     readonly columnHeader: "dsh-ideas-column-header";
     readonly columnTitle: "dsh-ideas-column-title";
     readonly columnCount: "dsh-ideas-column-count";
-    readonly columnDot: "dsh-ideas-column-dot";
-    readonly columnCollapse: "dsh-ideas-column-collapse";
     readonly quickAdd: "dsh-ideas-quick-add";
     readonly columnBody: "dsh-ideas-column-body";
     readonly empty: "dsh-ideas-empty";

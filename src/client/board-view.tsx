@@ -4,9 +4,9 @@
  * modals, per-card archive/restore/decline/delete, manual drag between Open
  * and Archived (+ intra-column reorder), search and a conjunctive tag filter.
  *
- * UI polish: per-column surface tints, markdown-rendered descriptions with a
- * raw/MD toggle, value/effort as named-level comboboxes, and a single click
- * on a card title or body opening the edit modal.
+ * UI polish: markdown-rendered descriptions with a raw/MD toggle, value/effort
+ * as named-level comboboxes, and a single click on a card title or body
+ * opening the edit modal.
  */
 
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
@@ -336,8 +336,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
   // Rendered-markdown view of descriptions (raw text is one click away).
   const [mdMode, setMdMode] = useState(true)
-  // Columns the user collapsed to focus on the open backlog.
-  const [collapsed, setCollapsed] = useState<ReadonlySet<IdeaStatus>>(new Set())
 
   useEffect(
     () => client.subscribe(() => setSnapshot(client.snapshot)),
@@ -355,15 +353,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     setTagFilter(current => current.includes(name)
       ? current.filter(entry => entry !== name)
       : [...current, name])
-  }
-
-  const toggleCollapse = (status: IdeaStatus): void => {
-    setCollapsed(current => {
-      const next = new Set(current)
-      if (next.has(status)) next.delete(status)
-      else next.add(status)
-      return next
-    })
   }
 
   const performDrop = async (event?: { dataTransfer: { getData(format: string): string } }): Promise<void> => {
@@ -493,11 +482,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       <div className={classes.columns}>
         {IDEA_COLUMNS.map(status => {
           const columnIdeas = byStatus(status)
-          const isCollapsed = collapsed.has(status)
           return (
             <section
               key={status}
-              data-status={status}
               className={classes.column}
               onDragEnter={() => { if (drag !== undefined) setDragTarget({ status }) }}
               onDragOver={event => {
@@ -512,21 +499,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               }}
             >
               <div className={classes.columnHeader}>
-                <span className={classes.columnDot} data-status={status} aria-hidden="true" />
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
                 <span className={classes.columnCount}>{columnIdeas.length}</span>
-                <button
-                  type="button"
-                  className={classes.columnCollapse}
-                  aria-label={isCollapsed ? t('board.expand') : t('board.collapse')}
-                  aria-expanded={!isCollapsed}
-                  onClick={() => { toggleCollapse(status) }}
-                >
-                  <span aria-hidden="true">{isCollapsed ? '›' : '⌄'}</span>
-                </button>
               </div>
-              {!isCollapsed && (
-                <div className={classes.columnBody}>
+              <div className={classes.columnBody}>
                   {status === 'open' && (
                     <button type="button" className={classes.quickAdd} onClick={() => { setShowNew(true) }}>
                       <span aria-hidden="true">＋</span>
@@ -745,7 +721,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                       )
                     })}
                 </div>
-              )}
             </section>
           )
         })}
