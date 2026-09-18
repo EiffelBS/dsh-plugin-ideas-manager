@@ -27,17 +27,22 @@ export function mountBoard(client: IdeasClient): () => void {
     pluginName: 'ideas',
     viewClassName: classes.boardView,
     activeAttribute: 'data-dsh-ideas-active',
-    siblingActiveAttribute: 'data-dsh-taskboard-active',
+    // Every family sibling's attribute is removed on open, not just the
+    // task-board's: the upstream taskboard<->ssh contract only clears that
+    // one attribute, so a stale ssh attribute would fight the ideas
+    // stylesheet and blank the center column.
+    siblingActiveAttributes: ['data-dsh-taskboard-active', 'data-dsh-ssh-active'],
     panelName: 'ideas',
-    siblingPanelName: 'taskboard',
-    // The task-board is a sibling we do not own: it only self-closes on its
-    // own declared sibling ("ssh"). A board opened earlier therefore keeps
-    // its controller open when we take the column and re-asserts its active
-    // attribute on the next host tick — evicting this board minutes later.
-    // Broadcasting "ssh" on open closes that controller through the existing
-    // family contract, making the takeover symmetric and the re-assert
-    // impossible.
-    evictDetails: ['ssh'],
+    // Close on every sibling activation, not only the task-board: the ssh
+    // broadcast would otherwise leave this controller open on top of the
+    // ssh panel.
+    siblingPanelNames: ['taskboard', 'ssh'],
+    // The upstream pair closes on the OTHER member's panel name ('ssh'
+    // closes the task-board, 'taskboard' closes ssh), so broadcast both on
+    // open: each currently-open sibling's controller then self-closes and
+    // cannot re-assert its active attribute on the next host tick (which
+    // would evict this board minutes later).
+    evictDetails: ['ssh', 'taskboard'],
     isOpen: () => client.boardOpen,
     close: () => client.closeBoard(),
     subscribe: listener => client.subscribe(listener),

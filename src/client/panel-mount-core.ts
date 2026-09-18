@@ -26,18 +26,30 @@ export interface CenterPanelMountOptions {
   viewClassName: string
   /** <html> attribute set while this panel is active. */
   activeAttribute: string
-  /** the sibling panel's active attribute, removed from <html> when this panel opens. */
-  siblingActiveAttribute: string
+  /**
+   * Every family sibling's active attribute, removed from <html> when this
+   * panel opens. The center column is single-occupant and each family
+   * stylesheet hides every child that is not its own view with !important,
+   * so two active attributes at once blank the whole column: the single
+   * upstream sibling shape (taskboard<->ssh) would leave a third family
+   * member's stale attribute fighting this panel.
+   */
+  siblingActiveAttributes: readonly string[]
   /** detail value this panel broadcasts on the cross-plugin activation event. */
   panelName: string
-  /** sibling detail value whose activation closes this panel. */
-  siblingPanelName: string
   /**
-   * Extra detail values broadcast on open, besides `panelName`. A family
-   * panel we do not own (e.g. the task-board) only self-closes on its own
-   * declared sibling, so broadcasting its value here closes that controller
-   * when this panel takes the column — otherwise a stale open state
-   * re-asserts its active attribute later and evicts this panel.
+   * Detail values whose activation closes this panel. The upstream family
+   * contract is a strict pair (the task-board closes on 'ssh', ssh closes on
+   * 'taskboard'), so a third member must list every sibling here — otherwise
+   * that sibling's broadcast leaves this controller open over its panel.
+   */
+  siblingPanelNames: readonly string[]
+  /**
+   * Extra detail values broadcast on open, besides `panelName`. The upstream
+   * pair members only self-close on the OTHER member's panel name, so this
+   * list carries every sibling name: each currently-open sibling controller
+   * then closes and can no longer re-assert its active attribute on the next
+   * host tick (which would otherwise evict this panel minutes later).
    */
   evictDetails?: readonly string[]
   /** open flag of the owning controller. */
@@ -66,6 +78,12 @@ function conversationColumn(): HTMLElement | undefined {
  * @returns disposer unmounting the tree and restoring the column.
  */
 export function mountCenterPanel(options: CenterPanelMountOptions): () => void {
+  // Set while THIS panel broadcasts its own activation. A broadcast detail
+  // can also be one of our own close triggers ('taskboard' closes this panel
+  // too), so the synchronous dispatch must not close us back. Per-instance,
+  // not module-level: sibling panels stay responsive to the broadcast even
+  // when they share this module copy (tests, HMR re-mounts).
+  let broadcasting = false
   let root: Root | undefined
   let container: HTMLDivElement | undefined
 
@@ -99,22 +117,35 @@ export function mountCenterPanel(options: CenterPanelMountOptions): () => void {
   const applyActive = (): void => {
     if (options.isOpen()) {
       ensure()
-      // Single-occupant center column: opening this panel must evict the
-      // sibling panel, both its html attribute and its controller state,
-      // otherwise the two panels' visibility rules fight.
-      document.documentElement.removeAttribute(options.siblingActiveAttribute)
+      // Single-occupant center column: opening this panel must evict every
+      // family sibling, both its html attributes and its controller state,
+      // otherwise the panels' visibility rules fight and the column goes
+      // blank (each family stylesheet hides anything that is not its own
+      // view with !important).
+      for (const attribute of options.siblingActiveAttributes) {
+        document.documentElement.removeAttribute(attribute)
+      }
       document.documentElement.setAttribute(options.activeAttribute, '')
       // Broadcast this panel's own activation plus every extra eviction
-      // detail (see evictDetails), so non-sibling occupants self-close.
-      for (const detail of [options.panelName, ...(options.evictDetails ?? [])]) {
-        document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail }))
+      // detail (see evictDetails), so the sibling controllers self-close.
+      // The in-flight flag keeps a broadcast detail that is also one of our
+      // own close triggers from closing us back (see onOtherActivate).
+      broadcasting = true
+      try {
+        for (const detail of [options.panelName, ...(options.evictDetails ?? [])]) {
+          document.dispatchEvent(new CustomEvent(ACTIVATE_EVENT, { detail }))
+        }
+      } finally {
+        broadcasting = false
       }
     } else {
       document.documentElement.removeAttribute(options.activeAttribute)
     }
   }
   const onOtherActivate = (event: Event): void => {
-    if ((event as CustomEvent).detail === options.siblingPanelName && options.isOpen()) {
+    if (broadcasting) return
+    const detail = (event as CustomEvent).detail
+    if (detail !== undefined && options.siblingPanelNames.includes(detail) && options.isOpen()) {
       options.close()
     }
   }

@@ -23,18 +23,30 @@ export interface CenterPanelMountOptions {
     viewClassName: string;
     /** <html> attribute set while this panel is active. */
     activeAttribute: string;
-    /** the sibling panel's active attribute, removed from <html> when this panel opens. */
-    siblingActiveAttribute: string;
+    /**
+     * Every family sibling's active attribute, removed from <html> when this
+     * panel opens. The center column is single-occupant and each family
+     * stylesheet hides every child that is not its own view with !important,
+     * so two active attributes at once blank the whole column: the single
+     * upstream sibling shape (taskboard<->ssh) would leave a third family
+     * member's stale attribute fighting this panel.
+     */
+    siblingActiveAttributes: readonly string[];
     /** detail value this panel broadcasts on the cross-plugin activation event. */
     panelName: string;
-    /** sibling detail value whose activation closes this panel. */
-    siblingPanelName: string;
     /**
-     * Extra detail values broadcast on open, besides `panelName`. A family
-     * panel we do not own (e.g. the task-board) only self-closes on its own
-     * declared sibling, so broadcasting its value here closes that controller
-     * when this panel takes the column — otherwise a stale open state
-     * re-asserts its active attribute later and evicts this panel.
+     * Detail values whose activation closes this panel. The upstream family
+     * contract is a strict pair (the task-board closes on 'ssh', ssh closes on
+     * 'taskboard'), so a third member must list every sibling here — otherwise
+     * that sibling's broadcast leaves this controller open over its panel.
+     */
+    siblingPanelNames: readonly string[];
+    /**
+     * Extra detail values broadcast on open, besides `panelName`. The upstream
+     * pair members only self-close on the OTHER member's panel name, so this
+     * list carries every sibling name: each currently-open sibling controller
+     * then closes and can no longer re-assert its active attribute on the next
+     * host tick (which would otherwise evict this panel minutes later).
      */
     evictDetails?: readonly string[];
     /** open flag of the owning controller. */

@@ -70,9 +70,12 @@ body[data-ds-dark-theme] {
     color-mix(in srgb, var(--dsh-ideas-fb-bg) 50%, transparent);
 }
 
-/* The center column is single-occupant; the :not() guard keeps the ideas and
-   task-board panels from fighting over visibility. */
-html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [data-dsh-ideas-view] {
+/* The center column is single-occupant; the :not() guards keep the ideas and
+   task-board panels from fighting over visibility. The ssh attribute is
+   guarded too: the upstream ssh panel only guards against the task-board, so
+   a transient ideas+ssh co-presence must resolve in ssh's favour (its rule
+   wins) instead of blanking the column. */
+html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-ideas-view] {
   display: block;
 }
 
@@ -80,8 +83,8 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [data-dsh-ideas-vie
    mounted but hidden. The !important is required: the dsh shell wraps the
    conversation view in a node with an inline \`display: contents\`, and inline
    styles beat a plain stylesheet rule. */
-html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [data-pane='conversation'] > :not([data-dsh-ideas-view]),
-html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]) [class*='centerCol'] > :not([data-dsh-ideas-view]) {
+html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-ideas-view]),
+html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-ideas-view]) {
   display: none !important;
 }
 
