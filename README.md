@@ -22,6 +22,13 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   update, decline / drag-to-archived → archive, restore → restore (delete →
   no-op, closing the loop to `done` is manual); `SKILL.md`. Verified live
   against TaskBoard 0.3.22.
+- **UI polish pass (done)** — Ideas UI improvement card: per-column surface
+  tints + status dots + collapsible columns; safe markdown rendering for
+  descriptions with a raw/MD toggle (cards + modal preview); value/effort as
+  named-level comboboxes (low/medium/high mapped to stored numbers);
+  single-click on a card title/body opens the edit modal; empty-filter state,
+  Escape-to-close modals, pending-disabled actions, quick-add row in Open,
+  updated date on cards. 12 new unit tests (markdown XSS subset + levels).
 - **P3 (in progress)** — OpenTimbre one-shot migration via `import`
   (`scripts/migrate-ot-ideas.mjs`) + export-golden diff.
 
