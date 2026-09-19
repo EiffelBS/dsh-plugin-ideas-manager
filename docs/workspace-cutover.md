@@ -10,15 +10,27 @@ generic, file-free workflow.
 
 ## 1. One-time: migrate the open backlog into the ledger
 
-The one-shot migration (`scripts/migrate-ot-ideas.mjs`) imports the
-canonical `## Idea #N — Title` format into the ledger. Run it once per
-target workspace, then keep capturing in the ledger only.
+The migration script (`scripts/migrate-ot-ideas.mjs`) parses the canonical
+`## Idea #N — Title` format into import payloads. Run it once per target
+workspace, then keep capturing in the ledger only.
 
 For OpenTimbre (as of 2026-09-19): the P3 migration imported ideas #1-#23;
-ideas **#24-#28** were later captured in IDEAS.md and must be re-imported
-before IDEAS.md can be dropped. Do them as new captures with their full
-analysis bodies (context / first-step sketch / costs / docs links), then
-apply the triage below.
+ideas **#24-#28** were later captured in IDEAS.md. Re-sync them with the
+incremental mode — it reads the live ledger, skips ids already present, and
+uses a fresh request id (the fixed P3 id would be replay-deduped):
+
+```
+node scripts/migrate-ot-ideas.mjs \
+  --ideas docs/IDEAS.md --archive docs/IDEAS-ARCHIVE.md \
+  --base http://127.0.0.1:3101 --incremental --status-lines --apply
+```
+
+`--status-lines` classifies each section by its status markers — DELIVERED
+sections land `archived` with a `deliveredAt` stamp (e.g. #22/#23 stay out of
+the open backlog), DECLINED land `declined`, the rest stay `open` with their
+Suggested-priority rank. Review the dry-run output first (drop `--apply`),
+then re-run with `--apply`. Everything the script leaves in the ledger is
+then managed through the normal triage/lifecycle verbs.
 
 ## 2. Enable the agent-visible protocol
 

@@ -30,14 +30,16 @@ mentions ideas / backlog / idees / notes:
 2. **Priority opinion on capture**: set `value` + `effort` levels and a
    suggested `rank`.
 3. **Re-rank the whole open backlog** on every material change (new idea,
-   delivery, scope change): read `GET /api/ideas/state`, then `reorder` the
+   delivery, scope change): read `GET /api/ideas/state`, then re-order the
    open ideas so the Priorities tab stays the current best ordering — never a
-   plain append. Re-rank only on material change; ranks stay advisory
-   (scheduling is the author's call).
-4. **Lifecycle**: delivered ideas leave the open backlog with a record of the
-   delivery (deliveredAt + verification/commit notes in the body); declined
-   ideas leave with a decision note. Prefer `update` for these records, then
-   `move`/`decline` to close.
+   plain append. Use `triage` when you are recording a priority opinion
+   (value/effort + rationale + rank are applied transactionally with the
+   re-rank); use `reorder` for pure re-ordering. Re-rank only on material
+   change; ranks stay advisory (scheduling is the author's call).
+4. **Lifecycle**: deliver finished ideas with the `deliver` verb (→
+   `archived` + `deliveredAt`; record commits/verification notes in the body
+   first); decline with a `decision` note. The ledger keeps a stable `#N`
+   sequence per idea (`ideaNumber`) — the human reference the OT docs used.
 5. **TaskBoard mirror** (best-effort, one-way, when the board is present):
    capture → backlog card, updates → card update, decline → archive; the
    delivered card is closed by the author's closure run (`done` is
@@ -50,8 +52,11 @@ For a workspace whose AGENTS.md still points at an `IDEAS.md` convention:
 1. Point the AGENTS.md idea section at this board instead (announce
    `announceToAgent: true` in the plugin settings so the guidance above is
    injected every session) and load this skill before idea work.
-2. Migrate the still-open ideas into the ledger once (a one-shot import; the
-   canonical format is captured in `scripts/migrate-ot-ideas.mjs`).
+2. Migrate the still-open ideas into the ledger once. The canonical format is
+   captured in `scripts/migrate-ot-ideas.mjs`; for a project already
+   partially migrated, re-run it with `--incremental --status-lines` so only
+   the missing sections are imported (DELIVERED sections land `archived`
+   with `deliveredAt`, DECLINED land `declined`).
 3. Keep `IDEAS.md` / `IDEAS-ARCHIVE.md` only as generated exports of the
    ledger (the `export` verb) — never edit them by hand again.
 4. Ranks/records live on the ideas (rationale, delivery record, decision);
@@ -72,10 +77,12 @@ For a workspace whose AGENTS.md still points at an `IDEAS.md` convention:
 
 | kind | keys | notes |
 |---|---|---|
-| `create` | kind, id, input | input keys: `title`*, `body`*, `workspaceId`, `rank`, `value`, `effort`, `tags`. Starts `open`. |
-| `update` | kind, ideaId, patch | patch keys: `title`, `body`, `rank`, `value`, `effort`, `tags`, `workspaceId`; `null` tags clears. |
+| `create` | kind, id, input | input keys: `title`*, `body`*, `workspaceId`, `rank`, `value`, `effort`, `rationale`, `tags`. Starts `open`, stamped with the next `ideaNumber`. |
+| `update` | kind, ideaId, patch | patch keys: `title`, `body`, `rank`, `value`, `effort`, `rationale`, `tags`, `workspaceId`; `null` tags clears. |
 | `move` | kind, ideaId, status | `open` ↔ `archived` (manual drag). |
-| `decline` | kind, ideaId | → `declined` + `archivedAt`. |
+| `triage` | kind, ideaId, patch | record the priority opinion and re-rank transactionally; patch keys: `value`, `effort`, `rationale`, `rank` (open ideas only). |
+| `decline` | kind, ideaId, decision | → `declined` + `archivedAt` + optional `decision` note. |
+| `deliver` | kind, ideaId | → `archived` + `archivedAt` + `deliveredAt` (mirrors the card archive; the card's `done` stays runner-owned). |
 | `restore` | kind, ideaId | `archived`/`declined` → `open`. |
 | `delete` | kind, ideaId | hard remove. |
 | `reorder` | kind, orderedIds | rewrites ranks 1..n. |
@@ -84,8 +91,9 @@ For a workspace whose AGENTS.md still points at an `IDEAS.md` convention:
 
 Errors: `forbidden` (403), `json-required` (415), `invalid-action` (400),
 `body-too-large` (413). `IdeaRecord`: see `src/core/ideas.ts` — `id`, `title`
-(≤200), `body` (≤32 KiB), `status`, optional `rank/value/effort/tags`
-(≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoardId`, timestamps.
+(≤200), `body` (≤32 KiB), `status`, optional `rank/value/effort/rationale/
+tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoardId`/
+`deliveredAt`/`decision`, `ideaNumber` (stable capture `#N`), timestamps.
 
 ## TaskBoard mirror (P2)
 

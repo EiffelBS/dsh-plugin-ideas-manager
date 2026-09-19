@@ -92,6 +92,11 @@ node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md
 # target a specific workspace id / registry / title explicitly
 node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --workspace <id>
 node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --registry <workspace.json> --workspace-title "OpenTimbre"
+
+# incremental re-sync (import only what the ledger is missing; DELIVERED
+# sections land archived with a deliveredAt stamp, DELIVERED won overridden
+# by DECLINED; uses a fresh request id so a re-run is not replay-deduped)
+node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --incremental --status-lines
 ```
 
 Workspace resolution (highest wins):
@@ -110,7 +115,10 @@ so the golden diff matches the imported workspace.
 Mapping:
 
 - `## Idea #N ...` sections → ideas `ot-<N>`; `IDEAS.md` → `open`,
-  `IDEAS-ARCHIVE.md` → `archived`, `DECLINED` sections → `declined`
+  `IDEAS-ARCHIVE.md` → `archived`, `DECLINED` sections → `declined`.
+  With `--status-lines` (re-sync), each section is classified by its own
+  status markers instead: DECLINED → `declined`, DELIVERED → `archived`
+  (with `deliveredAt`), the rest keep the document default.
 - `rank` from the Suggested-priority table; `createdAt`/`archivedAt` from the
   `captured` / `DELIVERED` / `DECLINED` dates in the headings (fallback: now)
 - `workspaceId` = the resolved id above (on the author machine this is the

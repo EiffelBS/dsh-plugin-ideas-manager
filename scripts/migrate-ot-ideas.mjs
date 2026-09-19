@@ -6,7 +6,10 @@
  * Faithful mapping (documented in README.md §Migration):
  * - a `## Idea #N ...` section -> one idea `{ id: "ot-<N>", title, body, status }`
  * - IDEAS.md sections -> `open`; IDEAS-ARCHIVE.md sections -> `archived`,
- *   except the `DECLINED` ones -> `declined`
+ *   except the `DECLINED` ones -> `declined`. `--status-lines` tightens the
+ *   IDEAS.md mapping: a section whose status line says DELIVERED -> `archived`
+ *   (with a `deliveredAt` stamp), DECLINED -> `declined`, everything else
+ *   stays the document default.
  * - `createdAt` from the first `captured YYYY-MM-DD` (or `DELIVERED …`) date
  *   in the heading; `archivedAt` (non-open) from the first
  *   `DELIVERED`/`DECLINED YYYY-MM-DD` date; both fall back to "now" when the
@@ -21,6 +24,13 @@
  * nothing); `--apply` (with `--ideas <path> --archive <path> --base <origin>`)
  * POSTs the import envelope to `{base}/api/ideas/action` over loopback with
  * the family same-origin markers.
+ *
+ * `--incremental` turns the run into a re-sync of the target ledger: the
+ * current `/api/ideas/state` is read first, ids already present are skipped,
+ * and a fresh request id is used (a replayed id would be deduped by the Host
+ * and import nothing — the fixed `ot-migration-v1` id is why a plain re-run
+ * after the P3 base is a no-op). Combined with `--status-lines` this is the
+ * T0 "import IDEAS.md #24..#28" command.
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -58,6 +68,94 @@ function dateInHeading(heading) {
 }
 
 /**
+ * The status region of a section: its heading plus the FIRST contiguous
+ * blockquote run under it (one blank line may bridge the heading to its
+ * `> Status: …` quote). Update notes farther down are not read — they can
+ * legitimately mention delivered slices ("… are **DELIVERED**", "… plan
+ * delivered in `docs/internal/`") without the idea itself being closed, so
+ * matching them would misclassify the section.
+ */
+function statusRegion(text) {
+  const lines = String(text).split('\n')
+  const region = [lines[0] ?? '']
+  let bridging = true
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i]
+    if (line.trimStart().startsWith('>')) {
+      region.push(line)
+      continue
+    }
+    if (line.trim() === '' && bridging) {
+      // One blank may separate the heading from its status blockquote; once a
+      // quote line ran, a blank ends the region (a new quote = a new note).
+      bridging = false
+      region.push('')
+      continue
+    }
+    break
+  }
+  return region.join('\n')
+}
+
+/**
+ * A delivered/declined marker is only trusted in an unambiguous context:
+ * - the heading meta suffix (`*(captured …, DELIVERED 2026-09-18)*`),
+ * - a `> Status: …` line right under the heading,
+ * - the marker immediately followed by a date (`DELIVERED 2026-09-18`).
+ * Prose like "… slices … are DELIVERED - `source/…`" or "… plan delivered in
+ * `docs/internal/`" inside update notes MUST NOT close an idea, so plain
+ * uppercase-in-a-quote is not enough — the docs also merge those notes into
+ * one blockquote with `>` separator lines, which defeats any "first quote
+ * only" window. The marker spelling is the all-caps convention; the
+ * lowercase verb never counts.
+ */
+const DELIVERED_DATE_FOLLOW = /DELIVERED\s*(?:\(\s*)?(?:\d{4}-\d{2}-\d{2})/
+const DECLINED_DATE_FOLLOW = /DECLINED\s*(?:\(\s*)?(?:\d{4}-\d{2}-\d{2})/
+
+function headingMeta(heading) {
+  const match = String(heading).match(/\*\(([^)]*)\)\*$/)
+  return match === null ? '' : match[1]
+}
+
+/** Trusted marker contexts: heading meta, a `> Status:` line, date-follow. */
+function hasStatusMarker(region, wordRe, dateFollowRe) {
+  const lines = String(region).split('\n')
+  const heading = lines[0] ?? ''
+  if (wordRe.test(headingMeta(heading))) return true
+  for (const line of lines) {
+    if (/^>\s*Status:/.test(line.trimStart()) && wordRe.test(line)) return true
+  }
+  return dateFollowRe.test(region)
+}
+
+/**
+ * Classify a section by its status markers: DECLINED wins, DELIVERED maps to
+ * `archived` (the delivery record), otherwise the fallback status applies.
+ */
+export function statusInSection(text, fallback) {
+  const region = statusRegion(text)
+  if (hasStatusMarker(region, /\bDECLINED\b/, DECLINED_DATE_FOLLOW)) return 'declined'
+  if (hasStatusMarker(region, /\bDELIVERED\b/, DELIVERED_DATE_FOLLOW)) return 'archived'
+  return fallback
+}
+
+/** The delivery date carried by a `DELIVERED YYYY-MM-DD` marker, if any. */
+export function deliveredDateInSection(text) {
+  const match = statusRegion(text).match(DELIVERED_DATE_FOLLOW)
+  return match === null ? undefined : dateToMs(match[0].match(/\d{4}-\d{2}-\d{2}/)?.[0])
+}
+
+/**
+ * Re-sync filter: drop rows whose id is already present in the target
+ * ledger so a second run only imports what the original migration missed.
+ */
+export function filterIncremental(rows, existingIds) {
+  const present = new Set(existingIds)
+  const missing = rows.filter((row) => !present.has(row.id))
+  return { missing, skipped: rows.length - missing.length }
+}
+
+/**
  * Split a heading's title away from the `*(…)*` meta suffix and the
  * `Idea #N <labels> <sep>` prefix. Falls back to the whole region when the
  * shape does not match.
@@ -71,7 +169,7 @@ export function titleFromHeading(rawHeading) {
 /**
  * Parse one OT capture document (IDEAS.md or IDEAS-ARCHIVE.md text).
  * @param {string} text - the document content, UTF-8.
- * @param {{ status: 'open'|'archived'|'declined', ranks?: Map<number, number>, now?: number, workspaceId?: string }} options
+ * @param {{ status: 'open'|'archived'|'declined', ranks?: Map<number, number>, now?: number, workspaceId?: string, classify?: boolean }} options
  * @returns {{ ideas: Array<object>, sections: number }}
  */
 export function parseOtIdeasDocument(text, options) {
@@ -83,7 +181,13 @@ export function parseOtIdeasDocument(text, options) {
   let current
   const flush = () => {
     if (current === undefined) return
-    const status = /DECLINED/i.test(`${current.heading}\n${current.body.join('\n')}`) ? 'declined' : options.status
+    const section = `${current.heading}\n${current.body.join('\n')}`
+    const region = statusRegion(section)
+    const declined = hasStatusMarker(region, /\bDECLINED\b/, DECLINED_DATE_FOLLOW)
+    const delivered = hasStatusMarker(region, /\bDELIVERED\b/, DELIVERED_DATE_FOLLOW)
+    const status = options.classify === true
+      ? declined ? 'declined' : delivered ? 'archived' : options.status
+      : /DECLINED/i.test(section) ? 'declined' : options.status
     const createdAt = dateInHeading(current.heading) ?? now
     const rank = options.ranks === undefined ? undefined : options.ranks.get(current.number)
     ideas.push({
@@ -93,6 +197,7 @@ export function parseOtIdeasDocument(text, options) {
       status,
       ...(rank === undefined ? {} : { rank }),
       ...(status === 'open' ? {} : { archivedAt: dateInHeading(current.heading) ?? now }),
+      ...(options.classify === true && delivered ? { deliveredAt: deliveredDateInSection(section) ?? dateInHeading(current.heading) ?? now } : {}),
       createdAt,
       updatedAt: now,
       workspaceId,
@@ -208,6 +313,33 @@ function flagOf(argv, name) {
   return undefined
 }
 
+function getJson(url) {
+  const parsed = new URL(url)
+  return new Promise((resolve, reject) => {
+    const outgoing = httpRequest(
+      {
+        hostname: parsed.hostname,
+        port: Number(parsed.port),
+        path: parsed.pathname,
+        method: 'GET',
+        headers: {
+          origin: `${parsed.protocol}//${parsed.host}`,
+          'sec-fetch-site': 'same-origin',
+        },
+      },
+      (res) => {
+        const chunks = []
+        res.on('data', (chunk) => chunks.push(chunk))
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }))
+        res.on('error', (error) => reject(error))
+      },
+    )
+    outgoing.setTimeout(15_000)
+    outgoing.on('error', (error) => reject(error))
+    outgoing.end()
+  })
+}
+
 function postJson(url, body) {
   const parsed = new URL(url)
   const payload = JSON.stringify(body)
@@ -240,6 +372,8 @@ function postJson(url, body) {
 
 async function main(argv) {
   const apply = argv.includes('--apply')
+  const incremental = argv.includes('--incremental')
+  const classify = argv.includes('--status-lines')
   const ideasPath = flagOf(argv, '--ideas')
   const archivePath = flagOf(argv, '--archive')
   const base = flagOf(argv, '--base') ?? 'http://127.0.0.1:3101'
@@ -249,25 +383,45 @@ async function main(argv) {
     title: flagOf(argv, '--workspace-title'),
   })
   if (ideasPath === undefined || archivePath === undefined) {
-    console.error('usage: migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> [--base <origin>] [--registry <workspace.json>] [--workspace-title <title>] [--workspace <id>] [--export-out <dir>] [--apply]')
+    console.error('usage: migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> [--base <origin>] [--registry <workspace.json>] [--workspace-title <title>] [--workspace <id>] [--incremental] [--status-lines] [--export-out <dir>] [--apply]')
     return 1
   }
-  const parsed = parseOtMigration(readFileSync(ideasPath, 'utf8'), readFileSync(archivePath, 'utf8'), { workspaceId: workspace.workspaceId })
-  console.log(`OT migration: ${parsed.ideas.length} ideas (${parsed.open.length} open, ${parsed.archived.length} archived, ${parsed.declined.length} declined${parsed.collisions > 0 ? `; ${parsed.collisions} split-idea collision(s) resolved toward the open backlog` : ''}) -> workspace "${workspace.workspaceId}" (${workspace.via})`)
-  for (const row of parsed.ideas) {
+  const parsed = parseOtMigration(readFileSync(ideasPath, 'utf8'), readFileSync(archivePath, 'utf8'), { workspaceId: workspace.workspaceId, classify })
+  let rows = parsed.ideas
+  let requestId = 'ot-migration-v1'
+  if (incremental) {
+    const state = await getJson(`${base}/api/ideas/state`)
+    if (state.status < 200 || state.status >= 300) {
+      console.error(`GET ${base}/api/ideas/state -> HTTP ${state.status}: ${state.body.slice(0, 200)}`)
+      return 2
+    }
+    const existing = JSON.parse(state.body).ideas.map((idea) => idea.id)
+    const delta = filterIncremental(rows, existing)
+    if (delta.skipped > 0) console.log(`incremental: ${delta.skipped} of ${rows.length} ideas already in the ledger; importing ${delta.missing.length}`)
+    rows = delta.missing
+    // A replayed request id is deduped by the Host; the re-sync always uses a
+    // fresh one so the delta is actually imported.
+    requestId = `ot-resync-${Date.now()}`
+  }
+  console.log(`OT migration: ${parsed.ideas.length} parsed (${parsed.open.length} open, ${parsed.archived.length} archived, ${parsed.declined.length} declined${parsed.collisions > 0 ? `; ${parsed.collisions} split-idea collision(s) resolved toward the open backlog` : ''}) -> workspace "${workspace.workspaceId}" (${workspace.via})${incremental ? ' [incremental]' : ''}${classify ? ' [status-lines]' : ''}`)
+  for (const row of rows) {
     const rank = row.rank === undefined ? '-' : String(row.rank)
     console.log(`  ${row.id.padEnd(7)} rank ${rank.padEnd(3)} ${row.status.padEnd(8)} ${row.title}`)
   }
   if (!apply) {
-    console.log('dry-run (no POST). Pass --apply to import.')
+    console.log(`dry-run (no POST). ${incremental ? 'Pass --apply to import the delta.' : 'Pass --apply to import.'}`)
   } else {
-    const envelope = {
-      requestId: 'ot-migration-v1',
-      action: { kind: 'import', sourceId: OT_IMPORT_SOURCE_ID, ideas: parsed.ideas },
+    if (rows.length === 0) {
+      console.log('nothing to import; no POST.')
+    } else {
+      const envelope = {
+        requestId,
+        action: { kind: 'import', sourceId: OT_IMPORT_SOURCE_ID, ideas: rows },
+      }
+      const httpResult = await postJson(`${base}/api/ideas/action`, envelope)
+      console.log(`POST ${base}/api/ideas/action -> HTTP ${httpResult.status}`)
+      if (httpResult.status < 200 || httpResult.status >= 300) return 2
     }
-    const httpResult = await postJson(`${base}/api/ideas/action`, envelope)
-    console.log(`POST ${base}/api/ideas/action -> HTTP ${httpResult.status}`)
-    if (httpResult.status < 200 || httpResult.status >= 300) return 2
   }
   const exportOut = flagOf(argv, '--export-out')
   if (exportOut !== undefined) {
