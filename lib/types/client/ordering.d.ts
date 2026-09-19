@@ -22,3 +22,8 @@ export declare function rebuildOrder(all: readonly IdeaRecord[], movedId: string
  * wire call.
  */
 export declare function moveIdeaInOpenBacklog(all: readonly IdeaRecord[], movedId: string, toward: 'up' | 'down'): string[] | undefined;
+/**
+ * Archived ideas of a workspace scope that carry a delivery stamp — the
+ * Delivered log contents (empty scope = all workspaces).
+ */
+export declare function deliveredIdeasOf(ideas: readonly IdeaRecord[], workspaceId: string): IdeaRecord[];

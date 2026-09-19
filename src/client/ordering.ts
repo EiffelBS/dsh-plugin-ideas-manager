@@ -68,3 +68,17 @@ export function moveIdeaInOpenBacklog(
   const closed = orderIdeas(all.filter(idea => idea.status !== 'open')).map(idea => idea.id)
   return [...ids, ...closed]
 }
+
+/**
+ * Archived ideas of a workspace scope that carry a delivery stamp — the
+ * Delivered log contents (empty scope = all workspaces).
+ */
+export function deliveredIdeasOf(
+  ideas: readonly IdeaRecord[],
+  workspaceId: string,
+): IdeaRecord[] {
+  return ideas.filter(idea =>
+    idea.status === 'archived'
+    && idea.deliveredAt !== undefined
+    && (workspaceId === '' || idea.workspaceId === workspaceId))
+}

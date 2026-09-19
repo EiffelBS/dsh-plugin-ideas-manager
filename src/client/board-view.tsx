@@ -17,9 +17,10 @@ import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IDEA_LEVELS, levelForValue, levelLabelKey } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
-import { orderIdeas, rebuildOrder } from './ordering.ts'
+import { orderIdeas, rebuildOrder, deliveredIdeasOf } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { PrioritiesView } from './priorities-view.tsx'
+import { DeliveredView } from './delivered-view.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
@@ -123,6 +124,10 @@ function IconDelete() {
   )
 }
 
+function IconCheck() {
+  return <svg {...actionIcon}><polyline points="20 6 9 17 4 12" /></svg>
+}
+
 function tagsText(idea: IdeaRecord | undefined): string {
   return idea?.tags === undefined ? '' : idea.tags.map(tag => tag.name).join(', ')
 }
@@ -169,6 +174,16 @@ function LevelSelect({ id, label, value, onChange, disabled }: {
   )
 }
 
+/** Current 1-based position of an edited idea inside the open backlog
+ *  ('' when the idea is not open or absent — the rank field then starts
+ *  empty; the triage verb is the only path that re-ranks with a shift). */
+function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecord[]): string {
+  if (idea === undefined || idea.status !== 'open') return ''
+  const open = orderIdeas(ideas.filter(item => item.status === 'open'))
+  const at = open.findIndex(item => item.id === idea.id)
+  return at < 0 ? '' : String(at + 1)
+}
+
 /** Shared capture/edit modal. */
 function IdeaModal({ client, initial, initialWorkspace, onClose }: {
   client: IdeasClient
@@ -184,6 +199,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
   const [rationale, setRationale] = useState(initial?.rationale ?? '')
   const [tags, setTags] = useState(tagsText(initial))
   const [workspace, setWorkspace] = useState(initial?.workspaceId ?? initialWorkspace ?? '')
+  const [rank, setRank] = useState(() => currentOpenRank(initial, client.snapshot?.ideas ?? []))
   const [error, setError] = useState<string | undefined>(undefined)
   // The edit modal opens straight on the rendered markdown view (the raw
   // textarea is one click away); a new capture keeps the raw textarea first
@@ -221,6 +237,14 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
     }
     const value = valueLevel === '' ? undefined : Number(valueLevel)
     const effort = effortLevel === '' ? undefined : Number(effortLevel)
+    // The suggested rank is a 1-based position inside the open backlog; a
+    // blank field means "no rank opinion" (append). Only a positive integer
+    // is accepted (the triage re-rank treats it as a position).
+    const parsedRank = rank.trim() === '' ? undefined : Number(rank)
+    if (parsedRank !== undefined && (!Number.isInteger(parsedRank) || parsedRank < 1)) {
+      setError(t('new.rankInvalid'))
+      return
+    }
     try {
       if (initial === undefined) {
         await client.createIdea({
@@ -231,8 +255,29 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
           ...(effort === undefined ? {} : { effort }),
           rationale,
           workspaceId: workspace,
+          ...(parsedRank === undefined ? {} : { rank: parsedRank }),
+        })
+      } else if (initial.status === 'open') {
+        // Open backlog edit: the text/tag/workspace fields go through the
+        // plain update; the priority opinion and the suggested rank go
+        // through the transactional triage — the only verb that re-ranks the
+        // open backlog with a shift (a rank change here must not orphan the
+        // old rank, and the workflow wants the backlog re-ranked on change).
+        await client.updateIdea(initial.id, {
+          title: title.trim(),
+          body: body.trim(),
+          tags: tags.split(','),
+          workspaceId: workspace,
+        })
+        await client.triageIdea(initial.id, {
+          ...(value === undefined ? {} : { value }),
+          ...(effort === undefined ? {} : { effort }),
+          rationale,
+          ...(parsedRank === undefined ? {} : { rank: parsedRank }),
         })
       } else {
+        // Archived / declined edit: no open-backlog re-rank (the rank field
+        // is hidden), the opinion fields go through the plain update.
         const patch: IdeaClientPatch = {
           title: title.trim(),
           body: body.trim(),
@@ -334,6 +379,22 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
             disabled={client.pending}
           />
         </div>
+        {(initial === undefined || initial.status === 'open') && (
+          <div className={classes.field}>
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-rank">{t('new.rank')}</label>
+            <input
+              id="dsh-ideas-rank"
+              className={classes.input}
+              type="number"
+              min={1}
+              step={1}
+              value={rank}
+              disabled={client.pending}
+              onChange={event => { setRank(event.target.value) }}
+            />
+            <div className={classes.fieldHint}>{t('new.rankHint')}</div>
+          </div>
+        )}
         <div className={classes.field}>
           <label className={classes.fieldLabel} htmlFor="dsh-ideas-tags">{t('new.tags')}</label>
           <input
@@ -419,6 +480,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
     && (workspaceFilter === '' || idea.workspaceId === workspaceFilter))
+  // The Delivered log mirrors the Priorities scope: archived + deliveredAt
+  // ideas of the current workspace ('' = all), no kanban filters.
+  const deliveredIdeas = deliveredIdeasOf(ideas, workspaceFilter)
   const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
 
   const toggleTag = (name: string): void => {
@@ -549,6 +613,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onClick={() => { switchTab('priorities') }}
         >
           {t('tab.priorities')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={activeTab === 'delivered' ? classes.tabActive : classes.tab}
+          data-active={activeTab === 'delivered' ? '' : undefined}
+          aria-selected={activeTab === 'delivered'}
+          onClick={() => { switchTab('delivered') }}
+        >
+          {t('tab.delivered')}
         </button>
       </nav>
 
@@ -742,6 +816,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 </button>
                               </div>
                             )}
+                            {idea.deliveredAt !== undefined && (
+                              <div className={classes.cardMeta}>
+                                <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
+                                  {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
+                                </span>
+                              </div>
+                            )}
                             {idea.tags !== undefined && idea.tags.length > 0 && (
                               <div className={classes.cardMeta}>
                                 {idea.tags.map(tag => (
@@ -815,6 +896,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 <IconEdit />
                                 {t('card.edit')}
                               </button>
+                              {idea.status === 'open' && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  title={t('card.deliverHint')}
+                                  onClick={() => { void client.deliverIdea(idea.id) }}
+                                >
+                                  <IconCheck />
+                                  {t('card.deliver')}
+                                </button>
+                              )}
                               {idea.status === 'open' && (
                                 <button
                                   type="button"
@@ -896,16 +989,26 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       </div>
           </>
         )
-        : (
-          <PrioritiesView
-            client={client}
-            openIdeas={scopedOpen}
-            allIdeas={ideas}
-            workspaceTitle={workspaceTitle}
-            onEdit={openEdit}
-            mdMode={mdMode}
-          />
-        )}
+        : activeTab === 'priorities'
+          ? (
+            <PrioritiesView
+              client={client}
+              openIdeas={scopedOpen}
+              allIdeas={ideas}
+              workspaceTitle={workspaceTitle}
+              onEdit={openEdit}
+              mdMode={mdMode}
+            />
+          )
+          : (
+            <DeliveredView
+              client={client}
+              deliveredIdeas={deliveredIdeas}
+              workspaceTitle={workspaceTitle}
+              onEdit={openEdit}
+              mdMode={mdMode}
+            />
+          )}
 
       {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (

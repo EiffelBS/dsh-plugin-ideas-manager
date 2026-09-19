@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createIdea, type IdeaRecord, type IdeaStatus } from '../src/core/ideas.ts'
-import { moveIdeaInOpenBacklog, orderIdeas, rebuildOrder } from '../src/client/ordering.ts'
+import { deliveredIdeasOf, moveIdeaInOpenBacklog, orderIdeas, rebuildOrder } from '../src/client/ordering.ts'
 
 function idea(id: string, status: IdeaStatus, rank?: number): IdeaRecord {
   return { ...createIdea({ title: id, body: '' }, 0, id), status, ...(rank === undefined ? {} : { rank }) }
@@ -75,5 +75,34 @@ describe('moveIdeaInOpenBacklog', () => {
     ]
     expect(moveIdeaInOpenBacklog(mixed, 'new', 'up')).toEqual(['new', 'b', 'old'])
     expect(moveIdeaInOpenBacklog(mixed, 'b', 'down')).toEqual(['new', 'b', 'old'])
+  })
+})
+
+describe('deliveredIdeasOf', () => {
+  const at = 1_700_000_000_000
+  const delivered = (id: string, workspaceId?: string): IdeaRecord => ({
+    ...idea(id, 'archived'),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    deliveredAt: at,
+  })
+
+  it('keeps only archived ideas carrying a delivery stamp', () => {
+    const rows = [
+      delivered('a'),
+      // Abandoned (archived without a stamp) and open ideas are excluded.
+      idea('b', 'archived'),
+      idea('c', 'open'),
+    ]
+    expect(deliveredIdeasOf(rows, '').map(row => row.id)).toEqual(['a'])
+  })
+
+  it('scopes to one workspace when asked (empty scope = all)', () => {
+    const rows = [
+      delivered('a', 'w1'),
+      delivered('b', 'w2'),
+      delivered('c'),
+    ]
+    expect(deliveredIdeasOf(rows, 'w1').map(row => row.id)).toEqual(['a'])
+    expect(deliveredIdeasOf(rows, '').map(row => row.id)).toEqual(['a', 'b', 'c'])
   })
 })

@@ -41,6 +41,21 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
 - **P3 (done)** — OpenTimbre one-shot migration via `import`
   (`scripts/migrate-ot-ideas.mjs`: workspace resolved by title against the
   target registry, legacy `ot` fallback) + export-golden diff.
+- **T0 (done)** — process & activation: `IDEAS_GUIDANCE` now states the full
+  capture → triage → re-rank → lifecycle protocol (announceToAgent); the
+  OT cutover is a one-line AGENTS.md flip per workspace; IDEAS.md → ledger
+  incremental re-sync (`--incremental --apply`).
+- **T1 (done)** — atomic `triage` verb (scores + rationale + rank +
+  transactional re-rank of the open backlog), `deliver` verb (archived +
+  deliveredAt, mirrors to the board), `decline` + decision, stable `#N`
+  idea numbers, `rationale`/`deliveredAt`/`ideaNumber` fields + generated
+  export bullets.
+- **T2 (done)** — lifecycle/UI: delivered at a glance (green "Delivered
+  {date}" badge on archived cards + a dedicated `Delivered` tab showing the
+  derived delivery log), "Livrer ✓" action on open cards, and triage through
+  the UI: the New/Edit modal carries a suggested rank field (1-based open
+  backlog position) that goes through the transactional triage re-rank on
+  every open-backlog edit.
 
 ## Contract (Host API)
 
@@ -52,7 +67,7 @@ Prefix `/api/ideas`. Same-origin fence: loopback socket + browser markers
 | Route | Purpose |
 |---|---|
 | `GET /api/ideas/state` | `{ schemaVersion: 1, revision, ideas[] }` |
-| `POST /api/ideas/action` | `create`, `update`, `move` (open↔archived), `decline`, `restore`, `delete`, `reorder`, `import`, `export` |
+| `POST /api/ideas/action` | `create`, `update`, `move` (open↔archived), `decline` (+ decision), `deliver`, `triage`, `restore`, `delete`, `reorder`, `import`, `export` |
 | `GET /api/ideas/events` | SSE `{ revision }` |
 
 Error ids mirror the task-board family: `forbidden` (403), `json-required`

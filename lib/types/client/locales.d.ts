@@ -30,6 +30,10 @@ export declare const fr: {
     'tab.label': string;
     'tab.overview': string;
     'tab.priorities': string;
+    'tab.delivered': string;
+    'delivered.hint': string;
+    'delivered.empty': string;
+    'delivered.deliverAt': string;
     'priorities.hint': string;
     'priorities.empty': string;
     'priorities.moveUp': string;
@@ -43,6 +47,9 @@ export declare const fr: {
     'new.tagsPlaceholder': string;
     'new.rationale': string;
     'new.rationalePlaceholder': string;
+    'new.rank': string;
+    'new.rankHint': string;
+    'new.rankInvalid': string;
     'new.value': string;
     'new.effort': string;
     'new.levelNone': string;
@@ -59,6 +66,10 @@ export declare const fr: {
     'card.edit': string;
     'card.archive': string;
     'card.decline': string;
+    'card.deliver': string;
+    'card.deliverHint': string;
+    'card.delivered': string;
+    'card.deliveredHint': string;
     'card.restore': string;
     'card.delete': string;
     'card.confirmDelete': string;
@@ -101,6 +112,10 @@ export declare const en: {
     'tab.label': string;
     'tab.overview': string;
     'tab.priorities': string;
+    'tab.delivered': string;
+    'delivered.hint': string;
+    'delivered.empty': string;
+    'delivered.deliverAt': string;
     'priorities.hint': string;
     'priorities.empty': string;
     'priorities.moveUp': string;
@@ -114,6 +129,9 @@ export declare const en: {
     'new.tagsPlaceholder': string;
     'new.rationale': string;
     'new.rationalePlaceholder': string;
+    'new.rank': string;
+    'new.rankHint': string;
+    'new.rankInvalid': string;
     'new.value': string;
     'new.effort': string;
     'new.levelNone': string;
@@ -130,6 +148,10 @@ export declare const en: {
     'card.edit': string;
     'card.archive': string;
     'card.decline': string;
+    'card.deliver': string;
+    'card.deliverHint': string;
+    'card.delivered': string;
+    'card.deliveredHint': string;
     'card.restore': string;
     'card.delete': string;
     'card.confirmDelete': string;

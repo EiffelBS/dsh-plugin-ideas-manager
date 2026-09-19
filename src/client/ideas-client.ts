@@ -106,6 +106,8 @@ export class IdeasClient {
     effort?: number
     rationale?: string
     workspaceId?: string
+    /** 1-based position inside the open backlog (capture triage opinion). */
+    rank?: number
   }): Promise<void> {
     const tags = tagNames(input.tags).map(name => ({ name }))
     await this.run({
@@ -117,6 +119,7 @@ export class IdeasClient {
         ...(input.value === undefined ? {} : { value: input.value }),
         ...(input.effort === undefined ? {} : { effort: input.effort }),
         ...(input.rationale === undefined || input.rationale === '' ? {} : { rationale: input.rationale }),
+        ...(input.rank === undefined ? {} : { rank: input.rank }),
         // An empty string (the modal's "no workspace" choice) stays generic by
         // omitting the field, matching the ledger's normalizeOptionalId.
         ...(input.workspaceId === undefined || input.workspaceId === '' ? {} : { workspaceId: input.workspaceId }),
@@ -171,7 +174,9 @@ export class IdeasClient {
       patch: {
         ...(patch.value === undefined ? {} : { value: patch.value }),
         ...(patch.effort === undefined ? {} : { effort: patch.effort }),
-        ...(patch.rationale === undefined || patch.rationale === '' ? {} : { rationale: patch.rationale }),
+        // Like updateIdea, an explicit blank rationale clears the recorded one
+        // (the Host triage trims '' to undefined).
+        ...(patch.rationale === undefined ? {} : { rationale: patch.rationale }),
         ...(patch.rank === undefined ? {} : { rank: patch.rank }),
       },
     })

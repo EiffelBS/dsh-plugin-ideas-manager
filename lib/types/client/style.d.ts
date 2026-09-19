@@ -81,6 +81,9 @@ export declare const classes: {
     readonly prioritiesRationaleText: "dsh-ideas-priorities-rationale-text";
     readonly prioritiesActions: "dsh-ideas-priorities-actions";
     readonly prioritiesMove: "dsh-ideas-priorities-move";
+    readonly deliveredStamp: "dsh-ideas-delivered-stamp";
+    readonly deliveredBadge: "dsh-ideas-delivered-badge";
+    readonly fieldHint: "dsh-ideas-field-hint";
 };
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */
 export declare function ensureIdeasStyle(): void;

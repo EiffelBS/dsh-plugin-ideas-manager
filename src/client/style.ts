@@ -1055,6 +1055,41 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   opacity: 0.35;
   cursor: default;
 }
+
+/* Delivered stamp (Delivered log rows): a green delivery pill echoing the
+   "status: DELIVERED YYYY-MM-DD" marker of the old IDEAS.md process. Green is
+   a fixed hue (not the tag palette) so a delivery always reads as positive. */
+.dsh-ideas-delivered-stamp {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(150 55% 40%) 38%, transparent);
+  background: color-mix(in srgb, hsl(150 55% 40%) 14%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(150 50% 38%) 82%, var(--dsh-ideas-fb-fg));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Delivered badge on an Archived kanban card: same green pill, so a
+   delivered idea is visually distinct from a plain archived (abandoned) one. */
+.dsh-ideas-delivered-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(150 55% 40%) 38%, transparent);
+  background: color-mix(in srgb, hsl(150 55% 40%) 14%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(150 50% 38%) 82%, var(--dsh-ideas-fb-fg));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Small hint under a modal field (the suggested-rank explanation). */
+.dsh-ideas-field-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
 `
 
 /** Class map consumed by the sidebar core and the board JSX. */
@@ -1133,6 +1168,9 @@ export const classes = {
   prioritiesRationaleText: 'dsh-ideas-priorities-rationale-text',
   prioritiesActions: 'dsh-ideas-priorities-actions',
   prioritiesMove: 'dsh-ideas-priorities-move',
+  deliveredStamp: 'dsh-ideas-delivered-stamp',
+  deliveredBadge: 'dsh-ideas-delivered-badge',
+  fieldHint: 'dsh-ideas-field-hint',
 } as const
 
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */

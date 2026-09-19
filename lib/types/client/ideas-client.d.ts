@@ -49,6 +49,8 @@ export declare class IdeasClient {
         effort?: number;
         rationale?: string;
         workspaceId?: string;
+        /** 1-based position inside the open backlog (capture triage opinion). */
+        rank?: number;
     }): Promise<void>;
     updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void>;
     moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void>;
