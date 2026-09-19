@@ -218,7 +218,18 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
   const [effortLevel, setEffortLevel] = useState(initial?.effort === undefined ? '' : String(levelForValue(initial.effort)))
   const [rationale, setRationale] = useState(initial?.rationale ?? '')
   const [tags, setTags] = useState(tagsText(initial))
-  const [workspace, setWorkspace] = useState(initial?.workspaceId ?? initialWorkspace ?? '')
+  // Capture default (T3): a new idea targets the current session's workspace
+  // when the board is not scoped to one — the project being discussed is the
+  // natural home of a capture. An edit keeps the idea's own workspace, and a
+  // scoped board still preselects its scope (explicit beats session).
+  const sessionWorkspace = client.activeWorkspace?.workspaceId ?? ''
+  const [workspace, setWorkspace] = useState((() =>
+    initial?.workspaceId
+    ?? (initialWorkspace === undefined || initialWorkspace === '' ? sessionWorkspace : initialWorkspace)
+    ?? '')())
+  // True while the picker shows the session-inferred default (capture only):
+  // a quiet hint marks it, so the author knows the selection was made for them.
+  const sessionDefaulted = initial === undefined && workspace !== '' && workspace === sessionWorkspace && workspace !== initialWorkspace
   const [rank, setRank] = useState(() => currentOpenRank(initial, client.snapshot?.ideas ?? []))
   const [error, setError] = useState<string | undefined>(undefined)
   // The edit modal opens straight on the rendered markdown view (the raw
@@ -368,6 +379,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
               </option>
             ))}
           </select>
+          {sessionDefaulted && <div className={classes.fieldHint}>{t('new.sessionWorkspaceHint')}</div>}
         </div>
         <div className={classes.field}>
           <span className={classes.fieldRowBetween}>

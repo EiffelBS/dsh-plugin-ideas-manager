@@ -60,6 +60,7 @@ export declare const fr: {
     'new.required': string;
     'new.workspace': string;
     'new.workspaceNone': string;
+    'new.sessionWorkspaceHint': string;
     'card.drag': string;
     'card.clickToEdit': string;
     'card.value': string;
@@ -158,6 +159,7 @@ export declare const en: {
     'new.levelNone': string;
     'new.workspace': string;
     'new.workspaceNone': string;
+    'new.sessionWorkspaceHint': string;
     'new.submit': string;
     'new.cancel': string;
     'new.required': string;

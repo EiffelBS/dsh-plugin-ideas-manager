@@ -8,6 +8,7 @@
 import type { IdeaStatus } from '../core/ideas.ts'
 import type { IdeasAction, IdeasSnapshot } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
+import type { ActiveWorkspaceSource } from './session-context.ts'
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts'
 
 function uuid(): string {
@@ -36,17 +37,32 @@ export class IdeasClient {
   private unsubscribeEvents: (() => void) | undefined
   private workspaces: WorkspaceViewLite[] = []
   private readonly workspacesSource: WorkspacesSource | undefined
+  private readonly activeWorkspaceSource: ActiveWorkspaceSource | undefined
   private unsubscribeWorkspaces: (() => void) | undefined
+  private unsubscribeActive: (() => void) | undefined
 
   constructor(
     private readonly transport: IdeasHostTransport,
     workspacesSource: WorkspacesSource | undefined,
+    activeWorkspaceSource?: ActiveWorkspaceSource,
   ) {
     this.workspacesSource = workspacesSource
-    if (this.workspacesSource !== undefined) {
+    // T3: the current session's workspace, resolved from the shell services.
+    // Optional — without it captures keep the pre-T3 default (scope, else generic).
+    this.activeWorkspaceSource = activeWorkspaceSource
+    // The catalog merge needs the registry rows; the active-workspace default
+    // needs the session stream. Either (or both) may be absent — the board
+    // degrades gracefully (ledger ids only, scope-or-generic capture default).
+    if (this.workspacesSource !== undefined || this.activeWorkspaceSource !== undefined) {
       this.syncWorkspaces()
-      this.unsubscribeWorkspaces = this.workspacesSource.subscribe(() => { this.syncWorkspaces() })
+      this.unsubscribeWorkspaces = this.workspacesSource?.subscribe(() => { this.syncWorkspaces() })
+      this.unsubscribeActive = this.activeWorkspaceSource?.subscribe(() => { this.syncWorkspaces() })
     }
+  }
+
+  /** The workspace of the current session (undefined when unknown). */
+  get activeWorkspace(): WorkspaceViewLite | undefined {
+    return this.activeWorkspaceSource?.current()
   }
 
   /** Current DSH registry rows (id + label); empty when the service is absent. */
@@ -84,7 +100,9 @@ export class IdeasClient {
   dispose(): void {
     this.unsubscribeEvents?.()
     this.unsubscribeWorkspaces?.()
+    this.unsubscribeActive?.()
     this.workspacesSource?.dispose()
+    this.activeWorkspaceSource?.dispose()
     this.listeners.clear()
   }
 

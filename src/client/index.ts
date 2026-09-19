@@ -15,13 +15,15 @@ import { mountBoard } from './board-mount.tsx'
 import { mountSidebarEntry } from './sidebar-entry.ts'
 import { ensureIdeasStyle } from './style.ts'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
+import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 
 /**
  * Cordis services this plugin consumes. Declared so apply runs once the DSH
- * shell Workspace registry (dsh-api-workspace-controller) is up; the board
- * still works without it (ledger-derived workspace ids only).
+ * shell Workspace registry (dsh-api-workspace-controller) and the session
+ * list are up; the board still works without them (ledger-derived workspace
+ * ids only, scope-or-generic capture default).
  */
-export const inject = [WORKSPACES_SERVICE] as const
+export const inject = [WORKSPACES_SERVICE, SESSIONS_SERVICE] as const
 
 // A duplicated client injection (module factory executed twice in one page
 // lifetime) would otherwise mount a second sidebar entry and board view.
@@ -38,7 +40,11 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     ensureIdeasStyle()
     const workspaces = resolveWorkspacesSource(ctx)
-    const client = new IdeasClient(new HttpIdeasHostTransport(), workspaces)
+    // T3: read-only session-context hint (current session's workspace); when
+    // either the session service or the registry is absent this is undefined
+    // and the capture default stays the board scope (else generic).
+    const activeWorkspace = resolveActiveWorkspaceSource(ctx)
+    const client = new IdeasClient(new HttpIdeasHostTransport(), workspaces, activeWorkspace)
     client.start()
     const disposers: Array<() => void> = []
     try {

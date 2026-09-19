@@ -7,6 +7,7 @@
 import type { IdeaStatus } from '../core/ideas.ts';
 import type { IdeasSnapshot } from '../protocol.ts';
 import type { IdeasHostTransport } from './host-api.ts';
+import type { ActiveWorkspaceSource } from './session-context.ts';
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts';
 /** Client-side patch accepted by `updateIdea`. */
 export interface IdeaClientPatch {
@@ -30,8 +31,12 @@ export declare class IdeasClient {
     private unsubscribeEvents;
     private workspaces;
     private readonly workspacesSource;
+    private readonly activeWorkspaceSource;
     private unsubscribeWorkspaces;
-    constructor(transport: IdeasHostTransport, workspacesSource: WorkspacesSource | undefined);
+    private unsubscribeActive;
+    constructor(transport: IdeasHostTransport, workspacesSource: WorkspacesSource | undefined, activeWorkspaceSource?: ActiveWorkspaceSource);
+    /** The workspace of the current session (undefined when unknown). */
+    get activeWorkspace(): WorkspaceViewLite | undefined;
     /** Current DSH registry rows (id + label); empty when the service is absent. */
     get workspaceOptions(): readonly WorkspaceViewLite[];
     subscribe(listener: () => void): () => void;

@@ -73,6 +73,13 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   before every card title (so a "follow-up of #N" lineage reads at a glance);
   the follow-up badge sits in the card header next to the delivered badge;
   the workspace chip and the tag pills share one meta line.
+- **T3 (done)** — session-aware capture: a new idea defaults to the current
+  session's workspace (same resolution rule as the shell: session id →
+  `workspaces` registry `sessionIds`, then `recentWorkspaceId`), only when the
+  board is not scoped; a hint marks the inferred workspace. Defensive
+  (degrades to scope-or-generic when the session/workspace services are
+  absent). Design for the optional per-workspace skill install stays
+  author-gated (`docs/t3-session-aware-capture.md`).
 
 ## Contract (Host API)
 

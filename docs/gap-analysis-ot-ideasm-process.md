@@ -122,7 +122,12 @@ protocol. Missing:
   derived "delivered log" and "suggested priority" views (the old tables,
   now generated), optional per-workspace export naming.
 - T3 — session-aware capture: resolve the current session's workspace for
-  captures; optional auto-install of the skill into workspaces' .dsh.
+  captures; default unscoped captures to it (new-idea modal, hint shown);
+  fall back to generic. Delivered 2026-09-19
+  (`docs/t3-session-aware-capture.md`): the session+workspaces service
+  resolution is implemented (defensive, degrades to the pre-T3 default);
+  the optional auto-install of the skill into workspaces' `.dsh` stays
+  author-gated by design (design doc, no arbitrary workspace writes).
 
 Risks: keep the fence (loopback + same-origin) for every new verb; keep the
 ledger single-writer and revisioned; never parse markdown back into the
