@@ -224,7 +224,6 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
 }
 
 .dsh-ideas-search {
-  margin-left: auto;
   width: 200px;
   padding: 6px 10px;
   border-radius: 8px;
@@ -235,11 +234,14 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
 }
 
 /* Board header workspace scope selector (compact, fixed width so the header
-   does not reflow when the selection label changes). */
+   does not reflow when the selection label changes). The auto left margin
+   keeps the whole right cluster (scope + search + actions) at the right edge
+   on both tabs, like the SSH panel header. */
 .dsh-ideas-workspace-select {
   box-sizing: border-box;
   width: 170px;
   max-width: 170px;
+  margin-left: auto;
   padding: 6px 8px;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
@@ -898,38 +900,41 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-weight: 600;
 }
 
-/* Panel tab bar (Overview / Priorities), above the board header. */
+/* Panel tab bar below the board header. SSH-panel presentation: the bar
+   carries a bottom rule, the active tab an accent underline, tabs only take
+   the width of their label (never stretched), hover gives the interactive
+   voile. */
 .dsh-ideas-tabs {
+  flex: none;
   display: flex;
-  gap: 4px;
-  margin-bottom: 2px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
-  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  gap: 2px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1, var(--dsh-ideas-fb-border));
 }
 
 .dsh-ideas-tab,
 .dsh-ideas-tab-active {
-  flex: 1 1 0;
-  padding: 5px 0;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  cursor: pointer;
+  white-space: nowrap;
   background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  padding: 7px 14px;
+  font-size: 13px;
 }
 
-.dsh-ideas-tab:hover {
-  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
-}
-
-.dsh-ideas-tab-active {
+.dsh-ideas-tab:hover,
+.dsh-ideas-tab-active:hover {
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
-  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
-  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer2));
+}
+
+.dsh-ideas-tab-active,
+.dsh-ideas-tab[data-active] {
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  border-bottom-color: var(--dsw-alias-state-business-primary, var(--dsh-ideas-fb-fg));
+  font-weight: 600;
 }
 
 /* Priorities view: the ranked open backlog. */

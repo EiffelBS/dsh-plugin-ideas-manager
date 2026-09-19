@@ -4,5 +4,6 @@ node_modules/
 # Local runtime artifacts — never commit these
 .migration-review/
 .test-*-url.txt
-backups/*-out.txt
+backups/
+*-out.txt
 

@@ -461,26 +461,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   return (
     <div className={classes.board} data-dsh-ideas-board="" data-dsh-plugin="ideas">
-      <nav className={classes.tabs} role="tablist" aria-label={t('tab.label')}>
-        <button
-          type="button"
-          role="tab"
-          className={activeTab === 'overview' ? classes.tabActive : classes.tab}
-          aria-selected={activeTab === 'overview'}
-          onClick={() => { switchTab('overview') }}
-        >
-          {t('tab.overview')}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          className={activeTab === 'priorities' ? classes.tabActive : classes.tab}
-          aria-selected={activeTab === 'priorities'}
-          onClick={() => { switchTab('priorities') }}
-        >
-          {t('tab.priorities')}
-        </button>
-      </nav>
       <header className={classes.boardHeader}>
         <button
           type="button"
@@ -546,6 +526,28 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           {t('board.new')}
         </button>
       </header>
+      <nav className={classes.tabs} role="tablist" aria-label={t('tab.label')}>
+        <button
+          type="button"
+          role="tab"
+          className={activeTab === 'overview' ? classes.tabActive : classes.tab}
+          data-active={activeTab === 'overview' ? '' : undefined}
+          aria-selected={activeTab === 'overview'}
+          onClick={() => { switchTab('overview') }}
+        >
+          {t('tab.overview')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={activeTab === 'priorities' ? classes.tabActive : classes.tab}
+          data-active={activeTab === 'priorities' ? '' : undefined}
+          aria-selected={activeTab === 'priorities'}
+          onClick={() => { switchTab('priorities') }}
+        >
+          {t('tab.priorities')}
+        </button>
+      </nav>
 
       {client.error !== undefined && (
         <div className={classes.error}>
