@@ -203,6 +203,30 @@ describe('IdeasHostService mirror integration', () => {
     service.dispose()
   })
 
+  it('mirrors a delivery as an archive of the bound task', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('req-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+    service.apply('req-2', { kind: 'deliver', ideaId: 'idea-1' })
+    await service.flushMirror()
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['create', 'move', 'archive'])
+    service.dispose()
+  })
+
+  it('never mirrors a triage (opinions and ranks are ideas-side only)', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const service = new IdeasHostService({ dir: freshDir(), mirror, autoMirror: true })
+    service.apply('req-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    service.apply('req-2', { kind: 'triage', ideaId: 'idea-1', patch: { value: 3, effort: 1 } })
+    service.apply('req-3', { kind: 'triage', ideaId: 'idea-1', patch: { rationale: 'Top value' } })
+    await service.flushMirror()
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['create', 'move'])
+    service.dispose()
+  })
+
   it('never rolls back an idea when the mirror fails', async () => {
     const transport = new FakeTransport()
     transport.actionStatus = 500

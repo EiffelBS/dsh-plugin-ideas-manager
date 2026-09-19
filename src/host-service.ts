@@ -180,15 +180,21 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
     case 'move':
       return action.status === 'archived' ? 'archive' : 'restore'
     case 'decline':
+    case 'deliver':
+      // A delivered idea leaves the backlog exactly like a declined one: the
+      // bound card is archived (the card's done still needs the author's
+      // closure run — done is runner-owned).
       return 'archive'
     case 'restore':
       return 'restore'
     case 'delete':
     case 'reorder':
+    case 'triage':
     case 'import':
     case 'export':
-      // delete: documented no-op — the card outlives the idea; reorder,
-      // import and export do not cross the mirror boundary.
+      // delete: documented no-op — the card outlives the idea; reorder and
+      // triage change ranking/opinions, not the card's life; import and
+      // export do not cross the mirror boundary.
       return undefined
   }
 }
@@ -201,6 +207,8 @@ function actionIdeaId(action: IdeasAction): string | undefined {
     case 'update':
     case 'move':
     case 'decline':
+    case 'deliver':
+    case 'triage':
     case 'restore':
     case 'delete':
       return action.ideaId

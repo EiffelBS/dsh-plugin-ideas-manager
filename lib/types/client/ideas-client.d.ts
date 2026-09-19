@@ -14,6 +14,7 @@ export interface IdeaClientPatch {
     body?: string;
     value?: number;
     effort?: number;
+    rationale?: string;
     /** Present means "replace the label set"; an empty array clears it. */
     tags?: string[];
     /** Present (including an empty string) replaces the workspace; '' = generic. */
@@ -46,11 +47,24 @@ export declare class IdeasClient {
         tags?: string[];
         value?: number;
         effort?: number;
+        rationale?: string;
         workspaceId?: string;
     }): Promise<void>;
     updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void>;
     moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void>;
-    declineIdea(ideaId: string): Promise<void>;
+    declineIdea(ideaId: string, decision?: string): Promise<void>;
+    /** Mark an open idea delivered: archived + deliveredAt, card mirror archived. */
+    deliverIdea(ideaId: string): Promise<void>;
+    /**
+     * Record the priority opinion (value/effort/rationale) and re-insert the
+     * idea at the suggested rank inside the open backlog (transactional re-rank).
+     */
+    triageIdea(ideaId: string, patch: {
+        value?: number;
+        effort?: number;
+        rationale?: string;
+        rank?: number;
+    }): Promise<void>;
     restoreIdea(ideaId: string): Promise<void>;
     deleteIdea(ideaId: string): Promise<void>;
     reorderIdea(orderedIds: string[]): Promise<void>;

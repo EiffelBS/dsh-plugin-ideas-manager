@@ -180,6 +180,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
   const [body, setBody] = useState(initial?.body ?? '')
   const [valueLevel, setValueLevel] = useState(initial?.value === undefined ? '' : String(levelForValue(initial.value)))
   const [effortLevel, setEffortLevel] = useState(initial?.effort === undefined ? '' : String(levelForValue(initial.effort)))
+  const [rationale, setRationale] = useState(initial?.rationale ?? '')
   const [tags, setTags] = useState(tagsText(initial))
   const [workspace, setWorkspace] = useState(initial?.workspaceId ?? initialWorkspace ?? '')
   const [error, setError] = useState<string | undefined>(undefined)
@@ -227,9 +228,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
           tags: tags.split(','),
           ...(value === undefined ? {} : { value }),
           ...(effort === undefined ? {} : { effort }),
-          // The create path omits an empty workspace (stays generic); the
-          // edit path below always sends the field, '' moving the idea back
-          // to generic through the Host's blank-to-undefined mapping.
+          rationale,
           workspaceId: workspace,
         })
       } else {
@@ -238,6 +237,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
           body: body.trim(),
           ...(value === undefined ? {} : { value }),
           ...(effort === undefined ? {} : { effort }),
+          rationale,
           tags: tags.split(','),
           workspaceId: workspace,
         }
@@ -342,6 +342,17 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
             value={tags}
             placeholder={t('new.tagsPlaceholder')}
             onChange={event => { setTags(event.target.value) }}
+          />
+        </div>
+        <div className={classes.field}>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-rationale">{t('new.rationale')}</label>
+          <textarea
+            id="dsh-ideas-rationale"
+            className={classes.textarea}
+            rows={2}
+            value={rationale}
+            placeholder={t('new.rationalePlaceholder')}
+            onChange={event => { setRationale(event.target.value) }}
           />
         </div>
         {error !== undefined && <div className={classes.error}>{error}</div>}

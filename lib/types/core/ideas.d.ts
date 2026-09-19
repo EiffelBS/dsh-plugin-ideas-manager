@@ -76,6 +76,16 @@ export interface IdeaRecord {
     workspaceId?: string;
     /** Mirror link to the TaskBoard card id when the bridge is active (P2). */
     taskBoardId?: string;
+    /**
+     * Stable capture sequence (1-based) assigned by the ledger at create — the
+     * "#N" human reference of the old IDEAS.md process. Absent on imported
+     * rows without a sequence.
+     */
+    ideaNumber?: number;
+    /** When the idea was delivered (archived + deliveredAt by the deliver verb). */
+    deliveredAt?: number;
+    /** Decision note recorded when an idea is declined. */
+    decision?: string;
     /** Creation instant (ms epoch). */
     createdAt: number;
     /** Last mutation instant (ms epoch). */
@@ -97,6 +107,8 @@ export interface NewIdeaInput {
     value?: number;
     /** Optional effort estimate. */
     effort?: number;
+    /** Optional triage justification for the rank (recorded at capture). */
+    rationale?: string;
     /** Optional idea labels. */
     tags?: IdeaTag[];
 }

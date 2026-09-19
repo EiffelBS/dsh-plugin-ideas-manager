@@ -37,7 +37,9 @@ export type IdeasAction =
   | { kind: 'create'; id: string; input: NewIdeaInput }
   | { kind: 'update'; ideaId: string; patch: IdeaUpdatePatch }
   | { kind: 'move'; ideaId: string; status: Extract<IdeaStatus, 'open' | 'archived'> }
-  | { kind: 'decline'; ideaId: string }
+  | { kind: 'decline'; ideaId: string; decision?: string }
+  | { kind: 'deliver'; ideaId: string }
+  | { kind: 'triage'; ideaId: string; patch: TriagePatch }
   | { kind: 'restore'; ideaId: string }
   | { kind: 'delete'; ideaId: string }
   | { kind: 'reorder'; orderedIds: string[] }
@@ -61,11 +63,25 @@ export interface IdeaUpdatePatch {
   rank?: number
   value?: number
   effort?: number
+  rationale?: string
   tags?: IdeaTagListOrNull
   workspaceId?: string
 }
 
 type IdeaTagListOrNull = IdeaTag[] | null
+
+/**
+ * Triage patch: the priority opinion (value/effort/rationale) plus the
+ * suggested 1-based rank where the idea should sit INSIDE the open backlog.
+ * The host applies the scores and re-inserts the idea at that rank, shifting
+ * the rest — never a plain append (see the guidance protocol).
+ */
+export interface TriagePatch {
+  value?: number
+  effort?: number
+  rationale?: string
+  rank?: number
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -77,7 +93,7 @@ function exactKeys(value: Record<string, unknown>, allowed: readonly string[]): 
   return Object.keys(value).every(key => allowed.includes(key))
 }
 
-function optionalString(value: unknown): boolean {
+function optionalString(value: unknown): value is string | undefined {
   return value === undefined || typeof value === 'string'
 }
 
@@ -106,6 +122,10 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   if (row.rank !== undefined && row.rank !== null && (typeof row.rank !== 'number' || !Number.isFinite(row.rank))) return undefined
   if (row.value !== undefined && row.value !== null && (typeof row.value !== 'number' || !Number.isFinite(row.value))) return undefined
   if (row.effort !== undefined && row.effort !== null && (typeof row.effort !== 'number' || !Number.isFinite(row.effort))) return undefined
+  if (row.rationale !== undefined && row.rationale !== null && typeof row.rationale !== 'string') return undefined
+  if (row.decision !== undefined && row.decision !== null && typeof row.decision !== 'string') return undefined
+  if (row.ideaNumber !== undefined && row.ideaNumber !== null && (typeof row.ideaNumber !== 'number' || !Number.isFinite(row.ideaNumber))) return undefined
+  if (row.deliveredAt !== undefined && row.deliveredAt !== null && typeof row.deliveredAt !== 'number') return undefined
   for (const key of ['workspaceId', 'taskBoardId'] as const) {
     if (row[key] !== undefined && typeof row[key] !== 'string') return undefined
   }
@@ -120,6 +140,10 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(typeof row.rank === 'number' ? { rank: row.rank } : {}),
     ...(typeof row.value === 'number' ? { value: row.value } : {}),
     ...(typeof row.effort === 'number' ? { effort: row.effort } : {}),
+    ...(typeof row.rationale === 'string' ? { rationale: row.rationale } : {}),
+    ...(typeof row.decision === 'string' ? { decision: row.decision } : {}),
+    ...(typeof row.ideaNumber === 'number' ? { ideaNumber: row.ideaNumber } : {}),
+    ...(typeof row.deliveredAt === 'number' ? { deliveredAt: row.deliveredAt } : {}),
     ...(isIdeaTagList(row.tags) ? { tags: row.tags } : {}),
     ...(typeof row.workspaceId === 'string' ? { workspaceId: row.workspaceId } : {}),
     ...(typeof row.taskBoardId === 'string' ? { taskBoardId: row.taskBoardId } : {}),
@@ -129,17 +153,18 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
 
 function createInput(value: unknown): value is NewIdeaInput {
   const input = record(value)
-  if (input === undefined || !exactKeys(input, ['title', 'body', 'workspaceId', 'rank', 'value', 'effort', 'tags'])) return false
+  if (input === undefined || !exactKeys(input, ['title', 'body', 'workspaceId', 'rank', 'value', 'effort', 'rationale', 'tags'])) return false
   if (typeof input.title !== 'string' || typeof input.body !== 'string') return false
   if (!optionalString(input.workspaceId)) return false
+  if (!optionalString(input.rationale)) return false
   if (!optionalFiniteNumber(input.rank) || !optionalFiniteNumber(input.value) || !optionalFiniteNumber(input.effort)) return false
   return input.tags === undefined || isIdeaTagList(input.tags)
 }
 
 function updatePatch(value: unknown): value is IdeaUpdatePatch {
   const patch = record(value)
-  if (patch === undefined || !exactKeys(patch, ['title', 'body', 'rank', 'value', 'effort', 'tags', 'workspaceId'])) return false
-  for (const key of ['title', 'body', 'workspaceId'] as const) {
+  if (patch === undefined || !exactKeys(patch, ['title', 'body', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId'])) return false
+  for (const key of ['title', 'body', 'workspaceId', 'rationale'] as const) {
     if (!optionalString(patch[key])) return false
   }
   for (const key of ['rank', 'value', 'effort'] as const) {
@@ -147,6 +172,16 @@ function updatePatch(value: unknown): value is IdeaUpdatePatch {
   }
   // null clears the label set; a present array must be a well-formed list.
   if (patch.tags !== undefined && patch.tags !== null && !isIdeaTagList(patch.tags)) return false
+  return true
+}
+
+function triagePatch(value: unknown): value is TriagePatch {
+  const patch = record(value)
+  if (patch === undefined || !exactKeys(patch, ['value', 'effort', 'rationale', 'rank'])) return false
+  if (!optionalString(patch.rationale)) return false
+  for (const key of ['value', 'effort', 'rank'] as const) {
+    if (!optionalFiniteNumber(patch[key])) return false
+  }
   return true
 }
 
@@ -195,7 +230,21 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
       return action.status === 'open' || action.status === 'archived'
         ? { requestId: envelope.requestId, action: { kind: 'move', ideaId, status: action.status } }
         : undefined
-    case 'decline':
+    case 'decline': {
+      if (!exactKeys(action, ['kind', 'ideaId', 'decision'])) return undefined
+      if (ideaId === undefined || !optionalString(action.decision)) return undefined
+      return action.decision === undefined
+        ? { requestId: envelope.requestId, action: { kind: 'decline', ideaId } }
+        : { requestId: envelope.requestId, action: { kind: 'decline', ideaId, decision: action.decision } }
+    }
+    case 'deliver':
+      if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
+      return ideaId === undefined ? undefined : { requestId: envelope.requestId, action: { kind: 'deliver', ideaId } }
+    case 'triage': {
+      if (!exactKeys(action, ['kind', 'ideaId', 'patch'])) return undefined
+      if (ideaId === undefined || !triagePatch(action.patch)) return undefined
+      return { requestId: envelope.requestId, action: { kind: 'triage', ideaId, patch: action.patch as TriagePatch } }
+    }
     case 'restore':
     case 'delete':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined

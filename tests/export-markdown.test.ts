@@ -60,4 +60,36 @@ describe('buildIdeasExport', () => {
     // An absent workspaceId means generic: it must not leak into a scoped export.
     expect(result.ideasMd).not.toContain('Generic idea')
   })
+
+  it('renders the T1 bullets: number, rationale, decision and delivered', () => {
+    const open = {
+      ...createIdea({ title: 'Port YuE2 score', body: '', value: 3, effort: 1, rationale: 'Top value' }, T0, 'idea-1'),
+      ideaNumber: 12,
+    }
+    const delivered = {
+      ...createIdea({ title: 'Shipped idea', body: '' }, T0, 'idea-2'),
+      status: 'archived' as const,
+      archivedAt: T1,
+      deliveredAt: T1,
+      ideaNumber: 7,
+    }
+    const declined = {
+      ...createIdea({ title: 'Nope', body: '' }, T0, 'idea-3'),
+      status: 'declined' as const,
+      archivedAt: T1,
+      decision: 'Covered elsewhere',
+      ideaNumber: 2,
+    }
+    const result = buildIdeasExport([open, delivered, declined], undefined)
+    expect(result.ideasMd).toContain('- number: #12')
+    expect(result.ideasMd).toContain('- rationale: Top value')
+    expect(result.archiveMd).toContain('## Shipped idea')
+    expect(result.archiveMd).toContain('- number: #7')
+    expect(result.archiveMd).toContain('- delivered: 2026-09-16T09:30:00.000Z')
+    expect(result.archiveMd).toContain('- decision: Covered elsewhere')
+    // A delivered idea carries no decision bullet, and an open idea carries no
+    // delivery stamp.
+    expect(result.ideasMd).not.toContain('- delivered:')
+    expect(result.ideasMd).not.toContain('- decision:')
+  })
 })

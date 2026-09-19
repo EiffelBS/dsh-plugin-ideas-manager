@@ -41,6 +41,8 @@ export declare const fr: {
     'new.bodyPlaceholder': string;
     'new.tags': string;
     'new.tagsPlaceholder': string;
+    'new.rationale': string;
+    'new.rationalePlaceholder': string;
     'new.value': string;
     'new.effort': string;
     'new.levelNone': string;
@@ -110,6 +112,8 @@ export declare const en: {
     'new.bodyPlaceholder': string;
     'new.tags': string;
     'new.tagsPlaceholder': string;
+    'new.rationale': string;
+    'new.rationalePlaceholder': string;
     'new.value': string;
     'new.effort': string;
     'new.levelNone': string;

@@ -129,3 +129,96 @@ describe('IdeasHostLedger persistence', () => {
     ledger.dispose()
   })
 })
+
+describe('IdeasHostLedger T1 lifecycle (triage / deliver / decline / numbering)', () => {
+  it('assigns monotonic idea numbers that survive a restart (persisted sequence)', () => {
+    const first = new IdeasHostLedger({ dir: freshDir() })
+    first.applyRequest('req-1', createAction('idea-1'))
+    first.applyRequest('req-2', createAction('idea-2'))
+    expect(first.snapshot().ideas.map(idea => idea.ideaNumber)).toEqual([1, 2])
+    first.dispose()
+
+    const second = new IdeasHostLedger({ dir })
+    second.applyRequest('req-3', createAction('idea-3'))
+    expect(second.snapshot().ideas.map(idea => idea.ideaNumber)).toEqual([1, 2, 3])
+    second.dispose()
+  })
+
+  it('triage stores the opinion and re-inserts the idea at the target rank', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a', 'A'))
+    ledger.applyRequest('r2', createAction('idea-b', 'B'))
+    ledger.applyRequest('r3', createAction('idea-c', 'C'))
+    ledger.applyRequest('r4', {
+      kind: 'triage',
+      ideaId: 'idea-c',
+      patch: { value: 3, effort: 1, rationale: 'Top value', rank: 1 },
+    })
+    const open = [...ledger.snapshot().ideas.filter(idea => idea.status === 'open')]
+      .sort((x, y) => (x.rank ?? Number.MAX_SAFE_INTEGER) - (y.rank ?? Number.MAX_SAFE_INTEGER))
+    expect(open.map(idea => idea.id)).toEqual(['idea-c', 'idea-a', 'idea-b'])
+    expect(open[0]!.value).toBe(3)
+    expect(open[0]!.effort).toBe(1)
+    expect(open[0]!.rationale).toBe('Top value')
+    // Every open idea now carries a concrete 1-based rank, not just the moved one.
+    expect(open.map(idea => idea.rank)).toEqual([1, 2, 3])
+    ledger.dispose()
+  })
+
+  it('triage appends when no rank is given and leaves delivered ideas in place', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a', 'A'))
+    ledger.applyRequest('r2', createAction('idea-b', 'B'))
+    ledger.applyRequest('r3', { kind: 'triage', ideaId: 'idea-a', patch: { value: 5 } })
+    const open = [...ledger.snapshot().ideas.filter(idea => idea.status === 'open')]
+      .sort((x, y) => (x.rank ?? Number.MAX_SAFE_INTEGER) - (y.rank ?? Number.MAX_SAFE_INTEGER))
+    expect(open.map(idea => idea.id)).toEqual(['idea-b', 'idea-a'])
+    // A note-only triage on a delivered idea updates the opinion without
+    // re-ranking the closed columns.
+    ledger.applyRequest('r4', { kind: 'deliver', ideaId: 'idea-b' })
+    ledger.applyRequest('r5', { kind: 'triage', ideaId: 'idea-a', patch: { rationale: 'note only' } })
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-a')!.rationale).toBe('note only')
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.status).toBe('archived')
+    // Ranks are column-major across the whole document: the open column comes
+    // first (idea-a at 1), so the delivered idea continues at 2.
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.rank).toBe(2)
+    ledger.dispose()
+  })
+
+  it('deliver archives an open idea and stamps deliveredAt; a closed idea is untouched', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    ledger.applyRequest('r2', { kind: 'deliver', ideaId: 'idea-a' })
+    const delivered = ledger.snapshot().ideas[0]!
+    expect(delivered.status).toBe('archived')
+    expect(delivered.deliveredAt).toBeDefined()
+    expect(delivered.archivedAt).toBeDefined()
+    const before = delivered.updatedAt
+    ledger.applyRequest('r3', { kind: 'deliver', ideaId: 'idea-a' })
+    expect(ledger.snapshot().ideas[0]!.updatedAt).toBe(before)
+    ledger.dispose()
+  })
+
+  it('decline records the decision (a blank decision is dropped)', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    ledger.applyRequest('r2', { kind: 'decline', ideaId: 'idea-a', decision: 'Covered by the sidecar' })
+    const declined = ledger.snapshot().ideas[0]!
+    expect(declined.status).toBe('declined')
+    expect(declined.decision).toBe('Covered by the sidecar')
+    ledger.applyRequest('r3', createAction('idea-b'))
+    ledger.applyRequest('r4', { kind: 'decline', ideaId: 'idea-b', decision: '   ' })
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.decision).toBeUndefined()
+    ledger.dispose()
+  })
+
+  it('an update patch can re-justify a rationale (a blank rationale clears it)', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    ledger.applyRequest('r2', { kind: 'update', ideaId: 'idea-a', patch: { rationale: 'after delivery' } })
+    expect(ledger.snapshot().ideas[0]!.rationale).toBe('after delivery')
+    ledger.applyRequest('r3', { kind: 'update', ideaId: 'idea-a', patch: { rationale: '  ' } })
+    expect(ledger.snapshot().ideas[0]!.rationale).toBeUndefined()
+    ledger.dispose()
+  })
+})

@@ -142,4 +142,59 @@ describe('parseActionEnvelope', () => {
   it('rejects an invalid initiator', () => {
     expect(parseActionEnvelope(envelope({ kind: 'delete', ideaId: 'a' }, 'req', { initiator: 42 }))).toBeUndefined()
   })
+
+  it('parses a triage patch with scores, rationale and a target rank', () => {
+    const parsed = parseActionEnvelope(envelope({
+      kind: 'triage',
+      ideaId: 'idea-1',
+      patch: { value: 3, effort: 1, rationale: 'Unblocks #2', rank: 2 },
+    }))
+    expect(parsed?.action).toEqual({
+      kind: 'triage',
+      ideaId: 'idea-1',
+      patch: { value: 3, effort: 1, rationale: 'Unblocks #2', rank: 2 },
+    })
+    // A note-only triage (no opinion) is legal too.
+    expect(parseActionEnvelope(envelope({ kind: 'triage', ideaId: 'idea-1', patch: {} }))?.action).toEqual({
+      kind: 'triage',
+      ideaId: 'idea-1',
+      patch: {},
+    })
+  })
+
+  it('rejects a triage patch with unknown keys or malformed values', () => {
+    expect(parseActionEnvelope(envelope({ kind: 'triage', ideaId: 'idea-1', patch: { evil: true } }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({ kind: 'triage', ideaId: 'idea-1', patch: { value: 'high' } }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({ kind: 'triage', ideaId: 'idea-1', patch: { rationale: 42 } }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({ kind: 'triage', ideaId: 'idea-1', patch: { value: NaN } }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({ kind: 'triage', ideaId: 'idea-1' }))).toBeUndefined()
+  })
+
+  it('parses deliver and decline (decision optional but must be a string)', () => {
+    expect(parseActionEnvelope(envelope({ kind: 'deliver', ideaId: 'idea-1' }))?.action).toEqual({ kind: 'deliver', ideaId: 'idea-1' })
+    expect(parseActionEnvelope(envelope({ kind: 'deliver' }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({ kind: 'decline', ideaId: 'idea-1' }))?.action).toEqual({ kind: 'decline', ideaId: 'idea-1' })
+    expect(parseActionEnvelope(envelope({ kind: 'decline', ideaId: 'idea-1', decision: 'Covered by the audiocpp sidecar' }))?.action)
+      .toEqual({ kind: 'decline', ideaId: 'idea-1', decision: 'Covered by the audiocpp sidecar' })
+    expect(parseActionEnvelope(envelope({ kind: 'decline', ideaId: 'idea-1', decision: 42 }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({ kind: 'decline', ideaId: 'idea-1', extra: 1 }))).toBeUndefined()
+  })
+
+  it('accepts rationale on create input and update patches', () => {
+    expect(parseActionEnvelope(envelope({
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'A', body: 'B', rationale: 'Top value' },
+    }))?.action).toEqual({
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'A', body: 'B', rationale: 'Top value' },
+    })
+    expect(parseActionEnvelope(envelope({
+      kind: 'update',
+      ideaId: 'idea-1',
+      patch: { rationale: 're-ranked after delivery' },
+    }))?.action).toEqual({ kind: 'update', ideaId: 'idea-1', patch: { rationale: 're-ranked after delivery' } })
+    expect(parseActionEnvelope(envelope({ kind: 'update', ideaId: 'idea-1', patch: { rationale: 42 } }))).toBeUndefined()
+  })
 })

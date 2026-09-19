@@ -20,6 +20,7 @@ export interface IdeaClientPatch {
   body?: string
   value?: number
   effort?: number
+  rationale?: string
   /** Present means "replace the label set"; an empty array clears it. */
   tags?: string[]
   /** Present (including an empty string) replaces the workspace; '' = generic. */
@@ -103,6 +104,7 @@ export class IdeasClient {
     tags?: string[]
     value?: number
     effort?: number
+    rationale?: string
     workspaceId?: string
   }): Promise<void> {
     const tags = tagNames(input.tags).map(name => ({ name }))
@@ -114,6 +116,7 @@ export class IdeasClient {
         body: input.body,
         ...(input.value === undefined ? {} : { value: input.value }),
         ...(input.effort === undefined ? {} : { effort: input.effort }),
+        ...(input.rationale === undefined || input.rationale === '' ? {} : { rationale: input.rationale }),
         // An empty string (the modal's "no workspace" choice) stays generic by
         // omitting the field, matching the ledger's normalizeOptionalId.
         ...(input.workspaceId === undefined || input.workspaceId === '' ? {} : { workspaceId: input.workspaceId }),
@@ -132,6 +135,7 @@ export class IdeasClient {
         ...(patch.body === undefined ? {} : { body: patch.body }),
         ...(patch.value === undefined ? {} : { value: patch.value }),
         ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+        ...(patch.rationale === undefined ? {} : { rationale: patch.rationale }),
         // The modal always sends the workspace: '' moves the idea back to
         // generic (the Host maps a blank trimmed string to undefined).
         ...(patch.workspaceId === undefined ? {} : { workspaceId: patch.workspaceId }),
@@ -146,8 +150,31 @@ export class IdeasClient {
     await this.run({ kind: 'move', ideaId, status })
   }
 
-  async declineIdea(ideaId: string): Promise<void> {
-    await this.run({ kind: 'decline', ideaId })
+  async declineIdea(ideaId: string, decision?: string): Promise<void> {
+    const note = decision?.trim()
+    await this.run(note === undefined || note === '' ? { kind: 'decline', ideaId } : { kind: 'decline', ideaId, decision: note })
+  }
+
+  /** Mark an open idea delivered: archived + deliveredAt, card mirror archived. */
+  async deliverIdea(ideaId: string): Promise<void> {
+    await this.run({ kind: 'deliver', ideaId })
+  }
+
+  /**
+   * Record the priority opinion (value/effort/rationale) and re-insert the
+   * idea at the suggested rank inside the open backlog (transactional re-rank).
+   */
+  async triageIdea(ideaId: string, patch: { value?: number; effort?: number; rationale?: string; rank?: number }): Promise<void> {
+    await this.run({
+      kind: 'triage',
+      ideaId,
+      patch: {
+        ...(patch.value === undefined ? {} : { value: patch.value }),
+        ...(patch.effort === undefined ? {} : { effort: patch.effort }),
+        ...(patch.rationale === undefined || patch.rationale === '' ? {} : { rationale: patch.rationale }),
+        ...(patch.rank === undefined ? {} : { rank: patch.rank }),
+      },
+    })
   }
 
   async restoreIdea(ideaId: string): Promise<void> {

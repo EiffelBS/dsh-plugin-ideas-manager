@@ -37,6 +37,14 @@ export type IdeasAction = {
 } | {
     kind: 'decline';
     ideaId: string;
+    decision?: string;
+} | {
+    kind: 'deliver';
+    ideaId: string;
+} | {
+    kind: 'triage';
+    ideaId: string;
+    patch: TriagePatch;
 } | {
     kind: 'restore';
     ideaId: string;
@@ -67,10 +75,23 @@ export interface IdeaUpdatePatch {
     rank?: number;
     value?: number;
     effort?: number;
+    rationale?: string;
     tags?: IdeaTagListOrNull;
     workspaceId?: string;
 }
 type IdeaTagListOrNull = IdeaTag[] | null;
+/**
+ * Triage patch: the priority opinion (value/effort/rationale) plus the
+ * suggested 1-based rank where the idea should sit INSIDE the open backlog.
+ * The host applies the scores and re-inserts the idea at that rank, shifting
+ * the rest — never a plain append (see the guidance protocol).
+ */
+export interface TriagePatch {
+    value?: number;
+    effort?: number;
+    rationale?: string;
+    rank?: number;
+}
 export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undefined;
 /** Convenience used by tests: build an idea record exactly as the ledger stores it. */
 export declare function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord;

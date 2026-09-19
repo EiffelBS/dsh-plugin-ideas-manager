@@ -122,6 +122,16 @@ export interface IdeaRecord {
   workspaceId?: string
   /** Mirror link to the TaskBoard card id when the bridge is active (P2). */
   taskBoardId?: string
+  /**
+   * Stable capture sequence (1-based) assigned by the ledger at create — the
+   * "#N" human reference of the old IDEAS.md process. Absent on imported
+   * rows without a sequence.
+   */
+  ideaNumber?: number
+  /** When the idea was delivered (archived + deliveredAt by the deliver verb). */
+  deliveredAt?: number
+  /** Decision note recorded when an idea is declined. */
+  decision?: string
   /** Creation instant (ms epoch). */
   createdAt: number
   /** Last mutation instant (ms epoch). */
@@ -144,6 +154,8 @@ export interface NewIdeaInput {
   value?: number
   /** Optional effort estimate. */
   effort?: number
+  /** Optional triage justification for the rank (recorded at capture). */
+  rationale?: string
   /** Optional idea labels. */
   tags?: IdeaTag[]
 }
@@ -161,6 +173,10 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
   if (record.rationale !== undefined && typeof record.rationale !== 'string') return false
   if (record.workspaceId !== undefined && typeof record.workspaceId !== 'string') return false
   if (record.taskBoardId !== undefined && typeof record.taskBoardId !== 'string') return false
+  if (record.ideaNumber !== undefined && (typeof record.ideaNumber !== 'number' || !Number.isFinite(record.ideaNumber))) return false
+  if (record.rationale !== undefined && typeof record.rationale !== 'string') return false
+  if (record.deliveredAt !== undefined && typeof record.deliveredAt !== 'number') return false
+  if (record.decision !== undefined && typeof record.decision !== 'string') return false
   if (record.archivedAt !== undefined && typeof record.archivedAt !== 'number') return false
   if (record.tags !== undefined && !Array.isArray(record.tags)) return false
   return true
@@ -183,6 +199,7 @@ export function normalizeStatus(status: unknown): IdeaStatus {
 /** Create an idea from user input (starts 'open'). */
 export function createIdea(input: NewIdeaInput, now: number, id: string): IdeaRecord {
   const tags = normalizeTags(input.tags)
+  const rationale = input.rationale?.trim()
   return {
     id,
     title: input.title.trim().slice(0, IDEA_TITLE_MAX_LENGTH),
@@ -193,6 +210,7 @@ export function createIdea(input: NewIdeaInput, now: number, id: string): IdeaRe
     ...(input.rank === undefined ? {} : { rank: input.rank }),
     ...(input.value === undefined ? {} : { value: input.value }),
     ...(input.effort === undefined ? {} : { effort: input.effort }),
+    ...(rationale === undefined || rationale === '' ? {} : { rationale }),
     ...(normalizeOptionalId(input.workspaceId) === undefined ? {} : { workspaceId: normalizeOptionalId(input.workspaceId) }),
     ...(tags === undefined ? {} : { tags }),
   }

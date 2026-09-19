@@ -23,6 +23,7 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   const lines: string[] = [`## ${idea.title}`, '']
   lines.push(bullet('id', `\`${idea.id}\``))
   lines.push(bullet('status', idea.status))
+  if (idea.ideaNumber !== undefined) lines.push(bullet('number', `#${idea.ideaNumber}`))
   if (idea.tags !== undefined && idea.tags.length > 0) {
     lines.push(bullet('tags', idea.tags.map(tag => `\`${tag.name}\``).join(', ')))
   }
@@ -32,8 +33,11 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   if (scores.length > 0) lines.push(bullet('scores', scores.join(' · ')))
   if (idea.rank !== undefined) lines.push(bullet('rank', String(idea.rank)))
   if (idea.workspaceId !== undefined) lines.push(bullet('workspace', `\`${idea.workspaceId}\``))
+  if (idea.rationale !== undefined) lines.push(bullet('rationale', idea.rationale))
+  if (idea.decision !== undefined) lines.push(bullet('decision', idea.decision))
   lines.push(bullet('created', iso(idea.createdAt)))
   lines.push(bullet('updated', iso(idea.updatedAt)))
+  if (idea.deliveredAt !== undefined) lines.push(bullet('delivered', iso(idea.deliveredAt)))
   if (idea.archivedAt !== undefined) lines.push(bullet('archived', iso(idea.archivedAt)))
   if (idea.body.trim() !== '') {
     lines.push('', idea.body.trim(), '')

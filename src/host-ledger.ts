@@ -51,6 +51,8 @@ interface LedgerDocument {
   ideas: IdeaRecord[]
   importedSources: string[]
   recentRequests: PersistedRequest[]
+  /** Next capture sequence — the stable "#N" idea number (1-based). */
+  ideaSequence: number
 }
 
 /** On-disk document with an unknown schema until the load branches decide. */
@@ -121,6 +123,9 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (typeof row.value === 'number' && Number.isFinite(row.value)) idea.value = row.value
     if (typeof row.effort === 'number' && Number.isFinite(row.effort)) idea.effort = row.effort
     if (typeof row.rationale === 'string' && row.rationale.trim() !== '') idea.rationale = row.rationale.trim()
+    if (typeof row.decision === 'string' && row.decision.trim() !== '') idea.decision = row.decision.trim()
+    if (typeof row.ideaNumber === 'number' && Number.isFinite(row.ideaNumber)) idea.ideaNumber = row.ideaNumber
+    if (typeof row.deliveredAt === 'number') idea.deliveredAt = row.deliveredAt
     if (typeof row.archivedAt === 'number') idea.archivedAt = row.archivedAt
     const workspaceId = typeof row.workspaceId === 'string' ? normalizeOptionalId(row.workspaceId) : undefined
     if (workspaceId !== undefined) idea.workspaceId = workspaceId
@@ -241,8 +246,12 @@ export class IdeasHostLedger {
     switch (action.kind) {
       case 'create': {
         if (this.document.ideas.some(idea => idea.id === action.id)) throw new Error('idea id already exists')
-        const idea = createIdea(action.input, now, action.id)
+        let idea = createIdea(action.input, now, action.id)
         if (idea.title.trim() === '') throw new Error('title is required')
+        // The stable capture sequence: the "#N" human reference of the old
+        // IDEAS.md process, monotonic and persisted with the document.
+        this.document.ideaSequence += 1
+        idea = { ...idea, ideaNumber: this.document.ideaSequence }
         this.document.ideas = [...this.document.ideas, idea]
         break
       }
@@ -271,10 +280,46 @@ export class IdeasHostLedger {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
         if (idea.status !== 'declined') {
+          const decision = action.decision === undefined ? undefined : blankToUndefined(action.decision)
           this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
-            ? { ...withStatus(item, 'declined', now), archivedAt: now }
+            ? { ...withStatus(item, 'declined', now), archivedAt: now, ...(decision === undefined ? {} : { decision }) }
             : item)
         }
+        break
+      }
+      case 'deliver': {
+        const idea = this.document.ideas.find(item => item.id === action.ideaId)
+        if (idea === undefined) throw new Error('idea not found')
+        if (idea.status !== 'open') break
+        // Delivered ideas leave the open backlog: same column as archived, but
+        // stamped as a delivery (the lifecycle distinguishes delivered vs
+        // abandoned; both render in the Archived column).
+        this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
+          ? { ...withStatus(item, 'archived', now), archivedAt: now, deliveredAt: now }
+          : item)
+        break
+      }
+      case 'triage': {
+        const idea = this.document.ideas.find(item => item.id === action.ideaId)
+        if (idea === undefined) throw new Error('idea not found')
+        let next: IdeaRecord = { ...idea, updatedAt: now }
+        if (action.patch.value !== undefined) next.value = action.patch.value
+        if (action.patch.effort !== undefined) next.effort = action.patch.effort
+        if (action.patch.rationale !== undefined) {
+          const rationale = action.patch.rationale.trim()
+          next.rationale = rationale === '' ? undefined : rationale
+        }
+        let ideas = this.document.ideas.map(item => item.id === action.ideaId ? next : item)
+        if (idea.status === 'open') {
+          // Re-rank: insert at the suggested 1-based position inside the open
+          // backlog and shift the rest — the transactional "never a plain
+          // append" of the triage protocol. Non-open ideas update their
+          // opinion without re-ordering.
+          const ordered = triageOrderedIds(ideas, action.ideaId, action.patch.rank)
+          const rankById = new Map(ordered.map((id, index) => [id, index + 1]))
+          ideas = ideas.map(item => ({ ...item, rank: rankById.get(item.id) ?? item.rank }))
+        }
+        this.document.ideas = ideas
         break
       }
       case 'restore': {
@@ -397,6 +442,9 @@ export class IdeasHostLedger {
       schemaVersion: IDEAS_SCHEMA_VERSION,
       revision: Number.isSafeInteger(parsed.revision) && (parsed.revision ?? -1) >= 0 ? parsed.revision as number : 0,
       ideas: parseHostIdeas(Array.isArray(parsed.ideas) ? parsed.ideas : []),
+      ideaSequence: Number.isSafeInteger(parsed.ideaSequence) && (parsed.ideaSequence ?? -1) >= 0
+        ? parsed.ideaSequence as number
+        : 0,
       importedSources: Array.isArray(parsed.importedSources)
         ? parsed.importedSources.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
         : [],
@@ -426,6 +474,7 @@ export class IdeasHostLedger {
       ideas: [],
       importedSources: [],
       recentRequests: [],
+      ideaSequence: 0,
     }
     try {
       this.writeAtomic(document)
@@ -475,8 +524,40 @@ function applyPatch(idea: IdeaRecord, patch: IdeaUpdatePatch, now: number): Idea
   if (patch.rank !== undefined) next.rank = patch.rank
   if (patch.value !== undefined) next.value = patch.value
   if (patch.effort !== undefined) next.effort = patch.effort
+  if (patch.rationale !== undefined) {
+    const rationale = patch.rationale.trim()
+    next.rationale = rationale === '' ? undefined : rationale
+  }
   if (patch.tags !== undefined) {
     next.tags = patch.tags === null ? undefined : normalizeTags(patch.tags)
   }
   return next
+}
+
+/** Trim to undefined when blank (the wire keeps rationale/decision optional). */
+function blankToUndefined(value: string): string | undefined {
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
+/** Helper of `apply`: rank-sorted rows (unranked last). */
+function rankOrdered(ideas: readonly IdeaRecord[]): IdeaRecord[] {
+  return [...ideas].sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
+}
+
+/**
+ * Column-major order after inserting `movedId` at `rank` (1-based) inside the
+ * open backlog; a missing rank appends. Closed columns keep their order.
+ */
+function triageOrderedIds(
+  ideas: readonly IdeaRecord[],
+  movedId: string,
+  rank: number | undefined,
+): string[] {
+  const openOthers = rankOrdered(ideas.filter(idea => idea.status === 'open' && idea.id !== movedId)).map(idea => idea.id)
+  const maxRank = openOthers.length + 1
+  const position = rank === undefined ? maxRank : Math.min(Math.max(1, Math.trunc(rank)), maxRank)
+  openOthers.splice(position - 1, 0, movedId)
+  const closed = rankOrdered(ideas.filter(idea => idea.status !== 'open')).map(idea => idea.id)
+  return [...openOthers, ...closed]
 }
