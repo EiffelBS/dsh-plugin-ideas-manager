@@ -35,6 +35,7 @@ export declare const classes: {
     readonly card: "dsh-ideas-card";
     readonly cardHeader: "dsh-ideas-card-header";
     readonly cardTitle: "dsh-ideas-card-title";
+    readonly cardNumber: "dsh-ideas-card-number";
     readonly cardGrip: "dsh-ideas-card-grip";
     readonly cardBody: "dsh-ideas-card-body";
     readonly bodyClickable: "dsh-ideas-body-clickable";
@@ -56,6 +57,7 @@ export declare const classes: {
     readonly select: "dsh-ideas-select";
     readonly preview: "dsh-ideas-preview";
     readonly modalActions: "dsh-ideas-modal-actions";
+    readonly editActions: "dsh-ideas-edit-actions";
     readonly tagFilterRow: "dsh-ideas-tag-filter-row";
     readonly tagFilterLabel: "dsh-ideas-tag-filter-label";
     readonly filterChip: "dsh-ideas-filter-chip";

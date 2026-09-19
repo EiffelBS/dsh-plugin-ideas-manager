@@ -2,8 +2,8 @@
  * Score badge: the value/effort level read as a colored pill with a tiny
  * axis icon — a dollar sign for value, a dumbbell for effort — so the two
  * axes are distinguishable at a glance on cards and list rows. The color
- * follows the level (low = green, medium = amber, high = red) through a
- * per-badge hue variable, like the tag pills.
+ * always means "best": green = High value / Low effort, amber = Medium,
+ * red = Low value / High effort, through a per-badge hue variable.
  */
 
 import type { CSSProperties } from 'react'
@@ -11,9 +11,13 @@ import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { levelForValue, levelLabelKey } from './levels.ts'
 
-/** Hue per level (1..3): green → amber → red. */
-function levelHue(level: number): number {
-  return [140, 45, 5][level - 1] ?? 210
+/**
+ * Hue per level (1..3), green = the BEST level of the axis: for value that
+ * is High (3, most valuable), for effort it is Low (1, least costly).
+ */
+function levelHue(axis: 'value' | 'effort', level: number): number {
+  const hues = axis === 'value' ? [5, 45, 140] : [140, 45, 5]
+  return hues[level - 1] ?? 210
 }
 
 const badgeIcon = {
@@ -61,7 +65,7 @@ export function ScoreBadge({ axis, value }: {
   return (
     <span
       className={classes.score}
-      style={{ '--dsh-ideas-level-hue': levelHue(level) } as CSSProperties}
+      style={{ '--dsh-ideas-level-hue': levelHue(axis, level) } as CSSProperties}
       title={t(axis === 'value' ? 'card.value' : 'card.effort', { level: t(labelKey) })}
     >
       <span className={classes.scoreIcon}>

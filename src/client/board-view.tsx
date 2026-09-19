@@ -200,13 +200,17 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecor
   return at < 0 ? '' : String(at + 1)
 }
 
-/** Shared capture/edit modal. */
-function IdeaModal({ client, initial, initialWorkspace, onClose }: {
+/** Shared capture/edit modal. The lifecycle actions of the card are mirrored
+ *  here per status (deliver / archive / decline / recette OK / follow-up /
+ *  restore), so the author can move an idea without leaving the editor. */
+function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
   client: IdeasClient
   initial?: IdeaRecord
   /** Board scope preselected for a new capture ('' when the board shows all). */
   initialWorkspace?: string
   onClose: () => void
+  /** Open the follow-up (recette NOK) modal for an under-review idea. */
+  onFollowUp?: (idea: IdeaRecord) => void
 }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
@@ -310,6 +314,21 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
     } catch {
       // The client carries the Host error; the modal stays open for a retry.
     }
+  }
+
+  /** One lifecycle action from the editor: run it, then close — the card
+   *  leaves its column, so the edit form no longer applies. Follow-up opens
+   *  its own modal instead (the parent stays put until the child is created). */
+  const lifecycle = (action: () => Promise<void>, followUp = false): void => {
+    if (followUp) {
+      if (initial === undefined || onFollowUp === undefined) return
+      onFollowUp(initial)
+      onClose()
+      return
+    }
+    void action().then(onClose, () => {
+      // The client carries the Host error; the modal stays open for a retry.
+    })
   }
 
   return (
@@ -434,6 +453,88 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
             onChange={event => { setRationale(event.target.value) }}
           />
         </div>
+        {initial !== undefined && (
+          // Lifecycle actions, mirroring the card's own action row by
+          // status — the author can move the idea without closing the editor.
+          <div className={classes.editActions}>
+            {initial.status === 'open' && (
+              <>
+                <button
+                  type="button"
+                  className={classes.actionButton}
+                  disabled={client.pending}
+                  title={t('card.deliverHint')}
+                  onClick={() => { lifecycle(() => client.deliverIdea(initial.id)) }}
+                >
+                  <IconCheck />
+                  {t('card.deliver')}
+                </button>
+                <button
+                  type="button"
+                  className={classes.actionButton}
+                  disabled={client.pending}
+                  onClick={() => { lifecycle(() => client.moveIdea(initial.id, 'archived')) }}
+                >
+                  <IconArchive />
+                  {t('card.archive')}
+                </button>
+                <button
+                  type="button"
+                  className={classes.actionButton}
+                  disabled={client.pending}
+                  onClick={() => { lifecycle(() => client.declineIdea(initial.id)) }}
+                >
+                  <IconDecline />
+                  {t('card.decline')}
+                </button>
+              </>
+            )}
+            {initial.status === 'underReview' && (
+              <>
+                <button
+                  type="button"
+                  className={classes.actionButton}
+                  disabled={client.pending}
+                  title={t('card.reviewOkHint')}
+                  onClick={() => { lifecycle(() => client.deliverIdea(initial.id)) }}
+                >
+                  <IconCheck />
+                  {t('card.reviewOk')}
+                </button>
+                <button
+                  type="button"
+                  className={classes.actionButton}
+                  disabled={client.pending}
+                  title={t('card.followUpHint')}
+                  onClick={() => { lifecycle(() => Promise.resolve(), true) }}
+                >
+                  <IconFollowUp />
+                  {t('card.followUp')}
+                </button>
+                <button
+                  type="button"
+                  className={classes.actionButton}
+                  disabled={client.pending}
+                  onClick={() => { lifecycle(() => client.declineIdea(initial.id)) }}
+                >
+                  <IconDecline />
+                  {t('card.decline')}
+                </button>
+              </>
+            )}
+            {(initial.status === 'archived' || initial.status === 'declined') && (
+              <button
+                type="button"
+                className={classes.actionButton}
+                disabled={client.pending}
+                onClick={() => { lifecycle(() => client.restoreIdea(initial.id)) }}
+              >
+                <IconRestore />
+                {t('card.restore')}
+              </button>
+            )}
+          </div>
+        )}
         {error !== undefined && <div className={classes.error}>{error}</div>}
         <div className={classes.modalActions}>
           <button type="button" className={classes.ghostButton} onClick={onClose}>{t('new.cancel')}</button>
@@ -894,8 +995,19 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   }
                                 }}
                               >
+                                {idea.ideaNumber !== undefined && (
+                                  <span className={classes.cardNumber}>#{idea.ideaNumber}</span>
+                                )}
                                 {idea.title}
                               </div>
+                              {idea.followUpOfId !== undefined && (
+                                <span
+                                  className={classes.followUpBadge}
+                                  title={t('card.followUpOfHint')}
+                                >
+                                  {t('card.followUpOf', { number: ideaById.get(idea.followUpOfId)?.ideaNumber ?? '—' })}
+                                </span>
+                              )}
                               {idea.status === 'underReview' && (
                                 <span className={classes.reviewBadge} title={t('card.underReviewHint')}>
                                   {t('board.status.underReview')}
@@ -937,31 +1049,19 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 <span aria-hidden="true">⠿</span>
                               </div>
                             </div>
-                            {workspaceId !== undefined && (
+                            {(workspaceId !== undefined || (idea.tags !== undefined && idea.tags.length > 0)) && (
                               <div className={classes.cardMeta}>
-                                <button
-                                  type="button"
-                                  className={classes.workspaceChip}
-                                  title={t('card.workspaceHint', { workspace: workspaceTitle(workspaceId) })}
-                                  onClick={() => { setWorkspaceFilter(workspaceId) }}
-                                >
-                                  {workspaceTitle(workspaceId)}
-                                </button>
-                              </div>
-                            )}
-                            {idea.followUpOfId !== undefined && (
-                              <div className={classes.cardMeta}>
-                                <span
-                                  className={classes.followUpBadge}
-                                  title={t('card.followUpOfHint')}
-                                >
-                                  {t('card.followUpOf', { number: ideaById.get(idea.followUpOfId)?.ideaNumber ?? '—' })}
-                                </span>
-                              </div>
-                            )}
-                            {idea.tags !== undefined && idea.tags.length > 0 && (
-                              <div className={classes.cardMeta}>
-                                {idea.tags.map(tag => (
+                                {workspaceId !== undefined && (
+                                  <button
+                                    type="button"
+                                    className={classes.workspaceChip}
+                                    title={t('card.workspaceHint', { workspace: workspaceTitle(workspaceId) })}
+                                    onClick={() => { setWorkspaceFilter(workspaceId) }}
+                                  >
+                                    {workspaceTitle(workspaceId)}
+                                  </button>
+                                )}
+                                {idea.tags !== undefined && idea.tags.map(tag => (
                                   <span
                                     key={tag.name}
                                     className={classes.tag}
@@ -1179,7 +1279,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
       {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (
-        <IdeaModal client={client} initial={editing} onClose={() => { setEditing(undefined) }} />
+        <IdeaModal
+          client={client}
+          initial={editing}
+          onClose={() => { setEditing(undefined) }}
+          onFollowUp={(idea) => { setFollowUp(idea) }}
+        />
       )}
       {followUp !== undefined && (
         <FollowUpModal client={client} parent={followUp} onClose={() => { setFollowUp(undefined) }} />

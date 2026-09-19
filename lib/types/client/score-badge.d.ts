@@ -2,8 +2,8 @@
  * Score badge: the value/effort level read as a colored pill with a tiny
  * axis icon — a dollar sign for value, a dumbbell for effort — so the two
  * axes are distinguishable at a glance on cards and list rows. The color
- * follows the level (low = green, medium = amber, high = red) through a
- * per-badge hue variable, like the tag pills.
+ * always means "best": green = High value / Low effort, amber = Medium,
+ * red = Low value / High effort, through a per-badge hue variable.
  */
 export declare function ScoreBadge({ axis, value }: {
     /** Which axis the score belongs to (drives the icon). */

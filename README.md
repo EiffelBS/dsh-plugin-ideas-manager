@@ -58,14 +58,21 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   backlog position) that goes through the transactional triage re-rank on
   every open-backlog edit.
 - **T2 feedback (done)** — value/effort as colored low/medium/high badges on
-  every card, delivered tag moved to the right of the card title, tab
-  counters (cards per tab), the Delivered tab shows every archived idea
-  (neutral stamp for manual archives, green stamp only for delivered), and
-  the **under-review (recette) lifecycle**: a 4th kanban column between open
-  and archived. Finished work lands there automatically when its task-board
-  card reaches `done` (bridge poll); each card offers Recette OK (`deliver`),
-  Follow-up needed (atomic `followUp` verb: a linked open child idea carrying
-  the parent summary + justification, parent archived) and Decline.
+  every card (green = the best of the axis: High value / Low effort),
+  delivered tag moved to the right of the card title, tab counters (cards per
+  tab), the Delivered tab shows every archived idea (neutral stamp for manual
+  archives, green stamp only for delivered), and the **under-review (recette)
+  lifecycle**: a 4th kanban column between open and archived. Finished work
+  lands there automatically when its task-board card reaches `done` (bridge
+  poll); each card offers Recette OK (`deliver`), Follow-up needed (atomic
+  `followUp` verb: a linked open child idea carrying the parent summary +
+  justification, parent archived) and Decline.
+- **T2 feedback 2 (done)** — the lifecycle actions of the cards (deliver /
+  archive / decline / recette OK / follow-up / restore, per status) are now
+  also available inside the edit modal; the stable idea number `#N` renders
+  before every card title (so a "follow-up of #N" lineage reads at a glance);
+  the follow-up badge sits in the card header next to the delivered badge;
+  the workspace chip and the tag pills share one meta line.
 
 ## Contract (Host API)
 

@@ -487,6 +487,18 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   min-width: 0;
 }
 
+/* Stable idea number shown before the card title (#N). Muted so the number
+   reads as a reference key, never as part of the title. */
+.dsh-ideas-card-number {
+  display: inline-block;
+  margin-right: 5px;
+  font-family: var(--dsw-font-mono, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+  white-space: nowrap;
+}
+
 /* Single click on the title opens the edit modal: the title reads as a
    link-like affordance on hover. */
 .dsh-ideas-card-title {
@@ -682,8 +694,9 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* Value/effort level badge: a colored pill carrying a tiny axis icon (dollar
    = value, dumbbell = effort) and the level label. The hue arrives inline as
-   --dsh-ideas-level-hue (low = green, medium = amber, high = red) and the
-   color-mix recipe above keeps it readable in both light and dark shells. */
+   --dsh-ideas-level-hue and always means "best": green = High value / Low
+   effort, red = Low value / High effort (the component computes it per axis);
+   the color-mix recipe keeps it readable in both light and dark shells. */
 .dsh-ideas-score {
   display: inline-flex;
   align-items: center;
@@ -796,6 +809,19 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Lifecycle action row in the edit modal (deliver / archive / decline /
+   recette OK / follow-up / restore, by status): a quiet row above the form
+   actions, separated by a hairline so it reads as part of the card, not of
+   the form fields. */
+.dsh-ideas-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
 }
 
 .dsh-ideas-field-row {
@@ -1210,6 +1236,7 @@ export const classes = {
   card: 'dsh-ideas-card',
   cardHeader: 'dsh-ideas-card-header',
   cardTitle: 'dsh-ideas-card-title',
+  cardNumber: 'dsh-ideas-card-number',
   cardGrip: 'dsh-ideas-card-grip',
   cardBody: 'dsh-ideas-card-body',
   bodyClickable: 'dsh-ideas-body-clickable',
@@ -1231,6 +1258,7 @@ export const classes = {
   select: 'dsh-ideas-select',
   preview: 'dsh-ideas-preview',
   modalActions: 'dsh-ideas-modal-actions',
+  editActions: 'dsh-ideas-edit-actions',
   tagFilterRow: 'dsh-ideas-tag-filter-row',
   tagFilterLabel: 'dsh-ideas-tag-filter-label',
   filterChip: 'dsh-ideas-filter-chip',
