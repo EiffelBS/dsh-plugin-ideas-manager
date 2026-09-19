@@ -76,7 +76,12 @@ export class IdeasClient {
   }
 
   toggleBoard(): void {
+    const wasOpen = this.boardOpen
     this.boardOpen = !this.boardOpen
+    // Opening the board loads a fresh snapshot immediately even though the
+    // background poll only runs while the board is open (see host-api
+    // subscribe: no SSE slots are held — the pool must stay available).
+    if (!wasOpen && this.boardOpen) void this.refresh()
     this.emit()
   }
 
@@ -86,13 +91,15 @@ export class IdeasClient {
     this.emit()
   }
 
-  /** Initial load + SSE revision push refresh. */
+  /** Initial load + short-poll refresh while the board is open. */
   start(): void {
     void this.refresh()
     try {
-      this.unsubscribeEvents = this.transport.subscribe(() => { void this.refresh() })
+      // Poll only while the board is actually open (isActive), so a closed
+      // board holds no connections and no traffic. See host-api subscribe.
+      this.unsubscribeEvents = this.transport.subscribe(() => { void this.refresh() }, () => this.boardOpen)
     } catch (error) {
-      // A failed SSE subscription degrades to manual refresh only.
+      // A failed subscription degrades to manual refresh only.
       console.error('[dsh-plugin-ideas-manager] event subscription failed', error)
     }
   }

@@ -42,7 +42,7 @@ export declare class IdeasClient {
     subscribe(listener: () => void): () => void;
     toggleBoard(): void;
     closeBoard(): void;
-    /** Initial load + SSE revision push refresh. */
+    /** Initial load + short-poll refresh while the board is open. */
     start(): void;
     dispose(): void;
     refresh(): Promise<void>;
