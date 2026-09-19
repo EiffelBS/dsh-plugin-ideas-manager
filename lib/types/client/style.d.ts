@@ -66,6 +66,21 @@ export declare const classes: {
     readonly actionButton: "dsh-ideas-action-button";
     readonly dangerButton: "dsh-ideas-danger-button";
     readonly confirmLabel: "dsh-ideas-confirm-label";
+    readonly tabs: "dsh-ideas-tabs";
+    readonly tab: "dsh-ideas-tab";
+    readonly tabActive: "dsh-ideas-tab-active";
+    readonly priorities: "dsh-ideas-priorities";
+    readonly prioritiesHint: "dsh-ideas-priorities-hint";
+    readonly prioritiesList: "dsh-ideas-priorities-list";
+    readonly prioritiesRow: "dsh-ideas-priorities-row";
+    readonly prioritiesRank: "dsh-ideas-priorities-rank";
+    readonly prioritiesGrow: "dsh-ideas-priorities-grow";
+    readonly prioritiesTitle: "dsh-ideas-priorities-title";
+    readonly prioritiesRationale: "dsh-ideas-priorities-rationale";
+    readonly prioritiesRationaleLabel: "dsh-ideas-priorities-rationale-label";
+    readonly prioritiesRationaleText: "dsh-ideas-priorities-rationale-text";
+    readonly prioritiesActions: "dsh-ideas-priorities-actions";
+    readonly prioritiesMove: "dsh-ideas-priorities-move";
 };
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */
 export declare function ensureIdeasStyle(): void;

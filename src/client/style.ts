@@ -897,6 +897,134 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-weight: 600;
 }
+
+/* Panel tab bar (Overview / Priorities), above the board header. */
+.dsh-ideas-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+}
+
+.dsh-ideas-tab,
+.dsh-ideas-tab-active {
+  flex: 1 1 0;
+  padding: 5px 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  background: transparent;
+}
+
+.dsh-ideas-tab:hover {
+  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
+}
+
+.dsh-ideas-tab-active {
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+}
+
+/* Priorities view: the ranked open backlog. */
+.dsh-ideas-priorities {
+  margin-top: 4px;
+}
+
+.dsh-ideas-priorities-hint {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-priorities-list {
+  margin: 0;
+  padding: 0 0 0 8px;
+}
+
+.dsh-ideas-priorities-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+}
+
+.dsh-ideas-priorities-rank {
+  flex: none;
+  min-width: 22px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-priorities-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dsh-ideas-priorities-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dsh-ideas-priorities-rationale {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-priorities-rationale-label {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.dsh-ideas-priorities-rationale-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-ideas-priorities-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.dsh-ideas-priorities-move {
+  min-width: 24px;
+  padding: 2px 0;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: transparent;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dsh-ideas-priorities-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 `
 
 /** Class map consumed by the sidebar core and the board JSX. */
@@ -960,6 +1088,21 @@ export const classes = {
   actionButton: 'dsh-ideas-action-button',
   dangerButton: 'dsh-ideas-danger-button',
   confirmLabel: 'dsh-ideas-confirm-label',
+  tabs: 'dsh-ideas-tabs',
+  tab: 'dsh-ideas-tab',
+  tabActive: 'dsh-ideas-tab-active',
+  priorities: 'dsh-ideas-priorities',
+  prioritiesHint: 'dsh-ideas-priorities-hint',
+  prioritiesList: 'dsh-ideas-priorities-list',
+  prioritiesRow: 'dsh-ideas-priorities-row',
+  prioritiesRank: 'dsh-ideas-priorities-rank',
+  prioritiesGrow: 'dsh-ideas-priorities-grow',
+  prioritiesTitle: 'dsh-ideas-priorities-title',
+  prioritiesRationale: 'dsh-ideas-priorities-rationale',
+  prioritiesRationaleLabel: 'dsh-ideas-priorities-rationale-label',
+  prioritiesRationaleText: 'dsh-ideas-priorities-rationale-text',
+  prioritiesActions: 'dsh-ideas-priorities-actions',
+  prioritiesMove: 'dsh-ideas-priorities-move',
 } as const
 
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */

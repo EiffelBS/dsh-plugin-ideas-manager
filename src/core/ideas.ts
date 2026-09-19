@@ -111,6 +111,11 @@ export interface IdeaRecord {
   value?: number
   /** Optional effort estimate (pure number). */
   effort?: number
+  /**
+   * Triage justification for the current rank (who/when/why). Written by the
+   * T1 triage flow; the Priorities view renders it when present.
+   */
+  rationale?: string
   /** Idea labels. */
   tags?: IdeaTag[]
   /** Workspace this idea belongs to (absent = generic). */
@@ -153,6 +158,7 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
   if (record.rank !== undefined && (typeof record.rank !== 'number' || !Number.isFinite(record.rank))) return false
   if (record.value !== undefined && (typeof record.value !== 'number' || !Number.isFinite(record.value))) return false
   if (record.effort !== undefined && (typeof record.effort !== 'number' || !Number.isFinite(record.effort))) return false
+  if (record.rationale !== undefined && typeof record.rationale !== 'string') return false
   if (record.workspaceId !== undefined && typeof record.workspaceId !== 'string') return false
   if (record.taskBoardId !== undefined && typeof record.taskBoardId !== 'string') return false
   if (record.archivedAt !== undefined && typeof record.archivedAt !== 'number') return false

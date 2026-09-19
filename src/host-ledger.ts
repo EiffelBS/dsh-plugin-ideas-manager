@@ -120,6 +120,7 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (typeof row.rank === 'number' && Number.isFinite(row.rank)) idea.rank = row.rank
     if (typeof row.value === 'number' && Number.isFinite(row.value)) idea.value = row.value
     if (typeof row.effort === 'number' && Number.isFinite(row.effort)) idea.effort = row.effort
+    if (typeof row.rationale === 'string' && row.rationale.trim() !== '') idea.rationale = row.rationale.trim()
     if (typeof row.archivedAt === 'number') idea.archivedAt = row.archivedAt
     const workspaceId = typeof row.workspaceId === 'string' ? normalizeOptionalId(row.workspaceId) : undefined
     if (workspaceId !== undefined) idea.workspaceId = workspaceId

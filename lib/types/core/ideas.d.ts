@@ -65,6 +65,11 @@ export interface IdeaRecord {
     value?: number;
     /** Optional effort estimate (pure number). */
     effort?: number;
+    /**
+     * Triage justification for the current rank (who/when/why). Written by the
+     * T1 triage flow; the Priorities view renders it when present.
+     */
+    rationale?: string;
     /** Idea labels. */
     tags?: IdeaTag[];
     /** Workspace this idea belongs to (absent = generic). */

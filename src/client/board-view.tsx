@@ -17,19 +17,14 @@ import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IDEA_LEVELS, levelForValue, levelLabelKey } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
+import { orderIdeas, rebuildOrder } from './ordering.ts'
+import { PrioritiesView } from './priorities-view.tsx'
+import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
   archived: 'board.status.archived',
   declined: 'board.status.declined',
-}
-
-function orderKey(idea: IdeaRecord): number {
-  return idea.rank ?? Number.MAX_SAFE_INTEGER
-}
-
-function orderIdeas(ideas: readonly IdeaRecord[]): IdeaRecord[] {
-  return [...ideas].sort((a, b) => orderKey(a) - orderKey(b))
 }
 
 function matchesFilter(idea: IdeaRecord, filter: string): boolean {
@@ -127,30 +122,23 @@ function IconDelete() {
   )
 }
 
-/**
- * Rebuild the global rank order with `movedId` placed at the drop position of
- * its target column: after `beforeId` when given, else at the column end.
- * Columns are always laid out open, archived, declined, each rank-sorted.
- */
-function rebuildOrder(all: readonly IdeaRecord[], movedId: string, targetStatus: IdeaStatus, beforeId: string | undefined): string[] {
-  const columns: string[] = []
-  for (const status of IDEA_COLUMNS) {
-    const ids = orderIdeas(all.filter(idea => idea.status === status && idea.id !== movedId)).map(idea => idea.id)
-    if (status === targetStatus) {
-      let index = ids.length
-      if (beforeId !== undefined) {
-        const at = ids.indexOf(beforeId)
-        if (at >= 0) index = at
-      }
-      ids.splice(index, 0, movedId)
-    }
-    columns.push(...ids)
-  }
-  return columns
-}
-
 function tagsText(idea: IdeaRecord | undefined): string {
   return idea?.tags === undefined ? '' : idea.tags.map(tag => tag.name).join(', ')
+}
+
+/**
+ * localStorage seam for the persisted active tab. Returns undefined when the
+ * browser has no usable storage (probes the accessor once); the tab helpers
+ * then keep the in-memory default and never throw.
+ */
+function activeTabStorage(): TabStorage | undefined {
+  try {
+    if (typeof localStorage === 'undefined') return undefined
+    void localStorage.getItem(ACTIVE_TAB_STORAGE_KEY)
+    return localStorage
+  } catch {
+    return undefined
+  }
 }
 
 /** Named-level combobox options for value/effort plus the unset choice. */
@@ -385,6 +373,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
   // Rendered-markdown view of descriptions (raw text is one click away).
   const [mdMode, setMdMode] = useState(true)
+  // Active panel tab (Overview kanban / Priorities ranking), persisted.
+  const [activeTab, setActiveTab] = useState<BoardTab>(() => readActiveTab(activeTabStorage()))
+  const switchTab = (tab: BoardTab): void => {
+    setActiveTab(tab)
+    writeActiveTab(activeTabStorage(), tab)
+  }
 
   useEffect(
     () => client.subscribe(() => setSnapshot(client.snapshot)),
@@ -404,6 +398,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     (workspaceFilter === '' || idea.workspaceId === workspaceFilter)
     && matchesFilter(idea, filter)
     && matchesTags(idea, tagFilter))
+  // The Priorities ranking ignores the kanban search/tag filters: it is the
+  // workspace-scoped backlog, ranked (see priorities-view.tsx).
+  const scopedOpen = ideas.filter(idea => workspaceFilter === '' || idea.workspaceId === workspaceFilter)
   const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
 
   const toggleTag = (name: string): void => {
@@ -453,6 +450,26 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   return (
     <div className={classes.board} data-dsh-ideas-board="" data-dsh-plugin="ideas">
+      <nav className={classes.tabs} role="tablist" aria-label={t('tab.label')}>
+        <button
+          type="button"
+          role="tab"
+          className={activeTab === 'overview' ? classes.tabActive : classes.tab}
+          aria-selected={activeTab === 'overview'}
+          onClick={() => { switchTab('overview') }}
+        >
+          {t('tab.overview')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={activeTab === 'priorities' ? classes.tabActive : classes.tab}
+          aria-selected={activeTab === 'priorities'}
+          onClick={() => { switchTab('priorities') }}
+        >
+          {t('tab.priorities')}
+        </button>
+      </nav>
       <header className={classes.boardHeader}>
         <button
           type="button"
@@ -480,32 +497,36 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             </option>
           ))}
         </select>
-        <input
-          className={classes.search}
-          type="search"
-          placeholder={t('board.search')}
-          value={filter}
-          aria-label={t('board.search')}
-          onChange={event => { setFilter(event.target.value) }}
-        />
-        <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
-          <button
-            type="button"
-            className={mdMode ? classes.mdToggleActive : classes.mdToggleButton}
-            aria-pressed={mdMode}
-            onClick={() => { setMdMode(true) }}
-          >
-            {t('board.mdView')}
-          </button>
-          <button
-            type="button"
-            className={mdMode ? classes.mdToggleButton : classes.mdToggleActive}
-            aria-pressed={!mdMode}
-            onClick={() => { setMdMode(false) }}
-          >
-            {t('board.textView')}
-          </button>
-        </div>
+        {activeTab === 'overview' && (
+          <>
+            <input
+              className={classes.search}
+              type="search"
+              placeholder={t('board.search')}
+              value={filter}
+              aria-label={t('board.search')}
+              onChange={event => { setFilter(event.target.value) }}
+            />
+            <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
+              <button
+                type="button"
+                className={mdMode ? classes.mdToggleActive : classes.mdToggleButton}
+                aria-pressed={mdMode}
+                onClick={() => { setMdMode(true) }}
+              >
+                {t('board.mdView')}
+              </button>
+              <button
+                type="button"
+                className={mdMode ? classes.mdToggleButton : classes.mdToggleActive}
+                aria-pressed={!mdMode}
+                onClick={() => { setMdMode(false) }}
+              >
+                {t('board.textView')}
+              </button>
+            </div>
+          </>
+        )}
         <button
           type="button"
           className={classes.primaryButton}
@@ -525,6 +546,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
+      {activeTab === 'overview'
+        ? (
+          <>
       {knownTags.length > 0 && (
         <div className={classes.tagFilterRow}>
           <span className={classes.tagFilterLabel}>{t('board.tagFilter')}</span>
@@ -809,6 +833,17 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           )
         })}
       </div>
+          </>
+        )
+        : (
+          <PrioritiesView
+            client={client}
+            openIdeas={scopedOpen}
+            allIdeas={ideas}
+            workspaceTitle={workspaceTitle}
+            onEdit={openEdit}
+          />
+        )}
 
       {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (
