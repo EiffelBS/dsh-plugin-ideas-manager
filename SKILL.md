@@ -16,6 +16,47 @@
   in the currently-selected scope), and cards with a workspace show a chip
   you can click to jump the board to that scope.
 
+## Process (agent-facing protocol)
+
+The ledger is the SOURCE OF TRUTH for ideas — it replaces any
+`IDEAS.md` / `IDEAS-ARCHIVE.md` file convention (the markdown export is a
+generated view, never parsed back). Follow this protocol when the user
+mentions ideas / backlog / idees / notes:
+
+1. **Capture into the ledger, never into a file**: `create` with a title
+   plus a body holding the analysis as markdown — context, value, effort,
+   first-step sketch / execution info, risks. Pick the `workspaceId` of the
+   project being discussed (generic when the user does not scope it).
+2. **Priority opinion on capture**: set `value` + `effort` levels and a
+   suggested `rank`.
+3. **Re-rank the whole open backlog** on every material change (new idea,
+   delivery, scope change): read `GET /api/ideas/state`, then `reorder` the
+   open ideas so the Priorities tab stays the current best ordering — never a
+   plain append. Re-rank only on material change; ranks stay advisory
+   (scheduling is the author's call).
+4. **Lifecycle**: delivered ideas leave the open backlog with a record of the
+   delivery (deliveredAt + verification/commit notes in the body); declined
+   ideas leave with a decision note. Prefer `update` for these records, then
+   `move`/`decline` to close.
+5. **TaskBoard mirror** (best-effort, one-way, when the board is present):
+   capture → backlog card, updates → card update, decline → archive; the
+   delivered card is closed by the author's closure run (`done` is
+   runner-owned — never automate idea → done from here).
+
+## Workspace cutover (replacing IDEAS.md)
+
+For a workspace whose AGENTS.md still points at an `IDEAS.md` convention:
+
+1. Point the AGENTS.md idea section at this board instead (announce
+   `announceToAgent: true` in the plugin settings so the guidance above is
+   injected every session) and load this skill before idea work.
+2. Migrate the still-open ideas into the ledger once (a one-shot import; the
+   canonical format is captured in `scripts/migrate-ot-ideas.mjs`).
+3. Keep `IDEAS.md` / `IDEAS-ARCHIVE.md` only as generated exports of the
+   ledger (the `export` verb) — never edit them by hand again.
+4. Ranks/records live on the ideas (rationale, delivery record, decision);
+   nothing is hand-maintained in a document anymore.
+
 ## Contract (copy of `src/protocol.ts`)
 
 - Prefix: `/api/ideas`. Guard: loopback socket + browser same-origin markers
