@@ -6,8 +6,7 @@
  */
 import { type IdeaRecord, type IdeaStatus } from '../core/ideas.ts';
 /** Ideas without a rank sort after every ranked idea. */
-export declare function orderKey(idea: IdeaRecord): number;
-/** Stable rank-sorted copy (ties keep their input order). */
+export declare function orderKey(idea: IdeaRecord): number; /** Stable rank-sorted copy (ties keep their input order). */
 export declare function orderIdeas(ideas: readonly IdeaRecord[]): IdeaRecord[];
 /**
  * Rebuild the global rank order with `movedId` placed at the drop position of
@@ -23,7 +22,9 @@ export declare function rebuildOrder(all: readonly IdeaRecord[], movedId: string
  */
 export declare function moveIdeaInOpenBacklog(all: readonly IdeaRecord[], movedId: string, toward: 'up' | 'down'): string[] | undefined;
 /**
- * Archived ideas of a workspace scope that carry a delivery stamp — the
- * Delivered log contents (empty scope = all workspaces).
+ * Archived ideas of a workspace scope — the Delivered log contents (empty
+ * scope = all workspaces). The journal shows every idea that left the open
+ * backlog (like the OT IDEAS-ARCHIVE.md): delivered ones carry a deliveredAt
+ * stamp, manually archived (abandoned) ones do not.
  */
-export declare function deliveredIdeasOf(ideas: readonly IdeaRecord[], workspaceId: string): IdeaRecord[];
+export declare function archivedIdeasOf(ideas: readonly IdeaRecord[], workspaceId: string): IdeaRecord[];

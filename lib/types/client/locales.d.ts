@@ -34,6 +34,8 @@ export declare const fr: {
     'delivered.hint': string;
     'delivered.empty': string;
     'delivered.deliverAt': string;
+    'delivered.archivedAt': string;
+    'delivered.archivedHint': string;
     'priorities.hint': string;
     'priorities.empty': string;
     'priorities.moveUp': string;
@@ -116,6 +118,8 @@ export declare const en: {
     'delivered.hint': string;
     'delivered.empty': string;
     'delivered.deliverAt': string;
+    'delivered.archivedAt': string;
+    'delivered.archivedHint': string;
     'priorities.hint': string;
     'priorities.empty': string;
     'priorities.moveUp': string;

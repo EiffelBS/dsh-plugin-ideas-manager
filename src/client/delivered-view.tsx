@@ -1,12 +1,14 @@
 /**
- * Delivered view: the derived "delivered log" of the T2 lifecycle — archived
- * ideas of the current workspace scope that carry a delivery stamp, most
- * recent first. This is the generated equivalent of the OT delivered-log
- * entries (hand-maintained in IDEAS.md); nothing here is hand-edited. One
- * row per delivered idea: the delivery date, title, workspace, value/effort,
- * description preview (MD/raw like the kanban and Priorities), and the
- * edit/restore actions. Restoring an idea brings it back to the open backlog
- * (the deliver verb is the only way in, restore the only way out).
+ * Delivered view: the derived "exit log" of the T2 lifecycle — archived ideas
+ * of the current workspace scope, most recent exit first. This is the
+ * generated equivalent of the OT IDEAS-ARCHIVE.md (hand-maintained before);
+ * nothing here is hand-edited. One row per archived idea: on the left an
+ * exit stamp — green "delivered YYYY-MM-DD" for ideas that went through the
+ * deliver verb, a neutral "archived YYYY-MM-DD" for manually archived
+ * (abandoned) ones — then the title, workspace, value/effort, description
+ * preview (MD/raw like the kanban and Priorities), and the edit/restore
+ * actions. Restoring an idea brings it back to the open backlog (the deliver
+ * verb is the only way in, restore the only way out).
  */
 
 import type { IdeasClient } from './ideas-client.ts'
@@ -14,12 +16,12 @@ import type { IdeaRecord } from '../core/ideas.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
-import { levelLabelKey } from './levels.ts'
+import { ScoreBadge } from './score-badge.tsx'
 
 export interface DeliveredViewProps {
   client: IdeasClient
-  /** Archived + deliveredAt ideas of the current scope, unsorted. */
-  deliveredIdeas: readonly IdeaRecord[]
+  /** Archived ideas of the current scope, unsorted. */
+  archivedIdeas: readonly IdeaRecord[]
   /** Resolve a workspace id to its display label. */
   workspaceTitle: (workspaceId: string) => string
   /** Open the shared edit modal on the given idea. */
@@ -28,13 +30,25 @@ export interface DeliveredViewProps {
   mdMode: boolean
 }
 
-/** Most recent delivery first; ideas without a stamp never get here. */
-function deliveredFirst(ideas: readonly IdeaRecord[]): IdeaRecord[] {
-  return [...ideas].sort((a, b) => (b.deliveredAt ?? 0) - (a.deliveredAt ?? 0))
+/** Most recent exit first (deliveredAt for delivered, archivedAt otherwise). */
+function mostRecentFirst(ideas: readonly IdeaRecord[]): IdeaRecord[] {
+  return [...ideas].sort((a, b) => exitAt(b) - exitAt(a))
 }
 
-export function DeliveredView({ client, deliveredIdeas, workspaceTitle, onEdit, mdMode }: DeliveredViewProps) {
-  const rows = deliveredFirst(deliveredIdeas)
+/** The stamp date: the delivery date when delivered, the archive date else. */
+function exitAt(idea: IdeaRecord): number {
+  return idea.deliveredAt ?? idea.archivedAt ?? idea.updatedAt ?? idea.createdAt
+}
+
+/** Compact ISO "YYYY-MM-DD" for the exit stamp (the OT log convention). */
+function isoDate(ms: number): string {
+  const d = new Date(ms)
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, mdMode }: DeliveredViewProps) {
+  const rows = mostRecentFirst(archivedIdeas)
   return (
     <div className={classes.priorities} data-dsh-ideas-delivered="">
       <div className={classes.prioritiesHint}>{t('delivered.hint')}</div>
@@ -44,10 +58,17 @@ export function DeliveredView({ client, deliveredIdeas, workspaceTitle, onEdit, 
           <ol className={classes.prioritiesList}>
             {rows.map(idea => {
               const workspaceId = idea.workspaceId
+              const delivered = idea.deliveredAt !== undefined
+              const stamp = delivered
+                ? t('delivered.deliverAt', { date: isoDate(idea.deliveredAt!) })
+                : t('delivered.archivedAt', { date: isoDate(exitAt(idea)) })
               return (
                 <li key={idea.id} className={classes.prioritiesRow}>
-                  <span className={classes.deliveredStamp}>
-                    {idea.deliveredAt === undefined ? '' : t('delivered.deliverAt', { date: isoDate(idea.deliveredAt) })}
+                  <span
+                    className={delivered ? classes.deliveredStamp : classes.archivedStamp}
+                    title={delivered ? t('card.deliveredHint') : t('delivered.archivedHint')}
+                  >
+                    {stamp}
                   </span>
                   <div className={classes.prioritiesGrow}>
                     <div
@@ -70,12 +91,8 @@ export function DeliveredView({ client, deliveredIdeas, workspaceTitle, onEdit, 
                         {workspaceId !== undefined && (
                           <span className={classes.workspaceChip}>{workspaceTitle(workspaceId)}</span>
                         )}
-                        {idea.value !== undefined && (
-                          <span className={classes.score}>{t('card.value', { level: t(levelLabelKey(idea.value)!) })}</span>
-                        )}
-                        {idea.effort !== undefined && (
-                          <span className={classes.score}>{t('card.effort', { level: t(levelLabelKey(idea.effort)!) })}</span>
-                        )}
+                        {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
+                        {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                       </div>
                     )}
                     {idea.body.trim() !== '' && (
@@ -144,11 +161,4 @@ export function DeliveredView({ client, deliveredIdeas, workspaceTitle, onEdit, 
         )}
     </div>
   )
-}
-
-/** Compact ISO "YYYY-MM-DD" for the delivering stamp (the OT log convention). */
-function isoDate(ms: number): string {
-  const d = new Date(ms)
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }

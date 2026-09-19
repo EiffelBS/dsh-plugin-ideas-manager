@@ -1,19 +1,21 @@
 /**
- * Delivered view: the derived "delivered log" of the T2 lifecycle — archived
- * ideas of the current workspace scope that carry a delivery stamp, most
- * recent first. This is the generated equivalent of the OT delivered-log
- * entries (hand-maintained in IDEAS.md); nothing here is hand-edited. One
- * row per delivered idea: the delivery date, title, workspace, value/effort,
- * description preview (MD/raw like the kanban and Priorities), and the
- * edit/restore actions. Restoring an idea brings it back to the open backlog
- * (the deliver verb is the only way in, restore the only way out).
+ * Delivered view: the derived "exit log" of the T2 lifecycle — archived ideas
+ * of the current workspace scope, most recent exit first. This is the
+ * generated equivalent of the OT IDEAS-ARCHIVE.md (hand-maintained before);
+ * nothing here is hand-edited. One row per archived idea: on the left an
+ * exit stamp — green "delivered YYYY-MM-DD" for ideas that went through the
+ * deliver verb, a neutral "archived YYYY-MM-DD" for manually archived
+ * (abandoned) ones — then the title, workspace, value/effort, description
+ * preview (MD/raw like the kanban and Priorities), and the edit/restore
+ * actions. Restoring an idea brings it back to the open backlog (the deliver
+ * verb is the only way in, restore the only way out).
  */
 import type { IdeasClient } from './ideas-client.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
 export interface DeliveredViewProps {
     client: IdeasClient;
-    /** Archived + deliveredAt ideas of the current scope, unsorted. */
-    deliveredIdeas: readonly IdeaRecord[];
+    /** Archived ideas of the current scope, unsorted. */
+    archivedIdeas: readonly IdeaRecord[];
     /** Resolve a workspace id to its display label. */
     workspaceTitle: (workspaceId: string) => string;
     /** Open the shared edit modal on the given idea. */
@@ -21,4 +23,4 @@ export interface DeliveredViewProps {
     /** Render descriptions as markdown (raw text otherwise), like the kanban. */
     mdMode: boolean;
 }
-export declare function DeliveredView({ client, deliveredIdeas, workspaceTitle, onEdit, mdMode }: DeliveredViewProps): import("react").JSX.Element;
+export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, mdMode }: DeliveredViewProps): import("react").JSX.Element;

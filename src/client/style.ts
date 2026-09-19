@@ -680,8 +680,32 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   font-size: 11px;
 }
 
+/* Value/effort level badge: a colored pill carrying a tiny axis icon (dollar
+   = value, dumbbell = effort) and the level label. The hue arrives inline as
+   --dsh-ideas-level-hue (low = green, medium = amber, high = red) and the
+   color-mix recipe above keeps it readable in both light and dark shells. */
 .dsh-ideas-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
   white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, hsl(var(--dsh-ideas-level-hue, 210) 70% 45%) 16%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(var(--dsh-ideas-level-hue, 210) 70% 45%) 78%, var(--dsh-ideas-fb-fg));
+  border: 1px solid color-mix(in srgb, hsl(var(--dsh-ideas-level-hue, 210) 70% 50%) 40%, transparent);
+}
+
+.dsh-ideas-score-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.dsh-ideas-score-icon svg {
+  display: block;
 }
 
 /* Workspace chip on cards (the "All workspaces" view): neutral pill, distinct
@@ -949,6 +973,25 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-weight: 600;
 }
 
+/* Small count badge at the right end of a tab (how many ideas that view
+   shows): a quiet pill that never outshines the label. */
+.dsh-ideas-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* Priorities view: the ranked open backlog. */
 .dsh-ideas-priorities {
   margin-top: 4px;
@@ -1071,9 +1114,25 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
+/* Neutral exit stamp: a manually archived (abandoned) idea in the log — same
+   pill shape, muted so delivered rows keep the visual accent. */
+.dsh-ideas-archived-stamp {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Delivered badge on an Archived kanban card: same green pill, so a
-   delivered idea is visually distinct from a plain archived (abandoned) one. */
+   delivered idea is visually distinct from a plain archived (abandoned) one.
+   Rendered in the card header, to the right of the title. */
 .dsh-ideas-delivered-badge {
+  flex: none;
   padding: 1px 8px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, hsl(150 55% 40%) 38%, transparent);
@@ -1170,6 +1229,9 @@ export const classes = {
   prioritiesMove: 'dsh-ideas-priorities-move',
   deliveredStamp: 'dsh-ideas-delivered-stamp',
   deliveredBadge: 'dsh-ideas-delivered-badge',
+  archivedStamp: 'dsh-ideas-archived-stamp',
+  tabCount: 'dsh-ideas-tab-count',
+  scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',
 } as const
 

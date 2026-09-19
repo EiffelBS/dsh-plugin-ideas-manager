@@ -15,12 +15,13 @@ import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts
 import { t, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
-import { IDEA_LEVELS, levelForValue, levelLabelKey } from './levels.ts'
+import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
-import { orderIdeas, rebuildOrder, deliveredIdeasOf } from './ordering.ts'
+import { orderIdeas, rebuildOrder, archivedIdeasOf } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
+import { ScoreBadge } from './score-badge.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
@@ -480,9 +481,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
     && (workspaceFilter === '' || idea.workspaceId === workspaceFilter))
-  // The Delivered log mirrors the Priorities scope: archived + deliveredAt
-  // ideas of the current workspace ('' = all), no kanban filters.
-  const deliveredIdeas = deliveredIdeasOf(ideas, workspaceFilter)
+  // The Delivered log mirrors the Priorities scope: archived ideas of the
+  // current workspace ('' = all), no kanban filters; the green delivery
+  // stamp renders only for rows carrying deliveredAt.
+  const archivedIdeas = archivedIdeasOf(ideas, workspaceFilter)
   const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
 
   const toggleTag = (name: string): void => {
@@ -603,6 +605,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onClick={() => { switchTab('overview') }}
         >
           {t('tab.overview')}
+          <span className={classes.tabCount}>{visible.length}</span>
         </button>
         <button
           type="button"
@@ -613,6 +616,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onClick={() => { switchTab('priorities') }}
         >
           {t('tab.priorities')}
+          <span className={classes.tabCount}>{scopedOpen.length}</span>
         </button>
         <button
           type="button"
@@ -623,6 +627,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onClick={() => { switchTab('delivered') }}
         >
           {t('tab.delivered')}
+          <span className={classes.tabCount}>{archivedIdeas.length}</span>
         </button>
       </nav>
 
@@ -773,6 +778,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               >
                                 {idea.title}
                               </div>
+                              {idea.deliveredAt !== undefined && (
+                                <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
+                                  {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
+                                </span>
+                              )}
                               <div
                                 className={classes.cardGrip}
                                 draggable={!client.pending}
@@ -814,13 +824,6 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 >
                                   {workspaceTitle(workspaceId)}
                                 </button>
-                              </div>
-                            )}
-                            {idea.deliveredAt !== undefined && (
-                              <div className={classes.cardMeta}>
-                                <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
-                                  {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
-                                </span>
                               </div>
                             )}
                             {idea.tags !== undefined && idea.tags.length > 0 && (
@@ -880,12 +883,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                             )}
                             {(idea.value !== undefined || idea.effort !== undefined) && (
                               <div className={classes.cardMeta}>
-                                {idea.value !== undefined && (
-                                  <span className={classes.score}>{t('card.value', { level: t(levelLabelKey(idea.value)!) })}</span>
-                                )}
-                                {idea.effort !== undefined && (
-                                  <span className={classes.score}>{t('card.effort', { level: t(levelLabelKey(idea.effort)!) })}</span>
-                                )}
+                                {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
+                                {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                               </div>
                             )}
                             <div className={classes.cardMeta}>
@@ -1003,7 +1002,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           : (
             <DeliveredView
               client={client}
-              deliveredIdeas={deliveredIdeas}
+              archivedIdeas={archivedIdeas}
               workspaceTitle={workspaceTitle}
               onEdit={openEdit}
               mdMode={mdMode}

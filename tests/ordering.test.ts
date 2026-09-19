@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { createIdea, type IdeaRecord, type IdeaStatus } from '../src/core/ideas.ts'
-import { deliveredIdeasOf, moveIdeaInOpenBacklog, orderIdeas, rebuildOrder } from '../src/client/ordering.ts'
+import { archivedIdeasOf, moveIdeaInOpenBacklog, orderIdeas, rebuildOrder } from '../src/client/ordering.ts'
 
 function idea(id: string, status: IdeaStatus, rank?: number): IdeaRecord {
   return { ...createIdea({ title: id, body: '' }, 0, id), status, ...(rank === undefined ? {} : { rank }) }
@@ -78,31 +78,31 @@ describe('moveIdeaInOpenBacklog', () => {
   })
 })
 
-describe('deliveredIdeasOf', () => {
+describe('archivedIdeasOf', () => {
   const at = 1_700_000_000_000
-  const delivered = (id: string, workspaceId?: string): IdeaRecord => ({
+  const archived = (id: string, workspaceId?: string, delivered = false): IdeaRecord => ({
     ...idea(id, 'archived'),
     ...(workspaceId === undefined ? {} : { workspaceId }),
-    deliveredAt: at,
+    ...(delivered ? { deliveredAt: at } : {}),
   })
 
-  it('keeps only archived ideas carrying a delivery stamp', () => {
+  it('keeps every archived idea of the scope, delivered or not (the exit log)', () => {
     const rows = [
-      delivered('a'),
-      // Abandoned (archived without a stamp) and open ideas are excluded.
-      idea('b', 'archived'),
+      archived('a', undefined, true),
+      archived('b'), // abandoned: archived without a stamp
       idea('c', 'open'),
+      idea('d', 'declined'),
     ]
-    expect(deliveredIdeasOf(rows, '').map(row => row.id)).toEqual(['a'])
+    expect(archivedIdeasOf(rows, '').map(row => row.id)).toEqual(['a', 'b'])
   })
 
   it('scopes to one workspace when asked (empty scope = all)', () => {
     const rows = [
-      delivered('a', 'w1'),
-      delivered('b', 'w2'),
-      delivered('c'),
+      archived('a', 'w1'),
+      archived('b', 'w2'),
+      archived('c'),
     ]
-    expect(deliveredIdeasOf(rows, 'w1').map(row => row.id)).toEqual(['a'])
-    expect(deliveredIdeasOf(rows, '').map(row => row.id)).toEqual(['a', 'b', 'c'])
+    expect(archivedIdeasOf(rows, 'w1').map(row => row.id)).toEqual(['a'])
+    expect(archivedIdeasOf(rows, '').map(row => row.id)).toEqual(['a', 'b', 'c'])
   })
 })

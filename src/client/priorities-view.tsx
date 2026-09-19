@@ -16,7 +16,7 @@ import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { orderIdeas, moveIdeaInOpenBacklog, rebuildOrder } from './ordering.ts'
 import { renderMarkdown } from './markdown.ts'
-import { levelLabelKey } from './levels.ts'
+import { ScoreBadge } from './score-badge.tsx'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 
 export interface PrioritiesProps {
@@ -169,12 +169,8 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                       {idea.workspaceId !== undefined && (
                         <span className={classes.workspaceChip}>{workspaceTitle(idea.workspaceId)}</span>
                       )}
-                      {idea.value !== undefined && (
-                        <span className={classes.score}>{t('card.value', { level: t(levelLabelKey(idea.value)!) })}</span>
-                      )}
-                      {idea.effort !== undefined && (
-                        <span className={classes.score}>{t('card.effort', { level: t(levelLabelKey(idea.effort)!) })}</span>
-                      )}
+                      {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
+                      {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                     </div>
                     {idea.body.trim() !== '' && (
                       mdMode

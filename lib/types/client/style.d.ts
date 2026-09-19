@@ -83,6 +83,9 @@ export declare const classes: {
     readonly prioritiesMove: "dsh-ideas-priorities-move";
     readonly deliveredStamp: "dsh-ideas-delivered-stamp";
     readonly deliveredBadge: "dsh-ideas-delivered-badge";
+    readonly archivedStamp: "dsh-ideas-archived-stamp";
+    readonly tabCount: "dsh-ideas-tab-count";
+    readonly scoreIcon: "dsh-ideas-score-icon";
     readonly fieldHint: "dsh-ideas-field-hint";
 };
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */

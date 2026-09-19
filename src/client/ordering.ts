@@ -10,9 +10,7 @@ import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts
 /** Ideas without a rank sort after every ranked idea. */
 export function orderKey(idea: IdeaRecord): number {
   return idea.rank ?? Number.MAX_SAFE_INTEGER
-}
-
-/** Stable rank-sorted copy (ties keep their input order). */
+}/** Stable rank-sorted copy (ties keep their input order). */
 export function orderIdeas(ideas: readonly IdeaRecord[]): IdeaRecord[] {
   return [...ideas].sort((a, b) => orderKey(a) - orderKey(b))
 }
@@ -70,15 +68,16 @@ export function moveIdeaInOpenBacklog(
 }
 
 /**
- * Archived ideas of a workspace scope that carry a delivery stamp — the
- * Delivered log contents (empty scope = all workspaces).
+ * Archived ideas of a workspace scope — the Delivered log contents (empty
+ * scope = all workspaces). The journal shows every idea that left the open
+ * backlog (like the OT IDEAS-ARCHIVE.md): delivered ones carry a deliveredAt
+ * stamp, manually archived (abandoned) ones do not.
  */
-export function deliveredIdeasOf(
+export function archivedIdeasOf(
   ideas: readonly IdeaRecord[],
   workspaceId: string,
 ): IdeaRecord[] {
   return ideas.filter(idea =>
     idea.status === 'archived'
-    && idea.deliveredAt !== undefined
     && (workspaceId === '' || idea.workspaceId === workspaceId))
 }
