@@ -964,11 +964,16 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
 }
 
-/* A row under the pointer while dragging: the accent ring marks where the
-   drop would insert the dragged idea (mirrors the grip's drag affordance). */
-.dsh-ideas-priorities-row[data-drop-target] {
-  border-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
-  box-shadow: 0 0 0 1px var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+/* While dragging, the hovered row shows the insertion point as an accent
+   line: above the row (drop before it, cursor in the upper half) or below
+   it (drop after it, cursor in the lower half). The shadow bleeds outside
+   the opaque row surface, so it reads as a clean separator line. */
+.dsh-ideas-priorities-row[data-drop-before] {
+  box-shadow: 0 -2px 0 0 var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
+.dsh-ideas-priorities-row[data-drop-after] {
+  box-shadow: 0 2px 0 0 var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
 }
 
 .dsh-ideas-priorities-rank {

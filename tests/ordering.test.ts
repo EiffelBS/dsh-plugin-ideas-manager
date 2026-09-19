@@ -63,4 +63,17 @@ describe('moveIdeaInOpenBacklog', () => {
     const allIdeas = [...all(), idea('f', 'archived', 2)]
     expect(moveIdeaInOpenBacklog(allIdeas, 'a', 'down')).toEqual(['b', 'a', 'c', 'd', 'e', 'f'])
   })
+
+  it('moves a lower-ranked open idea up past an entry from another column state', () => {
+    // The author's ledger shape: an archived idea holding rank 1, an open idea
+    // at rank 2 and a fresh unranked open idea. The arrows must still swap the
+    // two OPEN rows and leave the closed column untouched.
+    const mixed = [
+      idea('old', 'archived', 1),
+      idea('b', 'open', 2),
+      idea('new', 'open'),
+    ]
+    expect(moveIdeaInOpenBacklog(mixed, 'new', 'up')).toEqual(['new', 'b', 'old'])
+    expect(moveIdeaInOpenBacklog(mixed, 'b', 'down')).toEqual(['new', 'b', 'old'])
+  })
 })

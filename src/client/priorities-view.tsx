@@ -3,10 +3,10 @@
  * "Suggested priority" table the OpenTimbre IDEAS.md process maintained by
  * hand. Each open idea is one ranked row (rank, title, workspace, value/
  * effort, description preview, rationale) with move-up/move-down actions and
- * drag & drop reordering of the open column (drop before a row or at the end
- * of the list; the wire call is the same rank-write path the kanban uses).
- * The rationale text is displayed when the idea carries one; writing it
- * arrives with the T1 triage flow.
+ * drag & drop reordering of the open column. During a drag an accent line
+ * shows the insertion point: before the hovered row (upper half) or after it
+ * (lower half); dropping on the list surface below the rows appends at the
+ * end. The wire call is the same rank-write path the kanban uses.
  */
 
 import { useState, type DragEvent } from 'react'
@@ -32,13 +32,27 @@ export interface PrioritiesProps {
   mdMode: boolean
 }
 
+/** Drop indicator: which row is hovered and whether the drop inserts before
+ *  (upper half) or after (lower half) it. */
+interface DropAt {
+  id: string
+  before: boolean
+}
+
+/** Id of the dragged idea, read from the transfer payload or the fallback
+ *  state (browsers that do not share the payload with the drop target). */
+function draggedIdFrom(event: DragEvent<HTMLElement>, fallback: string | undefined): string | undefined {
+  const transferId = event.dataTransfer.getData('text/plain')
+  return transferId !== undefined && transferId !== '' ? transferId : fallback
+}
+
 /** Ranked backlog view (see module doc). */
 export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, mdMode }: PrioritiesProps) {
   const ranked = orderIdeas(openIdeas)
   // Duplicate of the kanban drag discipline: a dedicated grip starts the HTML5
   // drag carrying the idea id; rows mark where the drop would insert.
   const [dragId, setDragId] = useState<string | undefined>(undefined)
-  const [dropBefore, setDropBefore] = useState<string | undefined>(undefined)
+  const [dropAt, setDropAt] = useState<DropAt | undefined>(undefined)
 
   const move = (idea: IdeaRecord, toward: 'up' | 'down'): void => {
     const ordered = moveIdeaInOpenBacklog(allIdeas, idea.id, toward)
@@ -56,30 +70,51 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
 
   const endDrag = (): void => {
     setDragId(undefined)
-    setDropBefore(undefined)
+    setDropAt(undefined)
   }
 
-  const commitDrop = (event: DragEvent<HTMLElement>, beforeId: string | undefined): void => {
-    const transferId = event.dataTransfer.getData('text/plain')
-    const draggedId = transferId !== undefined && transferId !== '' ? transferId : dragId
-    if (draggedId === undefined || draggedId === beforeId) return
+  const commitDrop = (draggedId: string, beforeId: string | undefined): void => {
+    if (draggedId === beforeId) return
     const ordered = rebuildOrder(allIdeas, draggedId, 'open', beforeId)
     void client.reorderIdea(ordered)
     endDrag()
   }
 
-  const dropOnRow = (event: DragEvent<HTMLLIElement>, beforeId: string): void => {
+  /** True while the pointer sits in the upper half of `element`. */
+  const beforeHalf = (event: DragEvent<HTMLElement>, element: HTMLElement): boolean => {
+    const rect = element.getBoundingClientRect()
+    return event.clientY - rect.top < rect.height / 2
+  }
+
+  const dropOnRow = (event: DragEvent<HTMLLIElement>, idea: IdeaRecord, index: number): void => {
     event.preventDefault()
     event.stopPropagation()
-    commitDrop(event, beforeId)
+    const draggedId = draggedIdFrom(event, dragId)
+    if (draggedId === undefined || draggedId === idea.id) return
+    // Upper half inserts before the row, lower half after it (before the next
+    // row; past the last row means appending at the end).
+    const before = beforeHalf(event, event.currentTarget)
+    const beforeId = before ? idea.id : ranked[index + 1]?.id
+    commitDrop(draggedId, beforeId)
   }
 
   // Dropping on the list surface (outside any row) appends at the end of the
-  // open backlog, mirroring the kanban column-end drop.
+  // open backlog, mirroring the kanban column-end drop. The indicator shows
+  // the insertion line below the last row while hovering that surface.
+  const listDragOver = (event: DragEvent<HTMLOListElement>): void => {
+    if (dragId === undefined) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    if ((event.target as HTMLElement).closest('li') !== null) return
+    const last = ranked[ranked.length - 1]
+    setDropAt(last === undefined ? undefined : { id: last.id, before: false })
+  }
+
   const dropAtEnd = (event: DragEvent<HTMLOListElement>): void => {
     if ((event.target as HTMLElement).closest('li') !== null) return
     event.preventDefault()
-    commitDrop(event, undefined)
+    const draggedId = draggedIdFrom(event, dragId)
+    if (draggedId !== undefined) commitDrop(draggedId, undefined)
   }
 
   return (
@@ -90,32 +125,30 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
         : (
           <ol
             className={classes.prioritiesList}
-            onDragOver={event => {
-              if (dragId !== undefined) {
-                event.preventDefault()
-                event.dataTransfer.dropEffect = 'move'
-              }
-            }}
+            onDragOver={listDragOver}
             onDrop={dropAtEnd}
           >
             {ranked.map((idea, index) => {
               const first = index === 0
               const last = index === ranked.length - 1
-              const isTarget = dragId !== undefined && dropBefore === idea.id
+              const hovering = dragId !== undefined && dragId !== idea.id && dropAt?.id === idea.id
               return (
                 <li
                   key={idea.id}
                   className={classes.prioritiesRow}
                   data-dsh-idea-id={idea.id}
-                  data-drop-target={isTarget ? '' : undefined}
-                  onDragEnter={() => { if (dragId !== undefined) setDropBefore(idea.id) }}
+                  data-drop-before={hovering && dropAt!.before ? '' : undefined}
+                  data-drop-after={hovering && !dropAt!.before ? '' : undefined}
                   onDragOver={event => {
-                    if (dragId !== undefined) {
-                      event.preventDefault()
-                      event.dataTransfer.dropEffect = 'move'
-                    }
+                    if (dragId === undefined || idea.id === dragId) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                    const before = beforeHalf(event, event.currentTarget)
+                    setDropAt(current => current !== undefined && current.id === idea.id && current.before === before
+                      ? current
+                      : { id: idea.id, before })
                   }}
-                  onDrop={event => { dropOnRow(event, idea.id) }}
+                  onDrop={event => { dropOnRow(event, idea, index) }}
                 >
                   <span className={classes.prioritiesRank}>{index + 1}</span>
                   <div

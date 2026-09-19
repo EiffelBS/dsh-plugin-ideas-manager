@@ -3,10 +3,10 @@
  * "Suggested priority" table the OpenTimbre IDEAS.md process maintained by
  * hand. Each open idea is one ranked row (rank, title, workspace, value/
  * effort, description preview, rationale) with move-up/move-down actions and
- * drag & drop reordering of the open column (drop before a row or at the end
- * of the list; the wire call is the same rank-write path the kanban uses).
- * The rationale text is displayed when the idea carries one; writing it
- * arrives with the T1 triage flow.
+ * drag & drop reordering of the open column. During a drag an accent line
+ * shows the insertion point: before the hovered row (upper half) or after it
+ * (lower half); dropping on the list surface below the rows appends at the
+ * end. The wire call is the same rank-write path the kanban uses.
  */
 import type { IdeasClient } from './ideas-client.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
