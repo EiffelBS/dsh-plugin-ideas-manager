@@ -9,7 +9,7 @@
  * opening the edit modal.
  */
 
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useState, type CSSProperties, type DragEvent, type FormEvent } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
 import { t, type IdeasKey } from './locales.ts'
@@ -18,6 +18,7 @@ import { renderMarkdown } from './markdown.ts'
 import { IDEA_LEVELS, levelForValue, levelLabelKey } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
 import { orderIdeas, rebuildOrder } from './ordering.ts'
+import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 
@@ -368,7 +369,10 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
 }
 
 type DragState = { id: string; source: IdeaStatus } | undefined
-type DragTarget = { status: IdeaStatus; beforeId?: string } | undefined
+/** Drop target of the kanban drag: the column plus the insertion point
+ *  (beforeId undefined = append at the column end), and the hovered card +
+ *  half that drives the accent insertion line while dragging. */
+type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; half?: 'before' | 'after' } | undefined
 
 /** Board component; subscribes to the client snapshot. */
 export function IdeasBoard({ client }: { client: IdeasClient }) {
@@ -409,9 +413,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     (workspaceFilter === '' || idea.workspaceId === workspaceFilter)
     && matchesFilter(idea, filter)
     && matchesTags(idea, tagFilter))
-  // The Priorities ranking ignores the kanban search/tag filters: it is the
-  // workspace-scoped backlog, ranked (see priorities-view.tsx).
-  const scopedOpen = ideas.filter(idea => workspaceFilter === '' || idea.workspaceId === workspaceFilter)
+  // The Priorities ranking ignores the kanban search/tag filters: it ranks the
+  // OPEN backlog of the current workspace scope — the OT "Suggested priority"
+  // table never listed archived/declined ideas (see priorities-view.tsx).
+  const scopedOpen = ideas.filter(idea =>
+    idea.status === 'open'
+    && (workspaceFilter === '' || idea.workspaceId === workspaceFilter))
   const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
 
   const toggleTag = (name: string): void => {
@@ -420,27 +427,25 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : [...current, name])
   }
 
-  const performDrop = async (event?: { dataTransfer: { getData(format: string): string } }): Promise<void> => {
+  const performDrop = async (event: DragEvent<HTMLElement>, status: IdeaStatus, beforeId: string | undefined): Promise<void> => {
     // The dropped task id is carried on the dataTransfer (like the
     // task-board family); the drag state is a fallback for browsers that
     // do not share the payload with the drop target.
-    const transferId = event?.dataTransfer?.getData('text/plain')
-    const draggedId = transferId !== undefined && transferId !== '' ? transferId : drag?.id
-    const target = dragTarget
-    if (draggedId === undefined || target === undefined || drag === undefined) return
+    const draggedId = draggedIdFrom(event, drag?.id)
+    if (draggedId === undefined || drag === undefined) return
     const source = drag.source
     try {
-      if (source !== target.status) {
-        if (target.status === 'declined') {
+      if (source !== status) {
+        if (status === 'declined') {
           // The wire protocol only moves open <-> archived; declining is its
           // own action (sets archivedAt, mirrors decline on the task board).
           await client.declineIdea(draggedId)
         } else {
-          await client.moveIdea(draggedId, target.status as Extract<IdeaStatus, 'open' | 'archived'>)
+          await client.moveIdea(draggedId, status as Extract<IdeaStatus, 'open' | 'archived'>)
         }
       }
       const all = client.snapshot?.ideas ?? []
-      const ordered = rebuildOrder(all, draggedId, target.status, target.beforeId)
+      const ordered = rebuildOrder(all, draggedId, status, beforeId)
       await client.reorderIdea(ordered)
     } catch {
       // The board reflects the Host verdict; a failed drop needs no retry UI.
@@ -597,11 +602,24 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 if (drag !== undefined) {
                   event.preventDefault()
                   event.dataTransfer.dropEffect = 'move'
+                  // Over the column surface (outside any card) the insertion
+                  // line sits under the last card and the drop appends at the
+                  // column end, mirroring the Priorities list surface.
+                  if ((event.target as HTMLElement).closest('[data-dsh-idea-id]') !== null) return
+                  const last = columnIdeas[columnIdeas.length - 1]
+                  if (last === undefined) return
+                  setDragTarget(current => current !== undefined
+                    && current.status === status
+                    && current.beforeId === undefined
+                    && current.hoverId === last.id
+                    && current.half === 'after'
+                    ? current
+                    : { status, beforeId: undefined, hoverId: last.id, half: 'after' })
                 }
               }}
               onDrop={event => {
                 event.preventDefault()
-                void performDrop(event)
+                void performDrop(event, status, undefined)
               }}
             >
               <div className={classes.columnHeader}>
@@ -617,19 +635,51 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                   )}
                   {columnIdeas.length === 0
                     ? <div className={classes.empty}>{t(filtering ? 'board.emptyFiltered' : 'board.empty')}</div>
-                    : columnIdeas.map(idea => {
+                    : columnIdeas.map((idea, index) => {
                       const confirm = confirmId === idea.id
                       const workspaceId = idea.workspaceId
+                      // Half-split insertion line, like the Priorities rows:
+                      // hovering the upper half drops before the card, the
+                      // lower half after it (before the next card).
+                      const dropBefore = dragTarget?.status === status
+                        && dragTarget?.hoverId === idea.id
+                        && dragTarget?.half === 'before'
+                      const dropAfter = dragTarget?.status === status
+                        && dragTarget?.hoverId === idea.id
+                        && dragTarget?.half === 'after'
+                      const dropNextId = columnIdeas[index + 1]?.id
                       return (
                         <div
                           key={idea.id}
                           className={classes.cardWrapper}
-                          onDragEnter={() => { setDragTarget({ status, beforeId: idea.id }) }}
+                          data-dsh-idea-id={idea.id}
+                          data-drop-before={dropBefore ? '' : undefined}
+                          data-drop-after={dropAfter ? '' : undefined}
+                          onDragEnter={event => {
+                            if (drag === undefined || idea.id === drag.id) return
+                            const before = beforeHalf(event, event.currentTarget)
+                            setDragTarget({ status, beforeId: before ? idea.id : dropNextId, hoverId: idea.id, half: before ? 'before' : 'after' })
+                          }}
                           onDragOver={event => {
-                            if (drag !== undefined) {
-                              event.preventDefault()
-                              event.dataTransfer.dropEffect = 'move'
-                            }
+                            if (drag === undefined || idea.id === drag.id) return
+                            event.preventDefault()
+                            event.dataTransfer.dropEffect = 'move'
+                            const before = beforeHalf(event, event.currentTarget)
+                            const beforeId = before ? idea.id : dropNextId
+                            const half: 'before' | 'after' = before ? 'before' : 'after'
+                            setDragTarget(current => current !== undefined
+                              && current.status === status
+                              && current.beforeId === beforeId
+                              && current.hoverId === idea.id
+                              && current.half === half
+                              ? current
+                              : { status, beforeId, hoverId: idea.id, half })
+                          }}
+                          onDrop={event => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            const before = beforeHalf(event, event.currentTarget)
+                            void performDrop(event, status, before ? idea.id : dropNextId)
                           }}
                         >
                           <div className={classes.card} data-dsh-idea-id={idea.id}>

@@ -841,6 +841,18 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   cursor: default;
 }
 
+/* While dragging, the hovered card shows the insertion point as an accent
+   line, exactly like the Priorities rows: above the card (drop before it,
+   upper half) or below it (drop after it, lower half). The wrapper is
+   transparent, so the shadow draws a clean separator in the column gap. */
+.dsh-ideas-card-wrapper[data-drop-before] {
+  box-shadow: 0 -2px 0 0 var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
+.dsh-ideas-card-wrapper[data-drop-after] {
+  box-shadow: 0 2px 0 0 var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
 .dsh-ideas-card-actions {
   display: flex;
   align-items: center;

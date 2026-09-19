@@ -17,6 +17,7 @@ import { classes } from './style.ts'
 import { orderIdeas, moveIdeaInOpenBacklog, rebuildOrder } from './ordering.ts'
 import { renderMarkdown } from './markdown.ts'
 import { levelLabelKey } from './levels.ts'
+import { beforeHalf, draggedIdFrom } from './drag.ts'
 
 export interface PrioritiesProps {
   client: IdeasClient
@@ -37,13 +38,6 @@ export interface PrioritiesProps {
 interface DropAt {
   id: string
   before: boolean
-}
-
-/** Id of the dragged idea, read from the transfer payload or the fallback
- *  state (browsers that do not share the payload with the drop target). */
-function draggedIdFrom(event: DragEvent<HTMLElement>, fallback: string | undefined): string | undefined {
-  const transferId = event.dataTransfer.getData('text/plain')
-  return transferId !== undefined && transferId !== '' ? transferId : fallback
 }
 
 /** Ranked backlog view (see module doc). */
@@ -78,12 +72,6 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
     const ordered = rebuildOrder(allIdeas, draggedId, 'open', beforeId)
     void client.reorderIdea(ordered)
     endDrag()
-  }
-
-  /** True while the pointer sits in the upper half of `element`. */
-  const beforeHalf = (event: DragEvent<HTMLElement>, element: HTMLElement): boolean => {
-    const rect = element.getBoundingClientRect()
-    return event.clientY - rect.top < rect.height / 2
   }
 
   const dropOnRow = (event: DragEvent<HTMLLIElement>, idea: IdeaRecord, index: number): void => {
