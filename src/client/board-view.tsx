@@ -195,7 +195,10 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
   const [tags, setTags] = useState(tagsText(initial))
   const [workspace, setWorkspace] = useState(initial?.workspaceId ?? initialWorkspace ?? '')
   const [error, setError] = useState<string | undefined>(undefined)
-  const [preview, setPreview] = useState(false)
+  // The edit modal opens straight on the rendered markdown view (the raw
+  // textarea is one click away); a new capture keeps the raw textarea first
+  // so the idea is written before it is reviewed.
+  const [preview, setPreview] = useState(initial !== undefined)
 
   // Shape the workspace picker options once per open: the DSH registry rows
   // plus every workspace id present in the ledger (a scoped board and an edit
