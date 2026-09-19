@@ -35,6 +35,7 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   if (idea.workspaceId !== undefined) lines.push(bullet('workspace', `\`${idea.workspaceId}\``))
   if (idea.rationale !== undefined) lines.push(bullet('rationale', idea.rationale))
   if (idea.decision !== undefined) lines.push(bullet('decision', idea.decision))
+  if (idea.followUpOfId !== undefined) lines.push(bullet('follow-up of', `\`${idea.followUpOfId}\``))
   lines.push(bullet('created', iso(idea.createdAt)))
   lines.push(bullet('updated', iso(idea.updatedAt)))
   if (idea.deliveredAt !== undefined) lines.push(bullet('delivered', iso(idea.deliveredAt)))
@@ -78,8 +79,9 @@ export interface IdeasExport {
 
 /**
  * Build the export for a ledger (optionally filtered to one workspace).
- * Open ideas go to the main document; archived/declined ideas go to the
- * archive document.
+ * Open + under-review ideas go to the main document (under review = task
+ * done, human acceptance pending — still active work, not delivered);
+ * archived/declined ideas go to the archive document.
  */
 export function buildIdeasExport(
   ideas: readonly IdeaRecord[],
@@ -88,10 +90,10 @@ export function buildIdeasExport(
   const filter = workspaceId === undefined
     ? undefined
     : (idea: IdeaRecord): boolean => idea.workspaceId === workspaceId
-  const open = ideas.filter(idea => idea.status === 'open' && (filter === undefined || filter(idea)))
-  const closed = ideas.filter(idea => idea.status !== 'open' && (filter === undefined || filter(idea)))
+  const active = ideas.filter(idea => (idea.status === 'open' || idea.status === 'underReview') && (filter === undefined || filter(idea)))
+  const closed = ideas.filter(idea => (idea.status === 'archived' || idea.status === 'declined') && (filter === undefined || filter(idea)))
   return {
-    ideasMd: ideasToMarkdown(open, 'IDEAS', 'open ideas'),
+    ideasMd: ideasToMarkdown(active, 'IDEAS', 'open ideas'),
     archiveMd: ideasToMarkdown(closed, 'IDEAS-ARCHIVE', 'archived ideas'),
   }
 }

@@ -86,6 +86,23 @@ export declare const fr: {
     'level.low': string;
     'level.medium': string;
     'level.high': string;
+    'board.status.underReview': string;
+    'card.underReviewHint': string;
+    'card.reviewOk': string;
+    'card.reviewOkHint': string;
+    'card.followUp': string;
+    'card.followUpHint': string;
+    'card.followUpOf': string;
+    'card.followUpOfHint': string;
+    'followUp.title': string;
+    'followUp.parent': string;
+    'followUp.childTitle': string;
+    'followUp.childTitlePlaceholder': string;
+    'followUp.justification': string;
+    'followUp.summaryLabel': string;
+    'followUp.submit': string;
+    'followUp.cancel': string;
+    'followUp.required': string;
 };
 export declare const en: {
     'entry.label': string;
@@ -170,6 +187,23 @@ export declare const en: {
     'level.low': string;
     'level.medium': string;
     'level.high': string;
+    'board.status.underReview': string;
+    'card.underReviewHint': string;
+    'card.reviewOk': string;
+    'card.reviewOkHint': string;
+    'card.followUp': string;
+    'card.followUpHint': string;
+    'card.followUpOf': string;
+    'card.followUpOfHint': string;
+    'followUp.title': string;
+    'followUp.parent': string;
+    'followUp.childTitle': string;
+    'followUp.childTitlePlaceholder': string;
+    'followUp.justification': string;
+    'followUp.summaryLabel': string;
+    'followUp.submit': string;
+    'followUp.cancel': string;
+    'followUp.required': string;
 };
 export type IdeasKey = keyof typeof fr;
 /** Interpolate {placeholders} with the given params. */

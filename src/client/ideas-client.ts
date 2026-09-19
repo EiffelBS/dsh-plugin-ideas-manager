@@ -149,7 +149,7 @@ export class IdeasClient {
     })
   }
 
-  async moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void> {
+  async moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'underReview' | 'archived'>): Promise<void> {
     await this.run({ kind: 'move', ideaId, status })
   }
 
@@ -180,6 +180,15 @@ export class IdeasClient {
         ...(patch.rank === undefined ? {} : { rank: patch.rank }),
       },
     })
+  }
+
+  /**
+   * Recette NOK: create a child follow-up idea (linked to `ideaId` and
+   * carrying the summary + justification) and archive the parent — one atomic
+   * commit. The parent must currently be under review.
+   */
+  async followUpIdea(ideaId: string, input: { title: string; body: string }): Promise<void> {
+    await this.run({ kind: 'followUp', ideaId, input })
   }
 
   async restoreIdea(ideaId: string): Promise<void> {

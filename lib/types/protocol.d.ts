@@ -33,7 +33,7 @@ export type IdeasAction = {
 } | {
     kind: 'move';
     ideaId: string;
-    status: Extract<IdeaStatus, 'open' | 'archived'>;
+    status: Extract<IdeaStatus, 'open' | 'underReview' | 'archived'>;
 } | {
     kind: 'decline';
     ideaId: string;
@@ -45,6 +45,11 @@ export type IdeasAction = {
     kind: 'triage';
     ideaId: string;
     patch: TriagePatch;
+} | {
+    kind: 'followUp';
+    ideaId: string;
+    /** The child idea: title/body (the summary + justification, composed by the UI). */
+    input: FollowUpInput;
 } | {
     kind: 'restore';
     ideaId: string;
@@ -91,6 +96,17 @@ export interface TriagePatch {
     effort?: number;
     rationale?: string;
     rank?: number;
+}
+/**
+ * Input of the `followUp` verb: the child idea raised when the recette of an
+ * under-review idea is NOK. The UI composes `body` as the parent summary +
+ * the requested follow-up justification; the host links the child
+ * (`followUpOfId`), inherits the parent workspace, and archives the parent —
+ * atomically, in one commit.
+ */
+export interface FollowUpInput {
+    title: string;
+    body: string;
 }
 export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undefined;
 /** Convenience used by tests: build an idea record exactly as the ledger stores it. */

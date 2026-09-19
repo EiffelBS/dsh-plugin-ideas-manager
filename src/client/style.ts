@@ -1143,6 +1143,35 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
+/* Under-review badge on a kanban card: amber pill marking the recette gate
+   (work finished, human acceptance pending). Rendered in the card header, to
+   the right of the title. */
+.dsh-ideas-review-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(38 92% 45%) 40%, transparent);
+  background: color-mix(in srgb, hsl(38 92% 45%) 14%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(38 88% 40%) 85%, var(--dsh-ideas-fb-fg));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Follow-up lineage chip on a child card: neutral pill referencing the parent
+   idea the recette NOK created it from ("suivi de #N"). */
+.dsh-ideas-followup-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(250 40% 55%) 35%, transparent);
+  background: color-mix(in srgb, hsl(250 40% 55%) 12%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(250 45% 55%) 80%, var(--dsh-ideas-fb-fg));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Small hint under a modal field (the suggested-rank explanation). */
 .dsh-ideas-field-hint {
   margin-top: 4px;
@@ -1230,6 +1259,8 @@ export const classes = {
   deliveredStamp: 'dsh-ideas-delivered-stamp',
   deliveredBadge: 'dsh-ideas-delivered-badge',
   archivedStamp: 'dsh-ideas-archived-stamp',
+  reviewBadge: 'dsh-ideas-review-badge',
+  followUpBadge: 'dsh-ideas-followup-badge',
   tabCount: 'dsh-ideas-tab-count',
   scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',

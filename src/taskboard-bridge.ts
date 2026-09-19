@@ -62,6 +62,12 @@ export interface TaskBoardTaskPatch {
   tags?: { name: string; promptPrefix?: string }[] | null
 }
 
+/** Local mirror of a task-board task row — only the fields the poll reads. */
+export interface TaskBoardTaskLite {
+  id: string
+  status: string
+}
+
 /** A self-request result: HTTP status plus an optional parsed JSON body. */
 export interface TaskBoardHttpResult {
   status: number
@@ -195,6 +201,27 @@ export class TaskBoardMirror {
     if (!await this.availableNow()) throw new TaskBoardUnavailableError()
     if (idea.taskBoardId !== undefined && idea.taskBoardId !== '') return idea.taskBoardId
     return this.createCard(idea)
+  }
+
+  /**
+   * Read the current status of every task card: task id -> status. Returns
+   * undefined when the task-board is absent or the snapshot is malformed —
+   * the under-review poll treats that as "nothing to do" (best-effort, like
+   * the rest of the bridge).
+   */
+  async fetchTaskStatuses(): Promise<Map<string, string> | undefined> {
+    if (!await this.availableNow()) return undefined
+    const result = await this.options.transport.getState()
+    if (result.status !== 200 || typeof result.body !== 'object' || result.body === null) return undefined
+    const tasks = (result.body as { tasks?: unknown }).tasks
+    if (!Array.isArray(tasks)) return undefined
+    const byId = new Map<string, string>()
+    for (const task of tasks) {
+      if (typeof task !== 'object' || task === null) continue
+      const row = task as { id?: unknown; status?: unknown }
+      if (typeof row.id === 'string' && typeof row.status === 'string') byId.set(row.id, row.status)
+    }
+    return byId
   }
 
   /** Idea create -> task create (read-only, backlog) + move to backlog. */

@@ -32,7 +32,7 @@ import { join } from 'node:path'
 import { createIdea, normalizeStatus, normalizeTags, withStatus, type IdeaRecord } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
-import { IDEAS_SCHEMA_VERSION, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
+import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
 
 export const IDEAS_LEDGER_DIR_NAME = 'ideas'
 export const IDEAS_LEDGER_FILE_NAME = 'ledger-v2.json'
@@ -290,7 +290,9 @@ export class IdeasHostLedger {
       case 'deliver': {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
-        if (idea.status !== 'open') break
+        // Both an open idea and an under-review idea (recette OK) can be
+        // delivered; anything already closed is a no-op.
+        if (idea.status !== 'open' && idea.status !== 'underReview') break
         // Delivered ideas leave the open backlog: same column as archived, but
         // stamped as a delivery (the lifecycle distinguishes delivered vs
         // abandoned; both render in the Archived column).
@@ -320,6 +322,38 @@ export class IdeasHostLedger {
           ideas = ideas.map(item => ({ ...item, rank: rankById.get(item.id) ?? item.rank }))
         }
         this.document.ideas = ideas
+        break
+      }
+      case 'followUp': {
+        const parent = this.document.ideas.find(item => item.id === action.ideaId)
+        if (parent === undefined) throw new Error('idea not found')
+        // A follow-up is the recette-NOK answer to an under-review idea: the
+        // parent leaves the backlog (archived, not declined — the work was not
+        // rejected, it needs rework) while the child re-enters it open.
+        if (parent.status !== 'underReview') throw new Error('follow-up requires an under-review idea')
+        const input = blankToUndefined(action.input.title) ?? ''
+        if (input.trim() === '') throw new Error('title is required')
+        const childId = randomUUID()
+        this.document.ideaSequence += 1
+        const child = {
+          ...createIdea(
+            {
+              title: action.input.title,
+              body: action.input.body,
+              ...(parent.workspaceId === undefined ? {} : { workspaceId: parent.workspaceId }),
+            },
+            now,
+            childId,
+          ),
+          ideaNumber: this.document.ideaSequence,
+          followUpOfId: parent.id,
+        }
+        this.document.ideas = [
+          ...this.document.ideas.map(item => item.id === parent.id
+            ? { ...withStatus(item, 'archived', now), archivedAt: now }
+            : item),
+          child,
+        ]
         break
       }
       case 'restore': {

@@ -36,10 +36,16 @@ export type IdeasAction =
   | { kind: 'import'; sourceId: string; ideas: IdeaRecord[] }
   | { kind: 'create'; id: string; input: NewIdeaInput }
   | { kind: 'update'; ideaId: string; patch: IdeaUpdatePatch }
-  | { kind: 'move'; ideaId: string; status: Extract<IdeaStatus, 'open' | 'archived'> }
+  | { kind: 'move'; ideaId: string; status: Extract<IdeaStatus, 'open' | 'underReview' | 'archived'> }
   | { kind: 'decline'; ideaId: string; decision?: string }
   | { kind: 'deliver'; ideaId: string }
   | { kind: 'triage'; ideaId: string; patch: TriagePatch }
+  | {
+      kind: 'followUp'
+      ideaId: string
+      /** The child idea: title/body (the summary + justification, composed by the UI). */
+      input: FollowUpInput
+    }
   | { kind: 'restore'; ideaId: string }
   | { kind: 'delete'; ideaId: string }
   | { kind: 'reorder'; orderedIds: string[] }
@@ -81,6 +87,18 @@ export interface TriagePatch {
   effort?: number
   rationale?: string
   rank?: number
+}
+
+/**
+ * Input of the `followUp` verb: the child idea raised when the recette of an
+ * under-review idea is NOK. The UI composes `body` as the parent summary +
+ * the requested follow-up justification; the host links the child
+ * (`followUpOfId`), inherits the parent workspace, and archives the parent —
+ * atomically, in one commit.
+ */
+export interface FollowUpInput {
+  title: string
+  body: string
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -130,6 +148,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     if (row[key] !== undefined && typeof row[key] !== 'string') return undefined
   }
   if (row.archivedAt !== undefined && row.archivedAt !== null && typeof row.archivedAt !== 'number') return undefined
+  if (row.followUpOfId !== undefined && row.followUpOfId !== null && typeof row.followUpOfId !== 'string') return undefined
   return {
     id: row.id,
     title: row.title,
@@ -147,6 +166,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(isIdeaTagList(row.tags) ? { tags: row.tags } : {}),
     ...(typeof row.workspaceId === 'string' ? { workspaceId: row.workspaceId } : {}),
     ...(typeof row.taskBoardId === 'string' ? { taskBoardId: row.taskBoardId } : {}),
+    ...(typeof row.followUpOfId === 'string' ? { followUpOfId: row.followUpOfId } : {}),
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
   }
 }
@@ -183,6 +203,12 @@ function triagePatch(value: unknown): value is TriagePatch {
     if (!optionalFiniteNumber(patch[key])) return false
   }
   return true
+}
+
+function followUpInput(value: unknown): value is FollowUpInput {
+  const input = record(value)
+  if (input === undefined || !exactKeys(input, ['title', 'body'])) return false
+  return typeof input.title === 'string' && typeof input.body === 'string'
 }
 
 function reorderList(value: unknown): boolean {
@@ -227,7 +253,7 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
     case 'move':
       if (!exactKeys(action, ['kind', 'ideaId', 'status'])) return undefined
       if (ideaId === undefined) return undefined
-      return action.status === 'open' || action.status === 'archived'
+      return action.status === 'open' || action.status === 'underReview' || action.status === 'archived'
         ? { requestId: envelope.requestId, action: { kind: 'move', ideaId, status: action.status } }
         : undefined
     case 'decline': {
@@ -244,6 +270,11 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
       if (!exactKeys(action, ['kind', 'ideaId', 'patch'])) return undefined
       if (ideaId === undefined || !triagePatch(action.patch)) return undefined
       return { requestId: envelope.requestId, action: { kind: 'triage', ideaId, patch: action.patch as TriagePatch } }
+    }
+    case 'followUp': {
+      if (!exactKeys(action, ['kind', 'ideaId', 'input'])) return undefined
+      if (ideaId === undefined || !followUpInput(action.input)) return undefined
+      return { requestId: envelope.requestId, action: { kind: 'followUp', ideaId, input: action.input as FollowUpInput } }
     }
     case 'restore':
     case 'delete':

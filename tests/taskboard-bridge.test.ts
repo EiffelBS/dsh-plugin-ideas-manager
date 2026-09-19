@@ -41,9 +41,14 @@ class FakeTransport implements TaskBoardTransport {
   actionStatus = 200
   getStateCalls = 0
   posts: TaskBoardActionEnvelope[] = []
+  /** Optional task rows served by getState (the under-review poll's input). */
+  stateTasks: Array<{ id: string; status: string }> | undefined
   async getState() {
     this.getStateCalls += 1
-    return { status: this.stateStatus }
+    return {
+      status: this.stateStatus,
+      ...(this.stateTasks === undefined ? {} : { body: { schemaVersion: 3, revision: 1, tasks: this.stateTasks } }),
+    }
   }
   async postAction(envelope: TaskBoardActionEnvelope) {
     this.posts.push(envelope)
@@ -251,6 +256,65 @@ describe('IdeasHostService mirror integration', () => {
     expect(transport.posts).toHaveLength(0)
     expect(service.snapshot().ideas).toHaveLength(1)
     service.dispose()
+  })
+
+  it('fetchTaskStatuses maps task id -> status from the state body', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [
+      { id: 'task-1', status: 'backlog' },
+      { id: 'task-2', status: 'done' },
+    ]
+    const mirror = new TaskBoardMirror({ transport })
+    const statuses = await mirror.fetchTaskStatuses()
+    expect(statuses).toEqual(new Map([
+      ['task-1', 'backlog'],
+      ['task-2', 'done'],
+    ]))
+  })
+
+  it('fetchTaskStatuses returns undefined without tasks (absent plugin / malformed body)', async () => {
+    const empty = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport: empty })
+    expect(await mirror.fetchTaskStatuses()).toBeUndefined()
+    const broken = new FakeTransport()
+    broken.stateStatus = 404
+    const brokenMirror = new TaskBoardMirror({ transport: broken })
+    expect(await brokenMirror.fetchTaskStatuses()).toBeUndefined()
+  })
+
+  it('the under-review poll moves open ideas whose card is done', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [
+      { id: 'task-9', status: 'done' },
+      { id: 'task-8', status: 'backlog' },
+    ]
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.applyRequest('r2', { kind: 'create', id: 'idea-2', input: { title: 'U', body: 'B' } })
+    ledger.bindTaskBoardId('idea-1', 'task-9')
+    ledger.bindTaskBoardId('idea-2', 'task-8')
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+    await service.pollUnderReviewTransitions()
+    // Only the idea whose card reached done crossed the recette gate; the one
+    // still in backlog stays open.
+    expect(service.snapshot().ideas.find(idea => idea.id === 'idea-1')!.status).toBe('underReview')
+    expect(service.snapshot().ideas.find(idea => idea.id === 'idea-2')!.status).toBe('open')
+    expect(transport.posts).toHaveLength(0)
+    service.dispose()
+  })
+
+  it('the under-review poll is a no-op when autoMirror is off or the card is gone', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = []
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.bindTaskBoardId('idea-1', 'task-9')
+    const off = new IdeasHostService({ ledger, mirror, autoMirror: false })
+    await off.pollUnderReviewTransitions()
+    expect(off.snapshot().ideas[0]!.status).toBe('open')
+    off.dispose()
   })
 
   it('does not mirror when autoMirror is off', async () => {

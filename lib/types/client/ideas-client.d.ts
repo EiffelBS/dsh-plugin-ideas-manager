@@ -53,7 +53,7 @@ export declare class IdeasClient {
         rank?: number;
     }): Promise<void>;
     updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void>;
-    moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'archived'>): Promise<void>;
+    moveIdea(ideaId: string, status: Extract<IdeaStatus, 'open' | 'underReview' | 'archived'>): Promise<void>;
     declineIdea(ideaId: string, decision?: string): Promise<void>;
     /** Mark an open idea delivered: archived + deliveredAt, card mirror archived. */
     deliverIdea(ideaId: string): Promise<void>;
@@ -66,6 +66,15 @@ export declare class IdeasClient {
         effort?: number;
         rationale?: string;
         rank?: number;
+    }): Promise<void>;
+    /**
+     * Recette NOK: create a child follow-up idea (linked to `ideaId` and
+     * carrying the summary + justification) and archive the parent — one atomic
+     * commit. The parent must currently be under review.
+     */
+    followUpIdea(ideaId: string, input: {
+        title: string;
+        body: string;
     }): Promise<void>;
     restoreIdea(ideaId: string): Promise<void>;
     deleteIdea(ideaId: string): Promise<void>;

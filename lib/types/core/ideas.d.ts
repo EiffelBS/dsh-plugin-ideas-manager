@@ -4,8 +4,14 @@
  * share. Framework-free (no cordis, no runtime imports) so the model is
  * unit-testable in isolation.
  */
-/** Idea lifecycle status, one per kanban column. */
-export type IdeaStatus = 'open' | 'archived' | 'declined';
+/**
+ * Idea lifecycle status, one per kanban column. `underReview` is the recette
+ * gate: an idea whose work is done but whose acceptance by a human is still
+ * pending (entered automatically when the mirrored task card passes `done`).
+ * Recette OK → `deliver`; recette NOK → a `followUp` request (child idea) or
+ * `decline`.
+ */
+export type IdeaStatus = 'open' | 'underReview' | 'archived' | 'declined';
 /** One idea label: the name is the badge and the filter key, the optional prompt line rides the TaskBoard mirror when connected. */
 export interface IdeaTag {
     /** Display name; trimmed, non-empty, unique within the idea. */
@@ -43,7 +49,7 @@ export declare function isIdeaTagList(value: unknown): value is IdeaTag[];
 export declare function normalizeTags(value: unknown): IdeaTag[] | undefined;
 /** All valid statuses (closed union guard). */
 export declare const ALL_IDEA_STATUSES: readonly IdeaStatus[];
-/** The three kanban columns in display order. */
+/** The kanban columns in display order (underReview sits between open and archived). */
 export declare const IDEA_COLUMNS: readonly IdeaStatus[];
 /** Brand an unknown string as an idea status; undefined when it is not one. */
 export declare function isIdeaStatus(value: unknown): value is IdeaStatus;
@@ -76,6 +82,12 @@ export interface IdeaRecord {
     workspaceId?: string;
     /** Mirror link to the TaskBoard card id when the bridge is active (P2). */
     taskBoardId?: string;
+    /**
+     * Recette NOK: id of the parent idea this idea is a follow-up of (set by
+     * the `followUp` verb; the child carries the summary + justification and
+     * stays open while the parent is archived).
+     */
+    followUpOfId?: string;
     /**
      * Stable capture sequence (1-based) assigned by the ledger at create — the
      * "#N" human reference of the old IDEAS.md process. Absent on imported

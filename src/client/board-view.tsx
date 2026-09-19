@@ -1,8 +1,11 @@
 /**
- * Board view: the 3-column kanban (open / archived / declined) that replaces
- * the center column while active. P1 scope: full CRUD — capture and edit
- * modals, per-card archive/restore/decline/delete, manual drag between Open
- * and Archived (+ intra-column reorder), search and a conjunctive tag filter.
+ * Board view: the 4-column kanban (open / under review / archived / declined)
+ * that replaces the center column while active. P1 scope: full CRUD — capture
+ * and edit modals, per-card archive/restore/decline/delete, manual drag
+ * between the move-verb columns (+ intra-column reorder), search and a
+ * conjunctive tag filter. The under-review column is the recette gate: Recette
+ * OK delivers, Follow-up raises a linked child idea and archives the parent,
+ * Decline rejects.
  *
  * UI polish: markdown-rendered descriptions with a raw/MD toggle, value/effort
  * as named-level comboboxes, and a single click on a card title or body
@@ -26,6 +29,7 @@ import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, t
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
+  underReview: 'board.status.underReview',
   archived: 'board.status.archived',
   declined: 'board.status.declined',
 }
@@ -127,6 +131,17 @@ function IconDelete() {
 
 function IconCheck() {
   return <svg {...actionIcon}><polyline points="20 6 9 17 4 12" /></svg>
+}
+
+function IconFollowUp() {
+  return (
+    <svg {...actionIcon}>
+      <polyline points="1 4 1 10 7 10" />
+      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+      <line x1="14" y1="12" x2="20" y2="12" />
+      <line x1="17" y1="9" x2="17" y2="15" />
+    </svg>
+  )
 }
 
 function tagsText(idea: IdeaRecord | undefined): string {
@@ -277,8 +292,9 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
           ...(parsedRank === undefined ? {} : { rank: parsedRank }),
         })
       } else {
-        // Archived / declined edit: no open-backlog re-rank (the rank field
-        // is hidden), the opinion fields go through the plain update.
+        // Non-open edit (under review / archived / declined): no open-backlog
+        // re-rank (the rank field is hidden), the opinion fields go through
+        // the plain update.
         const patch: IdeaClientPatch = {
           title: title.trim(),
           body: body.trim(),
@@ -430,6 +446,104 @@ function IdeaModal({ client, initial, initialWorkspace, onClose }: {
   )
 }
 
+/**
+ * Recette-NOK modal: raise a child follow-up idea that carries the parent
+ * summary + the user's justification, and archive the parent — the atomic
+ * `followUp` verb. The child title is prefilled from the parent (number +
+ * title) so the lineage reads at a glance.
+ */
+function FollowUpModal({ client, parent, onClose }: {
+  client: IdeasClient
+  parent: IdeaRecord
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState(() =>
+    t('followUp.childTitlePlaceholder', { number: parent.ideaNumber ?? '?', title: parent.title }))
+  const [justification, setJustification] = useState('')
+  const [error, setError] = useState<string | undefined>(undefined)
+
+  // Escape closes the modal (capture phase, like the idea modal).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('keydown', onKey, true) }
+  }, [onClose])
+
+  const submit = async (event: FormEvent): Promise<void> => {
+    event.preventDefault()
+    if (title.trim() === '') {
+      setError(t('followUp.required'))
+      return
+    }
+    // The child body = the user's justification + the parent summary. The
+    // Host composes nothing: the client sends the final text verbatim.
+    const summary = parent.body.trim()
+    const parts = [
+      ...(justification.trim() === '' ? [] : [justification.trim()]),
+      ...(summary === '' ? [] : [`**${t('followUp.summaryLabel')}**\n\n${summary}`]),
+    ]
+    try {
+      await client.followUpIdea(parent.id, { title: title.trim(), body: parts.join('\n\n---\n\n') })
+      onClose()
+    } catch {
+      // The client carries the Host error; the modal stays open for a retry.
+    }
+  }
+
+  return (
+    <div className={classes.overlay} onClick={onClose}>
+      <form className={classes.modal} onClick={event => { event.stopPropagation() }} onSubmit={submit}>
+        <h3 className={classes.modalTitle}>{t('followUp.title')}</h3>
+        <div className={classes.field}>
+          <span className={classes.detailMeta}>{t('followUp.parent', { title: parent.title })}</span>
+        </div>
+        <div className={classes.field}>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-followup-title">{t('followUp.childTitle')}</label>
+          <input
+            id="dsh-ideas-followup-title"
+            className={classes.input}
+            type="text"
+            value={title}
+            autoFocus
+            onChange={event => { setTitle(event.target.value) }}
+          />
+        </div>
+        <div className={classes.field}>
+          <label className={classes.fieldLabel} htmlFor="dsh-ideas-followup-justification">{t('followUp.justification')}</label>
+          <textarea
+            id="dsh-ideas-followup-justification"
+            className={classes.textarea}
+            rows={4}
+            value={justification}
+            placeholder={t('followUp.justification')}
+            onChange={event => { setJustification(event.target.value) }}
+          />
+        </div>
+        {parent.body.trim() !== '' && (
+          <div className={classes.field}>
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-followup-summary">{t('followUp.summaryLabel')}</label>
+            <div id="dsh-ideas-followup-summary" className={classes.preview} data-dsh-ideas-preview="">
+              {parent.body}
+            </div>
+          </div>
+        )}
+        {error !== undefined && <div className={classes.error}>{error}</div>}
+        <div className={classes.modalActions}>
+          <button type="button" className={classes.ghostButton} onClick={onClose}>{t('followUp.cancel')}</button>
+          <button type="submit" className={classes.primaryButton} disabled={client.pending}>
+            {t('followUp.submit')}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 type DragState = { id: string; source: IdeaStatus } | undefined
 /** Drop target of the kanban drag: the column plus the insertion point
  *  (beforeId undefined = append at the column end), and the hovered card +
@@ -445,6 +559,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [workspaceFilter, setWorkspaceFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
+  // The under-review parent a recette-NOK follow-up is being raised for.
+  const [followUp, setFollowUp] = useState<IdeaRecord | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
@@ -464,6 +580,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
+  // id -> idea, to resolve a child's followUpOfId into the parent number.
+  const ideaById = new Map(ideas.map(idea => [idea.id, idea]))
   const knownTags = collectKnownTags(ideas)
   const catalog = buildWorkspaceCatalog(ideas, client.workspaceOptions)
   const workspaceTitle = (workspaceId: string): string =>
@@ -503,11 +621,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     try {
       if (source !== status) {
         if (status === 'declined') {
-          // The wire protocol only moves open <-> archived; declining is its
-          // own action (sets archivedAt, mirrors decline on the task board).
+          // Declining is its own action (sets archivedAt, mirrors decline on
+          // the task board); the move verb covers open/underReview/archived.
           await client.declineIdea(draggedId)
         } else {
-          await client.moveIdea(draggedId, status as Extract<IdeaStatus, 'open' | 'archived'>)
+          await client.moveIdea(draggedId, status as Extract<IdeaStatus, 'open' | 'underReview' | 'archived'>)
         }
       }
       const all = client.snapshot?.ideas ?? []
@@ -778,6 +896,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               >
                                 {idea.title}
                               </div>
+                              {idea.status === 'underReview' && (
+                                <span className={classes.reviewBadge} title={t('card.underReviewHint')}>
+                                  {t('board.status.underReview')}
+                                </span>
+                              )}
                               {idea.deliveredAt !== undefined && (
                                 <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
                                   {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
@@ -824,6 +947,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 >
                                   {workspaceTitle(workspaceId)}
                                 </button>
+                              </div>
+                            )}
+                            {idea.followUpOfId !== undefined && (
+                              <div className={classes.cardMeta}>
+                                <span
+                                  className={classes.followUpBadge}
+                                  title={t('card.followUpOfHint')}
+                                >
+                                  {t('card.followUpOf', { number: ideaById.get(idea.followUpOfId)?.ideaNumber ?? '—' })}
+                                </span>
                               </div>
                             )}
                             {idea.tags !== undefined && idea.tags.length > 0 && (
@@ -929,7 +1062,42 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('card.decline')}
                                 </button>
                               )}
-                              {idea.status !== 'open' && (
+                              {idea.status === 'underReview' && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  title={t('card.reviewOkHint')}
+                                  onClick={() => { void client.deliverIdea(idea.id) }}
+                                >
+                                  <IconCheck />
+                                  {t('card.reviewOk')}
+                                </button>
+                              )}
+                              {idea.status === 'underReview' && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  title={t('card.followUpHint')}
+                                  onClick={() => { setConfirmId(undefined); setFollowUp(idea) }}
+                                >
+                                  <IconFollowUp />
+                                  {t('card.followUp')}
+                                </button>
+                              )}
+                              {idea.status === 'underReview' && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  onClick={() => { void client.declineIdea(idea.id) }}
+                                >
+                                  <IconDecline />
+                                  {t('card.decline')}
+                                </button>
+                              )}
+                              {(idea.status === 'archived' || idea.status === 'declined') && (
                                 <button
                                   type="button"
                                   className={classes.actionButton}
@@ -1012,6 +1180,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (
         <IdeaModal client={client} initial={editing} onClose={() => { setEditing(undefined) }} />
+      )}
+      {followUp !== undefined && (
+        <FollowUpModal client={client} parent={followUp} onClose={() => { setFollowUp(undefined) }} />
       )}
     </div>
   )

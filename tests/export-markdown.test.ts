@@ -92,4 +92,30 @@ describe('buildIdeasExport', () => {
     expect(result.ideasMd).not.toContain('- delivered:')
     expect(result.ideasMd).not.toContain('- decision:')
   })
+
+  it('keeps under-review ideas in the active document (recette gate pending)', () => {
+    const underReview = {
+      ...createIdea({ title: 'Awaiting recette', body: '' }, T0, 'idea-1'),
+      status: 'underReview' as const,
+      ideaNumber: 3,
+    }
+    const result = buildIdeasExport([underReview], undefined)
+    // Under review is still an active idea: it lives in IDEAS.md, never in the
+    // archive document.
+    expect(result.ideasMd).toContain('## Awaiting recette')
+    expect(result.ideasMd).toContain('- status: underReview')
+    expect(result.ideasMd).toContain('- number: #3')
+    expect(result.ideasMd).not.toContain('- archived:')
+    expect(result.archiveMd).not.toContain('## Awaiting recette')
+  })
+
+  it('renders the follow-up lineage bullet on a child idea', () => {
+    const child = {
+      ...createIdea({ title: 'Rework the fade-out', body: '' }, T0, 'idea-2'),
+      ideaNumber: 4,
+      followUpOfId: 'idea-1',
+    }
+    const result = buildIdeasExport([child], undefined)
+    expect(result.ideasMd).toContain('- follow-up of: `idea-1`')
+  })
 })

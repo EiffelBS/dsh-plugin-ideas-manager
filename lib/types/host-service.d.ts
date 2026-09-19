@@ -1,8 +1,10 @@
 /**
  * Ideas host service: owns the ledger and fans its change notifications out to
  * the SSE route, and (P2) schedules the optional one-way TaskBoard mirror.
- * No timers, no sessions — the ideas board is a passive Host-authoritative
- * store (unlike the task board's execution runner).
+ * The board is a passive Host-authoritative store (unlike the task board's
+ * execution runner) — the only timer is the under-review poll, which watches
+ * for mirrored task cards passing `done` and moves the linked idea to
+ * `underReview` (the recette gate). No other background work runs.
  *
  * Mirror discipline (frozen in HANDOVER §2.3): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -29,6 +31,7 @@ export declare class IdeasHostService {
     private readonly pendingMirrors;
     private active;
     private disposed;
+    private reviewPoll;
     constructor(options?: {
         ledger?: IdeasHostLedger;
         dir?: string;
@@ -47,6 +50,15 @@ export declare class IdeasHostService {
      * when a test calls it.
      */
     flushMirror(): Promise<void>;
+    /**
+     * Start the under-review poll: every `intervalMs` the mirror's task-card
+     * statuses are read and any open idea whose linked card is `done` moves to
+     * `underReview` (the recette gate — the task is finished, human acceptance
+     * still pending). No-op when the mirror is absent or autoMirror is off.
+     */
+    startUnderReviewPoll(intervalMs?: number): void;
+    /** One poll pass (exposed for tests). Best-effort: any failure is ignored. */
+    pollUnderReviewTransitions(): Promise<void>;
     dispose(): void;
     private emit;
     /**

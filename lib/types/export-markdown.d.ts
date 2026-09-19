@@ -24,7 +24,8 @@ export interface IdeasExport {
 }
 /**
  * Build the export for a ledger (optionally filtered to one workspace).
- * Open ideas go to the main document; archived/declined ideas go to the
- * archive document.
+ * Open + under-review ideas go to the main document (under review = task
+ * done, human acceptance pending — still active work, not delivered);
+ * archived/declined ideas go to the archive document.
  */
 export declare function buildIdeasExport(ideas: readonly IdeaRecord[], workspaceId: string | undefined): IdeasExport;

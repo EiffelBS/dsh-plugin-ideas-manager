@@ -66,6 +66,11 @@ export interface TaskBoardTaskPatch {
         promptPrefix?: string;
     }[] | null;
 }
+/** Local mirror of a task-board task row — only the fields the poll reads. */
+export interface TaskBoardTaskLite {
+    id: string;
+    status: string;
+}
 /** A self-request result: HTTP status plus an optional parsed JSON body. */
 export interface TaskBoardHttpResult {
     status: number;
@@ -125,6 +130,13 @@ export declare class TaskBoardMirror {
      * @returns the task id to bind on the idea.
      */
     ensureTask(idea: IdeaRecord): Promise<string>;
+    /**
+     * Read the current status of every task card: task id -> status. Returns
+     * undefined when the task-board is absent or the snapshot is malformed —
+     * the under-review poll treats that as "nothing to do" (best-effort, like
+     * the rest of the bridge).
+     */
+    fetchTaskStatuses(): Promise<Map<string, string> | undefined>;
     /** Idea create -> task create (read-only, backlog) + move to backlog. */
     mirrorCreate(idea: IdeaRecord): Promise<string>;
     /** Idea update -> task update; self-heals an unbound idea by creating it first. */

@@ -222,3 +222,82 @@ describe('IdeasHostLedger T1 lifecycle (triage / deliver / decline / numbering)'
     ledger.dispose()
   })
 })
+
+describe('IdeasHostLedger under-review cycle (recette)', () => {
+  it('move sends an idea into the underReview column (open -> underReview)', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-a', status: 'underReview' })
+    const idea = ledger.snapshot().ideas[0]!
+    expect(idea.status).toBe('underReview')
+    expect(idea.archivedAt).toBeUndefined()
+    expect(idea.deliveredAt).toBeUndefined()
+    ledger.dispose()
+  })
+
+  it('recette OK (deliver) archives an under-review idea with the delivery stamp', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-a', status: 'underReview' })
+    ledger.applyRequest('r3', { kind: 'deliver', ideaId: 'idea-a' })
+    const delivered = ledger.snapshot().ideas[0]!
+    expect(delivered.status).toBe('archived')
+    expect(delivered.deliveredAt).toBeDefined()
+    expect(delivered.archivedAt).toBeDefined()
+    ledger.dispose()
+  })
+
+  it('recette NOK (followUp) creates a linked open child and archives the parent atomically', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { ...createAction('idea-a', 'Parent'), id: 'idea-a', input: { title: 'Parent', body: 'Parent summary', workspaceId: 'w1' } })
+    ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-a', status: 'underReview' })
+    ledger.applyRequest('r3', {
+      kind: 'followUp',
+      ideaId: 'idea-a',
+      input: { title: 'Rework the fade-out', body: 'Justification text\n\n---\n\n**Summary**\n\nParent summary' },
+    })
+    const ideas = ledger.snapshot().ideas
+    expect(ideas).toHaveLength(2)
+    const parent = ideas.find(idea => idea.id === 'idea-a')!
+    const child = ideas.find(idea => idea.id !== 'idea-a')!
+    expect(parent.status).toBe('archived')
+    expect(parent.archivedAt).toBeDefined()
+    expect(parent.deliveredAt).toBeUndefined()
+    expect(child.status).toBe('open')
+    expect(child.followUpOfId).toBe('idea-a')
+    expect(child.workspaceId).toBe('w1')
+    expect(child.title).toBe('Rework the fade-out')
+    expect(child.body).toContain('Justification text')
+    // The child continues the monotonic numbering sequence.
+    expect(child.ideaNumber).toBe(2)
+    ledger.dispose()
+  })
+
+  it('followUp requires an under-review parent (open is rejected)', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    expect(() => ledger.applyRequest('r2', {
+      kind: 'followUp',
+      ideaId: 'idea-a',
+      input: { title: 'Follow-up', body: 'Body' },
+    })).toThrowError(/follow-up requires an under-review idea/)
+    // The failed verb must not have mutated the ledger.
+    expect(ledger.snapshot().ideas).toHaveLength(1)
+    expect(ledger.snapshot().ideas[0]!.status).toBe('open')
+    ledger.dispose()
+  })
+
+  it('followUp rejects a blank child title', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('idea-a'))
+    ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-a', status: 'underReview' })
+    expect(() => ledger.applyRequest('r3', {
+      kind: 'followUp',
+      ideaId: 'idea-a',
+      input: { title: '   ', body: 'Body' },
+    })).toThrowError(/title is required/)
+    expect(ledger.snapshot().ideas).toHaveLength(1)
+    expect(ledger.snapshot().ideas[0]!.status).toBe('underReview')
+    ledger.dispose()
+  })
+})

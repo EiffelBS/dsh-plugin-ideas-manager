@@ -84,6 +84,8 @@ export declare const classes: {
     readonly deliveredStamp: "dsh-ideas-delivered-stamp";
     readonly deliveredBadge: "dsh-ideas-delivered-badge";
     readonly archivedStamp: "dsh-ideas-archived-stamp";
+    readonly reviewBadge: "dsh-ideas-review-badge";
+    readonly followUpBadge: "dsh-ideas-followup-badge";
     readonly tabCount: "dsh-ideas-tab-count";
     readonly scoreIcon: "dsh-ideas-score-icon";
     readonly fieldHint: "dsh-ideas-field-hint";

@@ -1,8 +1,10 @@
 /**
  * Ideas host service: owns the ledger and fans its change notifications out to
  * the SSE route, and (P2) schedules the optional one-way TaskBoard mirror.
- * No timers, no sessions — the ideas board is a passive Host-authoritative
- * store (unlike the task board's execution runner).
+ * The board is a passive Host-authoritative store (unlike the task board's
+ * execution runner) — the only timer is the under-review poll, which watches
+ * for mirrored task cards passing `done` and moves the linked idea to
+ * `underReview` (the recette gate). No other background work runs.
  *
  * Mirror discipline (frozen in HANDOVER §2.3): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -21,6 +23,9 @@ import {
   type IdeasSnapshot,
 } from './protocol.ts'
 
+/** How often the under-review poll re-reads the task-board card statuses. */
+const UNDER_REVIEW_POLL_MS = 30_000
+
 /** Apply response: the fresh snapshot, plus the generated export when asked. */
 export interface IdeasApplyResponse {
   state: IdeasSnapshot
@@ -38,6 +43,7 @@ export class IdeasHostService {
   private readonly pendingMirrors: Promise<void>[] = []
   private active = true
   private disposed = false
+  private reviewPoll: ReturnType<typeof setInterval> | undefined
 
   constructor(options: {
     ledger?: IdeasHostLedger
@@ -105,9 +111,52 @@ export class IdeasHostService {
     }
   }
 
+  /**
+   * Start the under-review poll: every `intervalMs` the mirror's task-card
+   * statuses are read and any open idea whose linked card is `done` moves to
+   * `underReview` (the recette gate — the task is finished, human acceptance
+   * still pending). No-op when the mirror is absent or autoMirror is off.
+   */
+  startUnderReviewPoll(intervalMs: number = UNDER_REVIEW_POLL_MS): void {
+    if (this.reviewPoll !== undefined || this.mirror === undefined || !this.autoMirror) return
+    this.reviewPoll = setInterval(() => { void this.pollUnderReviewTransitions() }, intervalMs)
+  }
+
+  /** One poll pass (exposed for tests). Best-effort: any failure is ignored. */
+  async pollUnderReviewTransitions(): Promise<void> {
+    if (this.mirror === undefined || !this.autoMirror || this.disposed) return
+    let statuses: Map<string, string> | undefined
+    try {
+      statuses = await this.mirror.fetchTaskStatuses()
+    } catch (error) {
+      console.error(`[dsh-plugin-ideas-manager] under-review poll failed: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    if (statuses === undefined) return
+    for (const idea of this.ledger.snapshot().ideas) {
+      if (idea.status !== 'open' || idea.taskBoardId === undefined) continue
+      if (statuses.get(idea.taskBoardId) !== 'done') continue
+      try {
+        // A fresh request id per transition (the ledger dedupes replays); the
+        // move to underReview mirrors nothing — the card is already done.
+        this.ledger.applyRequest(`under-review-${idea.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`, {
+          kind: 'move',
+          ideaId: idea.id,
+          status: 'underReview',
+        })
+      } catch (error) {
+        console.error(`[dsh-plugin-ideas-manager] under-review transition failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    if (this.reviewPoll !== undefined) {
+      clearInterval(this.reviewPoll)
+      this.reviewPoll = undefined
+    }
     this.ledger.dispose()
     this.listeners.clear()
   }
@@ -124,6 +173,20 @@ export class IdeasHostService {
    */
   private scheduleMirror(action: IdeasAction, ideas: readonly IdeaRecord[]): void {
     if (!this.autoMirror || this.mirror === undefined) return
+    // The followUp verb creates a NEW open idea (the child): its card mirrors
+    // as a fresh create, while the parent card is already done (nothing to
+    // archive). Every other action mirrors on its own idea id.
+    if (action.kind === 'followUp') {
+      const child = ideas.find(item => item.followUpOfId === action.ideaId)
+      if (child === undefined) return
+      const run = this.runMirror('create', child)
+      this.pendingMirrors.push(run)
+      void run.finally(() => {
+        const index = this.pendingMirrors.indexOf(run)
+        if (index >= 0) this.pendingMirrors.splice(index, 1)
+      })
+      return
+    }
     const kind = mirrorKindOf(action)
     if (kind === undefined) return
     const ideaId = actionIdeaId(action)
@@ -178,7 +241,10 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
     case 'update':
       return 'update'
     case 'move':
-      return action.status === 'archived' ? 'archive' : 'restore'
+      // Only an archived destination mirrors as an archive; moving an idea to
+      // underReview mirrors nothing (the card already passed done), and a
+      // move back to open restores the card.
+      return action.status === 'archived' ? 'archive' : action.status === 'open' ? 'restore' : undefined
     case 'decline':
     case 'deliver':
       // A delivered idea leaves the backlog exactly like a declined one: the
@@ -187,6 +253,9 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
       return 'archive'
     case 'restore':
       return 'restore'
+    case 'followUp':
+      // Handled in scheduleMirror directly (the child idea mirrors as create).
+      return undefined
     case 'delete':
     case 'reorder':
     case 'triage':
@@ -209,6 +278,7 @@ function actionIdeaId(action: IdeasAction): string | undefined {
     case 'decline':
     case 'deliver':
     case 'triage':
+    case 'followUp':
     case 'restore':
     case 'delete':
       return action.ideaId

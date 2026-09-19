@@ -1,9 +1,10 @@
 # dsh-plugin-ideas-manager
 
 Generic idea manager for the DSH Web GUI: a Host-authoritative `/api/ideas`
-ledger, capture, and a 3-column kanban (open / archived / declined) injected
-into the sidebar under New Session — plus an optional TaskBoard mirror when the
-task-board plugin is detected at runtime (P2). Autonomous without TaskBoard:
+ledger, capture, and a 4-column kanban (open / under review / archived /
+declined) injected into the sidebar under New Session — plus an optional
+TaskBoard mirror when the task-board plugin is detected at runtime (P2).
+Autonomous without TaskBoard:
 **zero hard dependency** on `@linxin666/dsh-client-ui-task-board`.
 
 See `HANDOVER.md` for the full design session decisions and the phased plan.
@@ -56,6 +57,15 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   the UI: the New/Edit modal carries a suggested rank field (1-based open
   backlog position) that goes through the transactional triage re-rank on
   every open-backlog edit.
+- **T2 feedback (done)** — value/effort as colored low/medium/high badges on
+  every card, delivered tag moved to the right of the card title, tab
+  counters (cards per tab), the Delivered tab shows every archived idea
+  (neutral stamp for manual archives, green stamp only for delivered), and
+  the **under-review (recette) lifecycle**: a 4th kanban column between open
+  and archived. Finished work lands there automatically when its task-board
+  card reaches `done` (bridge poll); each card offers Recette OK (`deliver`),
+  Follow-up needed (atomic `followUp` verb: a linked open child idea carrying
+  the parent summary + justification, parent archived) and Decline.
 
 ## Contract (Host API)
 
@@ -67,7 +77,7 @@ Prefix `/api/ideas`. Same-origin fence: loopback socket + browser markers
 | Route | Purpose |
 |---|---|
 | `GET /api/ideas/state` | `{ schemaVersion: 1, revision, ideas[] }` |
-| `POST /api/ideas/action` | `create`, `update`, `move` (open↔archived), `decline` (+ decision), `deliver`, `triage`, `restore`, `delete`, `reorder`, `import`, `export` |
+| `POST /api/ideas/action` | `create`, `update`, `move` (open/underReview/archived), `decline` (+ decision), `deliver`, `followUp`, `triage`, `restore`, `delete`, `reorder`, `import`, `export` |
 | `GET /api/ideas/events` | SSE `{ revision }` |
 
 Error ids mirror the task-board family: `forbidden` (403), `json-required`
@@ -169,7 +179,7 @@ src/
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # task-board family discipline
   core/ideas.ts       # IdeaRecord, statuses, tag validation
-  client/             # sidebar entry + 3-column kanban (React 18) + workspace scoping
+  client/             # sidebar entry + 4-column kanban (React 18) + workspace scoping
 scripts/
   migrate-ot-ideas.mjs  # P3 one-shot OT migration (parse + dry-run/--apply; workspace by title)
   restore-3080-ideas.mjs # recover an overwritten ledger from an API-state backup
