@@ -4,8 +4,9 @@
  * Idea bodies are stored as plain markdown but displayed inside the board, so
  * this module turns them into HTML. It is deliberately a small, framework-free
  * subset (headings, bold/italic, inline code, fenced code blocks, lists,
- * links, paragraphs with hard line breaks) that matches how ideas are
- * actually written — no full CommonMark dependency is pulled into the client.
+ * blockquotes, links, paragraphs with hard line breaks) that matches how
+ * ideas are actually written — no full CommonMark dependency is pulled into
+ * the client.
  *
  * Safety: HTML is escaped FIRST, then inline markers (backticks, *, _, link
  * brackets) are matched on the escaped text, and only http(s)/mailto link
@@ -106,8 +107,25 @@ export function renderMarkdown(src: string): string {
       blocks.push(`<${tag}>${items.map(item => `<li>${item}</li>`).join('')}</${tag}>`)
       continue
     }
-    // Paragraph: gather until blank line, heading, list or fence; single
-    // newlines become <br> (hard-break convention of idea bodies).
+    // Blockquote: consecutive ">" lines (optional leading whitespace) form
+    // one quote. The inner text is re-parsed as markdown, so headings,
+    // lists, code and nested ">>" quotes all work inside; the chained
+    // re-parse terminates because each level strips one ">" marker. A line
+    // without a ">" marker ends the quote (no lazy continuation, matching
+    // the predictable-subset philosophy).
+    if (trimmed.startsWith('>')) {
+      const inner: string[] = []
+      while (i < lines.length) {
+        const quote = /^\s*>( ?(.*))?$/.exec(lines[i]!)
+        if (quote === null) break
+        inner.push(quote[2] ?? '')
+        i++
+      }
+      blocks.push(`<blockquote>${renderMarkdown(inner.join('\n'))}</blockquote>`)
+      continue
+    }
+    // Paragraph: gather until blank line, heading, list, quote or fence;
+    // single newlines become <br> (hard-break convention of idea bodies).
     const buf = [lines[i]!]
     i++
     while (i < lines.length) {
@@ -117,6 +135,7 @@ export function renderMarkdown(src: string): string {
         || /^(#{1,6})\s+/.test(line)
         || line.startsWith('```')
         || /^([-*+]|\d+\.)\s+/.test(line)
+        || line.startsWith('>')
       ) break
       buf.push(lines[i]!)
       i++

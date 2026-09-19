@@ -4,8 +4,9 @@
  * Idea bodies are stored as plain markdown but displayed inside the board, so
  * this module turns them into HTML. It is deliberately a small, framework-free
  * subset (headings, bold/italic, inline code, fenced code blocks, lists,
- * links, paragraphs with hard line breaks) that matches how ideas are
- * actually written — no full CommonMark dependency is pulled into the client.
+ * blockquotes, links, paragraphs with hard line breaks) that matches how
+ * ideas are actually written — no full CommonMark dependency is pulled into
+ * the client.
  *
  * Safety: HTML is escaped FIRST, then inline markers (backticks, *, _, link
  * brackets) are matched on the escaped text, and only http(s)/mailto link

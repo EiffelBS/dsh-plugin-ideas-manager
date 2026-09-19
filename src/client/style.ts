@@ -633,6 +633,25 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   text-decoration-thickness: 2px;
 }
 
+/* Blockquotes, on the card and in the modal preview (shared rules). */
+.dsh-ideas-markdown-body blockquote,
+.dsh-ideas-preview blockquote {
+  margin: 4px 0;
+  padding: 2px 8px;
+  border-left: 3px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-markdown-body blockquote > :first-child,
+.dsh-ideas-preview blockquote > :first-child {
+  margin-top: 0;
+}
+
+.dsh-ideas-markdown-body blockquote > :last-child,
+.dsh-ideas-preview blockquote > :last-child {
+  margin-bottom: 0;
+}
+
 .dsh-ideas-updated {
   white-space: nowrap;
 }

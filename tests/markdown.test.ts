@@ -54,6 +54,44 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('- a\n1. b')).toContain('<ol>')
   })
 
+  it('renders blockquotes with inline content', () => {
+    expect(renderMarkdown('> quoted text')).toBe('<blockquote><p>quoted text</p></blockquote>')
+    // Inner content runs through inline parsing.
+    expect(renderMarkdown('> **bold** and `code`')).toContain('<strong>bold</strong>')
+    expect(renderMarkdown('> **bold** and `code`')).toContain('<code>code</code>')
+    // Consecutive quote lines form one blockquote with hard line breaks.
+    expect(renderMarkdown('> line one\n> line two')).toBe(
+      '<blockquote><p>line one<br>line two</p></blockquote>',
+    )
+  })
+
+  it('renders multi-paragraph and nested blockquotes', () => {
+    expect(renderMarkdown('> first\n>\n> second')).toBe(
+      '<blockquote><p>first</p>\n<p>second</p></blockquote>',
+    )
+    // Block-level constructs work inside a quote; nested ">>" quotes nest.
+    expect(renderMarkdown('> # Title')).toBe('<blockquote><h1>Title</h1></blockquote>')
+    expect(renderMarkdown('> > nested')).toBe(
+      '<blockquote><blockquote><p>nested</p></blockquote></blockquote>',
+    )
+  })
+
+  it('ends a blockquote at a non-quote line', () => {
+    const out = renderMarkdown('> quoted\nplain\n> more')
+    expect(out).toBe(
+      '<blockquote><p>quoted</p></blockquote>\n<p>plain</p>\n<blockquote><p>more</p></blockquote>',
+    )
+    // A quote line ends a preceding plain paragraph too.
+    expect(renderMarkdown('plain\n> quoted')).toBe('<p>plain</p>\n<blockquote><p>quoted</p></blockquote>')
+  })
+
+  it('escapes HTML inside blockquotes', () => {
+    const out = renderMarkdown('> <script>alert(1)</script>')
+    expect(out).toContain('<blockquote>')
+    expect(out).not.toContain('<script>')
+    expect(out).toContain('&lt;script&gt;')
+  })
+
   it('renders links with a safe destination only', () => {
     expect(renderMarkdown('[guide](https://example.com/a?b=1&c=2)')).toContain(
       '<a href="https://example.com/a?b=1&amp;c=2" target="_blank" rel="noreferrer">guide</a>',
