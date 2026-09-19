@@ -489,35 +489,33 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           ))}
         </select>
         {activeTab === 'overview' && (
-          <>
-            <input
-              className={classes.search}
-              type="search"
-              placeholder={t('board.search')}
-              value={filter}
-              aria-label={t('board.search')}
-              onChange={event => { setFilter(event.target.value) }}
-            />
-            <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
-              <button
-                type="button"
-                className={mdMode ? classes.mdToggleActive : classes.mdToggleButton}
-                aria-pressed={mdMode}
-                onClick={() => { setMdMode(true) }}
-              >
-                {t('board.mdView')}
-              </button>
-              <button
-                type="button"
-                className={mdMode ? classes.mdToggleButton : classes.mdToggleActive}
-                aria-pressed={!mdMode}
-                onClick={() => { setMdMode(false) }}
-              >
-                {t('board.textView')}
-              </button>
-            </div>
-          </>
+          <input
+            className={classes.search}
+            type="search"
+            placeholder={t('board.search')}
+            value={filter}
+            aria-label={t('board.search')}
+            onChange={event => { setFilter(event.target.value) }}
+          />
         )}
+        <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
+          <button
+            type="button"
+            className={mdMode ? classes.mdToggleActive : classes.mdToggleButton}
+            aria-pressed={mdMode}
+            onClick={() => { setMdMode(true) }}
+          >
+            {t('board.mdView')}
+          </button>
+          <button
+            type="button"
+            className={mdMode ? classes.mdToggleButton : classes.mdToggleActive}
+            aria-pressed={!mdMode}
+            onClick={() => { setMdMode(false) }}
+          >
+            {t('board.textView')}
+          </button>
+        </div>
         <button
           type="button"
           className={classes.primaryButton}
@@ -855,6 +853,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             allIdeas={ideas}
             workspaceTitle={workspaceTitle}
             onEdit={openEdit}
+            mdMode={mdMode}
           />
         )}
 

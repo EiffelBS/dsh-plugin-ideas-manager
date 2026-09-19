@@ -955,7 +955,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
 
 .dsh-ideas-priorities-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin: 2px 0;
   padding: 6px 8px;
@@ -964,9 +964,17 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
 }
 
+/* A row under the pointer while dragging: the accent ring marks where the
+   drop would insert the dragged idea (mirrors the grip's drag affordance). */
+.dsh-ideas-priorities-row[data-drop-target] {
+  border-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  box-shadow: 0 0 0 1px var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
 .dsh-ideas-priorities-rank {
   flex: none;
   min-width: 22px;
+  margin-top: 4px;
   text-align: center;
   font-size: 11px;
   font-weight: 700;
