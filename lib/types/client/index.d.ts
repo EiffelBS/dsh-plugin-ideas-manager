@@ -10,9 +10,12 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis';
 /**
  * Cordis services this plugin consumes. Declared so apply runs once the DSH
- * shell Workspace registry (dsh-api-workspace-controller) and the session
- * list are up; the board still works without them (ledger-derived workspace
- * ids only, scope-or-generic capture default).
+ * shell Workspace registry (dsh-api-workspace-controller), the session
+ * controller and the typed remote namespaces are up; the board still works
+ * without them (ledger-derived workspace ids only, scope-or-generic capture
+ * default). `remote` / `remote.session` are required so the model picker can
+ * read the Host catalog and select a model; without them the AI capture stays
+ * functional but the model selector is hidden.
  */
-export declare const inject: readonly ["workspaces", "sessions"];
+export declare const inject: readonly ["workspaces", "sessions", "remote", "remote.session"];
 export declare function apply(ctx: ClientContext): void;

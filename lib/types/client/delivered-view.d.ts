@@ -20,7 +20,11 @@ export interface DeliveredViewProps {
     workspaceTitle: (workspaceId: string) => string;
     /** Open the shared edit modal on the given idea. */
     onEdit: (idea: IdeaRecord) => void;
+    /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
+    onToggleTag: (name: string) => void;
+    /** Currently selected filter tags (highlighted row pills). */
+    activeTags: readonly string[];
     /** Render descriptions as markdown (raw text otherwise), like the kanban. */
     mdMode: boolean;
 }
-export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, mdMode }: DeliveredViewProps): import("react").JSX.Element;
+export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode }: DeliveredViewProps): import("react").JSX.Element;

@@ -126,45 +126,46 @@ session instead of creating it manually:
    `session.prompt([{ type: 'text', text }], 'queue')` on the resolved session
    face (`scope` → `sessionOf`), both duck-typed and optional — an absent
    service keeps the plain manual Create.
-3. The launch prompt is the SHORT form: the non-negotiable write-channel
-   contract + the captured idea + an inline fallback. The analysis
-   methodology lives in the **`ideas-analyst` skill** the Host installs at
-   `<dshHome>/skills/ideas-analyst/SKILL.md` (user-dsh root, rank 400 — every
-   session sees it, whatever the workspace). The session loads it from the
-   `available_skills` catalog and follows it; if the file is missing, the
-   prompt's inline fallback still covers the body structure, title, tags and
-   the per-workspace ranking rules.
-4. The session writes exactly through this documented channel (initiator
-   `plugin:ideas-manager:ai-capture`, fresh requestId per action), reads the
-   `id` / `ideaNumber` from the response, decides value/effort (1..3) and a
-   PER-WORKSPACE rank via the `triage` verb, then reports the ranking decision
-   to the human in the requester's language (English by default).
+3. The launch prompt is MINIMAL: it carries only what the skill cannot know —
+   the captured idea, the workspace (title + id), the priority hints, and the
+   server **origin** (dynamic per instance). The analysis methodology AND the
+   full write-channel contract live in the **`ideas-analyst` skill** the Host
+   installs at `<dshHome>/skills/ideas-analyst/SKILL.md` (user-dsh root, rank
+   400 — every session sees it, whatever the workspace). The session loads it
+   from the `available_skills` catalog and follows it; if the file is missing,
+   a one-line fallback in the prompt points it at the origin and asks it to use
+   its own judgement.
+4. The session writes exactly through the channel the skill documents
+   (initiator `plugin:ideas-manager:ai-capture`, fresh requestId per action),
+   reads the `id` / `ideaNumber` from the response (re-reading the state to
+   confirm value/effort/rank/rationale landed), decides value/effort (1..3) and
+   a PER-WORKSPACE rank via the `triage` verb, then reports the ranking
+   decision to the human in the requester's language (English by default).
 
 ### Skill-as-file design (decision, P3 refinement)
 
-Splitting the analyst prompt into a short prompt + an installed skill:
+Splitting the analyst prompt into a minimal prompt + an installed skill:
 
 - **Why a skill file**: the methodology (body structure, title policy, tag
-  rules, per-workspace rank semantics) evolves without touching the prompt,
-  the plugin code, or the prompt-fidelity tests; it matches the task-board
-  precedent (`<projectRoot>/.dsh/skills/task-board/SKILL.md`); and any agent
-  session in the workspace can read it directly.
+  rules, per-workspace rank semantics) AND the write-channel contract evolve
+  without touching the prompt, the plugin code, or the prompt-fidelity tests;
+  it matches the task-board precedent (`<projectRoot>/.dsh/skills/task-board/
+  SKILL.md`); and any agent session in the workspace can read it directly. The
+  prompt stays thin and free of duplication.
 - **Installation**: `src/skill-install.ts` writes the bundled skill
   (authored in `src/skills/ideas-analyst.ts`) to the user-dsh root on plugin
   activation. First-wins: a missing file is created, a present file is never
   overwritten (delete it to restore the bundled version); a divergent present
   file is logged. Best-effort — a read-only home never breaks plugin boot.
 - **What stays in the prompt** (authored there, never in the skill): the
-  per-capture data (workspace title + id, the human draft, the priority
-  hints) and the write-channel contract. The server origin is dynamic in the
-  page, and the exact envelope must not drift from the wire gate the server
-  enforces (`isIdeaTagList`, `parseActionEnvelope`, ACTION_LIMIT), so that
-  channel text stays in `buildAnalysisPrompt` (`src/client/session-queue.ts`).
-  The prompt is deliberately MINIMAL: it loads the skill and does not re-state
-  its methodology (body structure, title policy, tag format, per-workspace
-  rank, the report language) — the agent reads those from the skill. Only if
-  the skill is missing does a one-line fallback tell it to follow the channel
-  and use its own judgement.
+  per-capture data (workspace title + id, the human draft, the priority hints)
+  and the server **origin** (dynamic per instance — only the page knows it).
+  Everything else about the channel — headers, envelope, verbs CREATE/UPDATE/
+  TRIAGE, the tags-objects/400 rule, the fresh-requestId/dedupe rule, the
+  UTF-8 guidance — is FIXED and lives in the skill. Keeping the contract in
+  the skill (single source) is what lets the prompt be minimal; the wire gate
+  (`isIdeaTagList`, `parseActionEnvelope`, ACTION_LIMIT) is what enforces it
+  server-side regardless of where the docs live.
 - **Resolution precedence** (lowest rank wins): project `.dsh/skills` (100)
   beats the user-dsh install (400), so a project copy always wins over the
   plugin's default.
@@ -177,6 +178,9 @@ Splitting the analyst prompt into a short prompt + an installed skill:
   appears. A changed file is picked up without a restart (the skill-filesystem
   watcher invalidates), since the user-dsh root is scanned on every session
   catalog build.
+- **No backticks inside the skill**: the SKILL.md is authored inside a TypeScript
+  template literal, so any backtick in its body breaks the build (TS1005). Keep
+  code examples on 4-space-indented lines and never use backtick fence/emphasis.
 
 Workspace-less captures always keep the plain manual Create.
 

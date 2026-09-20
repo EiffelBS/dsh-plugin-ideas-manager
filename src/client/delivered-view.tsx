@@ -11,12 +11,14 @@
  * verb is the only way in, restore the only way out).
  */
 
+import { type CSSProperties } from 'react'
 import type { IdeasClient } from './ideas-client.ts'
 import type { IdeaRecord } from '../core/ideas.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { ScoreBadge } from './score-badge.tsx'
+import { tagHue } from './tags.ts'
 
 export interface DeliveredViewProps {
   client: IdeasClient
@@ -26,6 +28,10 @@ export interface DeliveredViewProps {
   workspaceTitle: (workspaceId: string) => string
   /** Open the shared edit modal on the given idea. */
   onEdit: (idea: IdeaRecord) => void
+  /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
+  onToggleTag: (name: string) => void
+  /** Currently selected filter tags (highlighted row pills). */
+  activeTags: readonly string[]
   /** Render descriptions as markdown (raw text otherwise), like the kanban. */
   mdMode: boolean
 }
@@ -47,7 +53,7 @@ function isoDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, mdMode }: DeliveredViewProps) {
+export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode }: DeliveredViewProps) {
   const rows = mostRecentFirst(archivedIdeas)
   return (
     <div className={classes.priorities} data-dsh-ideas-delivered="">
@@ -86,11 +92,21 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, m
                     >
                       {idea.title}
                     </div>
-                    {(workspaceId !== undefined || idea.value !== undefined || idea.effort !== undefined) && (
+                    {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined) && (
                       <div className={classes.cardMeta}>
                         {workspaceId !== undefined && (
                           <span className={classes.workspaceChip}>{workspaceTitle(workspaceId)}</span>
                         )}
+                        {idea.tags !== undefined && idea.tags.map(tag => (
+                          <span
+                            key={tag.name}
+                            className={classes.tag}
+                            style={{ '--dsh-ideas-tag-hue': tagHue(tag.name) } as CSSProperties}
+                            onClick={() => { onToggleTag(tag.name) }}
+                          >
+                            {tag.name}
+                          </span>
+                        ))}
                         {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                         {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                       </div>

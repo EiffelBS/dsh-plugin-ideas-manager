@@ -22,7 +22,9 @@ import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
 import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, rebuildOrder, archivedIdeasOf } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
-import type { AiCaptureInput } from './session-queue.ts'
+import { matchesTags, collectKnownTags, tagHue } from './tags.ts'
+import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
+import type { AiCaptureInput, ModelChoice } from './session-queue.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
@@ -40,33 +42,6 @@ function matchesFilter(idea: IdeaRecord, filter: string): boolean {
   const needle = filter.trim().toLowerCase()
   const haystacks = [idea.title, idea.body, ...(idea.tags ?? []).map(tag => tag.name)]
   return haystacks.some(text => text.toLowerCase().includes(needle))
-}
-
-/** Conjunctive tag filter: adding a label narrows the board. */
-function matchesTags(idea: IdeaRecord, selected: readonly string[]): boolean {
-  if (selected.length === 0) return true
-  const names = new Set((idea.tags ?? []).map(tag => tag.name))
-  return selected.every(name => names.has(name))
-}
-
-/** Every label in use across the ledger, sorted (for the filter chips). */
-function collectKnownTags(ideas: readonly IdeaRecord[]): string[] {
-  const names = new Set<string>()
-  for (const idea of ideas) for (const tag of idea.tags ?? []) names.add(tag.name)
-  return [...names].sort((a, b) => a.localeCompare(b))
-}
-
-/**
- * Deterministic per-name hue (0–359) so every tag keeps a stable,
- * distinct color on the cards. FNV-1a then maps onto 15 well-spaced hues.
- */
-function tagHue(name: string): number {
-  let h = 0x811c9dc5
-  for (let i = 0; i < name.length; i++) {
-    h ^= name.charCodeAt(i)
-    h = Math.imul(h, 0x01000193)
-  }
-  return ((h >>> 0) % 15) * 24
 }
 
 function shortDate(epoch: number): string {
@@ -265,6 +240,50 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
   const aiMode = initial === undefined && workspace !== '' && client.sessionLauncher !== undefined
     && catalog.some(entry => entry.workspaceId === workspace && entry.knownToApp)
 
+  // Phase 3 refinement: model picker for the analysing session. Loaded once
+  // per capture when the AI mode is reachable and the session controller can
+  // list models; an empty list hides the picker and the analyst session keeps
+  // its Host default. With many providers/models the picker is a cascade:
+  // a provider selector + a text filter + the (filtered) model list.
+  const [modelChoices, setModelChoices] = useState<ModelChoice[]>([])
+  const [selProvider, setSelProvider] = useState('')
+  const [modelQuery, setModelQuery] = useState('')
+  const [selModelKey, setSelModelKey] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    if (client.sessionLauncher === undefined) return
+    void client.sessionLauncher.listModels().then(choices => {
+      if (cancelled) return
+      setModelChoices(choices)
+      if (choices.length > 0) setSelProvider(choices[0]!.provider)
+    })
+    return () => { cancelled = true }
+    // The launcher is stable for the page; load once per modal open.
+  }, [client.sessionLauncher])
+  // Distinct providers, order preserved from the catalog.
+  const modelProviders: string[] = []
+  for (const choice of modelChoices) {
+    if (!modelProviders.includes(choice.provider)) modelProviders.push(choice.provider)
+  }
+  const activeProviderChoices = modelChoices.filter(choice => choice.provider === selProvider)
+  const query = modelQuery.trim().toLowerCase()
+  const filteredModelChoices = query === ''
+    ? activeProviderChoices
+    : activeProviderChoices.filter(choice =>
+        choice.label.toLowerCase().includes(query))
+  const selectedModel: ModelChoice | undefined =
+    filteredModelChoices.find(choice => choice.label === selModelKey)
+      ?? activeProviderChoices.find(choice => choice.label === selModelKey)
+
+  // Preselect the first model of the active provider whenever the provider
+  // (or the loaded catalog) changes and nothing is selected yet.
+  useEffect(() => {
+    if (activeProviderChoices.length === 0) return
+    if (!activeProviderChoices.some(choice => choice.label === selModelKey)) {
+      setSelModelKey(activeProviderChoices[0]!.label)
+    }
+  }, [selProvider, activeProviderChoices, selModelKey])
+
   // Escape closes the modal (Echo the overlay-click behaviour), without
   // closing anything behind it: the listener runs in the capture phase and
   // stops the event from reaching the shell's own handlers.
@@ -313,6 +332,9 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
           ...(effort === undefined ? {} : { effort }),
           rationale,
           ...(parsedRank === undefined ? {} : { rank: parsedRank }),
+          // A selected model is installed on the analyst session before the
+          // prompt; none means the Host default is used.
+          ...(selectedModel === undefined ? {} : { model: selectedModel }),
         }
         onClose()
         void client.sessionLauncher.launch(captured).catch((launchError: unknown) => {
@@ -426,70 +448,110 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
           </select>
           {sessionDefaulted && <div className={classes.fieldHint}>{t('new.sessionWorkspaceHint')}</div>}
         </div>
-        <div className={`${classes.fieldRow} ${classes.bodyLevelRow}`}>
+        {aiMode && modelChoices.length > 0 && (
           <div className={classes.field}>
-            <span className={classes.fieldRowBetween}>
-              <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
-              <button
-                type="button"
-                className={classes.ghostButton}
-                aria-pressed={preview}
-                onClick={() => { setPreview(current => !current) }}
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-model">{t('new.model')}</label>
+            <div className={`${classes.fieldRow} ${classes.modelRow}`}>
+              <select
+                id="dsh-ideas-model-provider"
+                className={classes.select}
+                value={selProvider}
+                disabled={client.pending}
+                title={t('new.modelProvider')}
+                onChange={event => { setSelProvider(event.target.value); setModelQuery('') }}
               >
-                {preview ? t('edit.previewOff') : t('edit.preview')}
-              </button>
-            </span>
-            {preview
-              ? (
-                <div
-                  className={classes.preview}
-                  data-dsh-ideas-preview=""
-                  dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
-                />
-              )
-              : (
-                <textarea
-                  id="dsh-ideas-body"
-                  className={`${classes.textarea} ${classes.bodyTextarea}`}
-                  value={body}
-                  placeholder={t('new.bodyPlaceholder')}
-                  onChange={event => { setBody(event.target.value) }}
-                />
-              )}
-            {aiMode && <div className={classes.fieldHint}>{t('new.aiCaptureHint')}</div>}
+                {modelProviders.map(provider => (
+                  <option key={provider} value={provider}>{provider}</option>
+                ))}
+              </select>
+              <input
+                id="dsh-ideas-model-query"
+                className={classes.input}
+                type="search"
+                value={modelQuery}
+                placeholder={t('new.modelFilterPlaceholder')}
+                disabled={client.pending}
+                onChange={event => { setModelQuery(event.target.value) }}
+              />
+              <select
+                id="dsh-ideas-model"
+                className={classes.select}
+                value={selModelKey}
+                disabled={client.pending}
+                onChange={event => { setSelModelKey(event.target.value) }}
+              >
+                {filteredModelChoices.map(choice => (
+                  <option key={choice.label} value={choice.label}>{choice.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className={classes.fieldHint}>{t('new.modelHint')}</div>
           </div>
-          <div className={classes.bodyLevelSide}>
-            <LevelSelect
-              id="dsh-ideas-value"
-              label={t('new.value')}
-              value={valueLevel}
-              onChange={setValueLevel}
-              disabled={client.pending}
-            />
-            <LevelSelect
-              id="dsh-ideas-effort"
-              label={t('new.effort')}
-              value={effortLevel}
-              onChange={setEffortLevel}
-              disabled={client.pending}
-            />
-          </div>
+        )}
+        <div className={classes.field}>
+          <span className={classes.fieldRowBetween}>
+            <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
+            <button
+              type="button"
+              className={classes.ghostButton}
+              aria-pressed={preview}
+              onClick={() => { setPreview(current => !current) }}
+            >
+              {preview ? t('edit.previewOff') : t('edit.preview')}
+            </button>
+          </span>
+          {preview
+            ? (
+              <div
+                className={classes.preview}
+                data-dsh-ideas-preview=""
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+              />
+            )
+            : (
+              <textarea
+                id="dsh-ideas-body"
+                className={`${classes.textarea} ${classes.bodyTextarea}`}
+                value={body}
+                placeholder={t('new.bodyPlaceholder')}
+                onChange={event => { setBody(event.target.value) }}
+              />
+            )}
+          {aiMode && <div className={classes.fieldHint}>{t('new.aiCaptureHint')}</div>}
         </div>
         {(initial === undefined || initial.status === 'open') && (
-          <div className={classes.field}>
-            <label className={classes.fieldLabel} htmlFor="dsh-ideas-rank">{t('new.rank')}</label>
-            <input
-              id="dsh-ideas-rank"
-              className={classes.input}
-              type="number"
-              min={1}
-              step={1}
-              value={rank}
-              disabled={client.pending}
-              onChange={event => { setRank(event.target.value) }}
-            />
-            <div className={classes.fieldHint}>{t('new.rankHint')}</div>
-          </div>
+          <>
+            <div className={classes.rankLevelRow}>
+              <div className={classes.field}>
+                <label className={classes.fieldLabel} htmlFor="dsh-ideas-rank">{t('new.rank')}</label>
+                <input
+                  id="dsh-ideas-rank"
+                  className={classes.input}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={rank}
+                  disabled={client.pending}
+                  onChange={event => { setRank(event.target.value) }}
+                />
+              </div>
+              <LevelSelect
+                id="dsh-ideas-value"
+                label={t('new.value')}
+                value={valueLevel}
+                onChange={setValueLevel}
+                disabled={client.pending}
+              />
+              <LevelSelect
+                id="dsh-ideas-effort"
+                label={t('new.effort')}
+                value={effortLevel}
+                onChange={setEffortLevel}
+                disabled={client.pending}
+              />
+            </div>
+            <div className={classes.fieldHint}>{t('new.rankValueEffortHint')}</div>
+          </>
         )}
         <div className={classes.field}>
           <label className={classes.fieldLabel} htmlFor="dsh-ideas-tags">{t('new.tags')}</label>
@@ -754,16 +816,19 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     matchesWorkspaceScope(idea, workspaceFilter)
     && matchesFilter(idea, filter)
     && matchesTags(idea, tagFilter))
-  // The Priorities ranking ignores the kanban search/tag filters: it ranks the
-  // OPEN backlog of the current workspace scope — archived/declined ideas are
-  // simply not part of the ranking (see priorities-view.tsx).
+  // The Priorities ranking ranks the OPEN backlog of the current workspace
+  // scope — archived/declined ideas are simply not part of the ranking (see
+  // priorities-view.tsx). The shared tag filter narrows it (the search box is
+  // kanban-only), so a tag-filtered board shows the same open rows everywhere.
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
-    && matchesWorkspaceScope(idea, workspaceFilter))
+    && matchesWorkspaceScope(idea, workspaceFilter)
+    && matchesTags(idea, tagFilter))
   // The Delivered log mirrors the Priorities scope: archived ideas of the
-  // current workspace ('' = all), no kanban filters; the green delivery
-  // stamp renders only for rows carrying deliveredAt.
+  // current workspace ('' = all), narrowed by the shared tag filter; the
+  // green delivery stamp renders only for rows carrying deliveredAt.
   const archivedIdeas = archivedIdeasOf(ideas, workspaceFilter)
+    .filter(idea => matchesTags(idea, tagFilter))
   const byStatus = (status: IdeaStatus): IdeaRecord[] => {
     const rows = visible.filter(idea => idea.status === status)
     // "All workspaces": lay the column out per workspace group (named by
@@ -806,11 +871,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     }
     setDrag(undefined)
     setDragTarget(undefined)
+    dragAutoscrollEnd()
   }
 
   /** Start an HTML5 drag carrying the idea id, exactly like the task-board family. */
   const startDrag = (idea: IdeaRecord): void => {
     setDrag({ id: idea.id, source: idea.status })
+    dragAutoscrollBegin()
   }
 
   const openEdit = (idea: IdeaRecord): void => {
@@ -930,9 +997,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
-      {activeTab === 'overview'
-        ? (
-          <>
+      {/* Shared tag filter chips: rendered on every tab. The same selection
+          narrows the Overview columns, the Priorities ranking and the
+          Delivered log (see checkTagRow below). */}
       {knownTags.length > 0 && (
         <div className={classes.tagFilterRow}>
           <span className={classes.tagFilterLabel}>{t('board.tagFilter')}</span>
@@ -956,9 +1023,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
+      {activeTab === 'overview'
+        ? (
+          <>
       <div className={classes.dragHint}>{t('board.dragHint')}</div>
 
-      <div className={classes.columns}>
+      <div className={classes.columns} data-dsh-columns-scroll="">
         {IDEA_COLUMNS.map(status => {
           const columnIdeas = byStatus(status)
           return (
@@ -970,6 +1040,17 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 if (drag !== undefined) {
                   event.preventDefault()
                   event.dataTransfer.dropEffect = 'move'
+                  // Auto-scroll the scroll surfaces when the pointer nears an
+                  // edge: the column body (vertical) and the columns wrapper
+                  // (horizontal, for when the Archived/Declined columns are
+                  // off-screen on a narrow window). Both are fed to the
+                  // autoscroll so whatever can scroll does.
+                  const body = event.currentTarget.closest<HTMLElement>('[data-dsh-column-scroll]')
+                  const rows = event.currentTarget.closest<HTMLElement>('[data-dsh-columns-scroll]')
+                  const scrollers: HTMLElement[] = []
+                  if (body !== null) scrollers.push(body)
+                  if (rows !== null) scrollers.push(rows)
+                  dragAutoscrollTrack(event, ...scrollers)
                   // Over the column surface (outside any card) the insertion
                   // line sits under the last card and the drop appends at the
                   // column end, mirroring the Priorities list surface.
@@ -994,7 +1075,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
                 <span className={classes.columnCount}>{columnIdeas.length}</span>
               </div>
-              <div className={classes.columnBody}>
+              <div className={classes.columnBody} data-dsh-column-scroll="">
                   {status === 'open' && (
                     <button type="button" className={classes.quickAdd} onClick={() => { setShowNew(true) }}>
                       <span aria-hidden="true">＋</span>
@@ -1114,7 +1195,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   }
                                   startDrag(idea)
                                 }}
-                                onDragEnd={() => { setDrag(undefined); setDragTarget(undefined) }}
+                                onDragEnd={() => { setDrag(undefined); setDragTarget(undefined); dragAutoscrollEnd() }}
                               >
                                 <span aria-hidden="true">⠿</span>
                               </div>
@@ -1334,6 +1415,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               allIdeas={ideas}
               workspaceTitle={workspaceTitle}
               onEdit={openEdit}
+              onToggleTag={toggleTag}
+              activeTags={tagFilter}
               mdMode={mdMode}
               grouped={workspaceFilter === ''}
             />
@@ -1344,6 +1427,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               archivedIdeas={archivedIdeas}
               workspaceTitle={workspaceTitle}
               onEdit={openEdit}
+              onToggleTag={toggleTag}
+              activeTags={tagFilter}
               mdMode={mdMode}
             />
           )}

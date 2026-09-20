@@ -51,7 +51,7 @@ export declare const fr: {
     'new.rationale': string;
     'new.rationalePlaceholder': string;
     'new.rank': string;
-    'new.rankHint': string;
+    'new.rankValueEffortHint': string;
     'new.rankInvalid': string;
     'new.value': string;
     'new.effort': string;
@@ -63,6 +63,10 @@ export declare const fr: {
     'new.required': string;
     'new.workspace': string;
     'new.workspaceNone': string;
+    'new.model': string;
+    'new.modelProvider': string;
+    'new.modelFilterPlaceholder': string;
+    'new.modelHint': string;
     'new.sessionWorkspaceHint': string;
     'card.drag': string;
     'card.clickToEdit': string;
@@ -156,13 +160,17 @@ export declare const en: {
     'new.rationale': string;
     'new.rationalePlaceholder': string;
     'new.rank': string;
-    'new.rankHint': string;
+    'new.rankValueEffortHint': string;
     'new.rankInvalid': string;
     'new.value': string;
     'new.effort': string;
     'new.levelNone': string;
     'new.workspace': string;
     'new.workspaceNone': string;
+    'new.model': string;
+    'new.modelProvider': string;
+    'new.modelFilterPlaceholder': string;
+    'new.modelHint': string;
     'new.sessionWorkspaceHint': string;
     'new.submit': string;
     'new.submitAi': string;

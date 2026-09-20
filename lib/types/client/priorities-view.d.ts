@@ -29,6 +29,10 @@ export interface PrioritiesProps {
     workspaceTitle: (workspaceId: string) => string;
     /** Open the shared edit modal on the given idea. */
     onEdit: (idea: IdeaRecord) => void;
+    /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
+    onToggleTag: (name: string) => void;
+    /** Currently selected filter tags (highlighted pills + row meta). */
+    activeTags: readonly string[];
     /** Render descriptions as markdown (raw text otherwise), like the kanban. */
     mdMode: boolean;
     /** True when the board shows "all workspaces": render per-workspace headed
@@ -37,4 +41,4 @@ export interface PrioritiesProps {
     grouped: boolean;
 }
 /** Ranked backlog view (see module doc). */
-export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, mdMode, grouped }: PrioritiesProps): import("react").JSX.Element;
+export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped }: PrioritiesProps): import("react").JSX.Element;

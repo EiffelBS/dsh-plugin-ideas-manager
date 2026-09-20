@@ -58,6 +58,10 @@ skill.
 
    Write it in the language of the human's draft and ground it in this
    project. Maximum ~32 KiB.
+   Before keeping a code/file/line reference from the human's draft, re-check
+   it in the project (read the source or grep) rather than copying it
+   verbatim - stale references creep into drafts and your analysis should
+   correct them.
 3. TAGS - keep the relevant human tags and ADD your own (at most 8, each name
    at most 32 characters, unique). Examples: a subsystem, a platform
    constraint. Persist them as an array of OBJECTS, never plain strings:
@@ -69,30 +73,81 @@ skill.
    of the idea INSIDE the open backlog of THIS workspace only (1 = highest).
    Other workspaces and the generic "no workspace" group rank separately -
    never rank against them. Choose the position that reflects the idea's
-   priority WITHOUT disturbing the relative order of the existing open ideas.
-   When this workspace has no open idea yet, rank = 1.
+   priority. The triage verb INSERTS at that position and SHIFTS the ranks of
+   every other open idea of the workspace to make room - you may re-rank the
+   open backlog whenever the content justifies it (a new idea, a delivery,
+   a scope change); you are not limited to "neither disturbing". When this
+   workspace has no open idea yet, rank = 1.
 6. RATIONALE - one or two sentences justifying the VALUE, the EFFORT and the
    RANK together.
 
 ## The write channel
 
-The launch prompt contains the exact write-channel contract (server origin,
-same-origin headers, envelope, verbs, limits). THIS card text is
-authoritative - do not go read plugin sources. Use the channel exactly as the
-prompt specifies; the prompt also warns which payload shapes are rejected with
-400 invalid-action. When you use PowerShell against the channel, send each
-JSON body as UTF-8 bytes so accents survive the round-trip.
+The launch prompt that loaded this skill tells you the exact **server origin**
+(it is the address of the DSH web server hosting the board, e.g.
+http://127.0.0.1:3101 - it varies per instance, so take it from the prompt).
+Everything else about the channel is fixed and documented here. THIS contract
+is authoritative - do not go read plugin sources.
 
-## Rules
+Every request must carry:
+
+    Origin: <the server origin from the prompt>
+    Sec-Fetch-Site: same-origin
+    Content-Type: application/json
+
+GET <origin>/api/ideas/state
+-> 200 { "revision": <int>, "ideas": [ <IdeaRecord>... ] }
+
+POST <origin>/api/ideas/action
+Envelope, exact keys:
+  { "requestId": "<fresh uuid, unique per action>", "initiator": "plugin:ideas-manager:ai-capture", "action": <verb> }
+
+Verbs:
+
+CREATE:
+  { "kind": "create", "id": "<fresh uuid>", "input": {
+      "title": "<final title>",
+      "body": "<your full markdown analysis, quotes/backslashes escaped>",
+      "tags": [ { "name": "..." } ],
+      "workspaceId": "<the capture workspace id>" } }
+  IMPORTANT: "tags" is an array of OBJECTS { "name": "..." } - an array of
+  plain strings is REJECTED with 400 invalid-action.
+
+UPDATE (only when you merge the capture into an existing duplicate):
+  { "kind": "update", "ideaId": "<id>", "patch": {
+      "title": "<final title>", "body": "<your analysis>", "tags": [ { "name": "..." } ] } }
+
+TRIAGE (priority opinion + rank):
+  { "kind": "triage", "ideaId": "<id>", "patch": {
+      "value": <1|2|3>, "effort": <1|2|3>, "rank": <position>, "rationale": "<one or two sentences>" } }
+  Omit "rank" from the patch when the idea is not open.
+
+Procedure:
+
+1. GET the state. Dedupe: compare the INTENT against the open AND archived
+   ideas of THIS workspace ONLY (ideas of other workspaces and of the
+   "no workspace" group are out of scope). On a match: UPDATE that idea with
+   your final title/analysis/tags, then TRIAGE it - never create a duplicate.
+   Otherwise: CREATE, then TRIAGE the created card.
+   If the GET /api/ideas/state response is too large to display in one output,
+   re-run it through a compact projection (only id, workspaceId, status, rank,
+   ideaNumber, title) so you can still deduplicate and rank against the full
+   open backlog.
+2. Each action uses a FRESH requestId (a replayed requestId is deduped - a
+   no-op).
+3. The action 200 response returns the whole board snapshot, not just your
+   card. Read the created/updated card's "id" and its "ideaNumber" from that
+   snapshot, and re-read GET /api/ideas/state afterwards to confirm the stored
+   value/effort/rank/rationale actually landed.
+
+Rules:
 
 - Never read or modify an idea of another workspace; never touch the
   "no workspace" group.
-- Dedupe before creating: compare against the open AND archived ideas of THIS
-  workspace only; on a match, update that idea instead of creating a
-  duplicate.
-- Each action uses a FRESH requestId (a replayed requestId is deduped - a
-  no-op).
-- Read the created/updated card's id and ideaNumber from the action response.
+- The channel refuses requests missing the headers above (403), and bodies
+  over 64 KiB.
+- When you use PowerShell against the channel, send each JSON body as UTF-8
+  bytes ([Text.Encoding]::UTF8.GetBytes(...)) so accents survive the round-trip.
 
 ## Final report (≤ 4 sentences, in the requester's language)
 

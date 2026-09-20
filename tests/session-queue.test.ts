@@ -1,14 +1,14 @@
 /**
- * Phase 3 session-queue tests: the structured analyst prompt (data fidelity,
- * channel contract) and the defensive launcher resolution + launch flow
+ * Phase 3 session-queue tests: the structured analyst prompt (data fidelity
+ * and the skill reference) and the defensive launcher resolution + launch flow
  * against a stubbed DSH session controller.
  *
- * The split (see docs/agent-write-channel.md §Phase 3): the prompt carries the
- * per-capture data and the write-channel contract ONLY; the analysis
- * methodology (body structure, title/tag/rank rules, the report) lives
- * in the installed `ideas-analyst` skill, which the analysing session loads
- * itself. These tests therefore assert the prompt's dynamic data + channel
- * text + the skill reference, never a re-statement of the methodology.
+ * The split (see docs/agent-write-channel.md §Phase 3): the prompt is MINIMAL
+ * and carries ONLY the per-capture data (workspace, draft, priority hints)
+ * plus the dynamic server origin; the analysis methodology AND the full
+ * write-channel contract live in the installed `ideas-analyst` skill, which
+ * the analysing session loads itself. These tests assert the prompt is thin
+ * and that the skill really is the home of the contract.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -16,7 +16,7 @@ import { buildAnalysisPrompt, resolveSessionLauncher, type SessionLauncher } fro
 import { IDEAS_ANALYST_SKILL_CONTENT } from '../src/skills/ideas-analyst.ts'
 
 describe('buildAnalysisPrompt', () => {
-  it('carries the captured idea, the workspace and the write-channel contract', () => {
+  it('carries the captured idea, the workspace and the server origin — nothing else technical', () => {
     const prompt = buildAnalysisPrompt(
       { workspaceId: 'ws-1', workspaceTitle: 'Alpha', title: 'Night mode', body: 'Context lines', tags: ['ui', 'polish'], value: 2 },
       'http://127.0.0.1:3101',
@@ -25,47 +25,48 @@ describe('buildAnalysisPrompt', () => {
     expect(prompt).toContain('Night mode')
     expect(prompt).toContain('Context lines')
     expect(prompt).toContain('Tags (human suggestion): ui, polish')
-    expect(prompt).toContain('http://127.0.0.1:3101/api/ideas/state')
-    expect(prompt).toContain('Sec-Fetch-Site: same-origin')
-    expect(prompt).toContain('plugin:ideas-manager:ai-capture')
-    expect(prompt).toContain('"workspaceId": "ws-1"')
+    // The dynamic origin is present (the skill does not know it).
+    expect(prompt).toContain('http://127.0.0.1:3101')
+    // The contract details are NOT duplicated in the prompt: they live in the skill.
+    expect(prompt).not.toContain('Sec-Fetch-Site')
+    expect(prompt).not.toContain('plugin:ideas-manager:ai-capture')
+    expect(prompt).not.toContain('`invalid-action`')
+    expect(prompt).not.toContain('[Text.Encoding]::UTF8.GetBytes')
+    expect(prompt).not.toContain('/api/ideas/state')
+    expect(prompt).not.toContain('"kind": "create"')
     // The human's opinion is echoed, never replaced by a placeholder.
     expect(prompt).toContain('value: 2')
     expect(prompt).not.toContain('undefined')
   })
 
-  it('mints the strict tags format and keeps the authoritative channel text', () => {
+  it('points at the skill and never re-states the methodology or the contract', () => {
     const prompt = buildAnalysisPrompt(
-      { workspaceId: 'ws-1', workspaceTitle: 'Alpha', title: 'T', body: 'draft', tags: ['ui'] },
-      'http://127.0.0.1:3101',
-    )
-    // Wire rule the first agent run hit: tag OBJECTS, never plain strings.
-    expect(prompt).toContain('{"name": "ui"}')
-    expect(prompt).toContain('an array of plain strings is REJECTED with 400 invalid-action')
-    // Self-sufficient: no source reading, UTF-8 guidance for PowerShell.
-    expect(prompt).toContain('do not go read plugin sources')
-    expect(prompt).toContain('[Text.Encoding]::UTF8.GetBytes')
-  })
-
-  it('references the installed ideas-analyst skill without re-stating its methodology', () => {
-    const prompt = buildAnalysisPrompt(
-      { workspaceId: 'ws-1', workspaceTitle: 'Alpha', title: 'T', body: '', tags: [] },
+      { workspaceId: 'ws-1', workspaceTitle: 'Alpha', title: 'T', body: 'draft', tags: [] },
       'http://127.0.0.1:3101',
     )
     expect(prompt).toContain('Load the skill named "ideas-analyst"')
     expect(prompt).toContain('available_skills catalog')
     expect(prompt).toContain('If the skill is not available')
-    // The methodology is NOT duplicated in the prompt: it lives in the skill.
+    // No methodology duplication in the prompt.
     expect(prompt).not.toContain('## Context')
     expect(prompt).not.toContain('## Value')
     expect(prompt).not.toContain('RANKS are RELATIVE')
     expect(prompt).not.toContain('otherwise rewrite it to a more precise one')
     expect(prompt).not.toContain('at most 4 sentences')
-    // The skill really is the home of those rules.
+  })
+
+  it('the skill is the single home of the methodology AND the write-channel contract', () => {
+    // Methodology.
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Context')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('ranks are RELATIVE per workspace')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('otherwise rewrite it to a more precise one')
-    // The report language follows the requester; never a hard-coded language.
+    // Contract details that must live in the skill, not the prompt.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Sec-Fetch-Site: same-origin')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('plugin:ideas-manager:ai-capture')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('an array of\n  plain strings is REJECTED with 400 invalid-action')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('[Text.Encoding]::UTF8.GetBytes')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('GET <origin>/api/ideas/state')
+    // Report language follows the requester; never hard-coded.
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain("in the requester's language")
     expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('in French')
   })
@@ -141,5 +142,67 @@ describe('resolveSessionLauncher', () => {
     }) as SessionLauncher
     await expect(failingCreate.launch({ workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [] }))
       .rejects.toThrow('gateway-down')
+  })
+
+  it('lists models by flattening the catalog groups', async () => {
+    const controller = {
+      create: async (): Promise<string> => 's',
+      scope: () => ({}),
+      sessionOf: () => undefined,
+      modelCatalog: async () => ({
+        ok: true,
+        value: {
+          groups: [
+            { id: 'p1', name: 'Provider One', models: [{ id: 'm1', name: 'Model A' }, { id: 'm2', name: 'Model B' }] },
+            { id: 'p2', name: 'Provider Two', models: [{ id: 'm3', name: 'Model C' }] },
+          ],
+        },
+      }),
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    const choices = await launcher.listModels()
+    expect(choices).toEqual([
+      { provider: 'p1', model: 'm1', label: 'Provider One · Model A' },
+      { provider: 'p1', model: 'm2', label: 'Provider One · Model B' },
+      { provider: 'p2', model: 'm3', label: 'Provider Two · Model C' },
+    ])
+  })
+
+  it('selects the model on the fresh session before prompting', async () => {
+    const selected: Array<{ sessionId?: string; provider?: string; model?: string }> = []
+    const controller = {
+      create: async (): Promise<string> => 'session-sel',
+      scope: () => ({}),
+      sessionOf: (ctx: unknown): unknown => ({
+        prompt: async () => ({ ok: true, value: { accepted: true } }),
+      }),
+      selectModel: async (sel: { sessionId: string; provider: string; model: string }): Promise<{ ok: boolean; value: { selected: unknown } }> => {
+        selected.push(sel)
+        return { ok: true, value: { selected: sel } }
+      },
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    const result = await launcher.launch({
+      workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      model: { provider: 'p1', model: 'm1', label: 'Provider One · Model A' },
+    })
+    expect(result).toEqual({ accepted: true })
+    expect(selected).toEqual([{ sessionId: 'session-sel', provider: 'p1', model: 'm1' }])
+  })
+
+  it('proceeds on the session default when selectModel is absent or rejects', async () => {
+    const controller = {
+      create: async (): Promise<string> => 's',
+      scope: () => ({}),
+      sessionOf: () => undefined,
+      selectModel: async () => ({ ok: false, error: { code: 'session/model-unavailable' } }),
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    // Without a prompt session the launcher still throws session-face-unavailable,
+    // but the model failure came first and is non-fatal (no throw from selectModel).
+    await expect(launcher.launch({
+      workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      model: { provider: 'p1', model: 'm1', label: 'P · M' },
+    })).rejects.toThrow(/session-face-unavailable/)
   })
 })

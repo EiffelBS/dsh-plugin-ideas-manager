@@ -773,7 +773,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(780px, 94vw);
+  width: min(680px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
   padding: 18px;
@@ -851,20 +851,27 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   flex: 1 1 0;
 }
 
-/* Body (left) + value/effort (right, stacked) in one capture row: a 2-column
-   grid so the description textarea keeps most of the modal width while the two
-   level selects present in the same horizontal band. */
-.dsh-ideas-body-level-row {
+/* Model picker cascade: provider selector | search | model list in one row.
+   The two selects share the row width with the search input. */
+.dsh-ideas-model-row {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr 1fr 2fr;
+  gap: 8px;
+  align-items: start;
+}
+
+/* Suggested rank + value + effort on ONE row: three equal columns so the
+   three priority inputs sit side by side (no wasted vertical space). Each
+   child is a full cell (the rank field and the two level selects). */
+.dsh-ideas-rank-level-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   align-items: start;
 }
 
-.dsh-ideas-body-level-side {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.dsh-ideas-rank-level-row > .dsh-ideas-field {
+  min-width: 0;
 }
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
@@ -1339,8 +1346,8 @@ export const classes = {
   field: 'dsh-ideas-field',
   fieldRow: 'dsh-ideas-field-row',
   fieldRowBetween: 'dsh-ideas-field-row-between',
-  bodyLevelRow: 'dsh-ideas-body-level-row',
-  bodyLevelSide: 'dsh-ideas-body-level-side',
+  modelRow: 'dsh-ideas-model-row',
+  rankLevelRow: 'dsh-ideas-rank-level-row',
   fieldLabel: 'dsh-ideas-field-label',
   input: 'dsh-ideas-input',
   textarea: 'dsh-ideas-textarea',

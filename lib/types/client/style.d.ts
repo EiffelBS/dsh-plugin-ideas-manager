@@ -51,8 +51,8 @@ export declare const classes: {
     readonly field: "dsh-ideas-field";
     readonly fieldRow: "dsh-ideas-field-row";
     readonly fieldRowBetween: "dsh-ideas-field-row-between";
-    readonly bodyLevelRow: "dsh-ideas-body-level-row";
-    readonly bodyLevelSide: "dsh-ideas-body-level-side";
+    readonly modelRow: "dsh-ideas-model-row";
+    readonly rankLevelRow: "dsh-ideas-rank-level-row";
     readonly fieldLabel: "dsh-ideas-field-label";
     readonly input: "dsh-ideas-input";
     readonly textarea: "dsh-ideas-textarea";

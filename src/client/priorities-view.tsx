@@ -18,11 +18,12 @@
  * the same rank-write path the kanban uses.
  */
 
-import { useState, type DragEvent } from 'react'
+import { useState, type DragEvent, type CSSProperties } from 'react'
 import type { IdeasClient } from './ideas-client.ts'
 import type { IdeaRecord } from '../core/ideas.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
+import { tagHue } from './tags.ts'
 import {
   compareWorkspaceGroups,
   groupOpenByWorkspace,
@@ -33,6 +34,7 @@ import {
 import { renderMarkdown } from './markdown.ts'
 import { ScoreBadge } from './score-badge.tsx'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
+import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 
 export interface PrioritiesProps {
   client: IdeasClient
@@ -44,6 +46,10 @@ export interface PrioritiesProps {
   workspaceTitle: (workspaceId: string) => string
   /** Open the shared edit modal on the given idea. */
   onEdit: (idea: IdeaRecord) => void
+  /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
+  onToggleTag: (name: string) => void
+  /** Currently selected filter tags (highlighted pills + row meta). */
+  activeTags: readonly string[]
   /** Render descriptions as markdown (raw text otherwise), like the kanban. */
   mdMode: boolean
   /** True when the board shows "all workspaces": render per-workspace headed
@@ -72,7 +78,7 @@ function groupTitle(group: OpenRankGroup, workspaceTitle: (workspaceId: string) 
 }
 
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, mdMode, grouped }: PrioritiesProps) {
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped }: PrioritiesProps) {
   // Workspace groups in display order; inside every group ideas are ranked
   // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
   // render a pure function of the props.
@@ -95,11 +101,13 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
     event.dataTransfer.setData('text/plain', idea.id)
     event.dataTransfer.effectAllowed = 'move'
     setDragId(idea.id)
+    dragAutoscrollBegin()
   }
 
   const endDrag = (): void => {
     setDragId(undefined)
     setDropAt(undefined)
+    dragAutoscrollEnd()
   }
 
   const commitDrop = (draggedId: string, beforeId: string | undefined): void => {
@@ -148,6 +156,9 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
     if (dragId === undefined || groupOfDrag(dragId) === undefined) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
+    // Auto-scroll the list when the pointer nears its top/bottom edge.
+    const scroller = event.currentTarget.closest<HTMLElement>('[data-dsh-list-scroll]')
+    if (scroller !== null) dragAutoscrollTrack(event, scroller)
     if ((event.target as HTMLElement).closest('li') !== null) return
     const last = groupRanked[groupRanked.length - 1]
     setDropAt(last === undefined ? undefined : { id: last.id, before: false })
@@ -181,6 +192,7 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
               )}
               <ol
                 className={classes.prioritiesList}
+                data-dsh-list-scroll=""
                 onDragOver={event => { listDragOver(event, group.ideas) }}
                 onDrop={dropAtEnd}
               >
@@ -238,6 +250,16 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                           {idea.workspaceId !== undefined && (
                             <span className={classes.workspaceChip}>{workspaceTitle(idea.workspaceId)}</span>
                           )}
+                          {idea.tags !== undefined && idea.tags.map(tag => (
+                            <span
+                              key={tag.name}
+                              className={classes.tag}
+                              style={{ '--dsh-ideas-tag-hue': tagHue(tag.name) } as CSSProperties}
+                              onClick={() => { onToggleTag(tag.name) }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
                           {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                           {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                         </div>
