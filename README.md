@@ -7,8 +7,6 @@ TaskBoard mirror when the task-board plugin is detected at runtime (P2).
 Autonomous without TaskBoard:
 **zero hard dependency** on `@linxin666/dsh-client-ui-task-board`.
 
-See `HANDOVER.md` for the full design session decisions and the phased plan.
-
 ## Status
 
 - **P0 (done)** — dual-face plugin (host + browser), sidebar entry, empty
@@ -39,13 +37,14 @@ See `HANDOVER.md` for the full design session decisions and the phased plan.
   ledger with the DSH Workspace registry when the shell service is up, and
   degrades gracefully (ledger ids only) when it is not. Protocol/model
   already carried `workspaceId`, so this phase is UI-only.
-- **P3 (done)** — OpenTimbre one-shot migration via `import`
-  (`scripts/migrate-ot-ideas.mjs`: workspace resolved by title against the
-  target registry, legacy `ot` fallback) + export-golden diff.
-- **T0 (done)** — process & activation: `IDEAS_GUIDANCE` now states the full
-  capture → triage → re-rank → lifecycle protocol (announceToAgent); the
-  OT cutover is a one-line AGENTS.md flip per workspace; IDEAS.md → ledger
-  incremental re-sync (`--incremental --apply`).
+- **P3 (done)** — one-shot import from any markdown capture document following
+  the `## Idea #N` section convention (open backlog + archived + declined
+  states resolved per section, per-workspace target) with a dry-run and an
+  apply mode, plus an export-golden diff to review an import before it lands.
+- **T0 (done)** — process & activation: agent guidance now states the full
+  capture → triage → re-rank → lifecycle protocol (announceToAgent); markdown
+  capture documents become optional generated views, incremental re-sync keeps
+  a working copy in sync with the ledger.
 - **T1 (done)** — atomic `triage` verb (scores + rationale + rank +
   transactional re-rank of the open backlog), `deliver` verb (archived +
   deliveredAt, mirrors to the board), `decline` + decision, stable `#N`
@@ -104,7 +103,7 @@ Full contract (verbes table, mirror mapping, PowerShell gotchas): see
 
 ```powershell
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # vitest (protocol gate, ledger persistence, export golden, mirror, OT parser)
+pnpm test            # vitest (protocol gate, ledger persistence, export golden, mirror, markdown import parser)
 pnpm run build       # tsc -p tsconfig.build.json (types -> lib/types) && tsdown (lib/index.js + lib/client.js)
 
 # isolated test profile (never the production profile of a live instance)
@@ -115,70 +114,6 @@ dsh --profile ideas-test --port 3099                # omitting --no-open opens t
 
 The browser half is served at `/plugins/<id>/client.js` after the GUI
 restarts; the host half registers the `/api/ideas` routes at boot.
-
-## OT migration (P3)
-
-One-shot import of the OpenTimbre `docs/IDEAS.md` / `docs/IDEAS-ARCHIVE.md`
-capture documents into the ledger:
-
-```powershell
-# dry-run first (counts + per-idea summary + workspace resolution, nothing posted)
-node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md>
-
-# apply after review (isolated/ledger home), then review the export golden diff
-node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --base http://127.0.0.1:3101 --apply
-
-# target a specific workspace id / registry / title explicitly
-node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --workspace <id>
-node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --registry <workspace.json> --workspace-title "OpenTimbre"
-
-# incremental re-sync (import only what the ledger is missing; DELIVERED
-# sections land archived with a deliveredAt stamp, DELIVERED won overridden
-# by DECLINED; uses a fresh request id so a re-run is not replay-deduped)
-node scripts/migrate-ot-ideas.mjs --ideas <IDEAS.md> --archive <IDEAS-ARCHIVE.md> --incremental --status-lines
-```
-
-Workspace resolution (highest wins):
-
-1. `--workspace <id>` — explicit target workspace id.
-2. title lookup — `--registry <workspace.json>` (default
-   `~/.dsh/storages/workspace.json`) is scanned for `tables.workspaces` rows
-   whose title equals `--workspace-title` (default `OpenTimbre`,
-   case-insensitive); a single match wins, several matches warn and pick the
-   first.
-3. legacy fallback — the `ot` slug, with a warning.
-
-The `--export-out <dir>` review export is filtered with the SAME resolved id,
-so the golden diff matches the imported workspace.
-
-Mapping:
-
-- `## Idea #N ...` sections → ideas `ot-<N>`; `IDEAS.md` → `open`,
-  `IDEAS-ARCHIVE.md` → `archived`, `DECLINED` sections → `declined`.
-  With `--status-lines` (re-sync), each section is classified by its own
-  status markers instead: DECLINED → `declined`, DELIVERED → `archived`
-  (with `deliveredAt`), the rest keep the document default.
-- `rank` from the Suggested-priority table; `createdAt`/`archivedAt` from the
-  `captured` / `DELIVERED` / `DECLINED` dates in the headings (fallback: now)
-- `workspaceId` = the resolved id above (on the author machine this is the
-  OpenTimbre registry id `c34460c8-…`, never the `ot` slug); bodies kept
-  verbatim
-- An idea id living in both docs (a hard split — e.g. #15 has an open
-  `(remaining)` slice AND a delivered `(slice)` record) resolves toward the
-  **open backlog**; the collision is reported, and the archive doc stays the
-  history of record.
-
-## Ledger recovery (2026-09-18)
-
-A test instance sharing the SAME DSH home as the production web profile held
-`~/.dsh/ideas/ledger-v2.lock` and overwrote `ledger-v2.json` with its own
-smoke-test cards, so the live board's edits only lived in memory. Recovery:
-capture the live board first (`GET /api/ideas/state` with the loopback
-same-origin markers), then run
-`node scripts/restore-3080-ideas.mjs <backup.json> --apply` with the server
-stopped — it rewrites the ledger (remapping the `ot` slug to the registry
-OpenTimbre id by default) and clears stale locks; the previous file is kept as
-a `.bak-…` sibling.
 
 ## Architecture
 
@@ -194,11 +129,8 @@ src/
   http.ts / loopback.ts / mount-once.ts   # task-board family discipline
   core/ideas.ts       # IdeaRecord, statuses, tag validation
   client/             # sidebar entry + 4-column kanban (React 18) + workspace scoping
-scripts/
-  migrate-ot-ideas.mjs  # P3 one-shot OT migration (parse + dry-run/--apply; workspace by title)
-  restore-3080-ideas.mjs # recover an overwritten ledger from an API-state backup
 tests/                  # vitest suites per module
-  HANDOVER.md / SKILL.md / README.md
+  SKILL.md / README.md
 ```
 
 PowerShell note (agent usage): always `Invoke-RestMethod -UseBasicParsing`,

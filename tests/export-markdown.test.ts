@@ -52,10 +52,10 @@ describe('buildIdeasExport', () => {
   })
 
   it('filters by workspace when requested', () => {
-    const ot = createIdea({ title: 'OT idea', body: '', workspaceId: 'ot' }, T0, 'ot-1')
+    const alpha = createIdea({ title: 'Alpha idea', body: '', workspaceId: 'alpha' }, T0, 'alpha-1')
     const generic = createIdea({ title: 'Generic idea', body: '' }, T0, 'gen-1')
-    const result = buildIdeasExport([ot, generic], 'ot')
-    expect(result.ideasMd).toContain('## OT idea')
+    const result = buildIdeasExport([alpha, generic], 'alpha')
+    expect(result.ideasMd).toContain('## Alpha idea')
     expect(result.ideasMd).not.toContain('## Generic idea')
     // An absent workspaceId means generic: it must not leak into a scoped export.
     expect(result.ideasMd).not.toContain('Generic idea')

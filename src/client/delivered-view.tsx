@@ -1,8 +1,8 @@
 /**
  * Delivered view: the derived "exit log" of the T2 lifecycle — archived ideas
  * of the current workspace scope, most recent exit first. This is the
- * generated equivalent of the OT IDEAS-ARCHIVE.md (hand-maintained before);
- * nothing here is hand-edited. One row per archived idea: on the left an
+ * generated equivalent of the exit log for archived ideas; nothing here is
+ * hand-edited. One row per archived idea: on the left an
  * exit stamp — green "delivered YYYY-MM-DD" for ideas that went through the
  * deliver verb, a neutral "archived YYYY-MM-DD" for manually archived
  * (abandoned) ones — then the title, workspace, value/effort, description
@@ -40,7 +40,7 @@ function exitAt(idea: IdeaRecord): number {
   return idea.deliveredAt ?? idea.archivedAt ?? idea.updatedAt ?? idea.createdAt
 }
 
-/** Compact ISO "YYYY-MM-DD" for the exit stamp (the OT log convention). */
+/** Compact ISO "YYYY-MM-DD" for the exit stamp (the delivered/archived date). */
 function isoDate(ms: number): string {
   const d = new Date(ms)
   const pad = (n: number): string => String(n).padStart(2, '0')

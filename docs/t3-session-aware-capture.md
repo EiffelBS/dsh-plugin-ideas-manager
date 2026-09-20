@@ -1,7 +1,7 @@
 # T3 — Session-aware capture (design + delivered part)
 
-Status: core delivered, 2026-09-19. Follows `docs/gap-analysis-ot-ideasm-process.md` G4
-("Generic workspace capture routing"). This document pins the design decisions
+Status: core delivered, 2026-09-19. Follows the "Generic workspace capture
+routing" design goal. This document pins the design decisions
 and separates what is implemented from the optional follow-up that must stay
 author-gated.
 
@@ -53,9 +53,9 @@ degradation, stream reactivity, ctx probing).
 
 ## Optional follow-up (design only — NOT implemented)
 
-"Auto-install the ideas skill into a workspace's `.dsh`" (G4 wording). The OT
-process ships a workspace-local skill (`.dsh/skills/task-board/SKILL.md`) so the
-per-workspace AGENTS.md can point agents at the board. Two constraints keep this
+"Auto-install the ideas skill into a workspace's `.dsh`". A workspace can ship
+a workspace-local skill (`.dsh/skills/.../SKILL.md`) so the per-workspace
+AGENTS.md can point agents at the board. Two constraints keep this
 out of the delivered tranche:
 
 1. **No arbitrary workspace writes.** The plugin lives in the DSH home; writing
@@ -68,7 +68,7 @@ out of the delivered tranche:
    install step would copy it to `<workspace>/.dsh/skills/ideas/SKILL.md`
    (optionally with the workspace id pre-resolved). Nothing in the plugin
    currently reads that location, so this is purely about the per-workspace
-   AGENTS.md pointer — see the OT cutover note below.
+   AGENTS.md pointer.
 
 Recommended shape when the author asks for it: a settings flag per workspace
 stored in the ideas settings namespace (`ideas`), a Host verb `installSkill`
@@ -77,9 +77,9 @@ feature-detecting the target directory through the workspaces registry
 surface in the board UI. Fence: the verb stays behind the loopback + same-origin
 guard like every other action; the write targets an explicit workspace path only.
 
-## OT cutover
+## Workspace cutover
 
-The per-workspace cutover stays a one-line AGENTS.md flip per project (T0):
+The per-workspace cutover stays a one-line AGENTS.md flip per project:
 point the "Ideas backlog sync" section at the board + `SKILL.md`, keep
 `IDEAS.md` / `IDEAS-ARCHIVE.md` only as generated exports. T3 does not change
 that; the session-aware default only means captures now land in the active

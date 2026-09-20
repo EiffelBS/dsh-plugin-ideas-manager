@@ -1,7 +1,7 @@
 /**
- * Ideas board copy: French-first dictionary with an English fallback, selected
- * by the document language. Kept dependency-free (no dsh locale service) so
- * the DOM-injected entry row and the standalone board tree share one lookup.
+ * Ideas board copy: per-document-language dictionary (`fr` and `en`) with an
+ * English default. Kept dependency-free (no dsh locale service) so the
+ * DOM-injected entry row and the standalone board tree share one lookup.
  */
 
 export const fr = {
@@ -221,10 +221,10 @@ export type IdeasKey = keyof typeof fr
 const DICTIONARIES: Record<string, typeof fr> = { fr, en }
 
 function currentDictionary(): typeof fr {
-  if (typeof document === 'undefined') return fr
+  if (typeof document === 'undefined') return en
   const lang = document.documentElement.lang ?? ''
   const base = lang.split('-')[0]!.toLowerCase()
-  return DICTIONARIES[base] ?? fr
+  return DICTIONARIES[base] ?? en
 }
 
 /** Interpolate {placeholders} with the given params. */

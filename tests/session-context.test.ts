@@ -14,35 +14,35 @@ import {
   type DshWorkspacesSnapshotService,
 } from '../src/client/session-context.ts'
 
-const WS_OT = { workspaceId: 'ws-ot', title: 'OpenTimbre', path: 'C:/ot', sessionIds: ['s-1', 's-2'] }
+const WS_ALPHA = { workspaceId: 'ws-alpha', title: 'Alpha', path: 'C:/alpha', sessionIds: ['s-1', 's-2'] }
 const WS_WEB = { workspaceId: 'ws-web', title: 'Web', path: 'C:/web', sessionIds: ['s-3'] }
 
 describe('resolveActiveWorkspace', () => {
   it('returns the workspace whose sessionIds contains the current session', () => {
-    expect(resolveActiveWorkspace('s-2', [WS_OT, WS_WEB], undefined)).toEqual({
-      workspaceId: 'ws-ot',
-      title: 'OpenTimbre',
+    expect(resolveActiveWorkspace('s-2', [WS_ALPHA, WS_WEB], undefined)).toEqual({
+      workspaceId: 'ws-alpha',
+      title: 'Alpha',
     })
   })
 
   it('falls back to the recent workspace when the session binds nothing', () => {
-    expect(resolveActiveWorkspace('s-99', [WS_OT, WS_WEB], 'ws-web')).toEqual({
+    expect(resolveActiveWorkspace('s-99', [WS_ALPHA, WS_WEB], 'ws-web')).toEqual({
       workspaceId: 'ws-web',
       title: 'Web',
     })
   })
 
   it('returns undefined without a session and without a recent workspace', () => {
-    expect(resolveActiveWorkspace(undefined, [WS_OT, WS_WEB], undefined)).toBeUndefined()
-    expect(resolveActiveWorkspace('', [WS_OT, WS_WEB], 'nope')).toBeUndefined()
+    expect(resolveActiveWorkspace(undefined, [WS_ALPHA, WS_WEB], undefined)).toBeUndefined()
+    expect(resolveActiveWorkspace('', [WS_ALPHA, WS_WEB], 'nope')).toBeUndefined()
   })
 
   it('tolerates a registry without sessionIds (ledger-only degradation)', () => {
-    expect(resolveActiveWorkspace('s-1', [{ workspaceId: 'ws-ot', title: 'OpenTimbre' }], undefined)).toBeUndefined()
+    expect(resolveActiveWorkspace('s-1', [{ workspaceId: 'ws-alpha', title: 'Alpha' }], undefined)).toBeUndefined()
   })
 
   it('prefers the session-bound workspace over the recent fallback', () => {
-    expect(resolveActiveWorkspace('s-3', [WS_OT, WS_WEB], 'ws-ot')).toEqual({
+    expect(resolveActiveWorkspace('s-3', [WS_ALPHA, WS_WEB], 'ws-alpha')).toEqual({
       workspaceId: 'ws-web',
       title: 'Web',
     })
@@ -59,7 +59,7 @@ describe('DshActiveWorkspaceSource', () => {
         subscribe: listener => { listeners.push(listener); return () => {} },
       },
     }
-    let workspacesItems: unknown[] = [WS_OT, WS_WEB]
+    let workspacesItems: unknown[] = [WS_ALPHA, WS_WEB]
     const workspaces: DshWorkspacesSnapshotService = {
       list: {
         getSnapshot: () => ({ items: workspacesItems as never }),
@@ -67,7 +67,7 @@ describe('DshActiveWorkspaceSource', () => {
       },
     }
     const source = new DshActiveWorkspaceSource(sessions, workspaces)
-    expect(source.current()).toEqual({ workspaceId: 'ws-ot', title: 'OpenTimbre' })
+    expect(source.current()).toEqual({ workspaceId: 'ws-alpha', title: 'Alpha' })
     // Session switch: the same snapshot now binds the web workspace.
     sessionsSnapshot = { current: 's-3' }
     for (const listener of listeners) listener()
@@ -84,7 +84,7 @@ describe('DshActiveWorkspaceSource', () => {
     }
     const workspaces: DshWorkspacesSnapshotService = {
       list: {
-        getSnapshot: () => ({ items: [WS_OT] }),
+        getSnapshot: () => ({ items: [WS_ALPHA] }),
         subscribe: () => () => {},
       },
     }
@@ -99,11 +99,11 @@ describe('resolveActiveWorkspaceSource', () => {
     const ctx = {
       get: (name: string) => name === 'sessions'
         ? { list: { getSnapshot: () => ({ current: 's-2' }), subscribe: () => () => {} } }
-        : { list: { getSnapshot: () => ({ items: [WS_OT, WS_WEB] }), subscribe: () => () => {} } },
+        : { list: { getSnapshot: () => ({ items: [WS_ALPHA, WS_WEB] }), subscribe: () => () => {} } },
     }
     const source = resolveActiveWorkspaceSource(ctx as never)
     expect(source).toBeDefined()
-    expect(source?.current()).toEqual({ workspaceId: 'ws-ot', title: 'OpenTimbre' })
+    expect(source?.current()).toEqual({ workspaceId: 'ws-alpha', title: 'Alpha' })
     source?.dispose()
   })
 

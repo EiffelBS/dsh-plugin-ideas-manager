@@ -15,35 +15,35 @@ import {
 
 describe('workspaceLabel', () => {
   it('prefers the title, then the path, then the raw id', () => {
-    expect(workspaceLabel({ workspaceId: 'ot', title: 'OpenTimbre', path: 'C:/ot' })).toBe('OpenTimbre')
-    expect(workspaceLabel({ workspaceId: 'ot', title: '', path: 'C:/ot' })).toBe('C:/ot')
-    expect(workspaceLabel({ workspaceId: 'ot', title: '', path: '' })).toBe('ot')
+    expect(workspaceLabel({ workspaceId: 'alpha', title: 'Alpha', path: 'C:/alpha' })).toBe('Alpha')
+    expect(workspaceLabel({ workspaceId: 'alpha', title: '', path: 'C:/alpha' })).toBe('C:/alpha')
+    expect(workspaceLabel({ workspaceId: 'alpha', title: '', path: '' })).toBe('alpha')
   })
 })
 
 describe('buildWorkspaceCatalog', () => {
   it('merges ledger ids unknown to the DSH registry as raw-id rows', () => {
     const catalog = buildWorkspaceCatalog(
-      [{ workspaceId: 'ot' }, { workspaceId: 'ot' }, { workspaceId: 'web' }, {}],
+      [{ workspaceId: 'alpha' }, { workspaceId: 'alpha' }, { workspaceId: 'web' }, {}],
       [],
     )
     expect(catalog).toEqual([
-      { workspaceId: 'ot', title: 'ot', knownToApp: false },
+      { workspaceId: 'alpha', title: 'alpha', knownToApp: false },
       { workspaceId: 'web', title: 'web', knownToApp: false },
     ])
   })
 
   it('keeps DSH titles and marks registry rows as known', () => {
-    const catalog = buildWorkspaceCatalog([], [{ workspaceId: 'ot', title: 'OpenTimbre' }])
-    expect(catalog).toEqual([{ workspaceId: 'ot', title: 'OpenTimbre', knownToApp: true }])
+    const catalog = buildWorkspaceCatalog([], [{ workspaceId: 'alpha', title: 'Alpha' }])
+    expect(catalog).toEqual([{ workspaceId: 'alpha', title: 'Alpha', knownToApp: true }])
   })
 
   it('lets the registry win the label for a shared id', () => {
     const catalog = buildWorkspaceCatalog(
-      [{ workspaceId: 'ot' }],
-      [{ workspaceId: 'ot', title: 'OpenTimbre' }],
+      [{ workspaceId: 'alpha' }],
+      [{ workspaceId: 'alpha', title: 'Alpha' }],
     )
-    expect(catalog).toEqual([{ workspaceId: 'ot', title: 'OpenTimbre', knownToApp: true }])
+    expect(catalog).toEqual([{ workspaceId: 'alpha', title: 'Alpha', knownToApp: true }])
   })
 
   it('sorts by display label', () => {
@@ -72,11 +72,11 @@ describe('DshWorkspacesSource', () => {
 
   it('lists the initial snapshot with resolved labels', () => {
     const source = new DshWorkspacesSource(serviceWith([
-      { workspaceId: 'ot', title: 'OpenTimbre', path: 'C:/ot' },
+      { workspaceId: 'alpha', title: 'Alpha', path: 'C:/alpha' },
       { workspaceId: 'web', title: '', path: 'C:/web' },
     ]))
     expect(source.list()).toEqual([
-      { workspaceId: 'ot', title: 'OpenTimbre' },
+      { workspaceId: 'alpha', title: 'Alpha' },
       { workspaceId: 'web', title: 'C:/web' },
     ])
     source.dispose()
@@ -84,7 +84,7 @@ describe('DshWorkspacesSource', () => {
 
   it('notifies listeners when the registry changes', () => {
     const source = new DshWorkspacesSource(serviceWith([
-      { workspaceId: 'ot', title: 'OpenTimbre', path: 'C:/ot' },
+      { workspaceId: 'alpha', title: 'Alpha', path: 'C:/alpha' },
     ]))
     let calls = 0
     source.subscribe(() => { calls += 1 })
@@ -97,12 +97,12 @@ describe('DshWorkspacesSource', () => {
   it('stays readable when subscribe throws (degraded static list)', () => {
     const broken = {
       list: {
-        getSnapshot: () => ({ items: [{ workspaceId: 'ot', title: 'OpenTimbre', path: 'C:/ot' }] }),
+        getSnapshot: () => ({ items: [{ workspaceId: 'alpha', title: 'Alpha', path: 'C:/alpha' }] }),
         subscribe: () => { throw new Error('follow unavailable') },
       },
     } as unknown as DshWorkspacesService
     const source = new DshWorkspacesSource(broken)
-    expect(source.list()).toEqual([{ workspaceId: 'ot', title: 'OpenTimbre' }])
+    expect(source.list()).toEqual([{ workspaceId: 'alpha', title: 'Alpha' }])
     source.dispose()
   })
 })

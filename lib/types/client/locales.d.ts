@@ -1,7 +1,7 @@
 /**
- * Ideas board copy: French-first dictionary with an English fallback, selected
- * by the document language. Kept dependency-free (no dsh locale service) so
- * the DOM-injected entry row and the standalone board tree share one lookup.
+ * Ideas board copy: per-document-language dictionary (`fr` and `en`) with an
+ * English default. Kept dependency-free (no dsh locale service) so the
+ * DOM-injected entry row and the standalone board tree share one lookup.
  */
 export declare const fr: {
     'entry.label': string;

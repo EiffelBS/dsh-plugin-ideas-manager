@@ -755,8 +755,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     && matchesFilter(idea, filter)
     && matchesTags(idea, tagFilter))
   // The Priorities ranking ignores the kanban search/tag filters: it ranks the
-  // OPEN backlog of the current workspace scope — the OT "Suggested priority"
-  // table never listed archived/declined ideas (see priorities-view.tsx).
+  // OPEN backlog of the current workspace scope — archived/declined ideas are
+  // simply not part of the ranking (see priorities-view.tsx).
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
     && matchesWorkspaceScope(idea, workspaceFilter))

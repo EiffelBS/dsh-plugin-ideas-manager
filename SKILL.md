@@ -44,24 +44,26 @@ mentions ideas / backlog / idees / notes:
    the parent summary + the justification, `followUpOfId` → parent) and
    archives the parent — or use `decline` (+ `decision`) when the recette
    rejects the idea outright. The ledger keeps a stable `#N` sequence per
-   idea (`ideaNumber`) — the human reference the OT docs used.
+   idea (`ideaNumber`) — the stable human reference for a captured idea.
 5. **TaskBoard mirror** (best-effort, one-way, when the board is present):
    capture → backlog card, updates → card update, decline / deliver →
    archive; a card reaching `done` moves its idea to under review
    automatically (the recette gate) — the recette verdict stays human-owned.
 
-## Workspace cutover (replacing IDEAS.md)
+## Workspace cutover (replacing an IDEAS.md convention)
 
-For a workspace whose AGENTS.md still points at an `IDEAS.md` convention:
+For a workspace whose AGENTS.md still points at an `IDEAS.md` / archive
+convention:
 
 1. Point the AGENTS.md idea section at this board instead (announce
    `announceToAgent: true` in the plugin settings so the guidance above is
    injected every session) and load this skill before idea work.
-2. Migrate the still-open ideas into the ledger once. The canonical format is
-   captured in `scripts/migrate-ot-ideas.mjs`; for a project already
-   partially migrated, re-run it with `--incremental --status-lines` so only
-   the missing sections are imported (DELIVERED sections land `archived`
-   with `deliveredAt`, DECLINED land `declined`).
+2. Migrate the still-open ideas into the ledger once, via the `import` verb
+   driven from the current capture documents (`## Idea #N` sections, with
+   `open` / `archived` / `declined` states resolved per section and a target
+   `workspaceId`), or capture them through the board. For a project already
+   partially migrated, import only what the ledger is missing so the states
+   and `deliveredAt` stamps land correctly.
 3. Keep `IDEAS.md` / `IDEAS-ARCHIVE.md` only as generated exports of the
    ledger (the `export` verb) — never edit them by hand again.
 4. Ranks/records live on the ideas (rationale, delivery record, decision);

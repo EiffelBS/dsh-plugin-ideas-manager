@@ -2,8 +2,8 @@
  * Unidirectional ledger -> markdown export for the /api/ideas `export` verb.
  *
  * The markdown is a *view* of the Host ledger: it is generated on demand and
- * never parsed back (the ledger is the source of truth; P3's one-shot
- * migration imports *into* the ledger, never from a markdown file). The
+ * never parsed back (the ledger is the source of truth; bulk `import` of a
+ * capture document moves *into* the ledger, never from a markdown file). The
  * format below is pinned by the golden tests — change consciously.
  */
 import type { IdeaRecord } from './core/ideas.ts';

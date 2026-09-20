@@ -5,7 +5,7 @@
  *
  * The split (see docs/agent-write-channel.md §Phase 3): the prompt carries the
  * per-capture data and the write-channel contract ONLY; the analysis
- * methodology (body structure, title/tag/rank rules, the French report) lives
+ * methodology (body structure, title/tag/rank rules, the report) lives
  * in the installed `ideas-analyst` skill, which the analysing session loads
  * itself. These tests therefore assert the prompt's dynamic data + channel
  * text + the skill reference, never a re-statement of the methodology.
@@ -65,7 +65,9 @@ describe('buildAnalysisPrompt', () => {
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Context')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('ranks are RELATIVE per workspace')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('otherwise rewrite it to a more precise one')
-    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('at most 4 sentences')
+    // The report language follows the requester; never a hard-coded language.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain("in the requester's language")
+    expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('in French')
   })
 
   it('marks unset opinions for the analyst to decide and renders empty tags as a dash', () => {

@@ -6,7 +6,7 @@
  * for mirrored task cards passing `done` and moves the linked idea to
  * `underReview` (the recette gate). No other background work runs.
  *
- * Mirror discipline (frozen in HANDOVER §2.3): the mirror is best-effort and
+ * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
  * and a replayed request id never re-mirrors. The bound card id is persisted
  * on the idea through the ledger's internal `bindTaskBoardId` path (the wire

@@ -6,7 +6,7 @@
  * for mirrored task cards passing `done` and moves the linked idea to
  * `underReview` (the recette gate). No other background work runs.
  *
- * Mirror discipline (frozen in HANDOVER §2.3): the mirror is best-effort and
+ * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
  * and a replayed request id never re-mirrors. The bound card id is persisted
  * on the idea through the ledger's internal `bindTaskBoardId` path (the wire
@@ -225,8 +225,8 @@ export class IdeasHostService {
         }
       } catch (error) {
         // The task-board plugin being absent is the normal autonomous state
-        // (HANDOVER §2.3, "tout fonctionne sauf le miroir"): stay silent. Any
-        // other failure is logged and never rolls back the idea.
+        // — the whole mirror is optional: stay silent. Any other failure is
+        // logged and never rolls back the idea.
         if (this.mirror!.isUnavailable) return
         console.error(`[dsh-plugin-ideas-manager] mirror ${kind} failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
       }

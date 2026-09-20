@@ -1,12 +1,11 @@
 /**
- * Priorities view: the suggested ranking of the open backlog, mirroring the
- * "Suggested priority" table the OpenTimbre IDEAS.md process maintained by
- * hand. Each open idea is one ranked row (rank, title, workspace chip,
- * value/effort, description preview, rationale) with move-up/move-down
- * actions and drag & drop reordering of the open column. During a drag an
- * accent line shows the insertion point: before the hovered row (upper half)
- * or after it (lower half); dropping on the list surface below the rows
- * appends at the end of the dragged idea's workspace group.
+ * Priorities view: the suggested ranking of the open backlog — the current
+ * best ordering of the open ideas. Each open idea is one ranked row (rank,
+ * title, workspace chip, value/effort, description preview, rationale) with
+ * move-up/move-down actions and drag & drop reordering of the open column.
+ * During a drag an accent line shows the insertion point: before the hovered
+ * row (upper half) or after it (lower half); dropping on the list surface
+ * below the rows appends at the end of the dragged idea's workspace group.
  *
  * Ranking is PER WORKSPACE ("rank by workspace"): every workspace group (the
  * workspace-less ideas are one generic group) carries its own relative ranks.

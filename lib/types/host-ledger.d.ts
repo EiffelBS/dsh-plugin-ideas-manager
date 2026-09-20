@@ -1,7 +1,7 @@
 /**
  * P1 Host ledger: the authoritative idea store persisted at
  * `~/.dsh/ideas/ledger-v2.json` (one shared ledger document; each idea may
- * carry a workspaceId — see HANDOVER §2.1).
+ * carry a workspaceId intended for that workspace).
  *
  * Discipline follows the dsh-task-board Host ledger with one deliberate
  * deviation: every write uses path-based node:fs calls (writeFileSync /

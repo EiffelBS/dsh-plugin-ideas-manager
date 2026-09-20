@@ -138,7 +138,7 @@ session instead of creating it manually:
    `plugin:ideas-manager:ai-capture`, fresh requestId per action), reads the
    `id` / `ideaNumber` from the response, decides value/effort (1..3) and a
    PER-WORKSPACE rank via the `triage` verb, then reports the ranking decision
-   to the human in French.
+   to the human in the requester's language (English by default).
 
 ### Skill-as-file design (decision, P3 refinement)
 
@@ -162,7 +162,7 @@ Splitting the analyst prompt into a short prompt + an installed skill:
   channel text stays in `buildAnalysisPrompt` (`src/client/session-queue.ts`).
   The prompt is deliberately MINIMAL: it loads the skill and does not re-state
   its methodology (body structure, title policy, tag format, per-workspace
-  rank, the French report) — the agent reads those from the skill. Only if
+  rank, the report language) — the agent reads those from the skill. Only if
   the skill is missing does a one-line fallback tell it to follow the channel
   and use its own judgement.
 - **Resolution precedence** (lowest rank wins): project `.dsh/skills` (100)

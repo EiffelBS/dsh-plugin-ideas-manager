@@ -6,7 +6,7 @@
  * bridge works whenever the task-board plugin is registered on the same
  * process and degrades to silent no-ops when it is not.
  *
- * Mapping (frozen in HANDOVER §2.3): idea create -> task create + move to
+ * Mapping (frozen design decision): idea create -> task create + move to
  * `backlog` (the card is `read-only`); idea update -> task update; idea
  * decline / move-to-archived -> task archive; idea restore -> task restore;
  * idea delete -> no-op (the card outlives the idea — closing the loop to
@@ -16,7 +16,7 @@
  */
 import type { IdeaRecord } from './core/ideas.ts';
 export declare const TASK_BOARD_API_PREFIX = "/api/task-board";
-/** Read-only permission stamped on every mirrored card (HANDOVER §1). */
+/** Read-only permission stamped on every mirrored card. */
 declare const MIRROR_TASK_PERMISSION: "read-only";
 /** Local mirror of the task-board action union (never imported from the package). */
 export type TaskBoardAction = {

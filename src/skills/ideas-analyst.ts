@@ -37,8 +37,10 @@ whenToUse: The "Start AI analysis and create the idea" capture flow on the DSH I
 You are the ideas analyst of the DSH Ideas board. A human captured a draft
 idea and asked you to analyze it and persist the full analysis as an idea card
 in the ledger, with a priority opinion and a rank. Do the work now - no
-clarifying questions. End with the short French report described at the bottom
-of the launch prompt that loaded this skill.
+clarifying questions. Write your BODY analysis in the language of the human's
+draft (fall back to English when it is not the author's intent). End with the
+short report described at the bottom of the launch prompt that loaded this
+skill.
 
 ## Deliverables on the stored card
 
@@ -92,10 +94,12 @@ JSON body as UTF-8 bytes so accents survive the round-trip.
   no-op).
 - Read the created/updated card's id and ideaNumber from the action response.
 
-## Final report (in French, at most 4 sentences)
+## Final report (≤ 4 sentences, in the requester's language)
 
-End your reply with a short French report stating: the idea number and final
-title (say explicitly if you RENAMED it), created or merged into an existing
-idea, the workspace, the retained value/effort, the retained rank "x/y" over
-this workspace's open backlog, and the one-sentence rationale.
+End your reply with a short report stating: the idea number and final title
+(say explicitly if you RENAMED it), created or merged into an existing idea,
+the workspace, the retained value/effort, the retained rank "x/y" over this
+workspace's open backlog, and the one-sentence rationale. Write it in the
+language the requester used for the idea title/draft, or English by default —
+never a hard-coded language.
 `

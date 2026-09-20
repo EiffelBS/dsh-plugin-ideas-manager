@@ -89,8 +89,7 @@ export declare function orderByWorkspaceGroups(rows: readonly IdeaRecord[], work
  * Archived ideas of a workspace scope — the Delivered log contents. The
  * filter follows matchesWorkspaceScope: '' = all workspaces, a concrete id =
  * one workspace, NO_WORKSPACE_FILTER = the workspace-less ideas only. The
- * journal shows every idea that left the open backlog (like the OT
- * IDEAS-ARCHIVE.md): delivered ones carry a deliveredAt stamp, manually
- * archived (abandoned) ones do not.
+ * journal shows every idea that left the open backlog: delivered ones carry a
+ * deliveredAt stamp, manually archived (abandoned) ones do not.
  */
 export declare function archivedIdeasOf(ideas: readonly IdeaRecord[], workspaceFilter: string): IdeaRecord[];
