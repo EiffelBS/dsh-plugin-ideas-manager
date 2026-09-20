@@ -26,10 +26,10 @@ afterEach(() => {
   }
 })
 
-const createAction = (id: string, title = 'Idea title') => ({
+const createAction = (id: string, title = 'Idea title', workspaceId?: string) => ({
   kind: 'create' as const,
   id,
-  input: { title, body: 'Body' },
+  input: { title, body: 'Body', ...(workspaceId === undefined ? {} : { workspaceId }) },
 })
 
 describe('IdeasHostLedger persistence', () => {
@@ -179,9 +179,49 @@ describe('IdeasHostLedger T1 lifecycle (triage / deliver / decline / numbering)'
     ledger.applyRequest('r5', { kind: 'triage', ideaId: 'idea-a', patch: { rationale: 'note only' } })
     expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-a')!.rationale).toBe('note only')
     expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.status).toBe('archived')
-    // Ranks are column-major across the whole document: the open column comes
-    // first (idea-a at 1), so the delivered idea continues at 2.
-    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.rank).toBe(2)
+    // Ranks are PER GROUP: the triage re-ranks only the open group (idea-a at
+    // 1), so the delivered idea keeps its archived-group rank (1) untouched.
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-a')!.rank).toBe(1)
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.rank).toBe(1)
+    ledger.dispose()
+  })
+
+  it('triage re-ranks only the moved idea\'s workspace group (per-workspace ranks)', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('a1', 'A1', 'ws-a'))
+    ledger.applyRequest('r2', createAction('a2', 'A2', 'ws-a'))
+    ledger.applyRequest('r3', createAction('b1', 'B1', 'ws-b'))
+    ledger.applyRequest('r4', createAction('g1', 'G1')) // the generic group
+    // Give every group its initial ranks (a1/a2 at 1..2, b1 at 1, g1 at 1).
+    ledger.applyRequest('r5', { kind: 'reorder', orderedIds: ['a1', 'a2', 'b1', 'g1'] })
+    ledger.applyRequest('r6', { kind: 'triage', ideaId: 'a2', patch: { value: 3, rank: 1 } })
+    const byId = new Map(ledger.snapshot().ideas.map(row => [row.id, row] as const))
+    expect(byId.get('a2')!.rank).toBe(1)
+    expect(byId.get('a1')!.rank).toBe(2) // shifted down inside ws-a only
+    expect(byId.get('b1')!.rank).toBe(1) // untouched
+    expect(byId.get('g1')!.rank).toBe(1) // untouched
+    ledger.dispose()
+  })
+
+  it('reorder re-derives per-group ranks from the id order (every group independently)', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', createAction('a1', 'A1', 'ws-a'))
+    ledger.applyRequest('r2', createAction('a2', 'A2', 'ws-a'))
+    ledger.applyRequest('r3', createAction('b1', 'B1', 'ws-b'))
+    ledger.applyRequest('r4', createAction('b2', 'B2', 'ws-b'))
+    ledger.applyRequest('r5', createAction('g1', 'G1')) // the generic group
+    // One wire list with the ws-b rows flipped and the groups interleaved:
+    // each (status, workspace) group still gets its OWN 1-based ranks.
+    ledger.applyRequest('r6', {
+      kind: 'reorder',
+      orderedIds: ['b2', 'a1', 'g1', 'b1', 'a2'],
+    })
+    const byId = new Map(ledger.snapshot().ideas.map(row => [row.id, row] as const))
+    expect(byId.get('b2')!.rank).toBe(1)
+    expect(byId.get('b1')!.rank).toBe(2)
+    expect(byId.get('a1')!.rank).toBe(1)
+    expect(byId.get('a2')!.rank).toBe(2)
+    expect(byId.get('g1')!.rank).toBe(1)
     ledger.dispose()
   })
 

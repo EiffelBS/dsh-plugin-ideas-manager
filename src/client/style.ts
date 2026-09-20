@@ -299,12 +299,15 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
 }
 
 /* Modal preview: rendered markdown of the draft description, in a read-only
-   box matching the textarea footprint. */
+   box matching the textarea footprint — same fixed start height as the raw
+   description textarea (toggling raw/MD never reflows the modal), same
+   vertical resize grip, and a height cap so the modal never drowns under an
+   over-grown box (overflow scrolls once the box is dragged taller). */
 .dsh-ideas-preview {
   box-sizing: border-box;
   width: 100%;
   min-height: 90px;
-  max-height: 260px;
+  resize: vertical;
   overflow-y: auto;
   padding: 8px 10px;
   border-radius: 8px;
@@ -312,6 +315,21 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
   background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
   font-size: 13px;
+}
+
+/* Shared sizing of the DESCRIPTION editor in both views: a fixed COMPACT
+   start height (~1.5x the 90px base start, so the modal keeps its buttons
+   visible) that the author can grow with the vertical grip or scroll
+   internally, capped so an over-grown box never pushes the actions away.
+   field-sizing: fixed pins the height against content-driven auto-grow
+   (Chromium field-sizing), which is what stretched the raw textarea to the
+   full modal height on some skins. The rationale/follow-up textareas stay on
+   the base rule below and are NOT affected. */
+.dsh-ideas-body-textarea,
+.dsh-ideas-preview {
+  height: 140px;
+  max-height: 45vh;
+  field-sizing: fixed;
 }
 
 .dsh-ideas-field-row-between {
@@ -755,7 +773,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  width: min(520px, 90vw);
+  width: min(780px, 94vw);
   max-height: 85vh;
   overflow-y: auto;
   padding: 18px;
@@ -831,6 +849,22 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 .dsh-ideas-field-row > .dsh-ideas-field {
   flex: 1 1 0;
+}
+
+/* Body (left) + value/effort (right, stacked) in one capture row: a 2-column
+   grid so the description textarea keeps most of the modal width while the two
+   level selects present in the same horizontal band. */
+.dsh-ideas-body-level-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.dsh-ideas-body-level-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
@@ -1018,18 +1052,71 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   line-height: 1;
 }
 
-/* Priorities view: the ranked open backlog. */
+/* Priorities view: the ranked open backlog. The wrapper is a flex column
+   pinned to the board's remaining height (flex: 1) so a long backlog scrolls
+   inside the panel instead of overflowing it; the hint stays put at the top,
+   the list owns the scroll area. Delivered shares the same wrapper. */
 .dsh-ideas-priorities {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
   margin-top: 4px;
 }
 
 .dsh-ideas-priorities-hint {
+  flex: none;
   margin: 4px 0 8px;
   font-size: 11px;
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
 }
 
+/* "All workspaces" mode (the board wraps the view with
+   data-dsh-ideas-grouped): the whole block is ONE scroll surface and the
+   per-workspace group headers stay with their rows, so the per-list scroll
+   area is disabled and every group renders at its natural height. */
+.dsh-ideas-priorities[data-dsh-ideas-grouped] {
+  overflow-y: auto;
+}
+
+.dsh-ideas-priorities-group {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  margin-bottom: 8px;
+}
+
+.dsh-ideas-priorities-group-title {
+  margin: 10px 0 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dsh-ideas-priorities[data-dsh-ideas-grouped] .dsh-ideas-priorities-list {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+/* In the grouped ("all workspaces") layout the sections stack at their
+   natural height and the wrapper block scrolls; without this the flex:1
+   below would split the wrapper height between the sections. */
+.dsh-ideas-priorities[data-dsh-ideas-grouped] .dsh-ideas-priorities-group {
+  flex: none;
+}
+
 .dsh-ideas-priorities-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
   margin: 0;
   padding: 0 0 0 8px;
 }
@@ -1252,9 +1339,12 @@ export const classes = {
   field: 'dsh-ideas-field',
   fieldRow: 'dsh-ideas-field-row',
   fieldRowBetween: 'dsh-ideas-field-row-between',
+  bodyLevelRow: 'dsh-ideas-body-level-row',
+  bodyLevelSide: 'dsh-ideas-body-level-side',
   fieldLabel: 'dsh-ideas-field-label',
   input: 'dsh-ideas-input',
   textarea: 'dsh-ideas-textarea',
+  bodyTextarea: 'dsh-ideas-body-textarea',
   select: 'dsh-ideas-select',
   preview: 'dsh-ideas-preview',
   modalActions: 'dsh-ideas-modal-actions',
@@ -1274,6 +1364,8 @@ export const classes = {
   tabActive: 'dsh-ideas-tab-active',
   priorities: 'dsh-ideas-priorities',
   prioritiesHint: 'dsh-ideas-priorities-hint',
+  prioritiesGroup: 'dsh-ideas-priorities-group',
+  prioritiesGroupTitle: 'dsh-ideas-priorities-group-title',
   prioritiesList: 'dsh-ideas-priorities-list',
   prioritiesRow: 'dsh-ideas-priorities-row',
   prioritiesRank: 'dsh-ideas-priorities-rank',

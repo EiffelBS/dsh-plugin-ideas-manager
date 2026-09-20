@@ -26,6 +26,7 @@ export declare const fr: {
     'board.textView': string;
     'board.workspace': string;
     'board.allWorkspaces': string;
+    'board.noWorkspace': string;
     'board.workspaceHint': string;
     'tab.label': string;
     'tab.overview': string;
@@ -56,6 +57,8 @@ export declare const fr: {
     'new.effort': string;
     'new.levelNone': string;
     'new.submit': string;
+    'new.submitAi': string;
+    'new.aiCaptureHint': string;
     'new.cancel': string;
     'new.required': string;
     'new.workspace': string;
@@ -128,6 +131,7 @@ export declare const en: {
     'board.textView': string;
     'board.workspace': string;
     'board.allWorkspaces': string;
+    'board.noWorkspace': string;
     'board.workspaceHint': string;
     'tab.label': string;
     'tab.overview': string;
@@ -161,6 +165,8 @@ export declare const en: {
     'new.workspaceNone': string;
     'new.sessionWorkspaceHint': string;
     'new.submit': string;
+    'new.submitAi': string;
+    'new.aiCaptureHint': string;
     'new.cancel': string;
     'new.required': string;
     'card.drag': string;

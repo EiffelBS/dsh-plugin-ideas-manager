@@ -51,9 +51,12 @@ export declare const classes: {
     readonly field: "dsh-ideas-field";
     readonly fieldRow: "dsh-ideas-field-row";
     readonly fieldRowBetween: "dsh-ideas-field-row-between";
+    readonly bodyLevelRow: "dsh-ideas-body-level-row";
+    readonly bodyLevelSide: "dsh-ideas-body-level-side";
     readonly fieldLabel: "dsh-ideas-field-label";
     readonly input: "dsh-ideas-input";
     readonly textarea: "dsh-ideas-textarea";
+    readonly bodyTextarea: "dsh-ideas-body-textarea";
     readonly select: "dsh-ideas-select";
     readonly preview: "dsh-ideas-preview";
     readonly modalActions: "dsh-ideas-modal-actions";
@@ -73,6 +76,8 @@ export declare const classes: {
     readonly tabActive: "dsh-ideas-tab-active";
     readonly priorities: "dsh-ideas-priorities";
     readonly prioritiesHint: "dsh-ideas-priorities-hint";
+    readonly prioritiesGroup: "dsh-ideas-priorities-group";
+    readonly prioritiesGroupTitle: "dsh-ideas-priorities-group-title";
     readonly prioritiesList: "dsh-ideas-priorities-list";
     readonly prioritiesRow: "dsh-ideas-priorities-row";
     readonly prioritiesRank: "dsh-ideas-priorities-rank";

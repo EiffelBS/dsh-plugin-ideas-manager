@@ -16,6 +16,7 @@ import { mountSidebarEntry } from './sidebar-entry.ts'
 import { ensureIdeasStyle } from './style.ts'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
+import { resolveSessionLauncher } from './session-queue.ts'
 
 /**
  * Cordis services this plugin consumes. Declared so apply runs once the DSH
@@ -45,6 +46,9 @@ export function apply(ctx: ClientContext): void {
     // and the capture default stays the board scope (else generic).
     const activeWorkspace = resolveActiveWorkspaceSource(ctx)
     const client = new IdeasClient(new HttpIdeasHostTransport(), workspaces, activeWorkspace)
+    // Phase 3: the AI-capture launcher rides the same "sessions" service;
+    // absent/malformed degrades to the plain manual Create.
+    client.sessionLauncher = resolveSessionLauncher(ctx)
     client.start()
     const disposers: Array<() => void> = []
     try {

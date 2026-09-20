@@ -14,14 +14,15 @@
 
 import { useEffect, useState, type CSSProperties, type DragEvent, type FormEvent } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
-import { IDEA_COLUMNS, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
+import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
 import { t, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
-import { orderIdeas, rebuildOrder, archivedIdeasOf } from './ordering.ts'
+import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, rebuildOrder, archivedIdeasOf } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
+import type { AiCaptureInput } from './session-queue.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
@@ -190,12 +191,16 @@ function LevelSelect({ id, label, value, onChange, disabled }: {
   )
 }
 
-/** Current 1-based position of an edited idea inside the open backlog
- *  ('' when the idea is not open or absent — the rank field then starts
- *  empty; the triage verb is the only path that re-ranks with a shift). */
+/** Current 1-based position of an edited idea inside ITS workspace group of
+ *  the open backlog ('' when the idea is not open or absent — the rank field
+ *  then starts empty; the triage verb is the only path that re-ranks with a
+ *  shift). Ranking is per workspace, so the peer set is the (open,
+ *  workspace) group the idea belongs to, never the whole open column. */
 function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecord[]): string {
   if (idea === undefined || idea.status !== 'open') return ''
-  const open = orderIdeas(ideas.filter(item => item.status === 'open'))
+  const key = rankGroupKey('open', idea.workspaceId)
+  const open = orderIdeas(ideas.filter(item =>
+    item.status === 'open' && rankGroupKey('open', item.workspaceId) === key))
   const at = open.findIndex(item => item.id === idea.id)
   return at < 0 ? '' : String(at + 1)
 }
@@ -206,7 +211,8 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecor
 function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
   client: IdeasClient
   initial?: IdeaRecord
-  /** Board scope preselected for a new capture ('' when the board shows all). */
+  /** Board scope preselected for a new capture ('' when the board shows all;
+   *  NO_WORKSPACE_FILTER maps to the generic "no workspace" value ''). */
   initialWorkspace?: string
   onClose: () => void
   /** Open the follow-up (recette NOK) modal for an under-review idea. */
@@ -225,10 +231,15 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
   const sessionWorkspace = client.activeWorkspace?.workspaceId ?? ''
   const [workspace, setWorkspace] = useState((() =>
     initial?.workspaceId
-    ?? (initialWorkspace === undefined || initialWorkspace === '' ? sessionWorkspace : initialWorkspace)
+    ?? (initialWorkspace === undefined || initialWorkspace === ''
+      ? sessionWorkspace
+      // A board scoped to "no workspace" keeps the capture generic too: '' is
+      // the modal's "no workspace" value (the sentinel never leaks as an id).
+      : initialWorkspace === NO_WORKSPACE_FILTER ? '' : initialWorkspace)
     ?? '')())
   // True while the picker shows the session-inferred default (capture only):
   // a quiet hint marks it, so the author knows the selection was made for them.
+  // ('' — the sentinel-mapped "no workspace" state — never counts as a default.)
   const sessionDefaulted = initial === undefined && workspace !== '' && workspace === sessionWorkspace && workspace !== initialWorkspace
   const [rank, setRank] = useState(() => currentOpenRank(initial, client.snapshot?.ideas ?? []))
   const [error, setError] = useState<string | undefined>(undefined)
@@ -245,6 +256,14 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
     initial?.workspaceId !== undefined
     && initial.workspaceId !== ''
     && !catalog.some(entry => entry.workspaceId === initial.workspaceId)
+  // Phase 3: a NEW capture targeting a real workspace KNOWN TO THE DSH APP is
+  // handed to the AI analyst (a fresh DSH session) instead of being created
+  // manually; the workspace-less capture keeps the plain Create. A ledger-only
+  // workspace id (present on ideas but absent from the DSH registry) cannot
+  // host a session, so it keeps the manual Create too. No session service ->
+  // no AI mode.
+  const aiMode = initial === undefined && workspace !== '' && client.sessionLauncher !== undefined
+    && catalog.some(entry => entry.workspaceId === workspace && entry.knownToApp)
 
   // Escape closes the modal (Echo the overlay-click behaviour), without
   // closing anything behind it: the listener runs in the capture phase and
@@ -268,15 +287,41 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
     }
     const value = valueLevel === '' ? undefined : Number(valueLevel)
     const effort = effortLevel === '' ? undefined : Number(effortLevel)
-    // The suggested rank is a 1-based position inside the open backlog; a
-    // blank field means "no rank opinion" (append). Only a positive integer
-    // is accepted (the triage re-rank treats it as a position).
+    // The suggested rank is a 1-based position inside the open backlog of the
+    // idea's OWN workspace group (relative ranks per workspace; blank means
+    // "no rank opinion" = append). Only a positive integer is accepted (the
+    // triage re-rank treats it as a position).
     const parsedRank = rank.trim() === '' ? undefined : Number(rank)
     if (parsedRank !== undefined && (!Number.isInteger(parsedRank) || parsedRank < 1)) {
       setError(t('new.rankInvalid'))
       return
     }
     try {
+      if (aiMode && client.sessionLauncher !== undefined) {
+        // Phase 3: NON-BLOCKING AI capture — the modal closes immediately,
+        // like the manual Create; nothing stays pending. The fresh session
+        // analyses the idea, creates or merges it in the target workspace
+        // through the loopback write channel, applies a per-workspace rank
+        // and reports the ranking decision to the human in the session.
+        const captured: AiCaptureInput = {
+          workspaceId: workspace,
+          workspaceTitle: catalog.find(entry => entry.workspaceId === workspace)?.title ?? workspace,
+          title: title.trim(),
+          body: body.trim(),
+          tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag !== ''),
+          ...(value === undefined ? {} : { value }),
+          ...(effort === undefined ? {} : { effort }),
+          rationale,
+          ...(parsedRank === undefined ? {} : { rank: parsedRank }),
+        }
+        onClose()
+        void client.sessionLauncher.launch(captured).catch((launchError: unknown) => {
+          // The session could not be queued (service torn down, create or
+          // prompt rejected): the board stays usable, the failure is logged.
+          console.error('[dsh-plugin-ideas-manager] AI capture failed:', launchError)
+        })
+        return
+      }
       if (initial === undefined) {
         await client.createIdea({
           title: title.trim(),
@@ -381,51 +426,54 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
           </select>
           {sessionDefaulted && <div className={classes.fieldHint}>{t('new.sessionWorkspaceHint')}</div>}
         </div>
-        <div className={classes.field}>
-          <span className={classes.fieldRowBetween}>
-            <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
-            <button
-              type="button"
-              className={classes.ghostButton}
-              aria-pressed={preview}
-              onClick={() => { setPreview(current => !current) }}
-            >
-              {preview ? t('edit.previewOff') : t('edit.preview')}
-            </button>
-          </span>
-          {preview
-            ? (
-              <div
-                className={classes.preview}
-                data-dsh-ideas-preview=""
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
-              />
-            )
-            : (
-              <textarea
-                id="dsh-ideas-body"
-                className={classes.textarea}
-                value={body}
-                placeholder={t('new.bodyPlaceholder')}
-                onChange={event => { setBody(event.target.value) }}
-              />
-            )}
-        </div>
-        <div className={classes.fieldRow}>
-          <LevelSelect
-            id="dsh-ideas-value"
-            label={t('new.value')}
-            value={valueLevel}
-            onChange={setValueLevel}
-            disabled={client.pending}
-          />
-          <LevelSelect
-            id="dsh-ideas-effort"
-            label={t('new.effort')}
-            value={effortLevel}
-            onChange={setEffortLevel}
-            disabled={client.pending}
-          />
+        <div className={`${classes.fieldRow} ${classes.bodyLevelRow}`}>
+          <div className={classes.field}>
+            <span className={classes.fieldRowBetween}>
+              <label className={classes.fieldLabel} htmlFor="dsh-ideas-body">{t('new.body')}</label>
+              <button
+                type="button"
+                className={classes.ghostButton}
+                aria-pressed={preview}
+                onClick={() => { setPreview(current => !current) }}
+              >
+                {preview ? t('edit.previewOff') : t('edit.preview')}
+              </button>
+            </span>
+            {preview
+              ? (
+                <div
+                  className={classes.preview}
+                  data-dsh-ideas-preview=""
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(body) }}
+                />
+              )
+              : (
+                <textarea
+                  id="dsh-ideas-body"
+                  className={`${classes.textarea} ${classes.bodyTextarea}`}
+                  value={body}
+                  placeholder={t('new.bodyPlaceholder')}
+                  onChange={event => { setBody(event.target.value) }}
+                />
+              )}
+            {aiMode && <div className={classes.fieldHint}>{t('new.aiCaptureHint')}</div>}
+          </div>
+          <div className={classes.bodyLevelSide}>
+            <LevelSelect
+              id="dsh-ideas-value"
+              label={t('new.value')}
+              value={valueLevel}
+              onChange={setValueLevel}
+              disabled={client.pending}
+            />
+            <LevelSelect
+              id="dsh-ideas-effort"
+              label={t('new.effort')}
+              value={effortLevel}
+              onChange={setEffortLevel}
+              disabled={client.pending}
+            />
+          </div>
         </div>
         {(initial === undefined || initial.status === 'open') && (
           <div className={classes.field}>
@@ -551,7 +599,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
         <div className={classes.modalActions}>
           <button type="button" className={classes.ghostButton} onClick={onClose}>{t('new.cancel')}</button>
           <button type="submit" className={classes.primaryButton} disabled={client.pending}>
-            {initial === undefined ? t('new.submit') : t('edit.save')}
+            {aiMode ? t('new.submitAi') : (initial === undefined ? t('new.submit') : t('edit.save'))}
           </button>
         </div>
       </form>
@@ -703,7 +751,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // plain empty message, while an active search/tag filter explains itself.
   const filtering = filter.trim() !== '' || tagFilter.length > 0
   const visible = ideas.filter(idea =>
-    (workspaceFilter === '' || idea.workspaceId === workspaceFilter)
+    matchesWorkspaceScope(idea, workspaceFilter)
     && matchesFilter(idea, filter)
     && matchesTags(idea, tagFilter))
   // The Priorities ranking ignores the kanban search/tag filters: it ranks the
@@ -711,12 +759,21 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // table never listed archived/declined ideas (see priorities-view.tsx).
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
-    && (workspaceFilter === '' || idea.workspaceId === workspaceFilter))
+    && matchesWorkspaceScope(idea, workspaceFilter))
   // The Delivered log mirrors the Priorities scope: archived ideas of the
   // current workspace ('' = all), no kanban filters; the green delivery
   // stamp renders only for rows carrying deliveredAt.
   const archivedIdeas = archivedIdeasOf(ideas, workspaceFilter)
-  const byStatus = (status: IdeaStatus): IdeaRecord[] => orderIdeas(visible.filter(idea => idea.status === status))
+  const byStatus = (status: IdeaStatus): IdeaRecord[] => {
+    const rows = visible.filter(idea => idea.status === status)
+    // "All workspaces": lay the column out per workspace group (named by
+    // title, the generic group last), each group rank-sorted — the board side
+    // of the "rank by workspace" presentation. A single-workspace scope has
+    // one group, so the plain rank sort is identical.
+    return workspaceFilter === ''
+      ? orderByWorkspaceGroups(rows, workspaceTitle)
+      : orderIdeas(rows)
+  }
 
   const toggleTag = (name: string): void => {
     setTagFilter(current => current.includes(name)
@@ -784,6 +841,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onChange={event => { setWorkspaceFilter(event.target.value) }}
         >
           <option value="">{t('board.allWorkspaces')}</option>
+          <option value={NO_WORKSPACE_FILTER}>{t('board.noWorkspace')}</option>
           {catalog.map(entry => (
             <option key={entry.workspaceId} value={entry.workspaceId}>
               {entry.title}{entry.knownToApp ? '' : ` (${entry.workspaceId})`}
@@ -1277,6 +1335,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               workspaceTitle={workspaceTitle}
               onEdit={openEdit}
               mdMode={mdMode}
+              grouped={workspaceFilter === ''}
             />
           )
           : (

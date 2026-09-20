@@ -1,12 +1,22 @@
 /**
  * Priorities view: the suggested ranking of the open backlog, mirroring the
  * "Suggested priority" table the OpenTimbre IDEAS.md process maintained by
- * hand. Each open idea is one ranked row (rank, title, workspace, value/
- * effort, description preview, rationale) with move-up/move-down actions and
- * drag & drop reordering of the open column. During a drag an accent line
- * shows the insertion point: before the hovered row (upper half) or after it
- * (lower half); dropping on the list surface below the rows appends at the
- * end. The wire call is the same rank-write path the kanban uses.
+ * hand. Each open idea is one ranked row (rank, title, workspace chip,
+ * value/effort, description preview, rationale) with move-up/move-down
+ * actions and drag & drop reordering of the open column. During a drag an
+ * accent line shows the insertion point: before the hovered row (upper half)
+ * or after it (lower half); dropping on the list surface below the rows
+ * appends at the end of the dragged idea's workspace group.
+ *
+ * Ranking is PER WORKSPACE ("rank by workspace"): every workspace group (the
+ * workspace-less ideas are one generic group) carries its own relative ranks.
+ * When the board shows "all workspaces" (`grouped`) the rows are laid out in
+ * headed sections — workspaces first in title order, the generic group last —
+ * and a drag is only accepted inside the dragged idea's own group (a
+ * cross-workspace drop has no within-group insertion point). When the board
+ * is scoped to one workspace the grouped layout degrades to a single
+ * unheaded list, identical to the pre-grouping behaviour. The wire call is
+ * the same rank-write path the kanban uses.
  */
 
 import { useState, type DragEvent } from 'react'
@@ -14,7 +24,13 @@ import type { IdeasClient } from './ideas-client.ts'
 import type { IdeaRecord } from '../core/ideas.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
-import { orderIdeas, moveIdeaInOpenBacklog, rebuildOrder } from './ordering.ts'
+import {
+  compareWorkspaceGroups,
+  groupOpenByWorkspace,
+  moveIdeaInOpenBacklog,
+  rebuildOrder,
+  type OpenRankGroup,
+} from './ordering.ts'
 import { renderMarkdown } from './markdown.ts'
 import { ScoreBadge } from './score-badge.tsx'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
@@ -23,7 +39,7 @@ export interface PrioritiesProps {
   client: IdeasClient
   /** Open ideas of the current workspace scope, unsorted (ranked below). */
   openIdeas: readonly IdeaRecord[]
-  /** Full ledger rows, for the column-major rebuild the reorder needs. */
+  /** Full ledger rows, for the group-major rebuild the reorder needs. */
   allIdeas: readonly IdeaRecord[]
   /** Resolve a workspace id to its display label. */
   workspaceTitle: (workspaceId: string) => string
@@ -31,6 +47,10 @@ export interface PrioritiesProps {
   onEdit: (idea: IdeaRecord) => void
   /** Render descriptions as markdown (raw text otherwise), like the kanban. */
   mdMode: boolean
+  /** True when the board shows "all workspaces": render per-workspace headed
+   *  sections (the generic group last) and restrict drops to one group.
+   *  False (single-workspace scope) keeps the plain unheaded list. */
+  grouped: boolean
 }
 
 /** Drop indicator: which row is hovered and whether the drop inserts before
@@ -40,9 +60,25 @@ interface DropAt {
   before: boolean
 }
 
+/** Normalized group discriminator of an idea ('' = the generic group), used
+ *  to accept drags inside one group only. */
+function groupKeyOfIdea(idea: IdeaRecord): string {
+  return idea.workspaceId ?? ''
+}
+
+/** Display title of a Priorities group (generic group gets the no-workspace
+ *  label), with null for a workspace that has no registry title. */
+function groupTitle(group: OpenRankGroup, workspaceTitle: (workspaceId: string) => string): string {
+  return group.workspaceId === undefined ? t('board.noWorkspace') : workspaceTitle(group.workspaceId)
+}
+
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, mdMode }: PrioritiesProps) {
-  const ranked = orderIdeas(openIdeas)
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, mdMode, grouped }: PrioritiesProps) {
+  // Workspace groups in display order; inside every group ideas are ranked
+  // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
+  // render a pure function of the props.
+  const groups = groupOpenByWorkspace(openIdeas)
+    .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
   // Duplicate of the kanban drag discipline: a dedicated grip starts the HTML5
   // drag carrying the idea id; rows mark where the drop would insert.
   const [dragId, setDragId] = useState<string | undefined>(undefined)
@@ -69,32 +105,52 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
 
   const commitDrop = (draggedId: string, beforeId: string | undefined): void => {
     if (draggedId === beforeId) return
+    // rebuildOrder is group-aware: the dragged idea lands inside its own
+    // workspace group of the open column, right before beforeId when the
+    // anchor belongs to that group, else at the group end — so a drop with
+    // no anchor (list surface) always appends at the dragged group's end.
     const ordered = rebuildOrder(allIdeas, draggedId, 'open', beforeId)
     void client.reorderIdea(ordered)
     endDrag()
   }
 
-  const dropOnRow = (event: DragEvent<HTMLLIElement>, idea: IdeaRecord, index: number): void => {
+  /** The dragged idea's own group key (undefined when the payload is stale). */
+  const groupOfDrag = (draggedId: string): string | undefined => {
+    const dragged = openIdeas.find(idea => idea.id === draggedId)
+    return dragged === undefined ? undefined : groupKeyOfIdea(dragged)
+  }
+
+  /** Same-group check for a hover/drop on a row: cross-workspace drags are
+   *  rejected (no insertion point exists between two different groups). */
+  const sameGroupAsDrag = (draggedId: string, idea: IdeaRecord): boolean => {
+    const dragGroup = groupOfDrag(draggedId)
+    return dragGroup !== undefined && dragGroup === groupKeyOfIdea(idea)
+  }
+
+  const dropOnRow = (event: DragEvent<HTMLLIElement>, idea: IdeaRecord, index: number, groupRanked: readonly IdeaRecord[]): void => {
     event.preventDefault()
     event.stopPropagation()
     const draggedId = draggedIdFrom(event, dragId)
     if (draggedId === undefined || draggedId === idea.id) return
+    if (!sameGroupAsDrag(draggedId, idea)) return
     // Upper half inserts before the row, lower half after it (before the next
-    // row; past the last row means appending at the end).
+    // row; past the last row means appending at the group end).
     const before = beforeHalf(event, event.currentTarget)
-    const beforeId = before ? idea.id : ranked[index + 1]?.id
+    const beforeId = before ? idea.id : groupRanked[index + 1]?.id
     commitDrop(draggedId, beforeId)
   }
 
-  // Dropping on the list surface (outside any row) appends at the end of the
-  // open backlog, mirroring the kanban column-end drop. The indicator shows
-  // the insertion line below the last row while hovering that surface.
-  const listDragOver = (event: DragEvent<HTMLOListElement>): void => {
-    if (dragId === undefined) return
+  // Dropping on a group's list surface (outside any row) appends at the end
+  // of the dragged idea's OWN group — rebuildOrder lands a no-anchor move at
+  // the group end, so the surface drop is group-correct by construction. The
+  // indicator shows the insertion line below the group's last row while
+  // hovering that surface.
+  const listDragOver = (event: DragEvent<HTMLOListElement>, groupRanked: readonly IdeaRecord[]): void => {
+    if (dragId === undefined || groupOfDrag(dragId) === undefined) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
     if ((event.target as HTMLElement).closest('li') !== null) return
-    const last = ranked[ranked.length - 1]
+    const last = groupRanked[groupRanked.length - 1]
     setDropAt(last === undefined ? undefined : { id: last.id, before: false })
   }
 
@@ -105,146 +161,162 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
     if (draggedId !== undefined) commitDrop(draggedId, undefined)
   }
 
+  const anyRows = openIdeas.length > 0
   return (
-    <div className={classes.priorities} data-dsh-ideas-priorities="">
-      <div className={classes.prioritiesHint}>{t('priorities.hint')}</div>
-      {ranked.length === 0
+    <div
+      className={classes.priorities}
+      data-dsh-ideas-priorities=""
+      data-dsh-ideas-grouped={grouped ? '' : undefined}
+    >      <div className={classes.prioritiesHint}>{t('priorities.hint')}</div>
+      {!anyRows
         ? <div className={classes.empty}>{t('priorities.empty')}</div>
         : (
-          <ol
-            className={classes.prioritiesList}
-            onDragOver={listDragOver}
-            onDrop={dropAtEnd}
-          >
-            {ranked.map((idea, index) => {
-              const first = index === 0
-              const last = index === ranked.length - 1
-              const hovering = dragId !== undefined && dragId !== idea.id && dropAt?.id === idea.id
-              return (
-                <li
-                  key={idea.id}
-                  className={classes.prioritiesRow}
-                  data-dsh-idea-id={idea.id}
-                  data-drop-before={hovering && dropAt!.before ? '' : undefined}
-                  data-drop-after={hovering && !dropAt!.before ? '' : undefined}
-                  onDragOver={event => {
-                    if (dragId === undefined || idea.id === dragId) return
-                    event.preventDefault()
-                    event.dataTransfer.dropEffect = 'move'
-                    const before = beforeHalf(event, event.currentTarget)
-                    setDropAt(current => current !== undefined && current.id === idea.id && current.before === before
-                      ? current
-                      : { id: idea.id, before })
-                  }}
-                  onDrop={event => { dropOnRow(event, idea, index) }}
-                >
-                  <span className={classes.prioritiesRank}>{index + 1}</span>
-                  <div
-                    className={classes.cardGrip}
-                    draggable={!client.pending}
-                    title={t('card.drag')}
-                    aria-label={t('card.drag')}
-                    onDragStart={(event) => { startDrag(event, idea) }}
-                    onDragEnd={endDrag}
-                  >
-                    <span aria-hidden="true">⠿</span>
-                  </div>
-                  <div className={classes.prioritiesGrow}>
-                    <div
-                      className={classes.prioritiesTitle}
-                      role="button"
-                      tabIndex={0}
-                      title={t('card.clickToEdit')}
-                      onClick={() => { onEdit(idea) }}
-                      onKeyDown={event => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault()
-                          onEdit(idea)
-                        }
+          groups.map(group => (
+            <section
+              key={group.workspaceId ?? ''}
+              className={classes.prioritiesGroup}
+              data-dsh-priorities-group={group.workspaceId ?? ''}
+            >
+              {grouped && (
+                <h4 className={classes.prioritiesGroupTitle}>{groupTitle(group, workspaceTitle)}</h4>
+              )}
+              <ol
+                className={classes.prioritiesList}
+                onDragOver={event => { listDragOver(event, group.ideas) }}
+                onDrop={dropAtEnd}
+              >
+                {group.ideas.map((idea, index) => {
+                  const first = index === 0
+                  const last = index === group.ideas.length - 1
+                  const hovering = dragId !== undefined && dragId !== idea.id && dropAt?.id === idea.id
+                  return (
+                    <li
+                      key={idea.id}
+                      className={classes.prioritiesRow}
+                      data-dsh-idea-id={idea.id}
+                      data-drop-before={hovering && dropAt!.before ? '' : undefined}
+                      data-drop-after={hovering && !dropAt!.before ? '' : undefined}
+                      onDragOver={event => {
+                        if (dragId === undefined || idea.id === dragId) return
+                        if (!sameGroupAsDrag(dragId, idea)) return
+                        event.preventDefault()
+                        event.dataTransfer.dropEffect = 'move'
+                        const before = beforeHalf(event, event.currentTarget)
+                        setDropAt(current => current !== undefined && current.id === idea.id && current.before === before
+                          ? current
+                          : { id: idea.id, before })
                       }}
+                      onDrop={event => { dropOnRow(event, idea, index, group.ideas) }}
                     >
-                      {idea.title}
-                    </div>
-                    <div className={classes.cardMeta}>
-                      {idea.workspaceId !== undefined && (
-                        <span className={classes.workspaceChip}>{workspaceTitle(idea.workspaceId)}</span>
-                      )}
-                      {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
-                      {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
-                    </div>
-                    {idea.body.trim() !== '' && (
-                      mdMode
-                        ? (
-                          <div
-                            className={`${classes.markdownBody} ${classes.bodyClickable}`}
-                            tabIndex={0}
-                            data-dsh-ideas-md=""
-                            dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.body) }}
-                            onClick={event => {
-                              // A link inside the rendered body opens the
-                              // target; anything else edits (kanban parity).
-                              if ((event.target as HTMLElement).closest('a') !== null) return
-                              onEdit(idea)
-                            }}
-                            onKeyDown={event => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                onEdit(idea)
-                              }
-                            }}
-                          />
-                        )
-                        : (
-                          <div
-                            className={`${classes.cardBody} ${classes.bodyClickable}`}
-                            role="button"
-                            tabIndex={0}
-                            title={t('card.clickToEdit')}
-                            onClick={() => { onEdit(idea) }}
-                            onKeyDown={event => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                onEdit(idea)
-                              }
-                            }}
-                          >
-                            {idea.body}
-                          </div>
-                        )
-                    )}
-                    {idea.rationale !== undefined && (
-                      <div className={classes.prioritiesRationale}>
-                        <span className={classes.prioritiesRationaleLabel}>{t('priorities.rationale')}</span>
-                        <span className={classes.prioritiesRationaleText}>{idea.rationale}</span>
+                      <span className={classes.prioritiesRank}>{index + 1}</span>
+                      <div
+                        className={classes.cardGrip}
+                        draggable={!client.pending}
+                        title={t('card.drag')}
+                        aria-label={t('card.drag')}
+                        onDragStart={(event) => { startDrag(event, idea) }}
+                        onDragEnd={endDrag}
+                      >
+                        <span aria-hidden="true">⠿</span>
                       </div>
-                    )}
-                  </div>
-                  <div className={classes.prioritiesActions}>
-                    <button
-                      type="button"
-                      className={classes.prioritiesMove}
-                      disabled={client.pending || first}
-                      aria-label={t('priorities.moveUp')}
-                      title={t('priorities.moveUp')}
-                      onClick={() => { move(idea, 'up') }}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      className={classes.prioritiesMove}
-                      disabled={client.pending || last}
-                      aria-label={t('priorities.moveDown')}
-                      title={t('priorities.moveDown')}
-                      onClick={() => { move(idea, 'down') }}
-                    >
-                      ↓
-                    </button>
-                  </div>
-                </li>
-              )
-            })}
-          </ol>
+                      <div className={classes.prioritiesGrow}>
+                        <div
+                          className={classes.prioritiesTitle}
+                          role="button"
+                          tabIndex={0}
+                          title={t('card.clickToEdit')}
+                          onClick={() => { onEdit(idea) }}
+                          onKeyDown={event => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              onEdit(idea)
+                            }
+                          }}
+                        >
+                          {idea.title}
+                        </div>
+                        <div className={classes.cardMeta}>
+                          {idea.workspaceId !== undefined && (
+                            <span className={classes.workspaceChip}>{workspaceTitle(idea.workspaceId)}</span>
+                          )}
+                          {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
+                          {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
+                        </div>
+                        {idea.body.trim() !== '' && (
+                          mdMode
+                            ? (
+                              <div
+                                className={`${classes.markdownBody} ${classes.bodyClickable}`}
+                                tabIndex={0}
+                                data-dsh-ideas-md=""
+                                dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.body) }}
+                                onClick={event => {
+                                  // A link inside the rendered body opens the
+                                  // target; anything else edits (kanban parity).
+                                  if ((event.target as HTMLElement).closest('a') !== null) return
+                                  onEdit(idea)
+                                }}
+                                onKeyDown={event => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    onEdit(idea)
+                                  }
+                                }}
+                              />
+                            )
+                            : (
+                              <div
+                                className={`${classes.cardBody} ${classes.bodyClickable}`}
+                                role="button"
+                                tabIndex={0}
+                                title={t('card.clickToEdit')}
+                                onClick={() => { onEdit(idea) }}
+                                onKeyDown={event => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    onEdit(idea)
+                                  }
+                                }}
+                              >
+                                {idea.body}
+                              </div>
+                            )
+                        )}
+                        {idea.rationale !== undefined && (
+                          <div className={classes.prioritiesRationale}>
+                            <span className={classes.prioritiesRationaleLabel}>{t('priorities.rationale')}</span>
+                            <span className={classes.prioritiesRationaleText}>{idea.rationale}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className={classes.prioritiesActions}>
+                        <button
+                          type="button"
+                          className={classes.prioritiesMove}
+                          disabled={client.pending || first}
+                          aria-label={t('priorities.moveUp')}
+                          title={t('priorities.moveUp')}
+                          onClick={() => { move(idea, 'up') }}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className={classes.prioritiesMove}
+                          disabled={client.pending || last}
+                          aria-label={t('priorities.moveDown')}
+                          title={t('priorities.moveDown')}
+                          onClick={() => { move(idea, 'down') }}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </section>
+          ))
         )}
     </div>
   )

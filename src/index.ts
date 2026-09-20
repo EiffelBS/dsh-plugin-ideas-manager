@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from 'schemastery'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IdeasHostService } from './host-service.ts'
+import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
 import { makeIdeasRoutes } from './host-routes.ts'
 import { mountOnce } from './mount-once.ts'
@@ -63,6 +64,11 @@ const DEFAULT_ANNOUNCE = false
 export const apply = mountOnce('dsh-plugin-ideas-manager', applyImpl)
 
 function applyImpl(ctx: Context, config?: Config): void {
+  // P3 refinement: install the ideas-analyst skill into the user-dsh skill
+  // root so any analysing session loads it from the catalog (best-effort and
+  // first-wins — a hand-edited file is kept; see src/skill-install.ts).
+  installIdeasAnalystSkill()
+
   // P2: the optional TaskBoard mirror. Feature-detected at runtime against the
   // Host's own origin over loopback — no hard import of the task-board plugin.
   const mirror = new TaskBoardMirror({

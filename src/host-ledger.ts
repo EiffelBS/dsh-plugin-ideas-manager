@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { createIdea, normalizeStatus, normalizeTags, withStatus, type IdeaRecord } from './core/ideas.ts'
+import { createIdea, normalizeStatus, normalizeTags, rankGroupKey, withStatus, type IdeaRecord } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -313,10 +313,11 @@ export class IdeasHostLedger {
         }
         let ideas = this.document.ideas.map(item => item.id === action.ideaId ? next : item)
         if (idea.status === 'open') {
-          // Re-rank: insert at the suggested 1-based position inside the open
-          // backlog and shift the rest — the transactional "never a plain
-          // append" of the triage protocol. Non-open ideas update their
-          // opinion without re-ordering.
+          // Re-rank INSIDE the idea's own workspace group: the suggested 1-based
+          // position is relative to the other open ideas of the same workspace
+          // (the workspace-less ideas form one generic group). Other workspace
+          // groups and the closed columns keep their ranks — the classic
+          // "rank by workspace" semantic of the Priorities view.
           const ordered = triageOrderedIds(ideas, action.ideaId, action.patch.rank)
           const rankById = new Map(ordered.map((id, index) => [id, index + 1]))
           ideas = ideas.map(item => ({ ...item, rank: rankById.get(item.id) ?? item.rank }))
@@ -374,7 +375,21 @@ export class IdeasHostLedger {
       case 'reorder': {
         const present = new Set(this.document.ideas.map(idea => idea.id))
         const ordered = action.orderedIds.filter(id => present.has(id))
-        const rankById = new Map(ordered.map((id, index) => [id, index + 1]))
+        // Ranks are relative to the (status, workspace) group: each idea takes
+        // the position of its own group in the provided order, so workspace A
+        // re-ranks independently of workspace B (the workspace-less ideas form
+        // one generic group). Ideas absent from the list keep their rank.
+        const byId = new Map(this.document.ideas.map(idea => [idea.id, idea]))
+        const counters = new Map<string, number>()
+        const rankById = new Map<string, number>()
+        for (const id of ordered) {
+          const item = byId.get(id)
+          if (item === undefined) continue
+          const key = rankGroupKey(item.status, item.workspaceId)
+          const next = (counters.get(key) ?? 0) + 1
+          counters.set(key, next)
+          rankById.set(id, next)
+        }
         this.document.ideas = this.document.ideas.map(idea => ({
           ...idea,
           rank: rankById.get(idea.id) ?? idea.rank,
@@ -580,18 +595,27 @@ function rankOrdered(ideas: readonly IdeaRecord[]): IdeaRecord[] {
 }
 
 /**
- * Column-major order after inserting `movedId` at `rank` (1-based) inside the
- * open backlog; a missing rank appends. Closed columns keep their order.
+ * New rank order of the MOVED IDEA'S OWN WORKSPACE GROUP after inserting
+ * `movedId` at `rank` (1-based) inside the open ideas of that group; a missing
+ * rank appends. Only the group's ids are returned: the triage caller maps
+ * `rankById` over the whole document and keeps every other group's rank
+ * untouched (`?? item.rank`). Other workspace groups and the closed columns
+ * are never re-ranked by a triage.
  */
 function triageOrderedIds(
   ideas: readonly IdeaRecord[],
   movedId: string,
   rank: number | undefined,
 ): string[] {
-  const openOthers = rankOrdered(ideas.filter(idea => idea.status === 'open' && idea.id !== movedId)).map(idea => idea.id)
+  const moved = ideas.find(idea => idea.id === movedId)
+  if (moved === undefined) return []
+  const groupKey = rankGroupKey('open', moved.workspaceId)
+  const openOthers = rankOrdered(ideas.filter(idea =>
+    idea.status === 'open'
+    && idea.id !== movedId
+    && rankGroupKey('open', idea.workspaceId) === groupKey)).map(idea => idea.id)
   const maxRank = openOthers.length + 1
   const position = rank === undefined ? maxRank : Math.min(Math.max(1, Math.trunc(rank)), maxRank)
   openOthers.splice(position - 1, 0, movedId)
-  const closed = rankOrdered(ideas.filter(idea => idea.status !== 'open')).map(idea => idea.id)
-  return [...openOthers, ...closed]
+  return openOthers
 }

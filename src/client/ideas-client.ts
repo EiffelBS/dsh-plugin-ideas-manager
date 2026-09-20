@@ -8,6 +8,7 @@
 import type { IdeaStatus } from '../core/ideas.ts'
 import type { IdeasAction, IdeasSnapshot } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
+import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts'
 
@@ -33,6 +34,12 @@ export class IdeasClient {
   snapshot: IdeasSnapshot | undefined
   error: string | undefined
   pending = false
+  /**
+   * Phase 3: optional "Start AI analysis and create the idea" launcher,
+   * resolved from the DSH session controller. Undefined keeps the plain
+   * manual Create for workspace-targeted captures.
+   */
+  sessionLauncher: SessionLauncher | undefined
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
   private workspaces: WorkspaceViewLite[] = []

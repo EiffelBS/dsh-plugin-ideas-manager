@@ -55,6 +55,14 @@ export declare const IDEA_COLUMNS: readonly IdeaStatus[];
 export declare function isIdeaStatus(value: unknown): value is IdeaStatus;
 /** Normalize one optional target string: trim; blank collapses to undefined. */
 export declare function normalizeOptionalId(value: string | undefined): string | undefined;
+/**
+ * Rank group of an idea: its manual rank is a position RELATIVE to the other
+ * ideas of the same (status, workspace) pair — the "rank by workspace" model.
+ * The workspace-less ideas (workspaceId undefined) share one generic group, so
+ * the board and the Priorities view rank them against each other only. Used by
+ * both the host (triage/reorder re-rank) and the client (order rebuilds).
+ */
+export declare function rankGroupKey(status: IdeaStatus, workspaceId: string | undefined): string;
 /** One idea on the board. */
 export interface IdeaRecord {
     /** Stable idea id (uuid or import identifier). */

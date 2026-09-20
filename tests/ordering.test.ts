@@ -1,14 +1,33 @@
 /**
- * Ordering helper tests: rank sorting, the column-major drag rebuild and the
- * one-step open-backlog move used by the Priorities tab.
+ * Ordering helper tests: rank sorting, the status-major / workspace-group
+ * drag rebuild, the one-step open-backlog move and the Priorities grouping —
+ * all under the "rank by workspace" model (ranks are relative inside each
+ * (status, workspace) group; the workspace-less ideas form the generic group).
  */
 
 import { describe, expect, it } from 'vitest'
 import { createIdea, type IdeaRecord, type IdeaStatus } from '../src/core/ideas.ts'
-import { archivedIdeasOf, moveIdeaInOpenBacklog, orderIdeas, rebuildOrder } from '../src/client/ordering.ts'
+import {
+  archivedIdeasOf,
+  compareWorkspaceGroups,
+  groupOpenByWorkspace,
+  matchesWorkspaceScope,
+  moveIdeaInOpenBacklog,
+  NO_WORKSPACE_FILTER,
+  orderByWorkspaceGroups,
+  orderIdeas,
+  rebuildOrder,
+} from '../src/client/ordering.ts'
 
 function idea(id: string, status: IdeaStatus, rank?: number): IdeaRecord {
   return { ...createIdea({ title: id, body: '' }, 0, id), status, ...(rank === undefined ? {} : { rank }) }
+}
+
+function ideaW(id: string, status: IdeaStatus, workspaceId?: string, rank?: number): IdeaRecord {
+  return {
+    ...idea(id, status, rank),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+  }
 }
 
 describe('orderIdeas', () => {
@@ -21,14 +40,50 @@ describe('orderIdeas', () => {
 })
 
 describe('rebuildOrder', () => {
-  it('re-lays the target column end-to-end, keeping the other column orders', () => {
+  it('re-lays the target group end-to-end, keeping the other groups and columns', () => {
     const all = [idea('a', 'open', 1), idea('b', 'open', 2), idea('x', 'archived', 5)]
     expect(rebuildOrder(all, 'b', 'open', undefined)).toEqual(['a', 'b', 'x'])
   })
 
-  it('places the moved idea before a given id in the target column', () => {
+  it('places the moved idea before a given id inside its own group', () => {
     const all = [idea('a', 'open', 1), idea('b', 'open', 2), idea('c', 'open', 3)]
     expect(rebuildOrder(all, 'c', 'open', 'a')).toEqual(['c', 'a', 'b'])
+  })
+
+  it('keeps every other workspace group rank-sorted (relative ranks untouched)', () => {
+    const all = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('b', 'open', 'w1', 2),
+      ideaW('x', 'open', 'w2', 1),
+      ideaW('y', 'open', 'w2', 2),
+    ]
+    // Move 'b' to the top of its OWN group: the w2 group order is untouched.
+    expect(rebuildOrder(all, 'b', 'open', 'a')).toEqual(['b', 'a', 'x', 'y'])
+  })
+
+  it('ignores a cross-workspace anchor (no within-group insertion point): the move lands at its group end', () => {
+    const all = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('b', 'open', 'w2', 1),
+      ideaW('c', 'open', 'w2', 2),
+    ]
+    expect(rebuildOrder(all, 'a', 'open', 'c')).toEqual(['a', 'b', 'c'])
+  })
+
+  it('creates the target group when it held no member yet (cross-column move of a lone row)', () => {
+    const all = [ideaW('a', 'open', 'w1', 1), ideaW('b', 'open', 'w2')]
+    expect(rebuildOrder(all, 'a', 'archived', undefined)).toEqual(['b', 'a'])
+  })
+
+  it('spreads a deadline-drop across closed columns status-major (archived before declined)', () => {
+    const all = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('x', 'archived', 'w1', 5),
+      ideaW('d', 'declined', 'w1', 1),
+    ]
+    // Drop 'a' on the archived column without an anchor: the archived group
+    // of w1 = [x, a] in rank order; declined stays untouched after it.
+    expect(rebuildOrder(all, 'a', 'archived', undefined)).toEqual(['x', 'a', 'd'])
   })
 })
 
@@ -59,9 +114,9 @@ describe('moveIdeaInOpenBacklog', () => {
     expect(moveIdeaInOpenBacklog(all(), 'absent', 'down')).toBeUndefined()
   })
 
-  it('keeps the closed column order untouched', () => {
+  it('keeps the closed columns ordered status-major (archived group, then declined)', () => {
     const allIdeas = [...all(), idea('f', 'archived', 2)]
-    expect(moveIdeaInOpenBacklog(allIdeas, 'a', 'down')).toEqual(['b', 'a', 'c', 'd', 'e', 'f'])
+    expect(moveIdeaInOpenBacklog(allIdeas, 'a', 'down')).toEqual(['b', 'a', 'c', 'd', 'f', 'e'])
   })
 
   it('moves a lower-ranked open idea up past an entry from another column state', () => {
@@ -75,6 +130,114 @@ describe('moveIdeaInOpenBacklog', () => {
     ]
     expect(moveIdeaInOpenBacklog(mixed, 'new', 'up')).toEqual(['new', 'b', 'old'])
     expect(moveIdeaInOpenBacklog(mixed, 'b', 'down')).toEqual(['new', 'b', 'old'])
+  })
+
+  it('moves inside the idea\'s own workspace group only (other groups untouched)', () => {
+    const allIdeas = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('b', 'open', 'w1', 2),
+      ideaW('x', 'open', 'w2', 1),
+      ideaW('y', 'open', 'w2', 2),
+      idea('g', 'open'), // generic group
+    ]
+    expect(moveIdeaInOpenBacklog(allIdeas, 'b', 'up')).toEqual(['b', 'a', 'x', 'y', 'g'])
+  })
+
+  it('treats the group edge as the move edge (a first/last row of ONE group is not the backlog edge)', () => {
+    const allIdeas = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('b', 'open', 'w2', 1),
+      ideaW('c', 'open', 'w2', 2),
+    ]
+    // 'a' is first of w1 but NOT first of the whole backlog: up is still a no-op
+    // because its group has no row above it.
+    expect(moveIdeaInOpenBacklog(allIdeas, 'a', 'up')).toBeUndefined()
+    // 'c' is last of w2: down is a no-op although w1 rows exist below it.
+    expect(moveIdeaInOpenBacklog(allIdeas, 'c', 'down')).toBeUndefined()
+    // A real within-group move still works ('c' up swaps with 'b' only).
+    expect(moveIdeaInOpenBacklog(allIdeas, 'c', 'up')).toEqual(['a', 'c', 'b'])
+  })
+
+  it('keeps the generic group last and re-ranks it independently', () => {
+    const allIdeas = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('b', 'open', 'w1', 2),
+      idea('g1', 'open', 1),
+      idea('g2', 'open', 2),
+    ]
+    // Move g1 down: only the generic group changes.
+    expect(moveIdeaInOpenBacklog(allIdeas, 'g1', 'down')).toEqual(['a', 'b', 'g2', 'g1'])
+  })
+})
+
+describe('groupOpenByWorkspace', () => {
+  it('partitions by workspace, sorts every group by its own rank and puts the generic group last', () => {
+    const open = [
+      ideaW('a', 'open', 'w2', 2),
+      ideaW('b', 'open', undefined, 1),
+      ideaW('c', 'open', 'w1', 1),
+      ideaW('d', 'open', 'w2', 1),
+      ideaW('e', 'open', undefined, 2),
+    ]
+    const groups = groupOpenByWorkspace(open)
+    expect(groups.map(group => group.workspaceId ?? null)).toEqual(['w1', 'w2', null])
+    expect(groups[0].ideas.map(row => row.id)).toEqual(['c'])
+    expect(groups[1].ideas.map(row => row.id)).toEqual(['d', 'a'])
+    expect(groups[2].ideas.map(row => row.id)).toEqual(['b', 'e'])
+  })
+
+  it('omits the generic group when there is no workspace-less idea', () => {
+    const open = [ideaW('a', 'open', 'w1', 1)]
+    const groups = groupOpenByWorkspace(open)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].workspaceId).toBe('w1')
+  })
+})
+
+describe('orderByWorkspaceGroups', () => {
+  const titles = new Map<string, string>([['w1', 'Zeta'], ['w2', 'Alpha']])
+  const title = (id: string): string => titles.get(id) ?? id
+
+  it('lays each column out group-contiguous (named by title), rank-sorted inside every group', () => {
+    const rows = [
+      ideaW('a', 'open', 'w1', 2),
+      ideaW('b', 'open', undefined, 1),
+      ideaW('c', 'open', 'w2', 2),
+      ideaW('d', 'open', 'w1', 1),
+      ideaW('e', 'open', 'w2', 1),
+    ]
+    expect(orderByWorkspaceGroups(rows, title).map(row => row.id)).toEqual(['e', 'c', 'd', 'a', 'b'])
+  })
+
+  it('keeps the plain rank sort under a single workspace (one group)', () => {
+    const rows = [ideaW('a', 'open', 'w1', 2), ideaW('b', 'open', 'w1', 1)]
+    expect(orderByWorkspaceGroups(rows, title).map(row => row.id)).toEqual(['b', 'a'])
+  })
+})
+
+describe('matchesWorkspaceScope', () => {
+  const w = (id: string, workspaceId?: string): IdeaRecord => ({
+    ...idea(id, 'open'),
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+  })
+
+  it('matches every idea when the filter is empty (all workspaces)', () => {
+    expect([
+      matchesWorkspaceScope(w('a'), ''),
+      matchesWorkspaceScope(w('b', 'w1'), ''),
+      matchesWorkspaceScope(w('c', 'w2'), ''),
+    ]).toEqual([true, true, true])
+  })
+
+  it('matches only the workspace-less ideas under NO_WORKSPACE_FILTER', () => {
+    expect(matchesWorkspaceScope(w('a'), NO_WORKSPACE_FILTER)).toBe(true)
+    expect(matchesWorkspaceScope(w('b', 'w1'), NO_WORKSPACE_FILTER)).toBe(false)
+  })
+
+  it('matches a concrete workspace id exactly', () => {
+    expect(matchesWorkspaceScope(w('a', 'w1'), 'w1')).toBe(true)
+    expect(matchesWorkspaceScope(w('b', 'w2'), 'w1')).toBe(false)
+    expect(matchesWorkspaceScope(w('c'), 'w1')).toBe(false)
   })
 })
 
@@ -104,5 +267,15 @@ describe('archivedIdeasOf', () => {
     ]
     expect(archivedIdeasOf(rows, 'w1').map(row => row.id)).toEqual(['a'])
     expect(archivedIdeasOf(rows, '').map(row => row.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('scopes to the workspace-less ideas only under NO_WORKSPACE_FILTER', () => {
+    const rows = [
+      archived('a', 'w1'),
+      archived('b'),
+      archived('c'),
+      idea('d', 'declined'),
+    ]
+    expect(archivedIdeasOf(rows, NO_WORKSPACE_FILTER).map(row => row.id)).toEqual(['b', 'c'])
   })
 })
