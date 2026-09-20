@@ -104,6 +104,52 @@ Full contract (verb table, mirror mapping, PowerShell gotchas) lives in
 
 ---
 
+## Install & update
+
+From a local checkout (no registry needed):
+
+```sh
+dsh plugin --profile web add link:/path/to/dsh-plugin-ideas-manager
+```
+
+From a git URL:
+
+```sh
+dsh plugin --profile web add git+https://github.com/EiffelBS/dsh-plugin-ideas-manager.git
+```
+
+`dsh plugin` runs `pnpm add` in the profile directory, then reconciles
+`dsh.profile.bundles`: because this package declares a `dsh.bundle`, it is
+auto-appended as a profile layer. Restart the web instance (or open a fresh
+page session) for the bundle change to take effect.
+
+Verify installation:
+
+```sh
+dsh web --profile web --no-open   # then look for the Ideas entry in the sidebar
+```
+
+To pick up a newer revision after a push (versions follow the package's
+`version` field — there are no tags or releases):
+
+```sh
+dsh plugin --profile web update dsh-plugin-ideas-manager
+```
+
+then restart the web instance.
+
+Uninstall / disable:
+
+```sh
+dsh plugin --profile web remove dsh-plugin-ideas-manager
+```
+
+> **Maintainers:** bump `version` in `package.json` on each meaningful push so
+> an installed profile's version stays observable (e.g. via `dsh plugin ls` or
+> `pnpm list` in the profile directory).
+
+---
+
 ## Build, test & install (dev)
 
 ```powershell

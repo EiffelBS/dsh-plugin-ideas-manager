@@ -1,7 +1,7 @@
 {
   "name": "dsh-plugin-ideas-manager",
   "description": "Generic idea manager for the DSH Web GUI: Host-authoritative /api/ideas ledger, capture, 4-column kanban (open / under review / archived / declined), optional TaskBoard mirror; mounted without DSH source changes.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
