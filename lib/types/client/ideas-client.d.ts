@@ -89,6 +89,13 @@ export declare class IdeasClient {
         body: string;
     }): Promise<void>;
     restoreIdea(ideaId: string): Promise<void>;
+    /**
+     * Start an analyst re-run on an existing idea (human-triggered): the Host
+     * stamps the cycle and preserves the current content as the prior-analysis
+     * audit trail; the caller then launches a fresh analyst session whose
+     * update+triage overwrite the card.
+     */
+    reanalyzeIdea(ideaId: string): Promise<void>;
     deleteIdea(ideaId: string): Promise<void>;
     reorderIdea(orderedIds: string[]): Promise<void>;
     /** Republish the DSH registry rows and wake the board (catalog refresh). */

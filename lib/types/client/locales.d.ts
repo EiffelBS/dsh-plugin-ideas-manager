@@ -103,6 +103,12 @@ export declare const fr: {
     'card.followUpHint': string;
     'card.followUpOf': string;
     'card.followUpOfHint': string;
+    'card.reanalyze': string;
+    'card.reanalyzeHint': string;
+    'reanalyze.title': string;
+    'reanalyze.hint': string;
+    'reanalyze.submit': string;
+    'reanalyze.cancel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -213,6 +219,12 @@ export declare const en: {
     'card.followUpHint': string;
     'card.followUpOf': string;
     'card.followUpOfHint': string;
+    'card.reanalyze': string;
+    'card.reanalyzeHint': string;
+    'reanalyze.title': string;
+    'reanalyze.hint': string;
+    'reanalyze.submit': string;
+    'reanalyze.cancel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;

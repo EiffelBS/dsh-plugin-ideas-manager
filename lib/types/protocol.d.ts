@@ -57,6 +57,9 @@ export type IdeasAction = {
     kind: 'delete';
     ideaId: string;
 } | {
+    kind: 'reanalyze';
+    ideaId: string;
+} | {
     kind: 'reorder';
     orderedIds: string[];
 } | {

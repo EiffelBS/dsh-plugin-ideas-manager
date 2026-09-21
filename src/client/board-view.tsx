@@ -24,7 +24,7 @@ import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspac
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
-import type { AiCaptureInput, ModelChoice, ReanalyzeInput } from './session-queue.ts'
+import type { AiCaptureInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
 import { matchSessionSelection } from './session-queue.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
@@ -193,6 +193,130 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecor
   return at < 0 ? '' : String(at + 1)
 }
 
+/** Shared analyst model-picker state: the catalog is loaded once per open,
+ *  preselected with the CURRENT host session's model (an untouched picker
+ *  matches the session — never the catalog's first row); '' means no model is
+ *  forced (the analyst session keeps its own default). Used by both the
+ *  capture modal and the re-analyze confirm modal. */
+function useAnalystModelPicker(launcher: SessionLauncher | undefined): {
+  modelChoices: ModelChoice[]
+  modelProviders: string[]
+  filteredModelChoices: ModelChoice[]
+  selProvider: string
+  modelQuery: string
+  selModelKey: string
+  setSelProvider: (next: string) => void
+  setModelQuery: (next: string) => void
+  setSelModelKey: (next: string) => void
+  selectedModel: ModelChoice | undefined
+} {
+  const [modelChoices, setModelChoices] = useState<ModelChoice[]>([])
+  const [selProvider, setSelProvider] = useState('')
+  const [modelQuery, setModelQuery] = useState('')
+  const [selModelKey, setSelModelKey] = useState('')
+  useEffect(() => {
+    let cancelled = false
+    if (launcher === undefined) return
+    void launcher.listModels().then(choices => {
+      if (cancelled) return
+      setModelChoices(choices)
+      // Preselect the CURRENT host session's model when the catalog knows it
+      // (see session-queue matchSessionSelection): never roll to the first
+      // row — that roll was the cost surprise. Unknown or absent selection
+      // keeps the explicit "inherit from session" empty option.
+      void launcher.currentModel().then(selection => {
+        if (cancelled) return
+        const current = matchSessionSelection(selection, choices)
+        if (current !== undefined) {
+          setSelProvider(current.provider)
+          setSelModelKey(current.label)
+        }
+      })
+    })
+    return () => { cancelled = true }
+    // The launcher is stable for the page; load once per modal open.
+  }, [launcher])
+  // Distinct providers, order preserved from the catalog.
+  const modelProviders: string[] = []
+  for (const choice of modelChoices) {
+    if (!modelProviders.includes(choice.provider)) modelProviders.push(choice.provider)
+  }
+  const activeProviderChoices = modelChoices.filter(choice => choice.provider === selProvider)
+  const query = modelQuery.trim().toLowerCase()
+  const filteredModelChoices = query === ''
+    ? activeProviderChoices
+    : activeProviderChoices.filter(choice =>
+        choice.label.toLowerCase().includes(query))
+  const selectedModel: ModelChoice | undefined =
+    selModelKey === ''
+      ? undefined
+      : filteredModelChoices.find(choice => choice.label === selModelKey)
+        ?? activeProviderChoices.find(choice => choice.label === selModelKey)
+  return {
+    modelChoices,
+    modelProviders,
+    filteredModelChoices,
+    selProvider,
+    modelQuery,
+    selModelKey,
+    setSelProvider,
+    setModelQuery,
+    setSelModelKey,
+    selectedModel,
+  }
+}
+
+/** The model-picker field row (provider cascade + filter + model list), as
+ *  rendered in the capture and re-analyze modals. Hidden by the caller when
+ *  the catalog is empty. */
+function ModelPickerField({ picker, disabled }: {
+  picker: ReturnType<typeof useAnalystModelPicker>
+  disabled: boolean
+}) {
+  return (
+    <div className={classes.field}>
+      <label className={classes.fieldLabel} htmlFor="dsh-ideas-model">{t('new.model')}</label>
+      <div className={`${classes.fieldRow} ${classes.modelRow}`}>
+        <select
+          id="dsh-ideas-model-provider"
+          className={classes.select}
+          value={picker.selProvider}
+          disabled={disabled}
+          title={t('new.modelProvider')}
+          onChange={event => { picker.setSelProvider(event.target.value); picker.setModelQuery(''); picker.setSelModelKey('') }}
+        >
+          <option value="">{t('new.modelSessionDefault')}</option>
+          {picker.modelProviders.map(provider => (
+            <option key={provider} value={provider}>{provider}</option>
+          ))}
+        </select>
+        <input
+          id="dsh-ideas-model-query"
+          className={classes.input}
+          type="search"
+          value={picker.modelQuery}
+          placeholder={t('new.modelFilterPlaceholder')}
+          disabled={disabled}
+          onChange={event => { picker.setModelQuery(event.target.value) }}
+        />
+        <select
+          id="dsh-ideas-model"
+          className={classes.select}
+          value={picker.selModelKey}
+          disabled={disabled}
+          onChange={event => { picker.setSelModelKey(event.target.value) }}
+        >
+          <option value="">{t('new.modelSessionDefault')}</option>
+          {picker.filteredModelChoices.map(choice => (
+            <option key={choice.label} value={choice.label}>{choice.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className={classes.fieldHint}>{t('new.modelHint')}</div>
+    </div>
+  )
+}
+
 /** Shared capture/edit modal. The lifecycle actions of the card are mirrored
  *  here per status (deliver / archive / decline / recette OK / follow-up /
  *  restore), so the author can move an idea without leaving the editor. */
@@ -255,57 +379,11 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   const aiMode = initial === undefined && workspace !== '' && client.sessionLauncher !== undefined
     && catalog.some(entry => entry.workspaceId === workspace && entry.knownToApp)
 
-  // Phase 3 refinement: model picker for the analysing session. Loaded once
-  // per capture when the AI mode is reachable and the session controller can
-  // list models; an empty list hides the picker and the analyst session keeps
-  // its Host default. With many providers/models the picker is a cascade:
-  // a provider selector + a text filter + the (filtered) model list.
-  const [modelChoices, setModelChoices] = useState<ModelChoice[]>([])
-  const [selProvider, setSelProvider] = useState('')
-  const [modelQuery, setModelQuery] = useState('')
-  const [selModelKey, setSelModelKey] = useState('')
-  useEffect(() => {
-    let cancelled = false
-    if (client.sessionLauncher === undefined) return
-    void client.sessionLauncher.listModels().then(choices => {
-      if (cancelled) return
-      setModelChoices(choices)
-      // Preselect the CURRENT host session's model when the catalog knows it,
-      // so an untouched picker matches the session the human is talking in —
-      // never roll to the catalog's first row (that roll was the cost
-      // surprise: an expensive model the user never picked). When the session
-      // selection is unknown or absent from the catalog, the explicit
-      // "inherit from session" empty option stays selected.
-      void client.sessionLauncher!.currentModel().then(selection => {
-        if (cancelled) return
-        const current = matchSessionSelection(selection, choices)
-        if (current !== undefined) {
-          setSelProvider(current.provider)
-          setSelModelKey(current.label)
-        }
-      })
-    })
-    return () => { cancelled = true }
-    // The launcher is stable for the page; load once per modal open.
-  }, [client.sessionLauncher])
-  // Distinct providers, order preserved from the catalog.
-  const modelProviders: string[] = []
-  for (const choice of modelChoices) {
-    if (!modelProviders.includes(choice.provider)) modelProviders.push(choice.provider)
-  }
-  const activeProviderChoices = modelChoices.filter(choice => choice.provider === selProvider)
-  const query = modelQuery.trim().toLowerCase()
-  const filteredModelChoices = query === ''
-    ? activeProviderChoices
-    : activeProviderChoices.filter(choice =>
-        choice.label.toLowerCase().includes(query))
-  // '' (the "inherit from session" option, first in the list) means NO model
-  // is forced: the analyst session keeps its own default.
-  const selectedModel: ModelChoice | undefined =
-    selModelKey === ''
-      ? undefined
-      : filteredModelChoices.find(choice => choice.label === selModelKey)
-        ?? activeProviderChoices.find(choice => choice.label === selModelKey)
+  // Phase 3 refinement: model picker for the analysing session (shared hook;
+  // an empty list hides the picker and the analyst session keeps its default).
+  const modelPicker = useAnalystModelPicker(client.sessionLauncher)
+  const { modelChoices } = modelPicker
+  const { selectedModel } = modelPicker
 
   // Escape closes the modal (Echo the overlay-click behaviour), without
   // closing anything behind it: the listener runs in the capture phase and
@@ -472,46 +550,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           {sessionDefaulted && <div className={classes.fieldHint}>{t('new.sessionWorkspaceHint')}</div>}
         </div>
         {aiMode && modelChoices.length > 0 && (
-          <div className={classes.field}>
-            <label className={classes.fieldLabel} htmlFor="dsh-ideas-model">{t('new.model')}</label>
-            <div className={`${classes.fieldRow} ${classes.modelRow}`}>
-              <select
-                id="dsh-ideas-model-provider"
-                className={classes.select}
-                value={selProvider}
-                disabled={client.pending}
-                title={t('new.modelProvider')}
-                onChange={event => { setSelProvider(event.target.value); setModelQuery(''); setSelModelKey('') }}
-              >
-                <option value="">{t('new.modelSessionDefault')}</option>
-                {modelProviders.map(provider => (
-                  <option key={provider} value={provider}>{provider}</option>
-                ))}
-              </select>
-              <input
-                id="dsh-ideas-model-query"
-                className={classes.input}
-                type="search"
-                value={modelQuery}
-                placeholder={t('new.modelFilterPlaceholder')}
-                disabled={client.pending}
-                onChange={event => { setModelQuery(event.target.value) }}
-              />
-              <select
-                id="dsh-ideas-model"
-                className={classes.select}
-                value={selModelKey}
-                disabled={client.pending}
-                onChange={event => { setSelModelKey(event.target.value) }}
-              >
-                <option value="">{t('new.modelSessionDefault')}</option>
-                {filteredModelChoices.map(choice => (
-                  <option key={choice.label} value={choice.label}>{choice.label}</option>
-                ))}
-              </select>
-            </div>
-            <div className={classes.fieldHint}>{t('new.modelHint')}</div>
-          </div>
+          <ModelPickerField picker={modelPicker} disabled={client.pending} />
         )}
         <div className={classes.field}>
           <span className={classes.fieldRowBetween}>
@@ -804,6 +843,68 @@ function FollowUpModal({ client, parent, onClose }: {
   )
 }
 
+/**
+ * Re-analyze confirm modal (idea #30 flow): the human trigger of an analyst
+ * re-run, WITH the model choice — a fresh session will overwrite the card
+ * (update + triage on the same idea id), so the launch is explicit and the
+ * analysing model selectable (same cascade picker as the capture; '' keeps
+ * the session default). The Host stamps the prior-analysis audit BEFORE the
+ * session starts (see the board's reanalyzeIdea).
+ */
+function ReanalyzeModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
+  client: IdeasClient
+  idea: IdeaRecord
+  /** Display title of the idea's workspace (context line). */
+  workspaceTitle: string
+  /** Start the run: stamp + launch with the picked (or default) model. */
+  onLaunch: (idea: IdeaRecord, model: ModelChoice | undefined) => void
+  onClose: () => void
+}) {
+  const picker = useAnalystModelPicker(client.sessionLauncher)
+  const [pending, setPending] = useState(false)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('keydown', onKey, true) }
+  }, [onClose])
+  const start = (): void => {
+    setPending(true)
+    onLaunch(idea, picker.selectedModel)
+  }
+  return (
+    <div className={classes.overlay} onClick={onClose}>
+      <div className={classes.modal} onClick={event => { event.stopPropagation() }}>
+        <h3 className={classes.modalTitle}>{t('reanalyze.title')}</h3>
+        <div className={classes.field}>
+          <span className={classes.detailMeta}>
+            {idea.ideaNumber !== undefined ? `#${idea.ideaNumber} — ` : ''}{idea.title}
+          </span>
+        </div>
+        <div className={classes.field}>
+          <div className={classes.fieldHint}>{t('reanalyze.hint', { workspace: workspaceTitle })}</div>
+        </div>
+        {picker.modelChoices.length > 0 && <ModelPickerField picker={picker} disabled={pending || client.pending} />}
+        <div className={classes.modalActions}>
+          <button type="button" className={classes.ghostButton} onClick={onClose}>{t('reanalyze.cancel')}</button>
+          <button
+            type="button"
+            className={classes.primaryButton}
+            disabled={pending || client.pending}
+            onClick={start}
+          >
+            {t('reanalyze.submit')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type DragState = { id: string; source: IdeaStatus } | undefined
 /** Drop target of the kanban drag: the column plus the insertion point
  *  (beforeId undefined = append at the column end), and the hovered card +
@@ -821,6 +922,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
   // The under-review parent a recette-NOK follow-up is being raised for.
   const [followUp, setFollowUp] = useState<IdeaRecord | undefined>(undefined)
+  // The open idea a Re-analyze confirm modal is raised for (idea #30 flow).
+  const [reanalyzing, setReanalyzing] = useState<IdeaRecord | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
@@ -934,9 +1037,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   /** Stamp the audit cycle on the Host first (the prior analysis is preserved
    *  BEFORE the agent overwrites the card), then launch the fresh analyst
-   *  session. A failed stamp aborts the run; a failed launch leaves the
+   *  session with the model picked in the confirm modal (undefined = session
+   *  default). A failed stamp aborts the run; a failed launch leaves the
    *  stamped card untouched (the human can retry the run). */
-  const reanalyzeIdea = (idea: IdeaRecord): void => {
+  const reanalyzeIdea = (idea: IdeaRecord, model: ModelChoice | undefined): void => {
     const launcher = client.sessionLauncher
     if (launcher === undefined || idea.workspaceId === undefined) return
     const run = async (): Promise<void> => {
@@ -952,6 +1056,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         ...(idea.value === undefined ? {} : { value: idea.value }),
         ...(idea.effort === undefined ? {} : { effort: idea.effort }),
         ...(idea.rationale === undefined ? {} : { rationale: idea.rationale }),
+        ...(model === undefined ? {} : { model }),
       }
       void launcher.launchReanalyze(input).catch((launchError: unknown) => {
         // The session could not be queued: the stamped card stays usable, the
@@ -963,6 +1068,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       // The client carries the Host error; the board reflects it.
       console.error('[dsh-plugin-ideas-manager] re-analyze stamp failed:', error)
     })
+    setReanalyzing(undefined)
   }
 
   return (
@@ -1365,7 +1471,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   className={classes.actionButton}
                                   disabled={client.pending}
                                   title={t('card.reanalyzeHint')}
-                                  onClick={() => { reanalyzeIdea(idea) }}
+                                  onClick={() => { setReanalyzing(idea) }}
                                 >
                                   <IconReanalyze />
                                   {t('card.reanalyze')}
@@ -1532,7 +1638,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           initial={editing}
           onClose={() => { setEditing(undefined) }}
           onFollowUp={(idea) => { setFollowUp(idea) }}
-          onReanalyze={canReanalyze(editing) ? reanalyzeIdea : undefined}
+          onReanalyze={canReanalyze(editing) ? (idea) => { setReanalyzing(idea) } : undefined}
+        />
+      )}
+      {reanalyzing !== undefined && (
+        <ReanalyzeModal
+          client={client}
+          idea={reanalyzing}
+          workspaceTitle={workspaceTitle(reanalyzing.workspaceId ?? '')}
+          onLaunch={reanalyzeIdea}
+          onClose={() => { setReanalyzing(undefined) }}
         />
       )}
       {followUp !== undefined && (

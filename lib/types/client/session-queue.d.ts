@@ -51,6 +51,32 @@ export interface AiLaunchResult {
     accepted: boolean;
 }
 /**
+ * The existing idea handed back to the analyst for a RE-ANALYZE run (idea #30
+ * flow): a fresh DSH session re-reads the stored card and overwrites it with a
+ * new analysis through the same write channel (update + triage on the SAME
+ * idea id — never a create, never a recursive re-analysis: every run is
+ * triggered by an explicit human click on the board).
+ */
+export interface ReanalyzeInput {
+    /** Target workspace of the idea (the session runs in it). */
+    workspaceId: string;
+    /** Display title of the target workspace, for the analyst's context. */
+    workspaceTitle: string;
+    /** The stored idea id the analyst MUST update (never create). */
+    ideaId: string;
+    /** The stable "#N" human reference of the idea (context only). */
+    ideaNumber?: number;
+    title: string;
+    body: string;
+    tags: readonly string[];
+    /** Current stored priority opinion (the analyst re-decides them). */
+    value?: number;
+    effort?: number;
+    rationale?: string;
+    /** Optional explicit model selection for the analysing session. */
+    model?: ModelChoice;
+}
+/**
  * A session model selection: the provider + model (+ optional reasoning
  * effort) a session runs on. Mirrors the Host `ModelSelection` type.
  */
@@ -65,6 +91,8 @@ export interface ModelSelection {
  */
 export interface SessionLauncher {
     launch(input: AiCaptureInput): Promise<AiLaunchResult>;
+    /** Re-run the analyst on an existing idea (idea #30 flow); same session mechanics. */
+    launchReanalyze(input: ReanalyzeInput): Promise<AiLaunchResult>;
     /** List the models available for an analysing session (empty when unavailable). */
     listModels(): Promise<ModelChoice[]>;
     /**
@@ -192,6 +220,15 @@ interface LauncherClientContext {
  * source of the contract.
  */
 export declare function buildAnalysisPrompt(input: AiCaptureInput, origin: string): string;
+/**
+ * The RE-ANALYZE launch prompt (idea #30 flow). Same split as the capture
+ * prompt: the skill carries the methodology and the write-channel contract;
+ * this prompt carries only what the skill cannot know — the target idea, the
+ * workspace, and the server origin — plus the re-analysis overrides (which
+ * idea id to update, which initiator to use, the no-create / no-recursion /
+ * rank-churn rules).
+ */
+export declare function buildReanalysisPrompt(input: ReanalyzeInput, origin: string): string;
 /**
  * Read the CURRENT host session's model selection from its `modelSelection`
  * projection (the same source the shell's own selector reads: `faceOf`
