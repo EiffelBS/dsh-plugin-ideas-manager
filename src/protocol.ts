@@ -48,6 +48,10 @@ export type IdeasAction =
     }
   | { kind: 'restore'; ideaId: string }
   | { kind: 'delete'; ideaId: string }
+  | {
+      kind: 'reanalyze'
+      ideaId: string
+    }
   | { kind: 'reorder'; orderedIds: string[] }
   | { kind: 'export'; workspaceId?: string }
 
@@ -149,6 +153,8 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   }
   if (row.archivedAt !== undefined && row.archivedAt !== null && typeof row.archivedAt !== 'number') return undefined
   if (row.followUpOfId !== undefined && row.followUpOfId !== null && typeof row.followUpOfId !== 'string') return undefined
+  if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
+  if (row.analysisAudit !== undefined && row.analysisAudit !== null && !isAnalysisAudit(row.analysisAudit)) return undefined
   return {
     id: row.id,
     title: row.title,
@@ -168,6 +174,8 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(typeof row.taskBoardId === 'string' ? { taskBoardId: row.taskBoardId } : {}),
     ...(typeof row.followUpOfId === 'string' ? { followUpOfId: row.followUpOfId } : {}),
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
+  ...(typeof row.reanalyzeAt === 'number' ? { reanalyzeAt: row.reanalyzeAt } : {}),
+  ...(isAnalysisAudit(row.analysisAudit) ? { analysisAudit: row.analysisAudit } : {}),
   }
 }
 
@@ -209,6 +217,18 @@ function followUpInput(value: unknown): value is FollowUpInput {
   const input = record(value)
   if (input === undefined || !exactKeys(input, ['title', 'body'])) return false
   return typeof input.title === 'string' && typeof input.body === 'string'
+}
+
+/** Whether an unknown value is a well-formed preserved prior analysis. */
+function isAnalysisAudit(value: unknown): value is IdeaRecord['analysisAudit'] {
+  const audit = record(value)
+  if (audit === undefined || !exactKeys(audit, ['at', 'title', 'body', 'tags', 'value', 'effort', 'rationale'])) return false
+  if (typeof audit.at !== 'number' || typeof audit.title !== 'string' || typeof audit.body !== 'string') return false
+  if (audit.tags !== undefined && !isIdeaTagList(audit.tags)) return false
+  for (const key of ['value', 'effort'] as const) {
+    if (audit[key] !== undefined && (typeof audit[key] !== 'number' || !Number.isFinite(audit[key] as number))) return false
+  }
+  return audit.rationale === undefined || typeof audit.rationale === 'string'
 }
 
 function reorderList(value: unknown): boolean {
@@ -280,6 +300,9 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
     case 'delete':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
       return ideaId === undefined ? undefined : { requestId: envelope.requestId, action: { kind: action.kind, ideaId } as IdeasAction }
+    case 'reanalyze':
+      if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
+      return ideaId === undefined ? undefined : { requestId: envelope.requestId, action: { kind: 'reanalyze', ideaId } }
     case 'reorder':
       if (!exactKeys(action, ['kind', 'orderedIds'])) return undefined
       return reorderList(action.orderedIds)

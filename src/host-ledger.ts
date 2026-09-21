@@ -133,9 +133,29 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (taskBoardId !== undefined) idea.taskBoardId = taskBoardId
     const tags = normalizeTags(row.tags)
     if (tags !== undefined) idea.tags = tags
+    if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
+    const audit = auditOf(row.analysisAudit)
+    if (audit !== undefined) idea.analysisAudit = audit
     ideas.push(idea)
   }
   return ideas
+}
+
+/** Structural repair of a persisted prior-analysis snapshot (undefined when unusable). */
+function auditOf(value: unknown): IdeaRecord['analysisAudit'] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const row = value as Record<string, unknown>
+  if (typeof row.at !== 'number' || typeof row.title !== 'string' || typeof row.body !== 'string') return undefined
+  const tags = normalizeTags(row.tags)
+  return {
+    at: row.at,
+    title: row.title,
+    body: row.body,
+    ...(tags === undefined ? {} : { tags }),
+    ...(typeof row.value === 'number' ? { value: row.value } : {}),
+    ...(typeof row.effort === 'number' ? { effort: row.effort } : {}),
+    ...(typeof row.rationale === 'string' && row.rationale.trim() !== '' ? { rationale: row.rationale.trim() } : {}),
+  }
 }
 
 export class IdeasHostLedger {
@@ -370,6 +390,28 @@ export class IdeasHostLedger {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
         this.document.ideas = this.document.ideas.filter(item => item.id !== action.ideaId)
+        break
+      }
+      case 'reanalyze': {
+        // The human-triggered start of an analyst re-run: stamp the cycle and
+        // preserve the CURRENT content as the prior-analysis audit trail. The
+        // analyst's own update+triage later writes the new content over the
+        // card; the audit keeps re-analysis deliberate (never destroying
+        // history). One level deep: the previous audit is superseded.
+        const idea = this.document.ideas.find(item => item.id === action.ideaId)
+        if (idea === undefined) throw new Error('idea not found')
+        const audit: IdeaRecord['analysisAudit'] = {
+          at: now,
+          title: idea.title,
+          body: idea.body,
+          ...(idea.tags === undefined ? {} : { tags: idea.tags }),
+          ...(idea.value === undefined ? {} : { value: idea.value }),
+          ...(idea.effort === undefined ? {} : { effort: idea.effort }),
+          ...(idea.rationale === undefined ? {} : { rationale: idea.rationale }),
+        }
+        this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
+          ? { ...item, reanalyzeAt: now, analysisAudit: audit, updatedAt: now }
+          : item)
         break
       }
       case 'reorder': {

@@ -112,6 +112,22 @@ export function rankGroupKey(status: IdeaStatus, workspaceId: string | undefined
   return `${status}\u0000${workspaceId ?? ''}`
 }
 
+/** Prior analysis preserved by a re-analyze run (one level deep). */
+export interface AnalysisAudit {
+  /** When the re-analyze cycle was started (ms epoch). */
+  at: number
+  /** The idea title BEFORE the re-analysis replaced it. */
+  title: string
+  /** The idea body BEFORE the re-analysis replaced it. */
+  body: string
+  /** The label set BEFORE the re-analysis replaced it. */
+  tags?: IdeaTag[]
+  /** The priority scores BEFORE the re-triage replaced them. */
+  value?: number
+  effort?: number
+  rationale?: string
+}
+
 /** One idea on the board. */
 export interface IdeaRecord {
   /** Stable idea id (uuid or import identifier). */
@@ -161,6 +177,19 @@ export interface IdeaRecord {
   updatedAt: number
   /** When the idea was archived or declined (ms epoch). */
   archivedAt?: number
+  /**
+   * Re-analyze cycle stamp (ms epoch): set by the `reanalyze` verb when a
+   * human-triggered analyst re-run starts. The analyst's own update+triage
+   * writes the new content; the stamp stays as the audit marker.
+   */
+  reanalyzeAt?: number
+  /**
+   * Prior analysis preserved by the latest re-analyze cycle: the title/body/
+   * tags/priority opinion the card carried BEFORE the analyst overwrote them.
+   * One level deep (the latest prior analysis only) so the ledger stays
+   * bounded — re-analyze replaces deliberately, never destroys history.
+   */
+  analysisAudit?: AnalysisAudit
 }
 
 /** Input for creating an idea. */
@@ -202,6 +231,13 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
   if (record.deliveredAt !== undefined && typeof record.deliveredAt !== 'number') return false
   if (record.decision !== undefined && typeof record.decision !== 'string') return false
   if (record.archivedAt !== undefined && typeof record.archivedAt !== 'number') return false
+  if (record.reanalyzeAt !== undefined && typeof record.reanalyzeAt !== 'number') return false
+  if (record.analysisAudit !== undefined) {
+    const audit = record.analysisAudit as Record<string, unknown>
+    if (typeof audit !== 'object' || audit === null || Array.isArray(audit)) return false
+    if (typeof audit.at !== 'number' || typeof audit.title !== 'string' || typeof audit.body !== 'string') return false
+    if (audit.tags !== undefined && !Array.isArray(audit.tags)) return false
+  }
   if (record.tags !== undefined && !Array.isArray(record.tags)) return false
   return true
 }

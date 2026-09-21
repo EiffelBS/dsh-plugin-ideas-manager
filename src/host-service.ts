@@ -259,11 +259,13 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
     case 'delete':
     case 'reorder':
     case 'triage':
+    case 'reanalyze':
     case 'import':
     case 'export':
       // delete: documented no-op — the card outlives the idea; reorder and
-      // triage change ranking/opinions, not the card's life; import and
-      // export do not cross the mirror boundary.
+      // triage change ranking/opinions, not the card's life; reanalyze only
+      // stamps the audit cycle; import and export do not cross the mirror
+      // boundary.
       return undefined
   }
 }
@@ -281,6 +283,7 @@ function actionIdeaId(action: IdeasAction): string | undefined {
     case 'followUp':
     case 'restore':
     case 'delete':
+    case 'reanalyze':
       return action.ideaId
     case 'reorder':
     case 'import':

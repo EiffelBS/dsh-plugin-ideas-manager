@@ -24,7 +24,7 @@ import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspac
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
-import type { AiCaptureInput, ModelChoice } from './session-queue.ts'
+import type { AiCaptureInput, ModelChoice, ReanalyzeInput } from './session-queue.ts'
 import { matchSessionSelection } from './session-queue.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
@@ -121,6 +121,18 @@ function IconFollowUp() {
   )
 }
 
+/** Rotate-cw: the re-analyze affordance (a fresh analyst run over the card). */
+function IconReanalyze() {
+  return (
+    <svg {...actionIcon}>
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+      <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  )
+}
+
 function tagsText(idea: IdeaRecord | undefined): string {
   return idea?.tags === undefined ? '' : idea.tags.map(tag => tag.name).join(', ')
 }
@@ -184,7 +196,7 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecor
 /** Shared capture/edit modal. The lifecycle actions of the card are mirrored
  *  here per status (deliver / archive / decline / recette OK / follow-up /
  *  restore), so the author can move an idea without leaving the editor. */
-function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
+function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onReanalyze }: {
   client: IdeasClient
   initial?: IdeaRecord
   /** Board scope preselected for a new capture ('' when the board shows all;
@@ -193,6 +205,8 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
   onClose: () => void
   /** Open the follow-up (recette NOK) modal for an under-review idea. */
   onFollowUp?: (idea: IdeaRecord) => void
+  /** Idea #30 flow: launch an analyst re-run on this open idea. */
+  onReanalyze?: (idea: IdeaRecord) => void
 }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
@@ -592,6 +606,18 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
           <div className={classes.editActions}>
             {initial.status === 'open' && (
               <>
+                {onReanalyze !== undefined && (
+                  <button
+                    type="button"
+                    className={classes.actionButton}
+                    disabled={client.pending}
+                    title={t('card.reanalyzeHint')}
+                    onClick={() => { onReanalyze(initial); onClose() }}
+                  >
+                    <IconReanalyze />
+                    {t('card.reanalyze')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={classes.actionButton}
@@ -894,6 +920,49 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const openEdit = (idea: IdeaRecord): void => {
     setConfirmId(undefined)
     setEditing(idea)
+  }
+
+  /** Idea #30 flow: a Re-analyze affordance is offered on an open idea only
+   *  when the analyst can actually run there — a session launcher resolved
+   *  AND the idea's workspace known to the DSH app (a ledger-only workspace
+   *  cannot host a session, exactly like the capture AI mode). */
+  const canReanalyze = (idea: IdeaRecord): boolean =>
+    idea.status === 'open'
+    && client.sessionLauncher !== undefined
+    && idea.workspaceId !== undefined
+    && catalog.some(entry => entry.workspaceId === idea.workspaceId && entry.knownToApp)
+
+  /** Stamp the audit cycle on the Host first (the prior analysis is preserved
+   *  BEFORE the agent overwrites the card), then launch the fresh analyst
+   *  session. A failed stamp aborts the run; a failed launch leaves the
+   *  stamped card untouched (the human can retry the run). */
+  const reanalyzeIdea = (idea: IdeaRecord): void => {
+    const launcher = client.sessionLauncher
+    if (launcher === undefined || idea.workspaceId === undefined) return
+    const run = async (): Promise<void> => {
+      await client.reanalyzeIdea(idea.id)
+      const input: ReanalyzeInput = {
+        workspaceId: idea.workspaceId!,
+        workspaceTitle: workspaceTitle(idea.workspaceId!),
+        ideaId: idea.id,
+        ...(idea.ideaNumber !== undefined ? { ideaNumber: idea.ideaNumber } : {}),
+        title: idea.title,
+        body: idea.body,
+        tags: (idea.tags ?? []).map(tag => tag.name),
+        ...(idea.value === undefined ? {} : { value: idea.value }),
+        ...(idea.effort === undefined ? {} : { effort: idea.effort }),
+        ...(idea.rationale === undefined ? {} : { rationale: idea.rationale }),
+      }
+      void launcher.launchReanalyze(input).catch((launchError: unknown) => {
+        // The session could not be queued: the stamped card stays usable, the
+        // failure is logged (same discipline as the AI capture).
+        console.error('[dsh-plugin-ideas-manager] AI re-analyze failed:', launchError)
+      })
+    }
+    void run().catch((error: unknown) => {
+      // The client carries the Host error; the board reflects it.
+      console.error('[dsh-plugin-ideas-manager] re-analyze stamp failed:', error)
+    })
   }
 
   return (
@@ -1290,6 +1359,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 <IconEdit />
                                 {t('card.edit')}
                               </button>
+                              {idea.status === 'open' && canReanalyze(idea) && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  title={t('card.reanalyzeHint')}
+                                  onClick={() => { reanalyzeIdea(idea) }}
+                                >
+                                  <IconReanalyze />
+                                  {t('card.reanalyze')}
+                                </button>
+                              )}
                               {idea.status === 'open' && (
                                 <button
                                   type="button"
@@ -1451,6 +1532,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           initial={editing}
           onClose={() => { setEditing(undefined) }}
           onFollowUp={(idea) => { setFollowUp(idea) }}
+          onReanalyze={canReanalyze(editing) ? reanalyzeIdea : undefined}
         />
       )}
       {followUp !== undefined && (

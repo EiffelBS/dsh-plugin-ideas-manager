@@ -55,6 +55,33 @@ export interface AiLaunchResult {
 }
 
 /**
+ * The existing idea handed back to the analyst for a RE-ANALYZE run (idea #30
+ * flow): a fresh DSH session re-reads the stored card and overwrites it with a
+ * new analysis through the same write channel (update + triage on the SAME
+ * idea id — never a create, never a recursive re-analysis: every run is
+ * triggered by an explicit human click on the board).
+ */
+export interface ReanalyzeInput {
+  /** Target workspace of the idea (the session runs in it). */
+  workspaceId: string
+  /** Display title of the target workspace, for the analyst's context. */
+  workspaceTitle: string
+  /** The stored idea id the analyst MUST update (never create). */
+  ideaId: string
+  /** The stable "#N" human reference of the idea (context only). */
+  ideaNumber?: number
+  title: string
+  body: string
+  tags: readonly string[]
+  /** Current stored priority opinion (the analyst re-decides them). */
+  value?: number
+  effort?: number
+  rationale?: string
+  /** Optional explicit model selection for the analysing session. */
+  model?: ModelChoice
+}
+
+/**
  * A session model selection: the provider + model (+ optional reasoning
  * effort) a session runs on. Mirrors the Host `ModelSelection` type.
  */
@@ -70,6 +97,8 @@ export interface ModelSelection {
  */
 export interface SessionLauncher {
   launch(input: AiCaptureInput): Promise<AiLaunchResult>
+  /** Re-run the analyst on an existing idea (idea #30 flow); same session mechanics. */
+  launchReanalyze(input: ReanalyzeInput): Promise<AiLaunchResult>
   /** List the models available for an analysing session (empty when unavailable). */
   listModels(): Promise<ModelChoice[]>
   /**
@@ -188,6 +217,42 @@ ${opinionFields}`
 }
 
 /**
+ * The RE-ANALYZE launch prompt (idea #30 flow). Same split as the capture
+ * prompt: the skill carries the methodology and the write-channel contract;
+ * this prompt carries only what the skill cannot know — the target idea, the
+ * workspace, and the server origin — plus the re-analysis overrides (which
+ * idea id to update, which initiator to use, the no-create / no-recursion /
+ * rank-churn rules).
+ */
+export function buildReanalysisPrompt(input: ReanalyzeInput, origin: string): string {
+  const tagsHuman = input.tags.length === 0 ? '—' : input.tags.join(', ')
+  const opinion = [
+    `value: ${input.value === undefined ? 'not set' : String(input.value)} (scale 1..3)`,
+    `effort: ${input.effort === undefined ? 'not set' : String(input.effort)} (scale 1..3)`,
+    `rationale: ${input.rationale ?? 'not set'}`,
+  ].join('\n')
+  return `You are the ideas analyst of the DSH Ideas board, for the workspace "${input.workspaceTitle}" (workspaceId ${input.workspaceId}). This is a RE-ANALYZE run: a human asked you to re-process an idea that ALREADY exists on the board. Do the work now — no clarifying questions.
+
+Load the skill named "ideas-analyst" from the available_skills catalog and follow it: it specifies the analysis methodology, the priority opinion and rank, the final report, AND the full write-channel contract. The only things the skill does not know are the server origin — it is ${origin} — and the re-analysis overrides below, which take precedence for this run.
+
+=== Re-analysis overrides (precedence over the skill for this run) ===
+- Envelope initiator: "plugin:ideas-manager:ai-reanalyze" (NOT ai-capture).
+- NEVER use the create verb. The idea already exists.
+- You MUST issue an update verb with ideaId ${input.ideaId} (your new title, your full markdown analysis body, your tags) and then a triage verb on the SAME ideaId.
+- Only re-triage the rank when your analysis actually justifies a different position; an unjustified re-rank churns the backlog. The rank history matters: keep ideaNumber, createdAt and the existing rank unless the content justifies moving it.
+- Do NOT re-analyze again or launch anything recursive: this run was explicitly triggered by a human; report and stop.
+
+=== The idea as currently stored (#${input.ideaNumber ?? '?'}, ideaId ${input.ideaId}) ===
+Title: ${input.title}
+Body (the stored analysis — you replace it with your fresh one):
+${input.body}
+Tags (current): ${tagsHuman}
+
+=== The stored priority opinion (re-decide them, and justify the final choice) ===
+${opinion}`
+}
+
+/**
  * Flatten the Host model catalog into unordered picker choices, one per model
  * in every provider group, labelled `provider · model`. Reflects the catalog
  * faithfully: when `modelCatalog()` is absent or fails, returns [] so the
@@ -264,6 +329,48 @@ export function matchSessionSelection(selection: ModelSelection | undefined, cho
 }
 
 /**
+ * Shared session mechanics of both analyst launches (capture and re-analyze):
+ * create the fresh session in the workspace, optionally install the selected
+ * model, then queue the prompt. A model rejection is best-effort (the analyst
+ * still runs, on the session default).
+ */
+async function launchAnalystSession(
+  controller: DshSessionsController,
+  modelSource: Partial<DshSessionsController> | undefined,
+  input: { workspaceId: string; model?: ModelChoice },
+  prompt: string,
+): Promise<AiLaunchResult> {
+  const sessionId = await controller.create({ workspaceId: input.workspaceId })
+  if (input.model !== undefined) {
+    const select = modelSource?.selectModel
+    if (select !== undefined) {
+      try {
+        const selected = await select({
+          sessionId,
+          provider: input.model.provider,
+          model: input.model.model,
+          ...(input.model.reasoningEffort === undefined ? {} : { reasoningEffort: input.model.reasoningEffort }),
+        })
+        if (selected.ok !== true) {
+          console.warn(`[dsh-plugin-ideas-manager] selectModel rejected: ${selected.error?.code ?? 'unknown'}`)
+        }
+      } catch (error) {
+        console.warn('[dsh-plugin-ideas-manager] selectModel failed', error)
+      }
+    }
+  }
+  const scopeCtx = controller.scope(sessionId)
+  const session = scopeCtx === undefined ? undefined : controller.sessionOf(scopeCtx)
+  if (session === undefined) throw new Error('session-face-unavailable')
+  const result = await session.prompt(
+    [{ type: 'text', text: prompt }],
+    'queue',
+  )
+  if (result.ok !== true) throw new Error('session-prompt-rejected')
+  return { accepted: true }
+}
+
+/**
  * Defensively resolve the session launcher from a client context. Returns
  * undefined when the "sessions" service is absent or does not expose the
  * create/scope/sessionOf surface — callers then keep the manual Create.
@@ -302,40 +409,18 @@ export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLaunc
       : hasModelRpcs(remoteSession) ? remoteSession
         : undefined
     return {
-      launch: async (input: AiCaptureInput): Promise<AiLaunchResult> => {
-        const sessionId = await controller.create({ workspaceId: input.workspaceId })
-        // Phase 3 refinement: when the user opted for a specific model, install
-        // it on the new session before the first prompt. The session controller
-        // validates/normalizes the selection; a failure is best-effort (the
-        // analyst still runs, on the session default).
-        if (input.model !== undefined) {
-          const select = modelSource?.selectModel
-          if (select !== undefined) {
-            try {
-              const selected = await select({
-                sessionId,
-                provider: input.model.provider,
-                model: input.model.model,
-                ...(input.model.reasoningEffort === undefined ? {} : { reasoningEffort: input.model.reasoningEffort }),
-              })
-              if (selected.ok !== true) {
-                console.warn(`[dsh-plugin-ideas-manager] selectModel rejected: ${selected.error?.code ?? 'unknown'}`)
-              }
-            } catch (error) {
-              console.warn('[dsh-plugin-ideas-manager] selectModel failed', error)
-            }
-          }
-        }
-        const scopeCtx = controller.scope(sessionId)
-        const session = scopeCtx === undefined ? undefined : controller.sessionOf(scopeCtx)
-        if (session === undefined) throw new Error('session-face-unavailable')
-        const result = await session.prompt(
-          [{ type: 'text', text: buildAnalysisPrompt(input, pageOrigin()) }],
-          'queue',
-        )
-        if (result.ok !== true) throw new Error('session-prompt-rejected')
-        return { accepted: true }
-      },
+      launch: async (input: AiCaptureInput): Promise<AiLaunchResult> =>
+        // Phase 3: NON-BLOCKING AI capture — the modal closes immediately, like
+        // the manual Create; nothing stays pending. The fresh session analyses
+        // the idea, creates or merges it in the target workspace through the
+        // loopback write channel, applies a per-workspace rank and reports the
+        // ranking decision to the human in the session.
+        launchAnalystSession(controller, modelSource, input, buildAnalysisPrompt(input, pageOrigin())),
+      launchReanalyze: async (input: ReanalyzeInput): Promise<AiLaunchResult> =>
+        // Idea #30 flow: re-run the analyst on an EXISTING idea — same session
+        // mechanics, dedicated prompt (the overrides carry the no-create /
+        // no-recursion rules and the ai-reanalyze initiator).
+        launchAnalystSession(controller, modelSource, input, buildReanalysisPrompt(input, pageOrigin())),
       listModels: () => modelSource === undefined ? Promise.resolve([]) : modelChoicesOf(modelSource),
       // The current host session's model: read straight from its
       // `modelSelection` projection (defensively). The board preselects the

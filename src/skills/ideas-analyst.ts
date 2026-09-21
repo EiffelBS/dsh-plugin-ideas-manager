@@ -149,6 +149,27 @@ Rules:
 - When you use PowerShell against the channel, send each JSON body as UTF-8
   bytes ([Text.Encoding]::UTF8.GetBytes(...)) so accents survive the round-trip.
 
+## Re-analysis runs (re-analyze action)
+
+When the launch prompt is a RE-ANALYZE run (it says so and names an existing
+idea id), the overrides in that prompt take precedence over the capture
+procedure above for that run:
+
+- The envelope initiator is "plugin:ideas-manager:ai-reanalyze", not
+  "plugin:ideas-manager:ai-capture".
+- NEVER use the create verb: the idea already exists. Dedupe is already
+  answered - the prompt names the exact idea id to work on.
+- You MUST issue an update verb on that idea id (final title, your full
+  markdown analysis body, tags as OBJECTS) and then a triage verb on the SAME
+  idea id.
+- Rank history matters: keep the existing rank unless your analysis actually
+  justifies a different position - an unjustified re-rank churns the backlog.
+  ideaNumber and createdAt are never yours to change.
+- Do NOT re-analyze again or launch anything recursive: each run is triggered
+  by an explicit human click on the board. Report and stop.
+- The board preserves your prior analysis in the card audit trail before your
+  update lands - overwrite deliberately, never guardedly.
+
 ## Final report (≤ 4 sentences, in the requester's language)
 
 End your reply with a short report stating: the idea number and final title

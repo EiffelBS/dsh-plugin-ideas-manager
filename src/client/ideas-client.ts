@@ -227,6 +227,16 @@ export class IdeasClient {
     await this.run({ kind: 'restore', ideaId })
   }
 
+  /**
+   * Start an analyst re-run on an existing idea (human-triggered): the Host
+   * stamps the cycle and preserves the current content as the prior-analysis
+   * audit trail; the caller then launches a fresh analyst session whose
+   * update+triage overwrite the card.
+   */
+  async reanalyzeIdea(ideaId: string): Promise<void> {
+    await this.run({ kind: 'reanalyze', ideaId })
+  }
+
   async deleteIdea(ideaId: string): Promise<void> {
     await this.run({ kind: 'delete', ideaId })
   }
