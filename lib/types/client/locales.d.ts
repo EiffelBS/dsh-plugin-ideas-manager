@@ -66,6 +66,7 @@ export declare const fr: {
     'new.model': string;
     'new.modelProvider': string;
     'new.modelFilterPlaceholder': string;
+    'new.modelSessionDefault': string;
     'new.modelHint': string;
     'new.sessionWorkspaceHint': string;
     'card.drag': string;
@@ -170,6 +171,7 @@ export declare const en: {
     'new.model': string;
     'new.modelProvider': string;
     'new.modelFilterPlaceholder': string;
+    'new.modelSessionDefault': string;
     'new.modelHint': string;
     'new.sessionWorkspaceHint': string;
     'new.submit': string;

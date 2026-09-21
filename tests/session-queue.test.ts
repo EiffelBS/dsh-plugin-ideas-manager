@@ -12,7 +12,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { buildAnalysisPrompt, resolveSessionLauncher, type SessionLauncher } from '../src/client/session-queue.ts'
+import {
+  buildAnalysisPrompt,
+  currentSessionSelectionOf,
+  matchSessionSelection,
+  resolveSessionLauncher,
+  type SessionLauncher,
+} from '../src/client/session-queue.ts'
 import { IDEAS_ANALYST_SKILL_CONTENT } from '../src/skills/ideas-analyst.ts'
 
 describe('buildAnalysisPrompt', () => {
@@ -204,5 +210,88 @@ describe('resolveSessionLauncher', () => {
       workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
       model: { provider: 'p1', model: 'm1', label: 'P · M' },
     })).rejects.toThrow(/session-face-unavailable/)
+  })
+})
+
+describe('currentSessionSelectionOf', () => {
+  /** Build a minimal session controller exposing the projection faces. */
+  const controllerWithProjection = (snapshot: unknown): unknown => ({
+    create: async () => 's', scope: () => ({}), sessionOf: () => undefined,
+    list: { getSnapshot: () => ({ current: 'session-current' }) },
+    binding: () => ({ session: { projections: { faceOf: () => ({ getSnapshot: () => snapshot }) } } }),
+  })
+
+  it('reads the pending selection from the session modelSelection projection', () => {
+    const selection = currentSessionSelectionOf(controllerWithProjection({
+      next: { provider: 'p1', model: 'm-cheap' },
+      lastUsed: { provider: 'p1', model: 'm-expensive' },
+    }) as Parameters<typeof currentSessionSelectionOf>[0])
+    expect(selection).toEqual({ provider: 'p1', model: 'm-cheap' })
+  })
+
+  it('falls back to lastUsed when there is no pending selection', () => {
+    const selection = currentSessionSelectionOf(controllerWithProjection({
+      next: null,
+      lastUsed: { provider: 'p1', model: 'm-used', reasoningEffort: 'high' },
+    }) as Parameters<typeof currentSessionSelectionOf>[0])
+    expect(selection).toEqual({ provider: 'p1', model: 'm-used', reasoningEffort: 'high' })
+  })
+
+  it('returns undefined when the projection/session faces are absent or malformed', () => {
+    // No list, no binding.
+    expect(currentSessionSelectionOf({} as Parameters<typeof currentSessionSelectionOf>[0])).toBeUndefined()
+    // Binding present but no session.
+    expect(currentSessionSelectionOf({
+      list: { getSnapshot: () => ({ current: 'c' }) },
+      binding: () => undefined,
+    } as unknown as Parameters<typeof currentSessionSelectionOf>[0])).toBeUndefined()
+    // Projection snapshot without usable provider/model.
+    expect(currentSessionSelectionOf(
+      controllerWithProjection({ next: { provider: '' }, lastUsed: null }) as Parameters<typeof currentSessionSelectionOf>[0],
+    )).toBeUndefined()
+    // Throwing faces degrade to undefined.
+    expect(currentSessionSelectionOf({
+      list: { getSnapshot: () => { throw new Error('boom') } },
+    } as unknown as Parameters<typeof currentSessionSelectionOf>[0])).toBeUndefined()
+  })
+})
+
+describe('matchSessionSelection', () => {
+  const choices = [
+    { provider: 'p1', model: 'm1', label: 'Provider One · Model A' },
+    { provider: 'p1', model: 'm2', label: 'Provider One · Model B' },
+    { provider: 'p2', model: 'm3', label: 'Provider Two · Model C' },
+  ]
+
+  it('matches provider+model and carries the reasoning effort', () => {
+    expect(matchSessionSelection({ provider: 'p1', model: 'm2', reasoningEffort: 'high' }, choices))
+      .toEqual({ provider: 'p1', model: 'm2', label: 'Provider One · Model B', reasoningEffort: 'high' })
+  })
+
+  it('returns undefined for an unknown selection (never rolls to the first catalog row)', () => {
+    expect(matchSessionSelection(undefined, choices)).toBeUndefined()
+    expect(matchSessionSelection({ provider: 'p3', model: 'unknown' }, choices)).toBeUndefined()
+    expect(matchSessionSelection({ provider: 'p1', model: 'unknown' }, choices)).toBeUndefined()
+  })
+})
+
+describe('SessionLauncher.currentModel', () => {
+  it('exposes the current host session model selection on the launcher', async () => {
+    const controller = {
+      create: async (): Promise<string> => 's', scope: () => ({}), sessionOf: () => ({}),
+      list: { getSnapshot: () => ({ current: 'session-current' }) },
+      binding: () => ({ session: { projections: { faceOf: () => ({ getSnapshot: () => ({
+        next: null,
+        lastUsed: { provider: 'deepseek', model: 'deepseek-v3' },
+      }) }) } } }),
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    await expect(launcher.currentModel()).resolves.toEqual({ provider: 'deepseek', model: 'deepseek-v3' })
+  })
+
+  it('resolves to undefined when no session projection exists', async () => {
+    const controller = { create: async (): Promise<string> => 's', scope: () => ({}), sessionOf: () => ({}) }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    await expect(launcher.currentModel()).resolves.toBeUndefined()
   })
 })

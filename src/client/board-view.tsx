@@ -25,6 +25,7 @@ import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import type { AiCaptureInput, ModelChoice } from './session-queue.ts'
+import { matchSessionSelection } from './session-queue.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
@@ -255,7 +256,20 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
     void client.sessionLauncher.listModels().then(choices => {
       if (cancelled) return
       setModelChoices(choices)
-      if (choices.length > 0) setSelProvider(choices[0]!.provider)
+      // Preselect the CURRENT host session's model when the catalog knows it,
+      // so an untouched picker matches the session the human is talking in —
+      // never roll to the catalog's first row (that roll was the cost
+      // surprise: an expensive model the user never picked). When the session
+      // selection is unknown or absent from the catalog, the explicit
+      // "inherit from session" empty option stays selected.
+      void client.sessionLauncher!.currentModel().then(selection => {
+        if (cancelled) return
+        const current = matchSessionSelection(selection, choices)
+        if (current !== undefined) {
+          setSelProvider(current.provider)
+          setSelModelKey(current.label)
+        }
+      })
     })
     return () => { cancelled = true }
     // The launcher is stable for the page; load once per modal open.
@@ -271,18 +285,13 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
     ? activeProviderChoices
     : activeProviderChoices.filter(choice =>
         choice.label.toLowerCase().includes(query))
+  // '' (the "inherit from session" option, first in the list) means NO model
+  // is forced: the analyst session keeps its own default.
   const selectedModel: ModelChoice | undefined =
-    filteredModelChoices.find(choice => choice.label === selModelKey)
-      ?? activeProviderChoices.find(choice => choice.label === selModelKey)
-
-  // Preselect the first model of the active provider whenever the provider
-  // (or the loaded catalog) changes and nothing is selected yet.
-  useEffect(() => {
-    if (activeProviderChoices.length === 0) return
-    if (!activeProviderChoices.some(choice => choice.label === selModelKey)) {
-      setSelModelKey(activeProviderChoices[0]!.label)
-    }
-  }, [selProvider, activeProviderChoices, selModelKey])
+    selModelKey === ''
+      ? undefined
+      : filteredModelChoices.find(choice => choice.label === selModelKey)
+        ?? activeProviderChoices.find(choice => choice.label === selModelKey)
 
   // Escape closes the modal (Echo the overlay-click behaviour), without
   // closing anything behind it: the listener runs in the capture phase and
@@ -458,8 +467,9 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
                 value={selProvider}
                 disabled={client.pending}
                 title={t('new.modelProvider')}
-                onChange={event => { setSelProvider(event.target.value); setModelQuery('') }}
+                onChange={event => { setSelProvider(event.target.value); setModelQuery(''); setSelModelKey('') }}
               >
+                <option value="">{t('new.modelSessionDefault')}</option>
                 {modelProviders.map(provider => (
                   <option key={provider} value={provider}>{provider}</option>
                 ))}
@@ -480,6 +490,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp }: {
                 disabled={client.pending}
                 onChange={event => { setSelModelKey(event.target.value) }}
               >
+                <option value="">{t('new.modelSessionDefault')}</option>
                 {filteredModelChoices.map(choice => (
                   <option key={choice.label} value={choice.label}>{choice.label}</option>
                 ))}

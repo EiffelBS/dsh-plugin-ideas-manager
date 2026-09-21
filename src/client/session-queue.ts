@@ -55,6 +55,16 @@ export interface AiLaunchResult {
 }
 
 /**
+ * A session model selection: the provider + model (+ optional reasoning
+ * effort) a session runs on. Mirrors the Host `ModelSelection` type.
+ */
+export interface ModelSelection {
+  provider: string
+  model: string
+  reasoningEffort?: string
+}
+
+/**
  * The write face the board uses to launch an AI capture. Resolved once per
  * page from the cordis "sessions" service; undefined degrades to manual.
  */
@@ -62,6 +72,14 @@ export interface SessionLauncher {
   launch(input: AiCaptureInput): Promise<AiLaunchResult>
   /** List the models available for an analysing session (empty when unavailable). */
   listModels(): Promise<ModelChoice[]>
+  /**
+   * The model selection of the CURRENT host session (the one the human is
+   * talking in), read from its `modelSelection` projection. The board uses it
+   * to preselect the model picker so an untouched picker matches the session
+   * — never the catalog's first row. Undefined when the projection is absent
+   * or malformed.
+   */
+  currentModel(): Promise<ModelSelection | undefined>
 }
 
 /** Cordis service name (same face the active-workspace hint already reads). */
@@ -86,6 +104,12 @@ interface DshSessionsController {
     value?: { selected: unknown }
     error?: { code?: string; message?: string }
   }>
+  /** Optional live session list (the `sessions.list` stream the shell exposes). */
+  list?: {
+    getSnapshot(): { current?: string; byId?: Record<string, { cwd?: string }> }
+  }
+  /** Optional per-session binding (the shell session controller's `binding(id)`). */
+  binding?(id: string): { session?: { projections?: { faceOf(key: string): unknown } } } | undefined
 }
 
 /** Duck-typed shape of the Host model catalog (see `ModelCatalog` in DSH types). */
@@ -190,6 +214,56 @@ function modelChoicesOf(controller: DshSessionsController): Promise<ModelChoice[
 }
 
 /**
+ * Read the CURRENT host session's model selection from its `modelSelection`
+ * projection (the same source the shell's own selector reads: `faceOf`
+ * snapshot with `next = pending ?? lastUsed`). Defensive throughout: any
+ * missing face returns undefined, so the board's preselect logic degrades to
+ * the explicit "inherit session default" choice instead of guessing.
+ */
+export function currentSessionSelectionOf(controller: DshSessionsController): ModelSelection | undefined {
+  try {
+    const currentId = controller.list?.getSnapshot().current
+    if (typeof currentId !== 'string' || currentId === '') return undefined
+    const bound = controller.binding?.(currentId)
+    if (bound === undefined) return undefined
+    const face = bound.session?.projections?.faceOf('modelSelection')
+    if (face === undefined) return undefined
+    const snapshot = (face as { getSnapshot?: () => unknown }).getSnapshot?.()
+    if (snapshot === undefined || snapshot === null) return undefined
+    const projected = snapshot as { next?: ModelSelection | null; lastUsed?: ModelSelection | null }
+    const selection = projected.next ?? projected.lastUsed
+    if (selection === undefined || selection === null) return undefined
+    if (typeof selection.provider !== 'string' || selection.provider === '') return undefined
+    if (typeof selection.model !== 'string' || selection.model === '') return undefined
+    return {
+      provider: selection.provider,
+      model: selection.model,
+      ...(typeof selection.reasoningEffort === 'string' && selection.reasoningEffort !== ''
+        ? { reasoningEffort: selection.reasoningEffort }
+        : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Match a session selection against the picker's catalog choices so the board
+ * can preselect the EXACT option the session runs on. The catalog choices are
+ * keyed by provider+model; the label is the picker's `selModelKey`. Returns
+ * undefined when the selection is unknown or not present in the catalog.
+ */
+export function matchSessionSelection(selection: ModelSelection | undefined, choices: readonly ModelChoice[]): ModelChoice | undefined {
+  if (selection === undefined) return undefined
+  const matched = choices.find(choice => choice.provider === selection.provider && choice.model === selection.model)
+  if (matched === undefined) return undefined
+  return {
+    ...matched,
+    ...(selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort }),
+  }
+}
+
+/**
  * Defensively resolve the session launcher from a client context. Returns
  * undefined when the "sessions" service is absent or does not expose the
  * create/scope/sessionOf surface — callers then keep the manual Create.
@@ -263,6 +337,11 @@ export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLaunc
         return { accepted: true }
       },
       listModels: () => modelSource === undefined ? Promise.resolve([]) : modelChoicesOf(modelSource),
+      // The current host session's model: read straight from its
+      // `modelSelection` projection (defensively). The board preselects the
+      // picker with this so an untouched picker matches the session — the
+      // cost-surprise only ever came from rolling to the catalog's first row.
+      currentModel: () => Promise.resolve(currentSessionSelectionOf(controller)),
     }
   } catch {
     return undefined
