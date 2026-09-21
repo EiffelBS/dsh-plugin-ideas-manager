@@ -106,13 +106,25 @@ Full contract (verb table, mirror mapping, PowerShell gotchas) lives in
 
 ## Install & update
 
+From npm (recommended):
+
+```sh
+dsh plugin --profile web add dsh-plugin-ideas-manager
+```
+
+Pinned to a version:
+
+```sh
+dsh plugin --profile web add dsh-plugin-ideas-manager@0.2.2
+```
+
 From a local checkout (no registry needed):
 
 ```sh
 dsh plugin --profile web add link:/path/to/dsh-plugin-ideas-manager
 ```
 
-From a git URL (pinned to a released tag — recommended for end users):
+From a git URL (fallback, pinned to a released tag):
 
 ```sh
 dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.2.2
@@ -133,7 +145,7 @@ To pick up a newer revision after a release (versions follow the package's
 `version` field; releases are tagged, e.g. `v0.2.2`):
 
 ```sh
-dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.2.2
+dsh plugin --profile web add dsh-plugin-ideas-manager@latest
 ```
 
 then restart the web instance.
