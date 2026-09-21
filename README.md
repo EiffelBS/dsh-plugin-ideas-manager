@@ -112,10 +112,10 @@ From a local checkout (no registry needed):
 dsh plugin --profile web add link:/path/to/dsh-plugin-ideas-manager
 ```
 
-From a git URL:
+From a git URL (pinned to a released tag — recommended for end users):
 
 ```sh
-dsh plugin --profile web add git+https://github.com/EiffelBS/dsh-plugin-ideas-manager.git
+dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.2.1
 ```
 
 `dsh plugin` runs `pnpm add` in the profile directory, then reconciles
@@ -129,11 +129,11 @@ Verify installation:
 dsh web --profile web --no-open   # then look for the Ideas entry in the sidebar
 ```
 
-To pick up a newer revision after a push (versions follow the package's
-`version` field — there are no tags or releases):
+To pick up a newer revision after a release (versions follow the package's
+`version` field; releases are tagged, e.g. `v0.2.1`):
 
 ```sh
-dsh plugin --profile web update dsh-plugin-ideas-manager
+dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.2.2
 ```
 
 then restart the web instance.
