@@ -69,6 +69,48 @@ describe('IdeasHostLedger persistence', () => {
     ledger.dispose()
   })
 
+  it('advances the idea sequence past the largest imported ideaNumber', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    const imported = [5, 17, 28].map(number => ({
+      id: `migrated-${number}`,
+      title: `Imported idea ${number}`,
+      body: 'Body',
+      status: 'open' as const,
+      ideaNumber: number,
+      createdAt: 1_700_000_000,
+      updatedAt: 1_700_000_000,
+    }))
+    const importedResult = ledger.applyRequest('req-import', {
+      kind: 'import',
+      sourceId: 'migration-test',
+      ideas: imported,
+    })
+    expect(importedResult.state.ideas).toHaveLength(3)
+
+    // The next create must not re-issue an ideaNumber already in use: the
+    // import carried #28, so the next capture is #29.
+    const created = ledger.applyRequest('req-create', createAction('post-migration'))
+    const createdIdea = created.state.ideas.find(idea => idea.id === 'post-migration')
+    expect(createdIdea?.ideaNumber).toBe(29)
+    ledger.dispose()
+  })
+
+  it('leaves the sequence untouched by an import without ideaNumbers', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('req-import', {
+      kind: 'import',
+      sourceId: 'plain-import',
+      ideas: [
+        { id: 'a-1', title: 'A one', body: 'Body', status: 'open' as const, createdAt: 1_700_000_000, updatedAt: 1_700_000_000 },
+        { id: 'a-2', title: 'A two', body: 'Body', status: 'open' as const, createdAt: 1_700_000_000, updatedAt: 1_700_000_000 },
+      ],
+    })
+    const created = ledger.applyRequest('req-create', createAction('first-after-plain'))
+    const createdIdea = created.state.ideas.find(idea => idea.id === 'first-after-plain')
+    expect(createdIdea?.ideaNumber).toBe(1)
+    ledger.dispose()
+  })
+
   it('quarantines a corrupt document and starts empty', () => {
     const dirHere = freshDir()
     writeFileSync(join(dirHere, 'ledger-v2.json'), '{ not json !!!', 'utf8')

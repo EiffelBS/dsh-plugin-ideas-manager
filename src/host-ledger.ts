@@ -399,12 +399,22 @@ export class IdeasHostLedger {
       case 'import': {
         if (this.document.importedSources.includes(action.sourceId)) return { state: this.snapshot() }
         const merged = new Map(this.document.ideas.map(idea => [idea.id, idea]))
+        let maxImportedNumber = 0
         for (const idea of parseHostIdeas(action.ideas)) {
+          if (typeof idea.ideaNumber === 'number' && idea.ideaNumber > maxImportedNumber) {
+            maxImportedNumber = idea.ideaNumber
+          }
           merged.set(idea.id, merged.has(idea.id)
             ? { ...merged.get(idea.id)!, ...idea, updatedAt: now }
             : idea)
         }
         this.document.ideas = [...merged.values()]
+        // An import may carry ideaNumbers (storage migration, resync from another
+        // host): keep the sequence past the largest imported number so the next
+        // create never re-issues a number already in use.
+        if (maxImportedNumber > this.document.ideaSequence) {
+          this.document.ideaSequence = maxImportedNumber
+        }
         this.document.importedSources = [...this.document.importedSources, action.sourceId]
         break
       }
