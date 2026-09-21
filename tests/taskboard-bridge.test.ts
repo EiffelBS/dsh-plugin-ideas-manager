@@ -140,6 +140,27 @@ describe('TaskBoardMirror mappings', () => {
     expect(input.prompt).toContain('Render the ABC score on the board.')
   })
 
+  it('recreates the card when the bound taskBoardId points at a deleted card', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'other-card', status: 'backlog' }]
+    const mirror = new TaskBoardMirror({ transport })
+    const bound = await mirror.mirrorUpdate(idea({ taskBoardId: 'ghost-card' }))
+    expect(bound).not.toBe('ghost-card')
+    expect(bound).toMatch(/^idea-/)
+    const kinds = transport.posts.map(p => p.action.kind)
+    expect(kinds).toEqual(['create', 'move', 'update'])
+  })
+
+  it('trusts the bound taskBoardId while the card still exists (no duplicate create)', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'live-card', status: 'backlog' }]
+    const mirror = new TaskBoardMirror({ transport })
+    const bound = await mirror.mirrorUpdate(idea({ taskBoardId: 'live-card' }))
+    expect(bound).toBe('live-card')
+    const kinds = transport.posts.map(p => p.action.kind)
+    expect(kinds).toEqual(['update'])
+  })
+
   it('mirrorUpdate self-heals an unbound idea (create + move) then updates', async () => {
     const transport = new FakeTransport()
     const mirror = new TaskBoardMirror({ transport })

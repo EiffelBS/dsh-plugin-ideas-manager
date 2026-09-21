@@ -199,7 +199,14 @@ export class TaskBoardMirror {
    */
   async ensureTask(idea: IdeaRecord): Promise<string> {
     if (!await this.availableNow()) throw new TaskBoardUnavailableError()
-    if (idea.taskBoardId !== undefined && idea.taskBoardId !== '') return idea.taskBoardId
+    if (idea.taskBoardId !== undefined && idea.taskBoardId !== '') {
+      // Trust the binding only while the card still exists in the snapshot: a
+      // card deleted out-of-band (manual cleanup, maintenance) must not turn
+      // every later idea update into a patch on a ghost task. The recreated
+      // card's id is returned so the caller rebinds the idea.
+      const statuses = await this.fetchTaskStatuses()
+      if (statuses === undefined || statuses.has(idea.taskBoardId)) return idea.taskBoardId
+    }
     return this.createCard(idea)
   }
 
