@@ -121,6 +121,25 @@ describe('TaskBoardMirror mappings', () => {
     expect(input.prompt).toBe('Alpha.')
   })
 
+  it('never ships an empty prompt: bare tags fall back to a mission derived from the card', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorCreate(idea({ tags: [{ name: 'ideas-manager' }, { name: 'ai-capture' }], ideaNumber: 30 }))
+    const input = (transport.posts[0]!.action as { input: { prompt: string } }).input
+    expect(input.prompt).toContain('You are implementing the idea below #30')
+    expect(input.prompt).toContain('"Port YuE2 score"')
+    expect(input.prompt).toContain('Render the ABC score on the board.')
+  })
+
+  it('falls back to the derived mission when the idea has no tags at all', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorCreate(idea({ tags: undefined, ideaNumber: undefined }))
+    const input = (transport.posts[0]!.action as { input: { prompt: string } }).input
+    expect(input.prompt).toContain('You are implementing the idea below — "Port YuE2 score"')
+    expect(input.prompt).toContain('Render the ABC score on the board.')
+  })
+
   it('mirrorUpdate self-heals an unbound idea (create + move) then updates', async () => {
     const transport = new FakeTransport()
     const mirror = new TaskBoardMirror({ transport })

@@ -287,10 +287,23 @@ export class TaskBoardMirror {
     }
   }
 
-  /** The executable prompt = the tag prompt lines, one per line. */
+  /**
+   * The executable prompt = the tag prompt lines, one per line; when no tag
+   * carries a prompt line, a mission prompt derived from the card itself.
+   * The fallback is mandatory: Task Board launches a run with
+   * `task.prompt !== '' ? task.prompt : task.title` (the description is never
+   * injected into the session), so an empty prompt would ship the card's bare
+   * TITLE to the launched agent — unexploitable for the common idea whose tags
+   * are all plain names. The body is the captured spec, so it becomes the run
+   * instruction instead.
+   */
   private taskPrompt(idea: IdeaRecord): string {
-    if (idea.tags === undefined) return ''
-    return idea.tags.map(tag => tag.promptPrefix?.trim() ?? '').filter(line => line !== '').join('\n')
+    if (idea.tags !== undefined) {
+      const lines = idea.tags.map(tag => tag.promptPrefix?.trim() ?? '').filter(line => line !== '')
+      if (lines.length > 0) return lines.join('\n')
+    }
+    const numeral = idea.ideaNumber === undefined ? '' : ` #${String(idea.ideaNumber)}`
+    return `You are implementing the idea below${numeral} — "${idea.title}" — from the DSH Ideas board. Work in the current workspace directory.\n\nThe idea's spec (Body):\n${idea.body}`
   }
 
   private async post(action: TaskBoardAction): Promise<void> {

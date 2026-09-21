@@ -149,7 +149,16 @@ export declare class TaskBoardMirror {
     get isUnavailable(): boolean;
     private createCard;
     private taskPatch;
-    /** The executable prompt = the tag prompt lines, one per line. */
+    /**
+     * The executable prompt = the tag prompt lines, one per line; when no tag
+     * carries a prompt line, a mission prompt derived from the card itself.
+     * The fallback is mandatory: Task Board launches a run with
+     * `task.prompt !== '' ? task.prompt : task.title` (the description is never
+     * injected into the session), so an empty prompt would ship the card's bare
+     * TITLE to the launched agent — unexploitable for the common idea whose tags
+     * are all plain names. The body is the captured spec, so it becomes the run
+     * instruction instead.
+     */
     private taskPrompt;
     private post;
 }
