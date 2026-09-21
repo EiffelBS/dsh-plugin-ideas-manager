@@ -28,7 +28,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24 ships npm 11.x, required for OIDC trusted publishing
+          # (npm publish --provenance with no NPM_TOKEN on the runner).
+          node-version: 24
           cache: pnpm
 
       - name: Tag matches package.json version
