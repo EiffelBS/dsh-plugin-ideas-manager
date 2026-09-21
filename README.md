@@ -1,10 +1,12 @@
 # dsh-plugin-ideas-manager
 
 **The Ideas manager** brings an idea backlog straight into the DSH Web GUI. It's
-a generic, self-contained alternative to a hand-maintained `IDEAS.md` file: an
-AI agent captures ideas, each one becomes a card on a kanban, gets scored and
-ranked, and flows through a lifecycle until it's delivered or declined. It also
-bridges to the [TaskBoard plugin](#taskboard-integration) when present.
+a generic, self-contained backlog: an AI agent captures ideas, each one
+becomes a card on a kanban, gets scored and ranked, and flows through a
+lifecycle until it's delivered or declined. It also bridges to the
+[TaskBoard plugin](#taskboard-integration)
+([`@linxin666/dsh-client-ui-task-board`](https://www.npmjs.com/package/@linxin666/dsh-client-ui-task-board),
+by linxin666 — third-party, not affiliated) when present.
 
 A Host-authoritative `/api/ideas` ledger keeps everything consistent and lets
 an agent write cards directly over HTTP — no UI needed. Fully usable without
@@ -61,8 +63,11 @@ Open · Under review · Archived · Declined.
 
 ## TaskBoard integration
 
-When the TaskBoard plugin is present, the Ideas manager mirrors its ledger onto
-TaskBoard's `backlog` so both tools stay in sync — **one-way** (Ideas → TaskBoard).
+When the TaskBoard plugin
+([`@linxin666/dsh-client-ui-task-board`](https://www.npmjs.com/package/@linxin666/dsh-client-ui-task-board),
+repo: [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web)) is
+present, the Ideas manager mirrors its ledger onto TaskBoard's `backlog` so
+both tools stay in sync — **one-way** (Ideas → TaskBoard).
 The mirror is detected at runtime (`GET /api/task-board/state`); if TaskBoard is
 absent the Ideas manager simply works standalone.
 
@@ -78,7 +83,7 @@ absent the Ideas manager simply works standalone.
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a
 backlog opinion, not a board state.
 
-> **Note for a manual `IDEAS.md` workflow:** the capture → triage → lifecycle
+> **Note for agent-driven workflows:** the capture → triage → lifecycle
 > protocol and the full wire contract are documented in
 > [`SKILL.md`](SKILL.md), so an agent can author cards directly over the HTTP
 > API without the UI.

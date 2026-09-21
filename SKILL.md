@@ -19,7 +19,7 @@
 ## Process (agent-facing protocol)
 
 The ledger is the SOURCE OF TRUTH for ideas — it replaces any
-`IDEAS.md` / `IDEAS-ARCHIVE.md` file convention (the markdown export is a
+hand-maintained markdown file convention (the markdown export is a
 generated view, never parsed back). Follow this protocol when the user
 mentions ideas / backlog / idees / notes:
 
@@ -50,10 +50,9 @@ mentions ideas / backlog / idees / notes:
    archive; a card reaching `done` moves its idea to under review
    automatically (the recette gate) — the recette verdict stays human-owned.
 
-## Workspace cutover (replacing an IDEAS.md convention)
+## Workspace adoption (replacing a hand-maintained file convention)
 
-For a workspace whose AGENTS.md still points at an `IDEAS.md` / archive
-convention:
+For a workspace whose AGENTS.md still points at hand-maintained idea files:
 
 1. Point the AGENTS.md idea section at this board instead (announce
    `announceToAgent: true` in the plugin settings so the guidance above is
@@ -64,8 +63,8 @@ convention:
    `workspaceId`), or capture them through the board. For a project already
    partially migrated, import only what the ledger is missing so the states
    and `deliveredAt` stamps land correctly.
-3. Keep `IDEAS.md` / `IDEAS-ARCHIVE.md` only as generated exports of the
-   ledger (the `export` verb) — never edit them by hand again.
+3. Keep the generated markdown exports of the ledger (the `export` verb) as
+   read-only views — never edit them by hand again.
 4. Ranks/records live on the ideas (rationale, delivery record, decision);
    nothing is hand-maintained in a document anymore.
 
