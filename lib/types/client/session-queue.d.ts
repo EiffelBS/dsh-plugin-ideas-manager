@@ -119,6 +119,18 @@ interface DshPromptSession {
         error?: unknown;
     }>;
 }
+/**
+ * Defensive shape of the Host >= 0.1.7 `ClientSessionReference` returned by
+ * `retainAgentScope(id)`: the retained record exposes the scoped context on
+ * `binding.ctx` (NOT `binding.session` — that is the live Session object) and
+ * the reference carries a synchronous, idempotent `release()`.
+ */
+interface RetainedAgentScope {
+    binding?: {
+        ctx?: unknown;
+    };
+    release?: () => void;
+}
 interface DshSessionsController {
     create(opts?: {
         workspaceId?: string;
@@ -127,6 +139,14 @@ interface DshSessionsController {
     }): Promise<string>;
     scope(id: string): unknown;
     sessionOf(ctx: unknown): DshPromptSession | undefined;
+    /**
+     * Optional identity retention (Host >= 0.1.7): retain the Agent scope of a
+     * freshly created session SYNCHRONOUSLY, materializing it when it is not yet
+     * catalogued. On Host <= 0.1.5 the method does not exist and `scope(id)`
+     * still materializes on demand, so the caller falls back to it — typed as
+     * optional so the face stays compatible with both Host definitions.
+     */
+    retainAgentScope?(id: string): RetainedAgentScope | undefined;
     /** Optional Host model catalog (the `remote.session.modelCatalog` RPC). */
     modelCatalog?(): Promise<{
         ok: boolean;
