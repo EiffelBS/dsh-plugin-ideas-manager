@@ -887,11 +887,14 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 .dsh-ideas-tag-filter-row {
   display: block;
   flex: none;
-  /* Row budget (settings option "tagRows", 1..5, default 3): one control
-     line (~29px) + gap + N tag rows (27px each) + tail. The !important
-     stands against a Skin Center sheet injected after this one; only the
-     VARIABLE is user-reachable, so the zone can never grow unbounded. */
-  max-height: calc(var(--dsh-ideas-tag-rows, 3) * 27px + 35px) !important;
+  /* Row budget (settings option "tagRows", 1..5, default 3): N lines of
+     27px TOTAL — the FIRST line is the shared control/tag line (label,
+     search, clear and the first tags all live in it), so the controls do
+     NOT add a line on top of the count: rows=1 shows that shared line
+     alone, rows=3 shows it plus two more tag lines. The !important stands
+     against a Skin Center sheet injected after this one; only the VARIABLE
+     is user-reachable, so the zone can never grow unbounded. */
+  max-height: calc(var(--dsh-ideas-tag-rows, 3) * 27px) !important;
   overflow-x: hidden;
   overflow-y: auto !important;
   overscroll-behavior: contain;

@@ -207,6 +207,11 @@ describe('tag filter zone CSS bound', () => {
     expect(shell).toContain('max-height:')
     expect(shell).toContain('!important')
     expect(shell).toContain('overflow-y: auto')
+    // The shared control/tag line COUNTS as the FIRST row of the budget:
+    // exactly tagRows x 27px, with NO extra line stacked on top of the count
+    // (the pre-single-flow formula added +35px for a separate control line).
+    expect(shell).toContain('* 27px')
+    expect(shell).not.toContain('+ 35px')
     // The row is a plain scroll box: the SINGLE flex-wrap container below
     // owns the whole first-line flow (no competing sub-block).
     expect(shell).toContain('display: block')
