@@ -22,7 +22,7 @@ import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
 import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, rebuildOrder, archivedIdeasOf } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
-import { matchesTags, collectKnownTags, tagHue } from './tags.ts'
+import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import type { AiCaptureInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
 import { matchSessionSelection } from './session-queue.ts'
@@ -911,6 +911,72 @@ type DragState = { id: string; source: IdeaStatus } | undefined
  *  half that drives the accent insertion line while dragging. */
 type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; half?: 'before' | 'after' } | undefined
 
+/**
+ * Shared tag-filter row (idea #36): an ALWAYS-visible header — the "Filter:"
+ * label, the chip search box and the clear button — above a chip zone capped
+ * at ~3 rows with its own scrollbar, so a large label union can no longer
+ * grow the row line by line and push the panel content down. The header sits
+ * outside the scroll container, so the clear button is reachable at any scroll
+ * position.
+ *
+ * The search narrows the CHIPS only (the board-header search narrows the
+ * CARDS: two controls, two behaviours, two labels) and never hides a
+ * SELECTED chip — even a stale one whose label left the ledger — so the board
+ * is never filtered by an invisible label. Clear resets both halves of the
+ * filter (selection + query) and shows whenever either half is active.
+ * Rendered above all three tabs (shared row).
+ */
+export function TagFilterRow({ knownTags, selected, onToggle, onClear }: {
+  knownTags: readonly string[]
+  selected: readonly string[]
+  onToggle: (name: string) => void
+  onClear: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const chips = filterKnownTags(knownTags, selected, query)
+  const active = selected.length > 0 || query !== ''
+  const clear = (): void => {
+    setQuery('')
+    onClear()
+  }
+  return (
+    <div className={classes.tagFilterRow}>
+      <div className={classes.tagFilterHeader}>
+        <span className={classes.tagFilterLabel}>{t('board.tagFilter')}</span>
+        <input
+          className={classes.tagFilterSearch}
+          type="search"
+          placeholder={t('board.tagFilterSearch')}
+          aria-label={t('board.tagFilterSearch')}
+          value={query}
+          onChange={event => { setQuery(event.target.value) }}
+        />
+        {active && (
+          <button type="button" className={classes.ghostButton} onClick={clear}>
+            {t('board.tagFilterClear')}
+          </button>
+        )}
+      </div>
+      <div className={classes.tagFilterChips}>
+        {chips.length === 0
+          ? <span className={classes.tagFilterNoMatch}>{t('board.tagFilterNoMatch')}</span>
+          : chips.map(name => (
+            <button
+              key={name}
+              type="button"
+              className={selected.includes(name) ? classes.filterChipActive : classes.filterChip}
+              style={{ '--dsh-ideas-tag-hue': tagHue(name) } as CSSProperties}
+              aria-pressed={selected.includes(name)}
+              onClick={() => { onToggle(name) }}
+            >
+              {name}
+            </button>
+          ))}
+      </div>
+    </div>
+  )
+}
+
 /** Board component; subscribes to the client snapshot. */
 export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [snapshot, setSnapshot] = useState(client.snapshot)
@@ -945,7 +1011,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const revision = snapshot?.revision
   // id -> idea, to resolve a child's followUpOfId into the parent number.
   const ideaById = new Map(ideas.map(idea => [idea.id, idea]))
-  const knownTags = collectKnownTags(ideas)
+  // Idea #36: the chip set follows the workspace scope — the plain ledger
+  // union mixes in labels that belong to other workspaces and drown the ones
+  // usable here; a scoped board only offers labels it can actually filter
+  // (a selected chip that falls out of scope stays visible, see
+  // filterKnownTags, so an active filter is never hidden).
+  const knownTags = collectKnownTags(
+    ideas.filter(idea => matchesWorkspaceScope(idea, workspaceFilter)),
+  )
   const catalog = buildWorkspaceCatalog(ideas, client.workspaceOptions)
   const workspaceTitle = (workspaceId: string): string =>
     catalog.find(entry => entry.workspaceId === workspaceId)?.title ?? workspaceId
@@ -1183,30 +1256,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
-      {/* Shared tag filter chips: rendered on every tab. The same selection
-          narrows the Overview columns, the Priorities ranking and the
-          Delivered log (see checkTagRow below). */}
+      {/* Shared tag filter (idea #36): rendered above all three tabs. The
+          header (label + chip search + clear) always stays visible; the
+          chips live in a ~3-row scrollable zone under it, and a selected
+          chip is never hidden by the search. The same selection narrows the
+          Overview columns, the Priorities ranking and the Delivered log. */}
       {knownTags.length > 0 && (
-        <div className={classes.tagFilterRow}>
-          <span className={classes.tagFilterLabel}>{t('board.tagFilter')}</span>
-          {knownTags.map(name => (
-            <button
-              key={name}
-              type="button"
-              className={tagFilter.includes(name) ? classes.filterChipActive : classes.filterChip}
-              style={{ '--dsh-ideas-tag-hue': tagHue(name) } as CSSProperties}
-              aria-pressed={tagFilter.includes(name)}
-              onClick={() => { toggleTag(name) }}
-            >
-              {name}
-            </button>
-          ))}
-          {tagFilter.length > 0 && (
-            <button type="button" className={classes.ghostButton} onClick={() => { setTagFilter([]) }}>
-              {t('board.tagFilterClear')}
-            </button>
-          )}
-        </div>
+        <TagFilterRow
+          knownTags={knownTags}
+          selected={tagFilter}
+          onToggle={toggleTag}
+          onClear={() => { setTagFilter([]) }}
+        />
       )}
 
       {activeTab === 'overview'

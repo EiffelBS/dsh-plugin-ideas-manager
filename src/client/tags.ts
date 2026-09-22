@@ -21,6 +21,27 @@ export function collectKnownTags(ideas: readonly IdeaRecord[]): string[] {
 }
 
 /**
+ * Narrow the filter chips with the chip search box (idea #36): a
+ * case-insensitive substring match on the label. Matched chips keep their
+ * order; SELECTED chips are appended when the query (or nothing at all)
+ * hides them, so an active filter never becomes an invisible filter — even
+ * for a stale selection whose label left the ledger. A blank query is the
+ * full list.
+ */
+export function filterKnownTags(
+  known: readonly string[],
+  selected: readonly string[],
+  query: string,
+): string[] {
+  const needle = query.trim().toLowerCase()
+  const matching = needle === ''
+    ? [...known]
+    : known.filter(entry => entry.toLowerCase().includes(needle))
+  const shown = new Set(matching)
+  return [...matching, ...selected.filter(entry => !shown.has(entry))]
+}
+
+/**
  * Deterministic per-name hue (0–359) so every tag keeps a stable,
  * distinct color on the cards. FNV-1a then maps onto 15 well-spaced hues.
  */

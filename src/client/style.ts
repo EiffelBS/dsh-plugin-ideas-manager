@@ -876,7 +876,20 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
+/* Shared tag filter block (idea #36): a header row that ALWAYS stays visible
+   (label + chip search + clear button) above the chips, and a separate chip
+   zone capped at ~3 rows with its own scrollbar. The header lives outside
+   the scroll container, so the reset can never scroll away with the chips;
+   and the cap stops the label union from growing the row line by line and
+   pushing the panel content (columns, ranking, log) down. */
 .dsh-ideas-tag-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+}
+
+.dsh-ideas-tag-filter-header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -887,6 +900,46 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 .dsh-ideas-tag-filter-label {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+/* Chip search (narrower + lighter than the card search .dsh-ideas-search):
+   the two coexisting searches must read as distinct controls — this one
+   narrows the CHIPS, the header one narrows the CARDS. */
+.dsh-ideas-tag-filter-search {
+  box-sizing: border-box;
+  width: 170px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 12px;
+}
+
+/* Scrollable chip zone, capped at ~3 chip rows (3 x ~21px chips + 2 x 6px
+   row gaps, with headroom for font-metric variance; a 4th row always
+   overflows into the scrollbar). The two layout properties are !important so
+   a Skin Center stylesheet injected AFTER this one (the model-filter
+   focus-ring precedent) cannot uncap the zone and reintroduce the
+   unbounded growth. */
+.dsh-ideas-tag-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: none;
+  max-height: 84px !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+/* The query matched no chip (and nothing is selected): explain instead of
+   leaving a blank zone under the always-visible header. */
+.dsh-ideas-tag-filter-no-match {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
 .dsh-ideas-filter-chip,
@@ -1357,7 +1410,11 @@ export const classes = {
   modalActions: 'dsh-ideas-modal-actions',
   editActions: 'dsh-ideas-edit-actions',
   tagFilterRow: 'dsh-ideas-tag-filter-row',
+  tagFilterHeader: 'dsh-ideas-tag-filter-header',
   tagFilterLabel: 'dsh-ideas-tag-filter-label',
+  tagFilterSearch: 'dsh-ideas-tag-filter-search',
+  tagFilterChips: 'dsh-ideas-tag-filter-chips',
+  tagFilterNoMatch: 'dsh-ideas-tag-filter-no-match',
   filterChip: 'dsh-ideas-filter-chip',
   filterChipActive: 'dsh-ideas-filter-chip-active',
   dragHint: 'dsh-ideas-drag-hint',
