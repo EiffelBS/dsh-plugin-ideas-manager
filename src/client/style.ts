@@ -877,23 +877,17 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
-/* Shared tag filter block (idea #36): ONE zone where the header (label + tag
-   search + clear button) is the FIRST flex item of a wrapping row and the
-   tags continue BESIDE it on the same first line (wrapping below it when the
-   row fills up) — no dedicated header line. The header scrolls WITH the tags
-   (deliberately NOT sticky, user call): the zone is capped at the tagRows
-   budget with its own scrollbar, so a large label union can never push the
-   panel content down. */
+/* Shared tag filter block (idea #36): ONE scroll zone with a SINGLE
+   flex-wrap container — the filter controls (label, tag search, clear) and
+   every tag are CONSECUTIVE items of the same row: the first tag immediately
+   follows the clear button (no sub-block competes for that first line), the
+   rest wrap below. No sticky: the controls scroll with the tags (user call).
+   The zone is capped at the tagRows budget with its own scrollbar, so a
+   large label union can never push the panel content down. */
 .dsh-ideas-tag-filter-row {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  /* Pack the wrapped tag lines at the top of the capped height. */
-  align-content: flex-start;
-  gap: 6px;
+  display: block;
   flex: none;
-  /* Row budget (settings option "tagRows", 1..5, default 3): one header
+  /* Row budget (settings option "tagRows", 1..5, default 3): one control
      line (~29px) + gap + N tag rows (27px each) + tail. The !important
      stands against a Skin Center sheet injected after this one; only the
      VARIABLE is user-reachable, so the zone can never grow unbounded. */
@@ -904,25 +898,29 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   padding-right: 2px;
 }
 
-.dsh-ideas-tag-filter-header {
+/* The single flow: controls first, tags after, all wrapping together. */
+.dsh-ideas-tag-filter-chips {
   display: flex;
   align-items: center;
-  gap: 6px;
   flex-wrap: wrap;
-  flex: none;
-  box-sizing: border-box;
+  gap: 6px;
+  /* Lines pack at the top of the capped zone. */
+  align-content: flex-start;
 }
 
 .dsh-ideas-tag-filter-label {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  /* A control keeps its size on the shared line. */
+  flex: none;
 }
 
-/* Chip search (narrower + lighter than the card search .dsh-ideas-search):
+/* Tag search (narrower + lighter than the card search .dsh-ideas-search):
    the two coexisting searches must read as distinct controls — this one
-   narrows the CHIPS, the header one narrows the CARDS. */
+   narrows the TAGS, the header one narrows the CARDS. */
 .dsh-ideas-tag-filter-search {
   box-sizing: border-box;
+  flex: none;
   width: 170px;
   padding: 3px 10px;
   border-radius: 999px;
@@ -932,27 +930,8 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   font-size: 12px;
 }
 
-/* Scrollable chip zone, capped at ~3 chip rows (3 x ~21px chips + 2 x 6px
-   row gaps, with headroom for font-metric variance; a 4th row always
-   overflows into the scrollbar). The two layout properties are !important so
-   a Skin Center stylesheet injected AFTER this one (the model-filter
-   focus-ring precedent) cannot uncap the zone and reintroduce the
-   unbounded growth. */
-.dsh-ideas-tag-filter-chips {
-  display: flex;
-  align-items: center;
-  /* Lines pack at the top of their (capped) rows. */
-  align-content: flex-start;
-  gap: 6px;
-  flex-wrap: wrap;
-  /* Start BESIDE the sticky header on its line, take whatever room is left
-     and wrap the following tags under it (min-width:0 allows the shrink). */
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* The query matched no chip (and nothing is selected): explain instead of
-   leaving a blank zone under the always-visible header. */
+/* The query matched no tag (and nothing is selected): explain instead of
+   leaving a blank zone under the controls. */
 .dsh-ideas-tag-filter-no-match {
   font-size: 11px;
   font-style: italic;
@@ -1609,7 +1588,6 @@ export const classes = {
   modalActions: 'dsh-ideas-modal-actions',
   editActions: 'dsh-ideas-edit-actions',
   tagFilterRow: 'dsh-ideas-tag-filter-row',
-  tagFilterHeader: 'dsh-ideas-tag-filter-header',
   tagFilterLabel: 'dsh-ideas-tag-filter-label',
   tagFilterSearch: 'dsh-ideas-tag-filter-search',
   tagFilterChips: 'dsh-ideas-tag-filter-chips',

@@ -84,10 +84,13 @@ function selectValue(select: HTMLSelectElement, value: string): void {
 /* --- query helpers -------------------------------------------------- */
 
 const row = (): Element | null => host.querySelector(`.${classes.tagFilterRow}`)
-const header = (): Element | null => host.querySelector(`.${classes.tagFilterHeader}`)
+/** The single flex-wrap container now holds the controls AND the tags. */
 const chipZone = (): Element | null => host.querySelector(`.${classes.tagFilterChips}`)
 const tagSearch = (): HTMLInputElement => host.querySelector(`.${classes.tagFilterSearch}`) as HTMLInputElement
-const chips = (): HTMLButtonElement[] => Array.from(chipZone()?.querySelectorAll('button') ?? [])
+/** Tag names only: the zone also contains the controls (label, search,
+ *  clear button) — select by the tag classes, never by "any button". */
+const chips = (): HTMLButtonElement[] =>
+  Array.from(chipZone()?.querySelectorAll(`.${classes.filterChip}, .${classes.filterChipActive}`) ?? []) as HTMLButtonElement[]
 const chipNames = (): string[] => chips().map(button => button.textContent ?? '')
 const noMatchHint = (): Element | null => host.querySelector(`.${classes.tagFilterNoMatch}`)
 const clearButton = (): HTMLButtonElement | undefined =>
@@ -198,37 +201,39 @@ describe('tag filter zone CSS bound', () => {
     expect(style).not.toBeNull()
     const css = style?.textContent ?? ''
     const shell = css.match(/\.dsh-ideas-tag-filter-row\s*\{[^}]*\}/)?.[0] ?? ''
-    // Header AND tags share ONE scroll zone: the cap carries the sticky
-    // header line (~35px) on top of the tagRows budget.
+    // Header AND tags share ONE scroll zone: the cap carries the control
+    // line (~35px) on top of the tagRows budget.
     expect(shell).toContain('calc(var(--dsh-ideas-tag-rows, 3)')
     expect(shell).toContain('max-height:')
     expect(shell).toContain('!important')
     expect(shell).toContain('overflow-y: auto')
-    // Flex ROW + wrap: the first tag starts BESIDE the sticky header line
-    // (no dedicated header line), wrapped lines pack at the top.
-    expect(shell).toContain('flex-direction: row')
-    expect(shell).toContain('flex-wrap: wrap')
-    expect(shell).toContain('align-content: flex-start')
+    // The row is a plain scroll box: the SINGLE flex-wrap container below
+    // owns the whole first-line flow (no competing sub-block).
+    expect(shell).toContain('display: block')
     expect(shell).toContain('overscroll-behavior')
   })
 
-  it('keeps the header as a plain flex item in the flow (scrolls with the tags)', () => {
+  it('puts the controls and the tags in ONE flex flow (first tag follows the clear)', () => {
     ensureIdeasStyle()
     const css = document.querySelector('style[data-plugin-css="dsh-plugin-ideas-manager/style"]')?.textContent ?? ''
-    const head = css.match(/\.dsh-ideas-tag-filter-header\s*\{[^}]*\}/)?.[0] ?? ''
-    // Deliberately NOT sticky (user call): the header scrolls with the tags,
-    // so it must carry no sticky positioning, opaque surface or z-index, and
-    // no scroll properties of its own.
-    expect(head).not.toContain('position: sticky')
-    expect(head).not.toContain('z-index')
-    expect(head).not.toContain('overflow')
-    expect(head).toContain('flex: none')
     const zone = css.match(/\.dsh-ideas-tag-filter-chips\s*\{[^}]*\}/)?.[0] ?? ''
+    // One wrapping container for controls AND tags: no sub-block can push
+    // the first tag to its own line.
     expect(zone).toContain('flex-wrap: wrap')
     expect(zone).toContain('align-content: flex-start')
-    // The tag block starts BESIDE the header (shrinkable, wraps under it).
-    expect(zone).toContain('flex: 1 1 auto')
-    expect(zone).toContain('min-width: 0')
+    expect(zone).toContain('gap: 6px')
+    // The legacy separate header block no longer exists (its removal is what
+    // guarantees the shared first line).
+    expect(css).not.toContain('.dsh-ideas-tag-filter-header')
+    // DOM order: label, search (and clear when active) sit before the first
+    // tag inside that single container.
+    mount(<RowHarness known={['alpha', 'beta']} />)
+    const zoneEl = chipZone()
+    expect(zoneEl).not.toBeNull()
+    const children = Array.from(zoneEl?.children ?? [])
+    expect(children[0]?.className).toContain(classes.tagFilterLabel)
+    expect(children[1]?.className).toContain(classes.tagFilterSearch)
+    expect(children[children.length - 1]?.className).toContain(classes.filterChip)
     // The cap lives on the row, never duplicated on the inner block.
     expect(zone).not.toContain('overflow')
   })
@@ -238,8 +243,9 @@ describe('TagFilterRow behaviour', () => {
   it('renders the always-visible header (label + search) with all chips and no clear yet', () => {
     mount(<RowHarness known={['Cadence', 'drone', 'Reaper']} />)
     expect(row()).not.toBeNull()
-    expect(header()).not.toBeNull()
-    expect(header()?.textContent).toContain(t('board.tagFilter'))
+    // The controls live in the SINGLE flex container, before the tags.
+    expect(chipZone()).not.toBeNull()
+    expect(chipZone()?.textContent).toContain(t('board.tagFilter'))
     expect(tagSearch().placeholder).toBe(t('board.tagFilterSearch'))
     expect(tagSearch().getAttribute('aria-label')).toBe(t('board.tagFilterSearch'))
     expect(chipNames()).toEqual(['Cadence', 'drone', 'Reaper'])

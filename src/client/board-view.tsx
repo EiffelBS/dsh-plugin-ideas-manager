@@ -912,12 +912,13 @@ type DragState = { id: string; source: IdeaStatus } | undefined
 type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; half?: 'before' | 'after' } | undefined
 
 /**
- * Shared tag-filter row (idea #36): ONE scrollable zone holding the
- * ALWAYS-visible header — the "Filter:" label, the tag search box and the
- * clear button — as a STICKY first line (opaque bar, tags scroll beneath it)
- * with every tag below, capped at the tagRows budget (~3 tag rows by default)
- * plus its own scrollbar. Because the header lives inside the zone but never
- * scrolls out, the clear button is reachable at any scroll position.
+ * Shared tag-filter row (idea #36): ONE scroll zone with a SINGLE flex-wrap
+ * container — the filter controls ("Filter:" label, tag search box, clear
+ * button) are the FIRST items, immediately followed by every tag: the first
+ * tag sits on the SAME line as the clear button (no sub-block competes for
+ * that line), the rest wrap below inside the tagRows cap with the zone's own
+ * scrollbar. The controls scroll WITH the tags (deliberately not sticky,
+ * user call): the clear button is a normal flow item.
  *
  * The search narrows the TAGS only (the board-header search narrows the
  * CARDS: two controls, two behaviours, two labels) and never hides a
@@ -941,7 +942,7 @@ export function TagFilterRow({ knownTags, selected, onToggle, onClear }: {
   }
   return (
     <div className={classes.tagFilterRow}>
-      <div className={classes.tagFilterHeader}>
+      <div className={classes.tagFilterChips}>
         <span className={classes.tagFilterLabel}>{t('board.tagFilter')}</span>
         <input
           className={classes.tagFilterSearch}
@@ -956,8 +957,6 @@ export function TagFilterRow({ knownTags, selected, onToggle, onClear }: {
             {t('board.tagFilterClear')}
           </button>
         )}
-      </div>
-      <div className={classes.tagFilterChips}>
         {chips.length === 0
           ? <span className={classes.tagFilterNoMatch}>{t('board.tagFilterNoMatch')}</span>
           : chips.map(name => (
