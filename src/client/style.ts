@@ -9,7 +9,8 @@
 /** Stable style-tag identity (one tag per page, idempotent). */
 const STYLE_TAG_ID = 'dsh-plugin-ideas-manager/style'
 
-const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped) --- */
+/** The whole stylesheet (exported for the health test: balance + parse checks). */
+export const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped) --- */
 
 [data-pane='conversation'],
 [class*='centerCol'] {
@@ -1074,7 +1075,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   box-sizing: border-box;
   width: 16px;
   height: 16px;
-  accent-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent));
+  accent-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
   cursor: pointer;
   flex: none;
 }
