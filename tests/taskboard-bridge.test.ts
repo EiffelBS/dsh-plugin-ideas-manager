@@ -524,4 +524,54 @@ describe('HttpTaskBoardTransport', () => {
       server.close()
     }
   })
+
+  it('reads a snapshot larger than the old 128 KiB ceiling', async () => {
+    const server = createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ schemaVersion: 3, revision: 1, tasks: [{ id: 't-1', status: 'backlog' }], pad: 'x'.repeat(140_000) }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const port = (server.address() as { port: number }).port
+    const transport = new HttpTaskBoardTransport(() => `http://127.0.0.1:${port}`)
+    try {
+      const state = await transport.getState()
+      expect(state.status).toBe(200)
+      const tasks = (state.body as { tasks?: unknown }).tasks as Array<{ id: string }>
+      expect(tasks.map(task => task.id)).toEqual(['t-1'])
+    } finally {
+      server.close()
+    }
+  })
+
+  it('REJECTS instead of hanging when a response exceeds the cap', async () => {
+    const server = createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ schemaVersion: 3, revision: 1, pad: 'x'.repeat(4_000) }))
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const port = (server.address() as { port: number }).port
+    const transport = new HttpTaskBoardTransport(() => `http://127.0.0.1:${port}`, { maxResponseBytes: 1024 })
+    try {
+      // Regression guard for the stalled-poll incident: the old code destroyed
+      // the oversized response WITHOUT settling, so this promise hung forever
+      // (a hang fails this test via the vitest timeout instead of passing).
+      await expect(transport.getState()).rejects.toThrow(/too large/)
+    } finally {
+      server.closeAllConnections()
+      server.close()
+    }
+  })
+
+  it('times out a stalled response instead of hanging', async () => {
+    const server = createServer(() => { /* never answer: exercises the fatal timeout */ })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
+    const port = (server.address() as { port: number }).port
+    const transport = new HttpTaskBoardTransport(() => `http://127.0.0.1:${port}`, { timeoutMs: 150 })
+    try {
+      await expect(transport.getState()).rejects.toThrow(/timed out/)
+    } finally {
+      server.closeAllConnections()
+      server.close()
+    }
+  })
 })

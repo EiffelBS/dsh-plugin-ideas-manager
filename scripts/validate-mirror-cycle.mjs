@@ -14,7 +14,10 @@
  *      still one card, same id) - the #35 acceptance;
  *   6. contract probe: task-board rejects a create of the bound id with
  *      400 `task id already exists` (why the bridge is get-before-create);
- *   7. decline archives the SAME card (create -> ... -> archive cycle).
+ *   7. under-review poll: the bound card is marked done (runner-owned status,
+ *      set through the import path) and the OPEN idea must move to
+ *      `underReview` within one 30 s poll cycle;
+ *   8. decline archives the SAME card (create -> ... -> archive cycle).
  *
  * Usage: node scripts/validate-mirror-cycle.mjs [--base http://127.0.0.1:3102]
  * Exit code 0 = all steps passed.
@@ -69,8 +72,8 @@ const ideasAction = (action, tag) => postJson('/api/ideas/action', {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
-async function waitFor(label, predicate) {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+async function waitFor(label, predicate, attempts = 60) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (await predicate()) return
     await sleep(250)
   }
@@ -143,7 +146,31 @@ check(clash.status === 400, `duplicate create returned ${clash.status}, expected
 check(String(clash.body?.error).includes('task id already exists'), `unexpected error: ${JSON.stringify(clash.body)}`)
 ok('task-board refuses create of an existing id (400 task id already exists)')
 
-// --- 7. decline archives the same card --------------------------------------
+// --- 7. under-review poll: done -> underReview ------------------------------
+// `done` is runner-owned on the board (MANUAL_STATUSES = backlog/todo), so the
+// recette marks the bound card done through the import path (the newer
+// updatedAt wins the merge), exactly like a settled run would. The state must
+// be fully readable here: a >cap snapshot would hang the poll forever (the
+// 2026-09-22 production incident: 190,947-byte state vs 128 KiB cap).
+const boardBeforeFlip = await getJson('/api/task-board/state')
+const boundCard = boardBeforeFlip.tasks.find(task => task.id === bound)
+check(boundCard !== undefined, 'bound card missing before the poll step')
+const flip = await postJson('/api/task-board/action', {
+  requestId: `validate35-poll-${Date.now()}`,
+  action: {
+    kind: 'import',
+    sourceId: `validate35-poll-${Date.now()}`,
+    tasks: [{ ...boundCard, status: 'done', updatedAt: Date.now() + 60_000 }],
+  },
+})
+check(flip.status === 200, `done flip via import -> ${flip.status}`)
+await waitFor('the under-review transition (poll interval 30 s)', async () => {
+  const state = await getJson('/api/ideas/state')
+  return state.ideas.find(idea => idea.id === ideaId)?.status === 'underReview'
+}, 160)
+ok('under-review poll moved the open idea to underReview once its card hit done')
+
+// --- 8. decline archives the same card --------------------------------------
 const declined = await ideasAction({ kind: 'decline', ideaId, decision: 'cycle validation' }, 'decline')
 check(declined.status === 200, `decline -> ${declined.status}`)
 await waitFor('the card to archive', async () => {
@@ -156,4 +183,4 @@ check(board.tasks.filter(task => task.id === bound).length === 1, 'bound card va
 check(cardsFor(board, rewritten).length === 1, 'archived card lost its title')
 ok('decline archived the SAME card (cycle complete: one card total)')
 
-console.log('PASS: full cycle create -> re-analyze -> update -> archive kept ONE card')
+console.log('PASS: full cycle create -> re-analyze -> update -> under-review -> archive kept ONE card')

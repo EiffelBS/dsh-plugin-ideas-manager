@@ -110,13 +110,26 @@ export interface TaskBoardTransport {
  */
 export declare class HttpTaskBoardTransport implements TaskBoardTransport {
     private readonly getBase;
+    private readonly maxResponseBytes;
+    private readonly timeoutMs;
     /**
      * @param getBase - lazily resolved origin (http://127.0.0.1:port); the
      *   listen port is only known once the web server has bound its socket.
+     * @param limits - test seams for the response cap and request timeout.
      */
-    constructor(getBase: () => string);
+    constructor(getBase: () => string, limits?: {
+        maxResponseBytes?: number;
+        timeoutMs?: number;
+    });
     getState(): Promise<TaskBoardHttpResult>;
     postAction(envelope: TaskBoardActionEnvelope): Promise<TaskBoardHttpResult>;
+    /**
+     * One self-request. The promise SETTLES ON EVERY PATH — resolved with the
+     * parsed reply, or rejected on overflow, early close, socket error, or
+     * timeout. The former implementation destroyed an oversized response
+     * without settling, which hung the caller forever and silently stalled the
+     * under-review poll once the production snapshot passed 128 KiB.
+     */
     private exchange;
 }
 /** Mirror options; every seam is injectable for tests. */

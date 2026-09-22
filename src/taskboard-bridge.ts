@@ -34,8 +34,19 @@ const MIRROR_TASK_PERMISSION = 'read-only' as const
 const PROBE_RETRY_MS = 30_000
 /** Per-self-request timeout; the mirror is best-effort and must not hang. */
 const TRANSPORT_TIMEOUT_MS = 10_000
-/** Cap on mirror response bodies (a snapshot could be large; we only read status). */
-const RESPONSE_CAP_BYTES = 128 * 1024
+/**
+ * Cap on mirror response bodies — BOTH routes answer a full task-board
+ * SNAPSHOT (every card's description + prompt), so the size grows with the
+ * board: the production board measured 190,947 bytes once idea #35's
+ * rewritten card landed and its task ran, past the former 128 KiB ceiling.
+ * Crossing the cap used to `res.destroy()` WITHOUT settling the promise:
+ * every snapshot read hung silently (no log line — a pending promise never
+ * throws), the under-review poll stopped moving ideas to `underReview`, and
+ * bound-idea mirror updates stalled with it. 16 MiB sits far above any real
+ * board, and the overflow path now REJECTS (see HttpTaskBoardTransport), so
+ * a cap can degrade a read but never hang a caller again.
+ */
+const RESPONSE_CAP_BYTES = 16 * 1024 * 1024
 
 /** Local mirror of the task-board action union (never imported from the package). */
 export type TaskBoardAction =
@@ -111,11 +122,20 @@ export interface TaskBoardTransport {
  * fence (socket + Host + Origin equality) accepts it without a token.
  */
 export class HttpTaskBoardTransport implements TaskBoardTransport {
+  private readonly getBase: () => string
+  private readonly maxResponseBytes: number
+  private readonly timeoutMs: number
+
   /**
    * @param getBase - lazily resolved origin (http://127.0.0.1:port); the
    *   listen port is only known once the web server has bound its socket.
+   * @param limits - test seams for the response cap and request timeout.
    */
-  constructor(private readonly getBase: () => string) {}
+  constructor(getBase: () => string, limits: { maxResponseBytes?: number; timeoutMs?: number } = {}) {
+    this.getBase = getBase
+    this.maxResponseBytes = limits.maxResponseBytes ?? RESPONSE_CAP_BYTES
+    this.timeoutMs = limits.timeoutMs ?? TRANSPORT_TIMEOUT_MS
+  }
 
   getState(): Promise<TaskBoardHttpResult> {
     return this.exchange('GET', `${TASK_BOARD_API_PREFIX}/state`)
@@ -125,9 +145,23 @@ export class HttpTaskBoardTransport implements TaskBoardTransport {
     return this.exchange('POST', `${TASK_BOARD_API_PREFIX}/action`, JSON.stringify(envelope))
   }
 
+  /**
+   * One self-request. The promise SETTLES ON EVERY PATH — resolved with the
+   * parsed reply, or rejected on overflow, early close, socket error, or
+   * timeout. The former implementation destroyed an oversized response
+   * without settling, which hung the caller forever and silently stalled the
+   * under-review poll once the production snapshot passed 128 KiB.
+   */
   private async exchange(method: 'GET' | 'POST', path: string, body?: string): Promise<TaskBoardHttpResult> {
     const base = this.getBase().replace(/\/$/, '')
     return new Promise<TaskBoardHttpResult>((resolve, reject) => {
+      let settled = false
+      const fail = (error: Error): void => {
+        if (!settled) { settled = true; reject(error) }
+      }
+      const succeed = (result: TaskBoardHttpResult): void => {
+        if (!settled) { settled = true; resolve(result) }
+      }
       const url = new URL(base + path)
       const headers: Record<string, string> = {
         origin: base,
@@ -140,14 +174,18 @@ export class HttpTaskBoardTransport implements TaskBoardTransport {
           const chunks: Buffer[] = []
           let size = 0
           res.on('data', (chunk: Buffer) => {
+            if (settled) return
             size += chunk.length
-            if (size > RESPONSE_CAP_BYTES) {
+            if (size > this.maxResponseBytes) {
               res.destroy()
+              outgoing.destroy()
+              fail(new Error(`task-board response too large (> ${this.maxResponseBytes} bytes)`))
               return
             }
             chunks.push(chunk)
           })
           res.on('end', () => {
+            if (settled) return
             const raw = Buffer.concat(chunks).toString('utf8')
             let parsed: unknown
             try {
@@ -155,13 +193,21 @@ export class HttpTaskBoardTransport implements TaskBoardTransport {
             } catch {
               parsed = raw
             }
-            resolve({ status: res.statusCode ?? 0, ...(parsed === undefined ? {} : { body: parsed }) })
+            succeed({ status: res.statusCode ?? 0, ...(parsed === undefined ? {} : { body: parsed }) })
           })
-          res.on('error', (error) => reject(error as Error))
+          res.on('error', (error) => fail(error as Error))
+          // A response closed before 'end' (server restart, reset mid-body)
+          // must reject — never linger as a pending promise.
+          res.on('close', () => { fail(new Error('task-board response closed before completion')) })
         },
       )
-      outgoing.setTimeout(TRANSPORT_TIMEOUT_MS)
-      outgoing.on('error', (error) => reject(error as Error))
+      outgoing.setTimeout(this.timeoutMs)
+      // Make the timeout FATAL: without this handler the 'timeout' event was
+      // never fatal and a stalled self-request would hang the caller forever.
+      outgoing.on('timeout', () => {
+        outgoing.destroy(new Error(`task-board request timed out after ${this.timeoutMs} ms`))
+      })
+      outgoing.on('error', (error) => fail(error as Error))
       if (body !== undefined) outgoing.write(body)
       outgoing.end()
     })
