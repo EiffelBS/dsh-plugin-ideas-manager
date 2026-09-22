@@ -928,7 +928,12 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   gap: 6px;
   flex-wrap: wrap;
   flex: none;
-  max-height: 84px !important;
+  /* Row budget (settings option "tagRows", 1..5, default 3): 27px per chip
+     row (21px chip + 6px gap) + 3px tail = 84px at the default, the value
+     applyTagChipRows() pushes. The !important stands against a Skin Center
+     sheet injected after this one; only the VARIABLE is user-reachable, so
+     the zone can never grow unbounded again. */
+  max-height: calc(var(--dsh-ideas-tag-chip-rows, 3) * 27px + 3px) !important;
   overflow-y: auto !important;
   overscroll-behavior: contain;
   padding-right: 2px;
@@ -938,6 +943,101 @@ body[data-ds-dark-theme] .dsh-ideas-card {
    leaving a blank zone under the always-visible header. */
 .dsh-ideas-tag-filter-no-match {
   font-size: 11px;
+  font-style: italic;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+/* --- Settings section (DSH Settings modal, registered by the client half) -
+   Rows follow the settings recipe: title + description on the left, the
+   control on the right, hairline-separated inside a card container. */
+.dsh-ideas-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+
+.dsh-ideas-settings-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+}
+
+.dsh-ideas-settings-intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-settings-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  overflow: hidden;
+}
+
+.dsh-ideas-settings-group {
+  padding: 10px 16px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 10px 16px 12px;
+}
+
+.dsh-ideas-settings-row + .dsh-ideas-settings-row {
+  border-top: 1px solid var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
+}
+
+.dsh-ideas-settings-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dsh-ideas-settings-row-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+}
+
+.dsh-ideas-settings-row-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-settings-number {
+  box-sizing: border-box;
+  width: 72px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+  text-align: center;
+}
+
+.dsh-ideas-settings-error {
+  font-size: 12px;
+  color: var(--dsh-ideas-fb-danger);
+}
+
+.dsh-ideas-settings-note {
+  font-size: 12px;
   font-style: italic;
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
@@ -1415,6 +1515,18 @@ export const classes = {
   tagFilterSearch: 'dsh-ideas-tag-filter-search',
   tagFilterChips: 'dsh-ideas-tag-filter-chips',
   tagFilterNoMatch: 'dsh-ideas-tag-filter-no-match',
+  settingsSection: 'dsh-ideas-settings-section',
+  settingsTitle: 'dsh-ideas-settings-title',
+  settingsIntro: 'dsh-ideas-settings-intro',
+  settingsCard: 'dsh-ideas-settings-card',
+  settingsGroup: 'dsh-ideas-settings-group',
+  settingsRow: 'dsh-ideas-settings-row',
+  settingsRowText: 'dsh-ideas-settings-row-text',
+  settingsRowTitle: 'dsh-ideas-settings-row-title',
+  settingsRowDesc: 'dsh-ideas-settings-row-desc',
+  settingsNumber: 'dsh-ideas-settings-number',
+  settingsError: 'dsh-ideas-settings-error',
+  settingsNote: 'dsh-ideas-settings-note',
   filterChip: 'dsh-ideas-filter-chip',
   filterChipActive: 'dsh-ideas-filter-chip-active',
   dragHint: 'dsh-ideas-drag-hint',

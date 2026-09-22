@@ -12,6 +12,8 @@ import {
   type IdeasActionEnvelope,
   type IdeasEventPayload,
   type IdeasSnapshot,
+  type IdeasSettingsPatch,
+  type IdeasSettingsView,
 } from '../protocol.ts'
 
 const REQUEST_TIMEOUT_MS = 15_000
@@ -47,6 +49,14 @@ export interface IdeasHostTransport {
    * @returns a disposer stopping the polling.
    */
   subscribe(listener: (event?: IdeasEventPayload) => void, isActive?: () => boolean): () => void
+  /**
+   * Read the plugin display settings (tagRows...). Optional capability: a
+   * transport without it — an older Host, a test fake — leaves the client on
+   * the spelled defaults (see IdeasClient.loadConfig).
+   */
+  config?(): Promise<IdeasSettingsView>
+  /** Persist a settings patch (revision-fenced); rejects with 'settings-conflict'. */
+  saveConfig?(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>
 }
 
 export class HttpIdeasHostTransport implements IdeasHostTransport {
@@ -58,6 +68,18 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
     return await this.post(uuid(), action, initiator)
   }
 
+  async config(): Promise<IdeasSettingsView> {
+    return await this.request(`${IDEAS_API_PREFIX}/config`, { cache: 'no-store' })
+  }
+
+  async saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView> {
+    return await this.request(`${IDEAS_API_PREFIX}/config`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ patch, ...(expectedRevision === undefined ? {} : { expectedRevision }) }),
+    })
+  }
+
   private async post(requestId: string, action: IdeasAction, initiator?: string): Promise<IdeasSnapshot> {
     const envelope: IdeasActionEnvelope = { requestId, action, ...(initiator === undefined || initiator === '' ? {} : { initiator }) }
     return await this.request(`${IDEAS_API_PREFIX}/action`, {
@@ -67,11 +89,11 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
     })
   }
 
-  private async request(url: string, init: RequestInit): Promise<IdeasSnapshot> {
+  private async request<T = IdeasSnapshot>(url: string, init: RequestInit): Promise<T> {
     const controller = new AbortController()
     const timeout = globalThis.setTimeout(() => { controller.abort() }, REQUEST_TIMEOUT_MS)
     try {
-      return await readJson<IdeasSnapshot>(await fetch(url, { ...init, signal: controller.signal }))
+      return await readJson<T>(await fetch(url, { ...init, signal: controller.signal }))
     } catch (error) {
       if (controller.signal.aborted) throw new Error(`ideas Host request timed out after ${REQUEST_TIMEOUT_MS / 1_000}s`)
       throw error

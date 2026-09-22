@@ -331,3 +331,70 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
 export function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord {
   return createIdea(input, now, id)
 }
+
+/* --- plugin display settings (GET/POST /api/ideas/config) --- */
+
+/** Resolved display-settings value served by the config routes. */
+export interface IdeasSettingsValue {
+  /** Visible tag-filter chip rows on the board (clamped to 1..5). */
+  tagRows: number
+}
+
+/** Patch accepted by POST /api/ideas/config (exact keys, numbers clamped). */
+export interface IdeasSettingsPatch {
+  tagRows?: number
+}
+
+/**
+ * Wire view of the plugin settings. `available` is false when the deployment
+ * serves no settings document (no host settings service) — the client keeps
+ * the defaults then, exactly like the Side card fallback. `revision` fences
+ * the next write (absent while unavailable).
+ */
+export interface IdeasSettingsView {
+  available: boolean
+  value: IdeasSettingsValue
+  revision?: number
+}
+
+/**
+ * Defaults the browser half keeps when no settings surface answers. Spelled
+ * here rather than imported from the host entry so the client bundle never
+ * pulls the Node-side module — same discipline as IDEAS_SETTINGS_NAMESPACE.
+ */
+export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = { tagRows: 3 }
+
+/** Inclusive bounds of the tagRows option (settings row: 1..5). */
+export const TAG_ROWS_MIN = 1
+export const TAG_ROWS_MAX = 5
+
+/**
+ * Clamp an unknown input to a legal tagRows value: finite numbers round to
+ * the nearest integer and clamp into 1..5; anything else falls back to the
+ * default. Hand-edited settings and hand-crafted wire values can never store
+ * or render an illegal row count (the clamp, not the schema, is the guard —
+ * a schema range would reject a bad stored section at registration).
+ */
+export function clampTagRows(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return IDEAS_SETTINGS_DEFAULTS.tagRows
+  return Math.min(TAG_ROWS_MAX, Math.max(TAG_ROWS_MIN, Math.round(value)))
+}
+
+/**
+ * Strict parser for the config write body ({ patch, expectedRevision? }).
+ * Unknown keys and a non-number tagRows reject; a present number is clamped
+ * before it ever reaches the settings service. An absent tagRows yields an
+ * empty patch (a no-op merge that still carries the revision fence).
+ */
+export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; expectedRevision: number | undefined } | undefined {
+  const body = record(value)
+  if (body === undefined || !exactKeys(body, ['patch', 'expectedRevision'])) return undefined
+  if (!optionalFiniteNumber(body.expectedRevision)) return undefined
+  const patch = record(body.patch)
+  if (patch === undefined || !exactKeys(patch, ['tagRows'])) return undefined
+  if (patch.tagRows !== undefined && (typeof patch.tagRows !== 'number' || !Number.isFinite(patch.tagRows))) return undefined
+  return {
+    patch: patch.tagRows === undefined ? {} : { tagRows: clampTagRows(patch.tagRows) },
+    expectedRevision: body.expectedRevision as number | undefined,
+  }
+}

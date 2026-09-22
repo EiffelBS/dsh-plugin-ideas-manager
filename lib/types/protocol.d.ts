@@ -116,4 +116,51 @@ export interface FollowUpInput {
 export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undefined;
 /** Convenience used by tests: build an idea record exactly as the ledger stores it. */
 export declare function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord;
+/** Resolved display-settings value served by the config routes. */
+export interface IdeasSettingsValue {
+    /** Visible tag-filter chip rows on the board (clamped to 1..5). */
+    tagRows: number;
+}
+/** Patch accepted by POST /api/ideas/config (exact keys, numbers clamped). */
+export interface IdeasSettingsPatch {
+    tagRows?: number;
+}
+/**
+ * Wire view of the plugin settings. `available` is false when the deployment
+ * serves no settings document (no host settings service) — the client keeps
+ * the defaults then, exactly like the Side card fallback. `revision` fences
+ * the next write (absent while unavailable).
+ */
+export interface IdeasSettingsView {
+    available: boolean;
+    value: IdeasSettingsValue;
+    revision?: number;
+}
+/**
+ * Defaults the browser half keeps when no settings surface answers. Spelled
+ * here rather than imported from the host entry so the client bundle never
+ * pulls the Node-side module — same discipline as IDEAS_SETTINGS_NAMESPACE.
+ */
+export declare const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue;
+/** Inclusive bounds of the tagRows option (settings row: 1..5). */
+export declare const TAG_ROWS_MIN = 1;
+export declare const TAG_ROWS_MAX = 5;
+/**
+ * Clamp an unknown input to a legal tagRows value: finite numbers round to
+ * the nearest integer and clamp into 1..5; anything else falls back to the
+ * default. Hand-edited settings and hand-crafted wire values can never store
+ * or render an illegal row count (the clamp, not the schema, is the guard —
+ * a schema range would reject a bad stored section at registration).
+ */
+export declare function clampTagRows(value: unknown): number;
+/**
+ * Strict parser for the config write body ({ patch, expectedRevision? }).
+ * Unknown keys and a non-number tagRows reject; a present number is clamped
+ * before it ever reaches the settings service. An absent tagRows yields an
+ * empty patch (a no-op merge that still carries the revision fence).
+ */
+export declare function parseSettingsBody(value: unknown): {
+    patch: IdeasSettingsPatch;
+    expectedRevision: number | undefined;
+} | undefined;
 export {};

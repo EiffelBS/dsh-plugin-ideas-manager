@@ -67,6 +67,18 @@ export declare const classes: {
     readonly tagFilterSearch: "dsh-ideas-tag-filter-search";
     readonly tagFilterChips: "dsh-ideas-tag-filter-chips";
     readonly tagFilterNoMatch: "dsh-ideas-tag-filter-no-match";
+    readonly settingsSection: "dsh-ideas-settings-section";
+    readonly settingsTitle: "dsh-ideas-settings-title";
+    readonly settingsIntro: "dsh-ideas-settings-intro";
+    readonly settingsCard: "dsh-ideas-settings-card";
+    readonly settingsGroup: "dsh-ideas-settings-group";
+    readonly settingsRow: "dsh-ideas-settings-row";
+    readonly settingsRowText: "dsh-ideas-settings-row-text";
+    readonly settingsRowTitle: "dsh-ideas-settings-row-title";
+    readonly settingsRowDesc: "dsh-ideas-settings-row-desc";
+    readonly settingsNumber: "dsh-ideas-settings-number";
+    readonly settingsError: "dsh-ideas-settings-error";
+    readonly settingsNote: "dsh-ideas-settings-note";
     readonly filterChip: "dsh-ideas-filter-chip";
     readonly filterChipActive: "dsh-ideas-filter-chip-active";
     readonly dragHint: "dsh-ideas-drag-hint";

@@ -6,7 +6,7 @@
  */
 
 import type { IdeaStatus } from '../core/ideas.ts'
-import type { IdeasAction, IdeasSnapshot } from '../protocol.ts'
+import { IDEAS_SETTINGS_DEFAULTS, type IdeasAction, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
@@ -34,6 +34,12 @@ export class IdeasClient {
   snapshot: IdeasSnapshot | undefined
   error: string | undefined
   pending = false
+  /** Display settings (tag rows ...); the spelled defaults until the config route answers. */
+  config: IdeasSettingsView = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
+  /** Last config write failure verbatim ('settings-conflict' | wire message); cleared on success. */
+  configError: string | undefined
+  /** Whether a config write is in flight (the settings row disables its input). */
+  configPending = false
   /**
    * Phase 3: optional "Start AI analysis and create the idea" launcher,
    * resolved from the DSH session controller. Undefined keeps the plain
@@ -101,6 +107,9 @@ export class IdeasClient {
   /** Initial load + short-poll refresh while the board is open. */
   start(): void {
     void this.refresh()
+    // Display settings ride the same startup: a failure keeps the spelled
+    // defaults (see loadConfig) and never blocks the board.
+    void this.loadConfig()
     try {
       // Poll only while the board is actually open (isActive), so a closed
       // board holds no connections and no traffic. See host-api subscribe.
@@ -128,6 +137,54 @@ export class IdeasClient {
       this.error = error instanceof Error ? error.message : String(error)
     }
     this.emit()
+  }
+
+  /**
+   * Load the display settings once at start(). A transport without the
+   * capability, an older Host (404), or a fence refusal all land on the same
+   * graceful outcome: `available: false` and the spelled defaults — the board
+   * must never depend on the settings surface.
+   */
+  async loadConfig(): Promise<void> {
+    if (this.transport.config === undefined) {
+      this.config = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
+      this.emit()
+      return
+    }
+    try {
+      this.config = await this.transport.config()
+      this.configError = undefined
+    } catch (error) {
+      console.warn('[dsh-plugin-ideas-manager] settings load failed', error)
+      this.config = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
+    }
+    this.emit()
+  }
+
+  /**
+   * Persist a settings patch (revision-fenced by the view the client holds).
+   * Failures surface verbatim as `configError` ('settings-conflict' and
+   * 'settings-unavailable' are wire codes the section localizes); the stored
+   * value only moves on success, so the settings row reverts for free.
+   */
+  async saveConfig(patch: IdeasSettingsPatch): Promise<void> {
+    if (this.transport.saveConfig === undefined || !this.config.available) {
+      this.configError = 'settings-unavailable'
+      this.emit()
+      return
+    }
+    this.configPending = true
+    this.configError = undefined
+    this.emit()
+    try {
+      this.config = await this.transport.saveConfig(patch, this.config.revision)
+      this.configError = undefined
+    } catch (error) {
+      this.configError = error instanceof Error ? error.message : String(error)
+    } finally {
+      this.configPending = false
+      this.emit()
+    }
   }
 
   async createIdea(input: {

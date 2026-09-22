@@ -13,7 +13,8 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IdeasHostService } from './host-service.ts'
 import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
-import { makeIdeasRoutes } from './host-routes.ts'
+import { makeIdeasRoutes, type IdeasConfigPort } from './host-routes.ts'
+import { clampTagRows, IDEAS_SETTINGS_DEFAULTS, type IdeasSettingsView } from './protocol.ts'
 import { mountOnce } from './mount-once.ts'
 
 /** Order of the announcement section within the tool-guidance band. */
@@ -80,10 +81,25 @@ function applyImpl(ctx: Context, config?: Config): void {
   // idea to underReview automatically (light poll, best-effort, no-op without
   // the mirror / autoMirror).
   if (config?.autoMirror ?? true) host.startUnderReviewPoll()
+
+  /** Structural face of the host `settings` service (no dsh-settings dependency). */
+  interface SettingsFace {
+    register(ns: string, schema: unknown, options?: { applies?: 'live' | 'restart' }): unknown
+    describe(options?: { redactSecrets?: boolean }): Array<{ ns: string; value: unknown; revision: number }>
+    update(ns: string, patch: object, expectedRevision?: number): Promise<void>
+  }
+  /** Display-settings schema: a permissive number, clamped at every boundary
+   *  (a ranged schema would reject a bad stored section AT REGISTRATION and
+   *  brick the namespace — the clamp keeps a hand-edited file working). */
+  const IdeasSettingsSchema = z.object({ tagRows: z.number().default(IDEAS_SETTINGS_DEFAULTS.tagRows) })
+
   ctx.effect(() => {
     const disposers: Array<() => void> = []
     try {
-      for (const route of makeIdeasRoutes(host)) disposers.push(ctx.webServer.register(route))
+      // The config port getter is late-bound: the routes mount before (or
+      // without) the settings service and answer `available: false` until
+      // ctx.inject(['settings']) fills the face further down.
+      for (const route of makeIdeasRoutes(host, () => configPort)) disposers.push(ctx.webServer.register(route))
     } catch (error) {
       for (const dispose of disposers) dispose()
       host.dispose()
@@ -94,6 +110,42 @@ function applyImpl(ctx: Context, config?: Config): void {
       host.dispose()
     }
   }, 'ideas: host ledger and routes')
+
+  // User-facing display settings (the DSH Settings modal section). The
+  // namespace is registered with the host settings provider here; the browser
+  // half reads and writes it through the plugin's own fenced
+  // /api/ideas/config route, because the DSH settings RPC domain serves only
+  // allowlisted namespaces to configuration clients (the Side card lesson).
+  // A deployment without a settings service never fills the face and the
+  // client keeps the spelled defaults; a corrupt stored section rejects the
+  // registration itself and degrades the same way (settings are a nicety).
+  let configPort: IdeasConfigPort | undefined
+  ctx.inject(['settings'], (sctx) => {
+    const settings = (sctx as unknown as { settings?: SettingsFace }).settings
+    if (settings === undefined) return
+    const ns = IDEAS_SETTINGS_NAMESPACE
+    try {
+      settings.register(ns, IdeasSettingsSchema, { applies: 'live' })
+    } catch (error) {
+      console.error('[dsh-plugin-ideas-manager] settings namespace registration failed', error)
+      return
+    }
+    const viewOf = (): IdeasSettingsView => {
+      const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === ns)
+      if (descriptor === undefined) return { available: true, value: IDEAS_SETTINGS_DEFAULTS }
+      const raw = (descriptor.value ?? {}) as { tagRows?: unknown }
+      return { available: true, value: { tagRows: clampTagRows(raw.tagRows) }, revision: descriptor.revision }
+    }
+    configPort = {
+      read: viewOf,
+      write: async (patch, expectedRevision) => {
+        const section = patch.tagRows === undefined ? {} : { tagRows: clampTagRows(patch.tagRows) }
+        await settings.update(ns, section, expectedRevision)
+        return viewOf()
+      },
+    }
+    return () => { configPort = undefined }
+  })
 
   // P0: the announcement reads the composition entry only. The settings
   // namespace surface (P1) swaps `current` when the web settings are served,

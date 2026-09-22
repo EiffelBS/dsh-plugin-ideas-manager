@@ -5,7 +5,7 @@
  * in for the former SSE stream (see `subscribe` for the connection-pool
  * rationale). Mirrors the dsh-task-board host-api discipline.
  */
-import { type IdeasAction, type IdeasEventPayload, type IdeasSnapshot } from '../protocol.ts';
+import { type IdeasAction, type IdeasEventPayload, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
 export interface IdeasHostTransport {
     state(): Promise<IdeasSnapshot>;
     action(action: IdeasAction, initiator?: string): Promise<IdeasSnapshot>;
@@ -25,10 +25,20 @@ export interface IdeasHostTransport {
      * @returns a disposer stopping the polling.
      */
     subscribe(listener: (event?: IdeasEventPayload) => void, isActive?: () => boolean): () => void;
+    /**
+     * Read the plugin display settings (tagRows...). Optional capability: a
+     * transport without it — an older Host, a test fake — leaves the client on
+     * the spelled defaults (see IdeasClient.loadConfig).
+     */
+    config?(): Promise<IdeasSettingsView>;
+    /** Persist a settings patch (revision-fenced); rejects with 'settings-conflict'. */
+    saveConfig?(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
 }
 export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     state(): Promise<IdeasSnapshot>;
     action(action: IdeasAction, initiator?: string): Promise<IdeasSnapshot>;
+    config(): Promise<IdeasSettingsView>;
+    saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
     private post;
     private request;
     /**

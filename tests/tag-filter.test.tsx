@@ -198,6 +198,7 @@ describe('tag filter zone CSS bound', () => {
     expect(style).not.toBeNull()
     const css = style?.textContent ?? ''
     const zone = css.match(/\.dsh-ideas-tag-filter-chips\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(zone).toContain('calc(var(--dsh-ideas-tag-chip-rows, 3)')
     expect(zone).toContain('max-height:')
     expect(zone).toContain('!important')
     expect(zone).toContain('overflow-y: auto')

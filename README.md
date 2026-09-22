@@ -61,6 +61,24 @@ Open · Under review · Archived · Declined.
 
 ---
 
+## Settings
+
+The plugin contributes an **Ideas board** section to the DSH Settings modal.
+It is backed by a registered `ideas` settings namespace on the Host (schemastery
+schema, revision-fenced writes, persisted in the profile's settings document)
+and edited through the plugin's own fenced `GET/POST /api/ideas/config` route —
+the DSH settings RPC domain does not serve third-party namespaces. Every option
+ships with an explicit title and a description stating what it changes, its
+range and its default:
+
+- **Visible tag-filter lines** (`tagRows`, 1–5, default 3): how many rows of
+  tag chips the board shows under the tabs before the chip zone scrolls; the
+  header (label + search + clear-filter) always stays visible. Applied
+  immediately, stored per DSH profile.
+
+Deployments without a settings service keep the spelled defaults (the section
+says so) — the board never depends on the settings surface.
+
 ## TaskBoard integration
 
 When the TaskBoard plugin

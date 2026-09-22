@@ -14,6 +14,7 @@ import { HttpIdeasHostTransport } from './host-api.ts'
 import { mountBoard } from './board-mount.tsx'
 import { mountSidebarEntry } from './sidebar-entry.ts'
 import { ensureIdeasStyle } from './style.ts'
+import { registerIdeasSettingsSection } from './settings-section.tsx'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 import { resolveSessionLauncher } from './session-queue.ts'
@@ -54,7 +55,12 @@ export function apply(ctx: ClientContext): void {
     client.sessionLauncher = resolveSessionLauncher(ctx)
     client.start()
     const disposers: Array<() => void> = []
+    // Settings glue: push tagRows onto the document on every config change
+    // (the CSS default of 3 covers the gap before the first answer) and
+    // register the Settings-modal section when the shell exposes slots.
+    // A context/slots failure degrades, never throws (see the module doc).
     try {
+      disposers.push(registerIdeasSettingsSection(ctx, client))
       disposers.push(mountSidebarEntry(client))
       disposers.push(mountBoard(client))
     } catch (error) {

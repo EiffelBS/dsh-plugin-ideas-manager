@@ -5,7 +5,7 @@
  * the DOM mounts at the edges only.
  */
 import type { IdeaStatus } from '../core/ideas.ts';
-import type { IdeasSnapshot } from '../protocol.ts';
+import { type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
 import type { IdeasHostTransport } from './host-api.ts';
 import type { SessionLauncher } from './session-queue.ts';
 import type { ActiveWorkspaceSource } from './session-context.ts';
@@ -28,6 +28,12 @@ export declare class IdeasClient {
     snapshot: IdeasSnapshot | undefined;
     error: string | undefined;
     pending: boolean;
+    /** Display settings (tag rows ...); the spelled defaults until the config route answers. */
+    config: IdeasSettingsView;
+    /** Last config write failure verbatim ('settings-conflict' | wire message); cleared on success. */
+    configError: string | undefined;
+    /** Whether a config write is in flight (the settings row disables its input). */
+    configPending: boolean;
     /**
      * Phase 3: optional "Start AI analysis and create the idea" launcher,
      * resolved from the DSH session controller. Undefined keeps the plain
@@ -53,6 +59,20 @@ export declare class IdeasClient {
     start(): void;
     dispose(): void;
     refresh(): Promise<void>;
+    /**
+     * Load the display settings once at start(). A transport without the
+     * capability, an older Host (404), or a fence refusal all land on the same
+     * graceful outcome: `available: false` and the spelled defaults — the board
+     * must never depend on the settings surface.
+     */
+    loadConfig(): Promise<void>;
+    /**
+     * Persist a settings patch (revision-fenced by the view the client holds).
+     * Failures surface verbatim as `configError` ('settings-conflict' and
+     * 'settings-unavailable' are wire codes the section localizes); the stored
+     * value only moves on success, so the settings row reverts for free.
+     */
+    saveConfig(patch: IdeasSettingsPatch): Promise<void>;
     createIdea(input: {
         title: string;
         body: string;

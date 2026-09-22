@@ -10,7 +10,14 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { IdeasHostService } from './host-service.ts'
 import { writeJson } from './http.ts'
 import { isLoopbackRequest } from './loopback.ts'
-import { parseActionEnvelope, IDEAS_API_PREFIX } from './protocol.ts'
+import {
+  parseActionEnvelope,
+  parseSettingsBody,
+  IDEAS_API_PREFIX,
+  IDEAS_SETTINGS_DEFAULTS,
+  type IdeasSettingsPatch,
+  type IdeasSettingsView,
+} from './protocol.ts'
 
 const ACTION_LIMIT = 64 * 1024
 const IMPORT_LIMIT = 2 * 1024 * 1024
@@ -50,7 +57,25 @@ async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unk
   return { raw, value: JSON.parse(raw) }
 }
 
-export function makeIdeasRoutes(service: IdeasHostService): WebRoute[] {
+/**
+ * Settings seam the config route calls in-process — the DSH settings RPC
+ * domain does not serve third-party namespaces to configuration clients (the
+ * Side card lesson), so the plugin exposes its own fenced route instead. The
+ * getter form lets the routes mount before `ctx.inject(['settings'])` fills
+ * the face, and a deployment without a settings service answers
+ * `available: false` forever (the client keeps the spelled defaults).
+ */
+export interface IdeasConfigPort {
+  /** Current resolved view (clamped value + revision fence). */
+  read(): IdeasSettingsView
+  /** Merge an already-clamped patch; rejects with code SETTINGS_CONFLICT on a stale revision. */
+  write(patch: IdeasSettingsPatch, expectedRevision: number | undefined): Promise<IdeasSettingsView>
+}
+
+export function makeIdeasRoutes(
+  service: IdeasHostService,
+  configPort?: () => IdeasConfigPort | undefined,
+): WebRoute[] {
   const guard = (req: IncomingMessage, res: ServerResponse): boolean => {
     if (isTrustedIdeasRequest(req)) return true
     writeJson(res, 403, { ok: false, error: 'forbidden' }, { 'cache-control': 'no-store' })
@@ -121,5 +146,43 @@ export function makeIdeasRoutes(service: IdeasHostService): WebRoute[] {
       push()
     },
   }
-  return [state, action, events]
+  const config: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/config`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string): void => {
+        writeJson(res, status, { ok: false, error }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'GET' && req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      const port = configPort?.()
+      if (req.method === 'GET') {
+        // Reads always answer: a deployment without the settings service
+        // reports `available: false` and the client keeps the defaults.
+        writeJson(res, 200, port?.read() ?? { available: false, value: IDEAS_SETTINGS_DEFAULTS }, { 'cache-control': 'no-store' })
+        return
+      }
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { raw: string; value: unknown }
+      try {
+        body = await readBody(req)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      if (Buffer.byteLength(body.raw) > ACTION_LIMIT) return deny(413, 'body-too-large')
+      const parsed = parseSettingsBody(body.value)
+      if (parsed === undefined) return deny(400, 'invalid-patch')
+      if (port === undefined) return deny(503, 'settings-unavailable')
+      try {
+        const view = await port.write(parsed.patch, parsed.expectedRevision)
+        writeJson(res, 200, view, { 'cache-control': 'no-store' })
+      } catch (error) {
+        const conflict = typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'SETTINGS_CONFLICT'
+        const message = error instanceof Error ? error.message : String(error)
+        deny(conflict ? 409 : 400, conflict ? 'settings-conflict' : message)
+      }
+    },
+  }
+  return [state, action, events, config]
 }
