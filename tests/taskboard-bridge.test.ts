@@ -1,7 +1,9 @@
 /**
  * P2 TaskBoard bridge tests: availability feature-detect with backoff, the
  * create->backlog / update / decline->archive / restore mirror mappings, the
- * loopback self-request transport against a real node:http server, and the
+ * loopback self-request transport against a real node:http server, the idea
+ * #35 duplicate guard (empty/unknown snapshot keeps the binding, deterministic
+ * card id, get-before-create adoption, per-idea serialization), and the
  * host-service integration (bind taskBoardId, replay never re-mirrors, a
  * failed mirror never rolls the idea back).
  */
@@ -201,6 +203,124 @@ describe('TaskBoardMirror mappings', () => {
     transport.actionStatus = 400
     const mirror = new TaskBoardMirror({ transport })
     await expect(mirror.mirrorCreate(idea())).rejects.toThrow(/task-board create -> 400/)
+  })
+})
+
+describe('TaskBoardMirror duplicate guard (idea #35)', () => {
+  it('keeps the binding on an EMPTY snapshot instead of recreating (transient state)', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = []
+    const logs: string[] = []
+    const mirror = new TaskBoardMirror({ transport, log: (message) => { logs.push(message) } })
+    const bound = await mirror.mirrorUpdate(idea({ taskBoardId: 'live-card' }))
+    expect(bound).toBe('live-card')
+    // The patch still targets the bound card; no create ever fires.
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['update'])
+    expect(transport.posts[0]!.action).toMatchObject({ taskId: 'live-card' })
+    expect(logs.some(line => line.includes('branch=trust-binding-snapshot-empty'))).toBe(true)
+  })
+
+  it('keeps the binding when the snapshot is unknown (malformed / board hiccup) and says so', async () => {
+    const transport = new FakeTransport()
+    const logs: string[] = []
+    const mirror = new TaskBoardMirror({ transport, log: (message) => { logs.push(message) } })
+    const bound = await mirror.mirrorUpdate(idea({ taskBoardId: 'live-card' }))
+    expect(bound).toBe('live-card')
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['update'])
+    const line = logs.find(entry => entry.includes('branch=trust-binding-snapshot-unknown'))
+    expect(line).toBeDefined()
+    expect(line).toContain('idea=idea-1')
+    expect(line).toContain('bound=live-card')
+    expect(line).toContain('tasks=?')
+  })
+
+  it('recreates a genuinely deleted card under the DETERMINISTIC id with a visible log event', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'other-card', status: 'backlog' }]
+    const logs: string[] = []
+    const mirror = new TaskBoardMirror({ transport, log: (message) => { logs.push(message) } })
+    const bound = await mirror.mirrorUpdate(idea({ taskBoardId: 'ghost-card' }))
+    expect(bound).toBe('idea-idea-1')
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['create', 'move', 'update'])
+    expect(transport.posts[0]!.action).toMatchObject({ kind: 'create', id: 'idea-idea-1' })
+    const line = logs.find(entry => entry.includes('branch=recreate-deleted-card'))
+    expect(line).toBeDefined()
+    expect(line).toContain('idea=idea-1')
+    expect(line).toContain('bound=ghost-card')
+    expect(line).toContain('tasks=1')
+  })
+
+  it('adopts the deterministic card for an unbound idea (get-before-create, no duplicate)', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'idea-idea-1', status: 'backlog' }]
+    const logs: string[] = []
+    const mirror = new TaskBoardMirror({ transport, log: (message) => { logs.push(message) } })
+    const bound = await mirror.mirrorUpdate(idea())
+    expect(bound).toBe('idea-idea-1')
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['update'])
+    expect(logs.some(line => line.includes('branch=adopt-existing-card'))).toBe(true)
+  })
+
+  it('adopts the deterministic card when a legacy binding points at a deleted card', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [
+      { id: 'other-card', status: 'backlog' },
+      { id: 'idea-idea-1', status: 'backlog' },
+    ]
+    const logs: string[] = []
+    const mirror = new TaskBoardMirror({ transport, log: (message) => { logs.push(message) } })
+    const bound = await mirror.mirrorUpdate(idea({ taskBoardId: 'legacy-random' }))
+    expect(bound).toBe('idea-idea-1')
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['update'])
+    expect(logs.some(line => line.includes('branch=adopt-deterministic-card'))).toBe(true)
+  })
+
+  it('mirrorCreate mints the deterministic card id (re-execution touches the same card)', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const taskId = await mirror.mirrorCreate(idea())
+    expect(taskId).toBe('idea-idea-1')
+    expect(transport.posts[0]!.action).toMatchObject({ kind: 'create', id: 'idea-idea-1' })
+    expect(transport.posts[1]!.action).toEqual({ kind: 'move', taskId: 'idea-idea-1', status: 'backlog' })
+  })
+})
+
+describe('IdeasHostService mirror serialization (idea #35)', () => {
+  it('runs create + update for one idea in order: exactly one card, latest content', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const service = new IdeasHostService({ dir: freshDir(), mirror, autoMirror: true })
+    service.apply('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    service.apply('r2', { kind: 'update', ideaId: 'idea-1', patch: { title: 'T2', body: 'B2' } })
+    await service.flushMirror()
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['create', 'move', 'update'])
+    const update = transport.posts[2]!.action as { taskId: string; patch: { title: string } }
+    expect(update.taskId).toBe('idea-idea-1')
+    expect(update.patch.title).toBe('T2')
+    expect(service.snapshot().ideas[0]!.taskBoardId).toBe('idea-idea-1')
+    service.dispose()
+  })
+
+  it('runs the follow-up child create ahead of the first child update (one card)', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.applyRequest('seed-2', { kind: 'move', ideaId: 'idea-1', status: 'underReview' })
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+    service.apply('r1', { kind: 'followUp', ideaId: 'idea-1', input: { title: 'Child', body: 'CB' } })
+    const child = service.snapshot().ideas.find(item => item.followUpOfId === 'idea-1')
+    expect(child).toBeDefined()
+    service.apply('r2', { kind: 'update', ideaId: child!.id, patch: { title: 'Child v2' } })
+    await service.flushMirror()
+    const creates = transport.posts.filter(post => post.action.kind === 'create')
+    expect(creates).toHaveLength(1)
+    expect(creates[0]!.action).toMatchObject({ kind: 'create', id: `idea-${child!.id}` })
+    const update = transport.posts.find(post => post.action.kind === 'update')!.action as { taskId: string; patch: { title: string } }
+    expect(update.taskId).toBe(`idea-${child!.id}`)
+    expect(update.patch.title).toBe('Child v2')
+    expect(service.snapshot().ideas.find(item => item.id === child!.id)!.taskBoardId).toBe(`idea-${child!.id}`)
+    service.dispose()
   })
 })
 

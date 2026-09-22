@@ -8,9 +8,13 @@
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
- * and a replayed request id never re-mirrors. The bound card id is persisted
- * on the idea through the ledger's internal `bindTaskBoardId` path (the wire
- * gate never accepts taskBoardId).
+ * and a replayed request id never re-mirrors. Mirror operations are
+ * SERIALIZED PER IDEA ID (one promise chain per idea): a create followed by
+ * an update runs one at a time in submission order, and each op re-reads the
+ * fresh ledger state at execution time, so a queued link can never race its
+ * predecessor into seeing "unbound" and minting a second card (idea #35).
+ * The bound card id is persisted on the idea through the ledger's internal
+ * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
 import { IdeasHostLedger } from './host-ledger.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
@@ -29,6 +33,8 @@ export declare class IdeasHostService {
     private readonly mirror;
     private readonly autoMirror;
     private readonly pendingMirrors;
+    /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
+    private readonly mirrorChains;
     private active;
     private disposed;
     private reviewPoll;
@@ -63,10 +69,20 @@ export declare class IdeasHostService {
     private emit;
     /**
      * Schedule the mirror for one applied action. The affected idea is read from
-     * the POST-commit snapshot; the mirror op runs in the background and binds
-     * the resolved card id when the idea is not yet bound (covers both the
-     * create path and the bridge-activated-later self-heal).
+     * the POST-commit snapshot; the mirror op runs on that idea's chain (see
+     * enqueueMirror) and binds the resolved card id when the idea is not yet
+     * bound (covers both the create path and the bridge-activated-later
+     * self-heal).
      */
     private scheduleMirror;
+    /**
+     * Queue one mirror op on its idea's chain (idea #35): ops for the SAME idea
+     * id run strictly in submission order — a create always completes (and
+     * binds) before a following update even starts — while ops for different
+     * ideas still run concurrently. `runMirror` never rejects, so a failed link
+     * cannot wedge the chain; `run` is tracked from schedule time so
+     * flushMirror waits for the whole chain, not just its tail link.
+     */
+    private enqueueMirror;
     private runMirror;
 }

@@ -8,9 +8,13 @@
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
- * and a replayed request id never re-mirrors. The bound card id is persisted
- * on the idea through the ledger's internal `bindTaskBoardId` path (the wire
- * gate never accepts taskBoardId).
+ * and a replayed request id never re-mirrors. Mirror operations are
+ * SERIALIZED PER IDEA ID (one promise chain per idea): a create followed by
+ * an update runs one at a time in submission order, and each op re-reads the
+ * fresh ledger state at execution time, so a queued link can never race its
+ * predecessor into seeing "unbound" and minting a second card (idea #35).
+ * The bound card id is persisted on the idea through the ledger's internal
+ * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
 
 import { IdeasHostLedger, type LedgerApplyResult } from './host-ledger.ts'
@@ -41,6 +45,8 @@ export class IdeasHostService {
   private readonly mirror: TaskBoardMirror | undefined
   private readonly autoMirror: boolean
   private readonly pendingMirrors: Promise<void>[] = []
+  /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
+  private readonly mirrorChains = new Map<string, Promise<void>>()
   private active = true
   private disposed = false
   private reviewPoll: ReturnType<typeof setInterval> | undefined
@@ -167,9 +173,10 @@ export class IdeasHostService {
 
   /**
    * Schedule the mirror for one applied action. The affected idea is read from
-   * the POST-commit snapshot; the mirror op runs in the background and binds
-   * the resolved card id when the idea is not yet bound (covers both the
-   * create path and the bridge-activated-later self-heal).
+   * the POST-commit snapshot; the mirror op runs on that idea's chain (see
+   * enqueueMirror) and binds the resolved card id when the idea is not yet
+   * bound (covers both the create path and the bridge-activated-later
+   * self-heal).
    */
   private scheduleMirror(action: IdeasAction, ideas: readonly IdeaRecord[]): void {
     if (!this.autoMirror || this.mirror === undefined) return
@@ -179,12 +186,7 @@ export class IdeasHostService {
     if (action.kind === 'followUp') {
       const child = ideas.find(item => item.followUpOfId === action.ideaId)
       if (child === undefined) return
-      const run = this.runMirror('create', child)
-      this.pendingMirrors.push(run)
-      void run.finally(() => {
-        const index = this.pendingMirrors.indexOf(run)
-        if (index >= 0) this.pendingMirrors.splice(index, 1)
-      })
+      this.enqueueMirror(child.id, 'create', child)
       return
     }
     const kind = mirrorKindOf(action)
@@ -192,16 +194,38 @@ export class IdeasHostService {
     const ideaId = actionIdeaId(action)
     const idea = ideas.find(item => item.id === ideaId)
     if (idea === undefined) return
-    const run = this.runMirror(kind, idea)
+    this.enqueueMirror(idea.id, kind, idea)
+  }
+
+  /**
+   * Queue one mirror op on its idea's chain (idea #35): ops for the SAME idea
+   * id run strictly in submission order — a create always completes (and
+   * binds) before a following update even starts — while ops for different
+   * ideas still run concurrently. `runMirror` never rejects, so a failed link
+   * cannot wedge the chain; `run` is tracked from schedule time so
+   * flushMirror waits for the whole chain, not just its tail link.
+   */
+  private enqueueMirror(ideaId: string, kind: MirrorKind, idea: IdeaRecord): void {
+    const previous = (this.mirrorChains.get(ideaId) ?? Promise.resolve()).catch(() => undefined)
+    const run = previous.then(async () => await this.runMirror(kind, idea))
+    this.mirrorChains.set(ideaId, run)
     this.pendingMirrors.push(run)
     void run.finally(() => {
       const index = this.pendingMirrors.indexOf(run)
       if (index >= 0) this.pendingMirrors.splice(index, 1)
+      if (this.mirrorChains.get(ideaId) === run) this.mirrorChains.delete(ideaId)
     })
   }
 
-  private runMirror(kind: MirrorKind, idea: IdeaRecord): Promise<void> {
+  private runMirror(kind: MirrorKind, captured: IdeaRecord): Promise<void> {
     return (async () => {
+      // Fresh read at execution time (idea #35): a queued op mirrors the idea
+      // AS IT IS NOW — including the taskBoardId a previous op on the same
+      // chain just bound — so a record captured before that bind can never
+      // make two links both see "unbound" and both create a card. Falls back
+      // to the captured record when the idea was deleted meanwhile (delete
+      // mirrors nothing, the captured content is still the mirror target).
+      const idea = this.ledger.snapshot().ideas.find(item => item.id === captured.id) ?? captured
       try {
         switch (kind) {
           case 'create': {

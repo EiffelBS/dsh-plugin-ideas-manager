@@ -1,13 +1,21 @@
 /**
  * Idea #30 (re-analyze action) tests: the wire verb, the host audit stamp
  * (prior analysis preserved, restart-safe), the import round-trip, and the
- * re-analysis launch prompt + launcher face.
+ * re-analysis launch prompt + launcher face. Idea #35 adds the mirror-cycle
+ * regression: a re-analyze run's analyst rewrite must UPDATE the bound
+ * TaskBoard card — never mint a duplicate.
  */
 
 import { describe, expect, it } from 'vitest'
 import { parseActionEnvelope } from '../src/protocol.ts'
 import { isIdeaRecord } from '../src/core/ideas.ts'
 import { IdeasHostLedger } from '../src/host-ledger.ts'
+import { IdeasHostService } from '../src/host-service.ts'
+import {
+  TaskBoardMirror,
+  type TaskBoardActionEnvelope,
+  type TaskBoardTransport,
+} from '../src/taskboard-bridge.ts'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -18,6 +26,22 @@ import {
 import { IDEAS_ANALYST_SKILL_CONTENT } from '../src/skills/ideas-analyst.ts'
 
 const envelope = (action: unknown) => ({ requestId: 'r1', action })
+
+/** In-memory task-board double (always answers 200; serves a mutable snapshot). */
+class FakeTaskBoardTransport implements TaskBoardTransport {
+  stateTasks: Array<{ id: string; status: string }> | undefined
+  posts: TaskBoardActionEnvelope[] = []
+  async getState() {
+    return {
+      status: 200,
+      ...(this.stateTasks === undefined ? {} : { body: { schemaVersion: 3, revision: 1, tasks: this.stateTasks } }),
+    }
+  }
+  async postAction(envelope: TaskBoardActionEnvelope) {
+    this.posts.push(envelope)
+    return { status: 200 }
+  }
+}
 
 describe('protocol reanalyze verb', () => {
   it('parses the verb with an ideaId', () => {
@@ -125,6 +149,82 @@ describe('host ledger reanalyze stamp', () => {
     expect(ledger.snapshot().ideas[0].analysisAudit).toEqual({ at: 1000, title: 'V3', body: 'B3' })
     expect(() => ledger.applyRequest('r6', { kind: 'reanalyze', ideaId: 'missing' })).toThrow('idea not found')
     ledger.dispose()
+  })
+})
+
+describe('re-analyze TaskBoard mirror cycle (idea #35)', () => {
+  it('create -> re-analyze -> analyst rewrite ends with ONE card and the same binding', async () => {
+    const transport = new FakeTaskBoardTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const service = new IdeasHostService({ dir: freshDir(), mirror, autoMirror: true })
+    service.apply('r1', { kind: 'create', id: 'idea-1', input: { title: 'Before', body: 'Old analysis' } })
+    await service.flushMirror()
+    const bound = service.snapshot().ideas[0]!.taskBoardId!
+    expect(bound).toBe('idea-idea-1')
+    // The board now holds exactly the bound card (as the live task-board does).
+    transport.stateTasks = [{ id: bound, status: 'backlog' }]
+    // The re-analyze verb itself mirrors nothing (stamp only).
+    service.apply('r2', { kind: 'reanalyze', ideaId: 'idea-1' })
+    await service.flushMirror()
+    expect(transport.posts.map(post => post.action.kind)).toEqual(['create', 'move'])
+    // The analyst's rewrite: update + triage on the same idea id.
+    service.apply('r3', { kind: 'update', ideaId: 'idea-1', patch: { title: 'After', body: 'New analysis' } })
+    service.apply('r4', { kind: 'triage', ideaId: 'idea-1', patch: { value: 3, effort: 1, rank: 1 } })
+    await service.flushMirror()
+    // The #35 regression: exactly one card ever created, the update patched it.
+    const creates = transport.posts.filter(post => post.action.kind === 'create')
+    expect(creates).toHaveLength(1)
+    const updates = transport.posts.filter(post => post.action.kind === 'update')
+    expect(updates).toHaveLength(1)
+    expect((updates[0]!.action as { taskId: string }).taskId).toBe(bound)
+    expect(service.snapshot().ideas[0]!.taskBoardId).toBe(bound)
+    service.dispose()
+  })
+
+  it('a transient EMPTY board snapshot at the analyst update never creates a second card', async () => {
+    const transport = new FakeTaskBoardTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const service = new IdeasHostService({ dir: freshDir(), mirror, autoMirror: true })
+    service.apply('r1', { kind: 'create', id: 'idea-1', input: { title: 'Before', body: 'Old analysis' } })
+    await service.flushMirror()
+    const bound = service.snapshot().ideas[0]!.taskBoardId!
+    transport.stateTasks = [{ id: bound, status: 'backlog' }]
+    service.apply('r2', { kind: 'reanalyze', ideaId: 'idea-1' })
+    await service.flushMirror()
+    // The suspected live cause: /state answers 200 with a transiently empty
+    // task list right when the analyst's update mirrors. The guard keeps the
+    // binding — the old code read "id absent" and minted a duplicate card.
+    transport.stateTasks = []
+    service.apply('r3', { kind: 'update', ideaId: 'idea-1', patch: { title: 'After', body: 'New analysis' } })
+    await service.flushMirror()
+    const creates = transport.posts.filter(post => post.action.kind === 'create')
+    expect(creates).toHaveLength(1)
+    expect(service.snapshot().ideas[0]!.taskBoardId).toBe(bound)
+    service.dispose()
+  })
+
+  it('a genuinely deleted card is rebuilt ONCE under the deterministic id (visible event)', async () => {
+    const transport = new FakeTaskBoardTransport()
+    const logs: string[] = []
+    const mirror = new TaskBoardMirror({ transport, log: (message) => { logs.push(message) } })
+    const service = new IdeasHostService({ dir: freshDir(), mirror, autoMirror: true })
+    service.apply('r1', { kind: 'create', id: 'idea-1', input: { title: 'Before', body: 'Old analysis' } })
+    await service.flushMirror()
+    // Out-of-band cleanup removed the card; other cards remain (non-empty).
+    transport.stateTasks = [{ id: 'unrelated-card', status: 'backlog' }]
+    service.apply('r2', { kind: 'update', ideaId: 'idea-1', patch: { title: 'After', body: 'New' } })
+    await service.flushMirror()
+    // Initial mirror + exactly ONE sanctioned rebuild — and both target the
+    // SAME deterministic id (a real board would reject a colliding create,
+    // so even a lying snapshot cannot yield a second distinct card).
+    const creates = transport.posts.filter(post => post.action.kind === 'create')
+    expect(creates).toHaveLength(2)
+    expect((creates[0]!.action as { id: string }).id).toBe('idea-idea-1')
+    expect((creates[1]!.action as { id: string }).id).toBe('idea-idea-1')
+    expect(logs.some(line => line.includes('branch=recreate-deleted-card'))).toBe(true)
+    // The rebuild re-binds the idea to the deterministic id.
+    expect(service.snapshot().ideas[0]!.taskBoardId).toBe('idea-idea-1')
+    service.dispose()
   })
 })
 

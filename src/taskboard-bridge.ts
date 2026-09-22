@@ -13,6 +13,14 @@
  * `done` is a manual run, never automated). Every failure is logged and the
  * ideas ledger stays the source of truth: the mirror never rolls back a
  * committed idea mutation.
+ *
+ * Duplicate guard (idea #35 — "update must never mean create"): card ids are
+ * DETERMINISTIC (`idea-` + idea.id, see mirrorCardIdFor), a bound idea is
+ * only ever re-created when a NON-EMPTY snapshot proves the card gone, and
+ * every ensureTask decision is logged with ideaId + binding + snapshot size +
+ * branch. A transiently empty/unreadable snapshot therefore keeps the binding
+ * and attempts the patch instead of minting a second card, and re-running any
+ * path re-touches the same card id instead of duplicating it.
  */
 
 import { request as httpRequest } from 'node:http'
@@ -72,6 +80,21 @@ export interface TaskBoardTaskLite {
 export interface TaskBoardHttpResult {
   status: number
   body?: unknown
+}
+
+/**
+ * Deterministic TaskBoard card id for an idea: `idea-` + idea.id.
+ *
+ * Idempotence (idea #35): re-running any mirror path targets the SAME card id
+ * instead of minting a fresh `idea-${randomUUID()}` on every re-execution —
+ * a re-analyze or a lost binding can no longer produce a second card. The
+ * task-board host ledger REFUSES `create` of an existing id (HTTP 400
+ * `task id already exists`), so callers pair this id with get-before-create:
+ * consult the snapshot first and adopt an already-present card rather than
+ * issuing the create.
+ */
+export function mirrorCardIdFor(idea: IdeaRecord): string {
+  return `idea-${idea.id}`
 }
 
 /** Injectable HTTP surface for the bridge (tests substitute a fake). */
@@ -192,22 +215,64 @@ export class TaskBoardMirror {
   }
 
   /**
-   * Resolve the bound task id, creating + moving the card to backlog when the
-   * idea is not yet mirrored (the ladder used by update/decline too, so a
-   * bridge activated after an idea's creation still catches it up).
+   * Resolve the task id a mirror operation must target; the caller rebinds
+   * the idea to the returned id. Decision ladder (idea #35 — "update must
+   * never mean create"), logged with ideaId + binding + snapshot size +
+   * branch on every path so a duplicate can be discriminated after the fact:
+   *
+   * Bound idea:
+   *  - snapshot unknown (task-board absent / malformed body) or EMPTY ->
+   *    keep the binding and target it. An empty or unreadable snapshot never
+   *    proves a deletion; the patch attempt that follows fails into the
+   *    service log instead of being "healed" by a create. This closes the
+   *    transient-snapshot duplicate factory.
+   *  - bound id present -> patch it (the normal path).
+   *  - bound id absent from a NON-EMPTY snapshot -> the card was deleted
+   *    out-of-band: the sanctioned rebuild, using the DETERMINISTIC id and
+   *    logged as a visible event (recreating an already-bound idea is never
+   *    silent again).
+   *
+   * Unbound idea (fresh create, or a binding never written):
+   *  - get-before-create: adopt the deterministic card when the snapshot
+   *    already holds it (a previous create whose bind did not land), only
+   *    otherwise create it. Self-heal of the legacy orphan case, no duplicate.
+   *
    * @returns the task id to bind on the idea.
    */
   async ensureTask(idea: IdeaRecord): Promise<string> {
     if (!await this.availableNow()) throw new TaskBoardUnavailableError()
-    if (idea.taskBoardId !== undefined && idea.taskBoardId !== '') {
-      // Trust the binding only while the card still exists in the snapshot: a
-      // card deleted out-of-band (manual cleanup, maintenance) must not turn
-      // every later idea update into a patch on a ghost task. The recreated
-      // card's id is returned so the caller rebinds the idea.
-      const statuses = await this.fetchTaskStatuses()
-      if (statuses === undefined || statuses.has(idea.taskBoardId)) return idea.taskBoardId
+    const cardId = mirrorCardIdFor(idea)
+    const bound = idea.taskBoardId === undefined || idea.taskBoardId === '' ? undefined : idea.taskBoardId
+    const statuses = await this.fetchTaskStatuses()
+    const tasks = statuses === undefined ? '?' : String(statuses.size)
+    if (bound !== undefined) {
+      if (statuses === undefined) {
+        this.decision(idea, bound, tasks, 'trust-binding-snapshot-unknown')
+        return bound
+      }
+      if (statuses.size === 0) {
+        this.decision(idea, bound, tasks, 'trust-binding-snapshot-empty')
+        return bound
+      }
+      if (statuses.has(bound)) {
+        this.decision(idea, bound, tasks, 'patch-bound-card')
+        return bound
+      }
+      if (statuses.has(cardId)) {
+        // The binding points at a gone legacy card while the deterministic
+        // card already exists (an earlier rebuild): adopt it, never create.
+        this.decision(idea, bound, tasks, 'adopt-deterministic-card')
+        return cardId
+      }
+      this.decision(idea, bound, tasks, 'recreate-deleted-card')
+      return this.createCard(idea, cardId)
     }
-    return this.createCard(idea)
+    if (statuses !== undefined && statuses.size > 0 && statuses.has(cardId)) {
+      this.decision(idea, undefined, tasks, 'adopt-existing-card')
+      return cardId
+    }
+    this.decision(idea, undefined, tasks, 'create-card')
+    return this.createCard(idea, cardId)
   }
 
   /**
@@ -231,10 +296,14 @@ export class TaskBoardMirror {
     return byId
   }
 
-  /** Idea create -> task create (read-only, backlog) + move to backlog. */
+  /**
+   * Idea create -> task create (read-only, backlog) + move to backlog.
+   * Routed through ensureTask so a create re-executed after a lost bind
+   * adopts the card already on the board instead of duplicating it.
+   */
   async mirrorCreate(idea: IdeaRecord): Promise<string> {
     if (!await this.availableNow()) throw new TaskBoardUnavailableError()
-    return this.createCard(idea)
+    return this.ensureTask(idea)
   }
 
   /** Idea update -> task update; self-heals an unbound idea by creating it first. */
@@ -266,8 +335,17 @@ export class TaskBoardMirror {
     return !this.available
   }
 
-  private async createCard(idea: IdeaRecord): Promise<string> {
-    const taskId = `idea-${randomUUID()}`
+  /** One ensureTask decision, always visible in the service log (idea #35). */
+  private decision(idea: IdeaRecord, bound: string | undefined, tasks: string, branch: string): void {
+    this.log(`ensureTask idea=${idea.id} bound=${bound ?? '-'} tasks=${tasks} branch=${branch}`)
+  }
+
+  /**
+   * Create the card at `taskId` (the DETERMINISTIC mirrorCardIdFor id — never
+   * a fresh uuid) and move it to backlog. The id is passed in rather than
+   * minted so no code path can accidentally re-introduce a random id.
+   */
+  private async createCard(idea: IdeaRecord, taskId: string): Promise<string> {
     await this.post({
       kind: 'create',
       id: taskId,

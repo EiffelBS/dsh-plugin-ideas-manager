@@ -83,6 +83,26 @@ absent the Ideas manager simply works standalone.
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a
 backlog opinion, not a board state.
 
+### Duplicate guard (exactly one card per idea)
+
+Card ids are **deterministic** (`idea-` + the idea id), so re-running any
+mirror path re-touches the same card instead of minting a twin. A bound idea's
+card is only rebuilt when a *non-empty* task-board snapshot proves it was
+deleted out-of-band — every `ensureTask` decision (idea id, binding, snapshot
+size, branch) is logged, and an empty or unreadable snapshot keeps the binding
+and attempts the patch, never a create. Mirror operations are serialized per
+idea id, so a create always completes (and binds) before a following update
+runs — "update" can never silently mean "create".
+
+Two scripts close the loop:
+
+- `node scripts/reconcile-taskboard-mirror.mjs [--url …] [--apply]` — detects
+  orphan duplicates (unbound card whose exact title matches a bound idea) and
+  archives them, always keeping the bound card; dry-run by default.
+- `node scripts/validate-mirror-cycle.mjs [--base …]` — live recette against a
+  test instance: create → re-analyze → analyst rewrite → decline must end with
+  exactly one card.
+
 > **Note for agent-driven workflows:** the capture → triage → lifecycle
 > protocol and the full wire contract are documented in
 > [`SKILL.md`](SKILL.md), so an agent can author cards directly over the HTTP
@@ -99,7 +119,7 @@ markers), JSON envelopes `{ requestId, action, initiator? }`.
 | Route | Purpose |
 |---|---|
 | `GET /api/ideas/state` | `{ schemaVersion: 1, revision, ideas[] }` |
-| `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reorder`, `import`, `export` |
+| `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
 | `GET /api/ideas/events` | SSE `{ revision }` |
 
 Every action is **deduplicated by `requestId`** (fresh id per call), and a
