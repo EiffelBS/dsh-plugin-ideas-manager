@@ -212,16 +212,17 @@ describe('tag filter zone CSS bound', () => {
     expect(shell).toContain('overscroll-behavior')
   })
 
-  it('keeps the header sticky at the top of the zone (clear never scrolls away)', () => {
+  it('keeps the header as a plain flex item in the flow (scrolls with the tags)', () => {
     ensureIdeasStyle()
     const css = document.querySelector('style[data-plugin-css="dsh-plugin-ideas-manager/style"]')?.textContent ?? ''
     const head = css.match(/\.dsh-ideas-tag-filter-header\s*\{[^}]*\}/)?.[0] ?? ''
-    expect(head).toContain('position: sticky')
-    expect(head).toContain('top: 0')
-    expect(head).toContain('background:')
-    expect(head).toContain('flex: none')
-    // The sticky bar itself must not become a second scroll container.
+    // Deliberately NOT sticky (user call): the header scrolls with the tags,
+    // so it must carry no sticky positioning, opaque surface or z-index, and
+    // no scroll properties of its own.
+    expect(head).not.toContain('position: sticky')
+    expect(head).not.toContain('z-index')
     expect(head).not.toContain('overflow')
+    expect(head).toContain('flex: none')
     const zone = css.match(/\.dsh-ideas-tag-filter-chips\s*\{[^}]*\}/)?.[0] ?? ''
     expect(zone).toContain('flex-wrap: wrap')
     expect(zone).toContain('align-content: flex-start')

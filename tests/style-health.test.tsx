@@ -72,13 +72,20 @@ describe('injected sheet parse (what the browser keeps)', () => {
     expect(rules.length).toBeGreaterThan(80)
   })
 
-  it('ships the compact-density hide rules (tag, description, date, workspace)', () => {
+  it('ships the compact-density hide rules (tags, description, date, workspace — kanban AND rows)', () => {
     for (const hide of [
+      // Overview kanban cards.
       "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-card-body",
       "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-markdown-body",
       "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-tag",
       "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-workspace-chip",
       "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-updated",
+      // Priorities / Delivered rows.
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-card-body",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-tag",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-workspace-chip",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-delivered-stamp",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-archived-stamp",
     ]) {
       expect({ hide, present: CSS_TEXT.includes(hide) }).toEqual({ hide, present: true })
     }

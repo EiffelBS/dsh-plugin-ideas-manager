@@ -877,15 +877,13 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
-/* Shared tag filter block (idea #36): ONE scrollable zone where the sticky
-   header (label + tag search + clear button) is the FIRST flex item and the
+/* Shared tag filter block (idea #36): ONE zone where the header (label + tag
+   search + clear button) is the FIRST flex item of a wrapping row and the
    tags continue BESIDE it on the same first line (wrapping below it when the
-   row fills up) — no wasted header line. The header is an opaque sticky bar:
-   tags scrolling inside its box pass beneath it, and the band to its RIGHT
-   holds no control, so nothing ever overlaps unreadably. The zone is capped
-   at the tagRows budget (the sticky header line on top of N tag rows) with
-   its own scrollbar, so a large label union can never push the panel content
-   down. */
+   row fills up) — no dedicated header line. The header scrolls WITH the tags
+   (deliberately NOT sticky, user call): the zone is capped at the tagRows
+   budget with its own scrollbar, so a large label union can never push the
+   panel content down. */
 .dsh-ideas-tag-filter-row {
   display: flex;
   flex-direction: row;
@@ -895,8 +893,8 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   align-content: flex-start;
   gap: 6px;
   flex: none;
-  /* Row budget (settings option "tagRows", 1..5, default 3): one sticky
-     header line (~29px) + gap + N tag rows (27px each) + tail. The !important
+  /* Row budget (settings option "tagRows", 1..5, default 3): one header
+     line (~29px) + gap + N tag rows (27px each) + tail. The !important
      stands against a Skin Center sheet injected after this one; only the
      VARIABLE is user-reachable, so the zone can never grow unbounded. */
   max-height: calc(var(--dsh-ideas-tag-rows, 3) * 27px + 35px) !important;
@@ -913,13 +911,6 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   flex-wrap: wrap;
   flex: none;
   box-sizing: border-box;
-  /* Sticky inside the scroll zone: tags pass UNDER this opaque bar and the
-     clear button never scrolls away (the spec sticky alternative). */
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
-  box-shadow: 0 1px 0 var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
 }
 
 .dsh-ideas-tag-filter-label {
@@ -1120,6 +1111,34 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 [data-dsh-ideas-density='compact'] .dsh-ideas-card-actions {
   margin-top: 4px;
+}
+
+/* Same compact treatment for the Priorities and Delivered rows (the option
+   covers every board view, not the Overview columns only): hide tags,
+   description, date stamps and workspace, tighten the row chrome. The rank,
+   title, rationale, value/effort badges and actions stay. */
+[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row {
+  gap: 4px;
+  margin: 1px 0;
+  padding: 4px 6px;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-card-body,
+[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-markdown-body {
+  display: none;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-tag {
+  display: none;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-priorities-row .dsh-ideas-workspace-chip {
+  display: none;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-delivered-stamp,
+[data-dsh-ideas-density='compact'] .dsh-ideas-archived-stamp {
+  display: none;
 }
 
 .dsh-ideas-filter-chip,
