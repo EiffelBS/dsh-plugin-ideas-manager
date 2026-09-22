@@ -55,12 +55,18 @@ const clientHalf: UserConfig = {
   dts: false,
   sourcemap: true,
   clean: false,
-  // The loader module table answers platform modules and plugin ids. This
-  // plugin's browser code only imports type-level @deepseek-ai/cordis (erased
-  // before bundling), so nothing needs to stay external; everything else is
-  // inlined (react, react-dom, ...). onlyBundle: false silences the
-  // "unintended bundling" hint — inlining here is intentional.
-  deps: { alwaysBundle: () => true, onlyBundle: false },
+  // The shell module table SEEDS the platform externals (react,
+  // react/jsx-runtime, react-dom, react-dom/client — the Side card
+  // CLIENT_EXTERNALS mirror documents it): the shell renders plugin-
+  // contributed slots with ITS OWN React, so an inlined second React copy
+  // crashes every hook called from such a slot (minified React error #321,
+  // "invalid hook call" — live bug on the settings section). Keep exactly
+  // those four external (resolved through the loader's injected require) and
+  // inline everything else; onlyBundle: false silences the bundling hint.
+  deps: {
+    alwaysBundle: (id: string) => !['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client'].includes(id),
+    onlyBundle: false,
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
