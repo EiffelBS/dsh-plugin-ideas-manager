@@ -877,17 +877,22 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
-/* Shared tag filter block (idea #36): ONE scrollable zone holding the
-   header (label + tag search + clear button) and every tag below it. The
-   header is STICKY at the top of that zone (opaque surface + hairline so
-   tags scroll beneath it cleanly), which keeps the clear button visible at
-   any scroll position without a second column; the zone itself is capped at
-   the tagRows budget (the sticky header line on top of N tag rows) with its
-   own scrollbar, so a large label union can never push the panel content
+/* Shared tag filter block (idea #36): ONE scrollable zone where the sticky
+   header (label + tag search + clear button) is the FIRST flex item and the
+   tags continue BESIDE it on the same first line (wrapping below it when the
+   row fills up) — no wasted header line. The header is an opaque sticky bar:
+   tags scrolling inside its box pass beneath it, and the band to its RIGHT
+   holds no control, so nothing ever overlaps unreadably. The zone is capped
+   at the tagRows budget (the sticky header line on top of N tag rows) with
+   its own scrollbar, so a large label union can never push the panel content
    down. */
 .dsh-ideas-tag-filter-row {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  /* Pack the wrapped tag lines at the top of the capped height. */
+  align-content: flex-start;
   gap: 6px;
   flex: none;
   /* Row budget (settings option "tagRows", 1..5, default 3): one sticky
@@ -895,6 +900,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
      stands against a Skin Center sheet injected after this one; only the
      VARIABLE is user-reachable, so the zone can never grow unbounded. */
   max-height: calc(var(--dsh-ideas-tag-rows, 3) * 27px + 35px) !important;
+  overflow-x: hidden;
   overflow-y: auto !important;
   overscroll-behavior: contain;
   padding-right: 2px;
@@ -944,12 +950,14 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 .dsh-ideas-tag-filter-chips {
   display: flex;
   align-items: center;
-  /* Lines pack right under the sticky header (the scroll cap and scrollbar
-     live on the row, never duplicated on this inner block). */
+  /* Lines pack at the top of their (capped) rows. */
   align-content: flex-start;
   gap: 6px;
   flex-wrap: wrap;
-  flex: none;
+  /* Start BESIDE the sticky header on its line, take whatever room is left
+     and wrap the following tags under it (min-width:0 allows the shrink). */
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* The query matched no chip (and nothing is selected): explain instead of
@@ -1080,9 +1088,11 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   flex: none;
 }
 
-/* Card density (settings option cardDensity = compact): tighter padding and
-   gaps inside the columns so more cards fit on screen; card CONTENT is never
-   truncated or reordered. The attribute rides the board root (see IdeasBoard). */
+/* Card density (settings option cardDensity = compact): the kanban card HIDES
+   its tags, description, updated date and workspace chip (title, #N, value/
+   effort badges and actions stay) and tightens padding/gaps — a genuinely
+   denser column. Scoped to .dsh-ideas-card only: the Priorities and
+   Delivered rows keep their full meta, and card content is never reordered. */
 [data-dsh-ideas-density='compact'] .dsh-ideas-column-body {
   gap: 4px;
 }
@@ -1091,8 +1101,21 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   padding: 5px 8px;
 }
 
-[data-dsh-ideas-density='compact'] .dsh-ideas-card-body {
-  margin-top: 2px;
+[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-card-body,
+[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-markdown-body {
+  display: none;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-tag {
+  display: none;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-workspace-chip {
+  display: none;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-updated {
+  display: none;
 }
 
 [data-dsh-ideas-density='compact'] .dsh-ideas-card-actions {

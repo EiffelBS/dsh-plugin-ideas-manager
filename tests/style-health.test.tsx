@@ -71,4 +71,16 @@ describe('injected sheet parse (what the browser keeps)', () => {
     // keep this far below the shipped count).
     expect(rules.length).toBeGreaterThan(80)
   })
+
+  it('ships the compact-density hide rules (tag, description, date, workspace)', () => {
+    for (const hide of [
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-card-body",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-markdown-body",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-tag",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-workspace-chip",
+      "[data-dsh-ideas-density='compact'] .dsh-ideas-card .dsh-ideas-updated",
+    ]) {
+      expect({ hide, present: CSS_TEXT.includes(hide) }).toEqual({ hide, present: true })
+    }
+  })
 })

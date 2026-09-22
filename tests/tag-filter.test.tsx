@@ -204,7 +204,11 @@ describe('tag filter zone CSS bound', () => {
     expect(shell).toContain('max-height:')
     expect(shell).toContain('!important')
     expect(shell).toContain('overflow-y: auto')
-    expect(shell).toContain('flex-direction: column')
+    // Flex ROW + wrap: the first tag starts BESIDE the sticky header line
+    // (no dedicated header line), wrapped lines pack at the top.
+    expect(shell).toContain('flex-direction: row')
+    expect(shell).toContain('flex-wrap: wrap')
+    expect(shell).toContain('align-content: flex-start')
     expect(shell).toContain('overscroll-behavior')
   })
 
@@ -221,6 +225,9 @@ describe('tag filter zone CSS bound', () => {
     const zone = css.match(/\.dsh-ideas-tag-filter-chips\s*\{[^}]*\}/)?.[0] ?? ''
     expect(zone).toContain('flex-wrap: wrap')
     expect(zone).toContain('align-content: flex-start')
+    // The tag block starts BESIDE the header (shrinkable, wraps under it).
+    expect(zone).toContain('flex: 1 1 auto')
+    expect(zone).toContain('min-width: 0')
     // The cap lives on the row, never duplicated on the inner block.
     expect(zone).not.toContain('overflow')
   })
