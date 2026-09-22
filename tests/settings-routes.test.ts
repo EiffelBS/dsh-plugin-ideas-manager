@@ -87,8 +87,13 @@ function post(url: string, body: unknown, marker = true): Promise<Response> {
 function fakePort(fail?: 'conflict', stored?: { tagRows: number }): { port: IdeasConfigPort; writes: Array<{ patch: { tagRows?: number }; expectedRevision: number | undefined }> } {
   const writes: Array<{ patch: { tagRows?: number }; expectedRevision: number | undefined }> = []
   const current = stored ?? { tagRows: 3 }
+  const view = (revision: number): IdeasSettingsView => ({
+    available: true,
+    value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: current.tagRows },
+    revision,
+  })
   const port: IdeasConfigPort = {
-    read: (): IdeasSettingsView => ({ available: true, value: { tagRows: current.tagRows }, revision: 4 }),
+    read: () => view(4),
     write: async (patch, expectedRevision) => {
       writes.push({ patch, expectedRevision })
       if (fail === 'conflict') {
@@ -97,7 +102,7 @@ function fakePort(fail?: 'conflict', stored?: { tagRows: number }): { port: Idea
         throw error
       }
       if (patch.tagRows !== undefined) current.tagRows = patch.tagRows
-      return { available: true, value: { tagRows: current.tagRows }, revision: 5 }
+      return view(5)
     },
   }
   return { port, writes }
@@ -122,7 +127,11 @@ describe('GET /api/ideas/config', () => {
     const base = await serve(() => port)
     const response = await get(`${base}${IDEAS_API_PREFIX}/config`, true)
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ available: true, value: { tagRows: 5 }, revision: 4 })
+    expect(await response.json()).toEqual({
+      available: true,
+      value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 5 },
+      revision: 4,
+    })
   })
 
   it('rejects other methods with 405', async () => {
@@ -142,7 +151,11 @@ describe('POST /api/ideas/config', () => {
     const response = await post(`${base}${IDEAS_API_PREFIX}/config`, { patch: { tagRows: 99 }, expectedRevision: 4 })
     expect(response.status).toBe(200)
     expect(writes).toEqual([{ patch: { tagRows: 5 }, expectedRevision: 4 }])
-    expect(await response.json()).toEqual({ available: true, value: { tagRows: 5 }, revision: 5 })
+    expect(await response.json()).toEqual({
+      available: true,
+      value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 5 },
+      revision: 5,
+    })
   })
 
   it('reports 503 settings-unavailable without a settings face', async () => {

@@ -12,7 +12,7 @@
  * opening the edit modal.
  */
 
-import { useEffect, useState, type CSSProperties, type DragEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
 import { t, type IdeasKey } from './locales.ts'
@@ -912,17 +912,16 @@ type DragState = { id: string; source: IdeaStatus } | undefined
 type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; half?: 'before' | 'after' } | undefined
 
 /**
- * Shared tag-filter row (idea #36): an ALWAYS-visible header — the "Filter:"
- * label, the chip search box and the clear button — sitting INLINE at the
- * LEFT of the chips zone, so the first chip row shares the header line and
- * the block costs no extra vertical line. The zone is capped at ~3 rows with
- * its own scrollbar; the header stays OUTSIDE that scroll container, so the
- * clear button is reachable at any scroll position, and the zone wraps under
- * the header only on panels too narrow for both columns.
+ * Shared tag-filter row (idea #36): ONE scrollable zone holding the
+ * ALWAYS-visible header — the "Filter:" label, the tag search box and the
+ * clear button — as a STICKY first line (opaque bar, tags scroll beneath it)
+ * with every tag below, capped at the tagRows budget (~3 tag rows by default)
+ * plus its own scrollbar. Because the header lives inside the zone but never
+ * scrolls out, the clear button is reachable at any scroll position.
  *
- * The search narrows the CHIPS only (the board-header search narrows the
+ * The search narrows the TAGS only (the board-header search narrows the
  * CARDS: two controls, two behaviours, two labels) and never hides a
- * SELECTED chip — even a stale one whose label left the ledger — so the board
+ * SELECTED tag — even a stale one whose label left the ledger — so the board
  * is never filtered by an invisible label. Clear resets both halves of the
  * filter (selection + query) and shows whenever either half is active.
  * Rendered above all three tabs (shared row).
@@ -978,9 +977,49 @@ export function TagFilterRow({ knownTags, selected, onToggle, onClear }: {
   )
 }
 
+/**
+ * One lifecycle button with its optional in-place confirmation (settings
+ * option confirmLifecycle). OFF: renders the plain action button; ON: the
+ * first click swaps the button for "Confirm this action?" + Yes/No, mirroring
+ * the existing delete confirmation recipe.
+ */
+function LifecycleAction({ confirming, pending, title, icon, label, onRun, onCancel }: {
+  confirming: boolean
+  pending: boolean
+  title?: string
+  icon: ReactNode
+  label: string
+  onRun: () => void
+  onCancel: () => void
+}) {
+  if (!confirming) {
+    return (
+      <button type="button" className={classes.actionButton} disabled={pending} title={title} onClick={onRun}>
+        {icon}
+        {label}
+      </button>
+    )
+  }
+  return (
+    <>
+      <span className={classes.confirmLabel}>{t('card.confirmLifecycle')}</span>
+      <button type="button" className={classes.actionButton} disabled={pending} onClick={onRun}>
+        {icon}
+        {t('card.deleteYes')}
+      </button>
+      <button type="button" className={classes.ghostButton} onClick={onCancel}>
+        {t('card.deleteNo')}
+      </button>
+    </>
+  )
+}
+
 /** Board component; subscribes to the client snapshot. */
 export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [snapshot, setSnapshot] = useState(client.snapshot)
+  // Display settings ride the same subscription: every load/save produces a
+  // fresh view reference, so the board re-renders when an option changes.
+  const [settings, setSettings] = useState(client.config)
   const [filter, setFilter] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   // '': all workspaces; a concrete id scopes the columns + search to it.
@@ -992,6 +1031,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // The open idea a Re-analyze confirm modal is raised for (idea #30 flow).
   const [reanalyzing, setReanalyzing] = useState<IdeaRecord | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
+  // Lifecycle confirmation (settings option confirmLifecycle): the Deliver /
+  // Recette-OK / Decline button armed for an in-place Yes/No confirmation.
+  const [confirmVerb, setConfirmVerb] = useState<{ id: string; verb: 'deliver' | 'decline' } | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
   // Rendered-markdown view of descriptions (raw text is one click away).
@@ -1004,9 +1046,30 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   useEffect(
-    () => client.subscribe(() => setSnapshot(client.snapshot)),
+    () => client.subscribe(() => {
+      setSnapshot(client.snapshot)
+      setSettings(client.config)
+    }),
     [client],
   )
+
+  // The settings view the board renders from: a load or a save always lands
+  // a COMPLETE legal value (sanitized on arrival); the spelled defaults
+  // cover the gap before the first answer.
+  const cfg = settings.value
+  // Apply the persisted preferences ONCE, at the first SETTLED config load:
+  // the chosen open tab, the markdown default and (when remembered) the
+  // workspace scope. Session switches stay free afterwards, and a later
+  // settings write never resets what the user picked inside the board.
+  const settingsApplied = useRef(false)
+  useEffect(() => {
+    if (settingsApplied.current || !client.configLoaded) return
+    settingsApplied.current = true
+    if (!settings.available) return
+    switchTab(cfg.defaultTab)
+    setMdMode(cfg.renderMarkdown)
+    if (cfg.rememberWorkspaceScope) setWorkspaceFilter(cfg.workspaceScope)
+  }, [settings, client, cfg.defaultTab, cfg.renderMarkdown, cfg.rememberWorkspaceScope, cfg.workspaceScope])
 
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
@@ -1060,6 +1123,30 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : [...current, name])
   }
 
+  /**
+   * Lifecycle runner (settings option confirmLifecycle): with the option ON,
+   * the first click ARMS the in-place Yes/No confirmation for (idea, verb)
+   * and only the second click runs the verb; with it OFF every click runs
+   * directly (today's behaviour). One armed state covers the four lifecycle
+   * buttons (Deliver, Recette OK, Decline on open + under-review cards).
+   */
+  const lifecycleConfirmOn = cfg.confirmLifecycle
+  const armedFor = (idea: IdeaRecord, verb: 'deliver' | 'decline'): boolean =>
+    confirmVerb?.id === idea.id && confirmVerb.verb === verb
+  const runLifecycle = (idea: IdeaRecord, verb: 'deliver' | 'decline', run: () => Promise<void>): void => {
+    if (!lifecycleConfirmOn) {
+      void run()
+      return
+    }
+    if (armedFor(idea, verb)) {
+      setConfirmVerb(undefined)
+      void run()
+      return
+    }
+    setConfirmVerb({ id: idea.id, verb })
+  }
+  const cancelLifecycle = (): void => { setConfirmVerb(undefined) }
+
   const performDrop = async (event: DragEvent<HTMLElement>, status: IdeaStatus, beforeId: string | undefined): Promise<void> => {
     // The dropped task id is carried on the dataTransfer (like the
     // task-board family); the drag state is a fallback for browsers that
@@ -1096,6 +1183,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const openEdit = (idea: IdeaRecord): void => {
     setConfirmId(undefined)
+    setConfirmVerb(undefined)
     setEditing(idea)
   }
 
@@ -1146,7 +1234,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   return (
-    <div className={classes.board} data-dsh-ideas-board="" data-dsh-plugin="ideas">
+    <div
+      className={classes.board}
+      data-dsh-ideas-board=""
+      data-dsh-plugin="ideas"
+      /* Card-density option (settings): the compact rules hook on this root. */
+      data-dsh-ideas-density={cfg.cardDensity === 'compact' ? 'compact' : undefined}
+    >
       <header className={classes.boardHeader}>
         <button
           type="button"
@@ -1165,7 +1259,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           value={workspaceFilter}
           aria-label={t('board.workspace')}
           title={t('board.workspaceHint')}
-          onChange={event => { setWorkspaceFilter(event.target.value) }}
+          onChange={event => {
+            setWorkspaceFilter(event.target.value)
+            // Remembered-scope option: persist the pick so the next open
+            // restores it. The flag sanitizes to OFF without a settings
+            // surface, so a settings-less deployment never reaches this write.
+            if (cfg.rememberWorkspaceScope) void client.saveConfig({ workspaceScope: event.target.value })
+          }}
         >
           <option value="">{t('board.allWorkspaces')}</option>
           <option value={NO_WORKSPACE_FILTER}>{t('board.noWorkspace')}</option>
@@ -1257,13 +1357,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
-      {/* Shared tag filter (idea #36): rendered above all three tabs. The
-          header (label + chip search + clear) always stays visible INLINE at
-          the left of the chips, whose first row shares its line; the rest of
-          the chips live in a ~3-row scrollable zone (wrapping under the
-          header on narrow panels), and a selected chip is never hidden by the
-          search. The same selection narrows the Overview columns, the
-          Priorities ranking and the Delivered log. */}
+      {/* Shared tag filter (idea #36): rendered above all three tabs — ONE
+          scrollable zone whose sticky header (label + tag search + clear)
+          never scrolls away, with the tags capped at the tagRows budget
+          below it; a selected tag is never hidden by the search. The same
+          selection narrows the Overview columns, the Priorities ranking and
+          the Delivered log. */}
       {knownTags.length > 0 && (
         <TagFilterRow
           knownTags={knownTags}
@@ -1279,7 +1378,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       <div className={classes.dragHint}>{t('board.dragHint')}</div>
 
       <div className={classes.columns} data-dsh-columns-scroll="">
-        {IDEA_COLUMNS.map(status => {
+        {/* Option hideDeclinedColumn: the Declined section leaves the view
+            (its cards stay in the ledger and the markdown export; the tab
+            count still includes them). */}
+        {IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn)).map(status => {
           const columnIdeas = byStatus(status)
           return (
             <section
@@ -1542,16 +1644,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 </button>
                               )}
                               {idea.status === 'open' && (
-                                <button
-                                  type="button"
-                                  className={classes.actionButton}
-                                  disabled={client.pending}
+                                <LifecycleAction
+                                  label={t('card.deliver')}
+                                  icon={<IconCheck />}
                                   title={t('card.deliverHint')}
-                                  onClick={() => { void client.deliverIdea(idea.id) }}
-                                >
-                                  <IconCheck />
-                                  {t('card.deliver')}
-                                </button>
+                                  pending={client.pending}
+                                  confirming={armedFor(idea, 'deliver')}
+                                  onRun={() => { runLifecycle(idea, 'deliver', () => client.deliverIdea(idea.id)) }}
+                                  onCancel={cancelLifecycle}
+                                />
                               )}
                               {idea.status === 'open' && (
                                 <button
@@ -1565,27 +1666,25 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 </button>
                               )}
                               {idea.status === 'open' && (
-                                <button
-                                  type="button"
-                                  className={classes.actionButton}
-                                  disabled={client.pending}
-                                  onClick={() => { void client.declineIdea(idea.id) }}
-                                >
-                                  <IconDecline />
-                                  {t('card.decline')}
-                                </button>
+                                <LifecycleAction
+                                  label={t('card.decline')}
+                                  icon={<IconDecline />}
+                                  pending={client.pending}
+                                  confirming={armedFor(idea, 'decline')}
+                                  onRun={() => { runLifecycle(idea, 'decline', () => client.declineIdea(idea.id)) }}
+                                  onCancel={cancelLifecycle}
+                                />
                               )}
                               {idea.status === 'underReview' && (
-                                <button
-                                  type="button"
-                                  className={classes.actionButton}
-                                  disabled={client.pending}
+                                <LifecycleAction
+                                  label={t('card.reviewOk')}
                                   title={t('card.reviewOkHint')}
-                                  onClick={() => { void client.deliverIdea(idea.id) }}
-                                >
-                                  <IconCheck />
-                                  {t('card.reviewOk')}
-                                </button>
+                                  icon={<IconCheck />}
+                                  pending={client.pending}
+                                  confirming={armedFor(idea, 'deliver')}
+                                  onRun={() => { runLifecycle(idea, 'deliver', () => client.deliverIdea(idea.id)) }}
+                                  onCancel={cancelLifecycle}
+                                />
                               )}
                               {idea.status === 'underReview' && (
                                 <button
@@ -1593,22 +1692,21 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   className={classes.actionButton}
                                   disabled={client.pending}
                                   title={t('card.followUpHint')}
-                                  onClick={() => { setConfirmId(undefined); setFollowUp(idea) }}
+                                  onClick={() => { setConfirmId(undefined); setConfirmVerb(undefined); setFollowUp(idea) }}
                                 >
                                   <IconFollowUp />
                                   {t('card.followUp')}
                                 </button>
                               )}
                               {idea.status === 'underReview' && (
-                                <button
-                                  type="button"
-                                  className={classes.actionButton}
-                                  disabled={client.pending}
-                                  onClick={() => { void client.declineIdea(idea.id) }}
-                                >
-                                  <IconDecline />
-                                  {t('card.decline')}
-                                </button>
+                                <LifecycleAction
+                                  label={t('card.decline')}
+                                  icon={<IconDecline />}
+                                  pending={client.pending}
+                                  confirming={armedFor(idea, 'decline')}
+                                  onRun={() => { runLifecycle(idea, 'decline', () => client.declineIdea(idea.id)) }}
+                                  onCancel={cancelLifecycle}
+                                />
                               )}
                               {(idea.status === 'archived' || idea.status === 'declined') && (
                                 <button

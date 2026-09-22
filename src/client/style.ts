@@ -876,20 +876,27 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
-/* Shared tag filter block (idea #36, compact layout): the header (label +
-   chip search + clear button) sits INLINE at the LEFT of the chips zone, so
-   the FIRST chip row shares the header line and the whole block saves a full
-   line of panel height (the zone cap below IS the block height). The header
-   stays OUTSIDE the scroll container, so the clear button can never scroll
-   away; the chips zone wraps UNDER the header only when the panel is too
-   narrow to hold both columns. */
+/* Shared tag filter block (idea #36): ONE scrollable zone holding the
+   header (label + tag search + clear button) and every tag below it. The
+   header is STICKY at the top of that zone (opaque surface + hairline so
+   tags scroll beneath it cleanly), which keeps the clear button visible at
+   any scroll position without a second column; the zone itself is capped at
+   the tagRows budget (the sticky header line on top of N tag rows) with its
+   own scrollbar, so a large label union can never push the panel content
+   down. */
 .dsh-ideas-tag-filter-row {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 6px;
   flex: none;
+  /* Row budget (settings option "tagRows", 1..5, default 3): one sticky
+     header line (~29px) + gap + N tag rows (27px each) + tail. The !important
+     stands against a Skin Center sheet injected after this one; only the
+     VARIABLE is user-reachable, so the zone can never grow unbounded. */
+  max-height: calc(var(--dsh-ideas-tag-rows, 3) * 27px + 35px) !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .dsh-ideas-tag-filter-header {
@@ -898,6 +905,14 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   gap: 6px;
   flex-wrap: wrap;
   flex: none;
+  box-sizing: border-box;
+  /* Sticky inside the scroll zone: tags pass UNDER this opaque bar and the
+     clear button never scrolls away (the spec sticky alternative). */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  box-shadow: 0 1px 0 var(--dsw-alias-border-l2, var(--dsh-ideas-fb-border));
 }
 
 .dsh-ideas-tag-filter-label {
@@ -928,25 +943,12 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 .dsh-ideas-tag-filter-chips {
   display: flex;
   align-items: center;
-  /* Lines pack at the TOP of the capped zone (default align-content would
-     spread 1-2 rows over the full 84px height when the header line already
-     hosts the first chips row). */
+  /* Lines pack right under the sticky header (the scroll cap and scrollbar
+     live on the row, never duplicated on this inner block). */
   align-content: flex-start;
   gap: 6px;
   flex-wrap: wrap;
-  /* Take the rest of the row next to the header; the 260px basis lets the
-     zone wrap UNDER the header on very narrow panels. */
-  flex: 1 1 260px;
-  min-width: 0;
-  /* Row budget (settings option "tagRows", 1..5, default 3): 27px per chip
-     row (21px chip + 6px gap) + 3px tail = 84px at the default, the value
-     applyTagChipRows() pushes. The !important stands against a Skin Center
-     sheet injected after this one; only the VARIABLE is user-reachable, so
-     the zone can never grow unbounded again. */
-  max-height: calc(var(--dsh-ideas-tag-chip-rows, 3) * 27px + 3px) !important;
-  overflow-y: auto !important;
-  overscroll-behavior: contain;
-  padding-right: 2px;
+  flex: none;
 }
 
 /* The query matched no chip (and nothing is selected): explain instead of
@@ -1050,6 +1052,50 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   font-size: 12px;
   font-style: italic;
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-settings-select {
+  box-sizing: border-box;
+  max-width: 240px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  flex: none;
+}
+
+/* Boolean option rows: a real checkbox with the brand accent (native
+   semantics and focus, zero custom-switch machinery). */
+.dsh-ideas-settings-check {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent));
+  cursor: pointer;
+  flex: none;
+}
+
+/* Card density (settings option cardDensity = compact): tighter padding and
+   gaps inside the columns so more cards fit on screen; card CONTENT is never
+   truncated or reordered. The attribute rides the board root (see IdeasBoard). */
+[data-dsh-ideas-density='compact'] .dsh-ideas-column-body {
+  gap: 4px;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-card {
+  padding: 5px 8px;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-card-body {
+  margin-top: 2px;
+}
+
+[data-dsh-ideas-density='compact'] .dsh-ideas-card-actions {
+  margin-top: 4px;
 }
 
 .dsh-ideas-filter-chip,
@@ -1535,6 +1581,8 @@ export const classes = {
   settingsRowTitle: 'dsh-ideas-settings-row-title',
   settingsRowDesc: 'dsh-ideas-settings-row-desc',
   settingsNumber: 'dsh-ideas-settings-number',
+  settingsSelect: 'dsh-ideas-settings-select',
+  settingsCheck: 'dsh-ideas-settings-check',
   settingsError: 'dsh-ideas-settings-error',
   settingsNote: 'dsh-ideas-settings-note',
   filterChip: 'dsh-ideas-filter-chip',

@@ -13,17 +13,16 @@
  */
 import type { IdeasClient } from './ideas-client.ts';
 /**
- * Shared tag-filter row (idea #36): an ALWAYS-visible header — the "Filter:"
- * label, the chip search box and the clear button — sitting INLINE at the
- * LEFT of the chips zone, so the first chip row shares the header line and
- * the block costs no extra vertical line. The zone is capped at ~3 rows with
- * its own scrollbar; the header stays OUTSIDE that scroll container, so the
- * clear button is reachable at any scroll position, and the zone wraps under
- * the header only on panels too narrow for both columns.
+ * Shared tag-filter row (idea #36): ONE scrollable zone holding the
+ * ALWAYS-visible header — the "Filter:" label, the tag search box and the
+ * clear button — as a STICKY first line (opaque bar, tags scroll beneath it)
+ * with every tag below, capped at the tagRows budget (~3 tag rows by default)
+ * plus its own scrollbar. Because the header lives inside the zone but never
+ * scrolls out, the clear button is reachable at any scroll position.
  *
- * The search narrows the CHIPS only (the board-header search narrows the
+ * The search narrows the TAGS only (the board-header search narrows the
  * CARDS: two controls, two behaviours, two labels) and never hides a
- * SELECTED chip — even a stale one whose label left the ledger — so the board
+ * SELECTED tag — even a stale one whose label left the ledger — so the board
  * is never filtered by an invisible label. Clear resets both halves of the
  * filter (selection + query) and shows whenever either half is active.
  * Rendered above all three tabs (shared row).

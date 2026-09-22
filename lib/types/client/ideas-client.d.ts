@@ -34,6 +34,9 @@ export declare class IdeasClient {
     configError: string | undefined;
     /** Whether a config write is in flight (the settings row disables its input). */
     configPending: boolean;
+    /** Whether the first config load has SETTLED (available or not) — the board
+     *  applies persisted preferences once, guarded on this flag. */
+    configLoaded: boolean;
     /**
      * Phase 3: optional "Start AI analysis and create the idea" launcher,
      * resolved from the DSH session controller. Undefined keeps the plain

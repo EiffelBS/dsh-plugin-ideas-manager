@@ -9,9 +9,11 @@ import { describe, expect, it } from 'vitest'
 import {
   clampTagRows,
   parseSettingsBody,
+  sanitizeSettings,
   IDEAS_SETTINGS_DEFAULTS,
   TAG_ROWS_MAX,
   TAG_ROWS_MIN,
+  WORKSPACE_SCOPE_MAX_LENGTH,
 } from '../src/protocol.ts'
 
 describe('clampTagRows', () => {
@@ -76,5 +78,72 @@ describe('parseSettingsBody', () => {
     expect(parseSettingsBody('x')).toBeUndefined()
     expect(parseSettingsBody(undefined)).toBeUndefined()
     expect(parseSettingsBody([{ patch: {} }])).toBeUndefined()
+  })
+})
+
+describe('sanitizeSettings (full-value read guard)', () => {
+  it('fills every field with legal defaults from a corrupt or partial section', () => {
+    expect(sanitizeSettings(undefined)).toEqual(IDEAS_SETTINGS_DEFAULTS)
+    expect(sanitizeSettings('junk')).toEqual(IDEAS_SETTINGS_DEFAULTS)
+    expect(sanitizeSettings([])).toEqual(IDEAS_SETTINGS_DEFAULTS)
+    expect(sanitizeSettings({})).toEqual(IDEAS_SETTINGS_DEFAULTS)
+  })
+
+  it('keeps legal fields and fixes illegal ones', () => {
+    const value = sanitizeSettings({
+      tagRows: 99,
+      defaultTab: 'bogus',
+      renderMarkdown: false,
+      rememberWorkspaceScope: true,
+      workspaceScope: 'w'.repeat(1000),
+      confirmLifecycle: 'yes',
+      hideDeclinedColumn: true,
+      cardDensity: 'tiny',
+    })
+    expect(value.tagRows).toBe(5)
+    expect(value.defaultTab).toBe('overview')
+    expect(value.renderMarkdown).toBe(false)
+    expect(value.rememberWorkspaceScope).toBe(true)
+    expect(value.workspaceScope).toHaveLength(WORKSPACE_SCOPE_MAX_LENGTH)
+    expect(value.confirmLifecycle).toBe(false) // non-boolean -> default
+    expect(value.hideDeclinedColumn).toBe(true)
+    expect(value.cardDensity).toBe('comfortable')
+  })
+
+  it('accepts every legal enum member', () => {
+    expect(sanitizeSettings({ defaultTab: 'delivered' }).defaultTab).toBe('delivered')
+    expect(sanitizeSettings({ defaultTab: 'priorities' }).defaultTab).toBe('priorities')
+    expect(sanitizeSettings({ cardDensity: 'compact' }).cardDensity).toBe('compact')
+  })
+})
+
+describe('parseSettingsBody (extended option set)', () => {
+  it('sanitizes enum fields, bounds the scope and clamps rows', () => {
+    expect(parseSettingsBody({ patch: { defaultTab: 'delivered' } })?.patch.defaultTab).toBe('delivered')
+    expect(parseSettingsBody({ patch: { defaultTab: 'nope' } })?.patch.defaultTab).toBe('overview')
+    expect(parseSettingsBody({ patch: { cardDensity: 'compact' } })?.patch.cardDensity).toBe('compact')
+    expect(parseSettingsBody({ patch: { workspaceScope: 'x'.repeat(1000) } })?.patch.workspaceScope)
+      .toHaveLength(WORKSPACE_SCOPE_MAX_LENGTH)
+    expect(parseSettingsBody({ patch: { tagRows: 99 } })?.patch.tagRows).toBe(5)
+  })
+
+  it('accepts booleans and rejects a non-boolean for a boolean field', () => {
+    expect(parseSettingsBody({ patch: { renderMarkdown: false, hideDeclinedColumn: true } })?.patch)
+      .toEqual({ renderMarkdown: false, hideDeclinedColumn: true })
+    expect(parseSettingsBody({ patch: { confirmLifecycle: 'on' } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { rememberWorkspaceScope: 1 } })).toBeUndefined()
+  })
+
+  it('rejects a non-string scope and unknown fields; enums sanitize leniently', () => {
+    expect(parseSettingsBody({ patch: { workspaceScope: 42 } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { mystery: true } })).toBeUndefined()
+    // Enums follow the tagRows policy (sanitize, never reject): an illegal
+    // value lands on the default instead of erroring the settings row.
+    expect(parseSettingsBody({ patch: { defaultTab: 7, cardDensity: 'tiny' } })?.patch)
+      .toEqual({ defaultTab: 'overview', cardDensity: 'comfortable' })
+  })
+
+  it('still carries the revision fence with an empty patch', () => {
+    expect(parseSettingsBody({ patch: {}, expectedRevision: 2 })).toEqual({ patch: {}, expectedRevision: 2 })
   })
 })

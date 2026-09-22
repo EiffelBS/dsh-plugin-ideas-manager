@@ -116,15 +116,40 @@ export interface FollowUpInput {
 export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undefined;
 /** Convenience used by tests: build an idea record exactly as the ledger stores it. */
 export declare function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord;
+/**
+ * Panel tabs, mirror of BOARD_TABS (src/client/tabs.ts): spelled here so the
+ * host bundle never pulls the client model — same discipline as the defaults.
+ */
+export declare const IDEAS_TABS: readonly ["overview", "priorities", "delivered"];
+/** One panel tab id. */
+export type IdeasTab = (typeof IDEAS_TABS)[number];
+/** Card densities offered by the settings row. */
+export declare const IDEAS_DENSITIES: readonly ["comfortable", "compact"];
+/** One card-density mode. */
+export type IdeasDensity = (typeof IDEAS_DENSITIES)[number];
+/** Bound of the remembered workspace scope (aligned on the envelope ids). */
+export declare const WORKSPACE_SCOPE_MAX_LENGTH = 256;
 /** Resolved display-settings value served by the config routes. */
 export interface IdeasSettingsValue {
-    /** Visible tag-filter chip rows on the board (clamped to 1..5). */
+    /** Visible tag-filter rows on the board (clamped to 1..5). */
     tagRows: number;
+    /** Panel tab opened at board start (mirror of BOARD_TABS). */
+    defaultTab: IdeasTab;
+    /** Render card descriptions as markdown at open (session toggle stays free). */
+    renderMarkdown: boolean;
+    /** Reopen on the last selected workspace scope instead of all workspaces. */
+    rememberWorkspaceScope: boolean;
+    /** Last workspace scope kept while rememberWorkspaceScope is on ('' = all). */
+    workspaceScope: string;
+    /** Ask for an in-place confirmation before Deliver / Decline. */
+    confirmLifecycle: boolean;
+    /** Hide the Declined kanban column (declined cards leave the board view). */
+    hideDeclinedColumn: boolean;
+    /** Kanban card density. */
+    cardDensity: IdeasDensity;
 }
-/** Patch accepted by POST /api/ideas/config (exact keys, numbers clamped). */
-export interface IdeasSettingsPatch {
-    tagRows?: number;
-}
+/** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
+export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;
 /**
  * Wire view of the plugin settings. `available` is false when the deployment
  * serves no settings document (no host settings service) — the client keeps
@@ -154,10 +179,21 @@ export declare const TAG_ROWS_MAX = 5;
  */
 export declare function clampTagRows(value: unknown): number;
 /**
+ * Sanitize a raw section into a COMPLETE legal value: both read paths (host
+ * viewOf, client loadConfig) run every field through its guard, so a
+ * hand-edited document or a corrupt wire can never widen what the UI renders.
+ * Policy on READS: numbers clamp, enums/booleans fall back to the default,
+ * strings bound. (Writes are stricter: a non-boolean rejects — see
+ * parseSettingsBody.)
+ */
+export declare function sanitizeSettings(raw: unknown): IdeasSettingsValue;
+/**
  * Strict parser for the config write body ({ patch, expectedRevision? }).
- * Unknown keys and a non-number tagRows reject; a present number is clamped
- * before it ever reaches the settings service. An absent tagRows yields an
- * empty patch (a no-op merge that still carries the revision fence).
+ * Unknown keys reject; booleans must be REAL booleans (no meaningful clamp —
+ * a non-boolean is a corrupt wire); tagRows clamps and the enums sanitize to
+ * their default (the lenient read policy); workspaceScope is a bounded
+ * string. An absent field yields an empty patch (a no-op merge that still
+ * carries the revision fence).
  */
 export declare function parseSettingsBody(value: unknown): {
     patch: IdeasSettingsPatch;

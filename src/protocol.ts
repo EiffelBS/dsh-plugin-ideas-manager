@@ -334,16 +334,44 @@ export function ideaFromInput(id: string, input: NewIdeaInput, now: number): Ide
 
 /* --- plugin display settings (GET/POST /api/ideas/config) --- */
 
+/**
+ * Panel tabs, mirror of BOARD_TABS (src/client/tabs.ts): spelled here so the
+ * host bundle never pulls the client model — same discipline as the defaults.
+ */
+export const IDEAS_TABS = ['overview', 'priorities', 'delivered'] as const
+/** One panel tab id. */
+export type IdeasTab = (typeof IDEAS_TABS)[number]
+
+/** Card densities offered by the settings row. */
+export const IDEAS_DENSITIES = ['comfortable', 'compact'] as const
+/** One card-density mode. */
+export type IdeasDensity = (typeof IDEAS_DENSITIES)[number]
+
+/** Bound of the remembered workspace scope (aligned on the envelope ids). */
+export const WORKSPACE_SCOPE_MAX_LENGTH = 256
+
 /** Resolved display-settings value served by the config routes. */
 export interface IdeasSettingsValue {
-  /** Visible tag-filter chip rows on the board (clamped to 1..5). */
+  /** Visible tag-filter rows on the board (clamped to 1..5). */
   tagRows: number
+  /** Panel tab opened at board start (mirror of BOARD_TABS). */
+  defaultTab: IdeasTab
+  /** Render card descriptions as markdown at open (session toggle stays free). */
+  renderMarkdown: boolean
+  /** Reopen on the last selected workspace scope instead of all workspaces. */
+  rememberWorkspaceScope: boolean
+  /** Last workspace scope kept while rememberWorkspaceScope is on ('' = all). */
+  workspaceScope: string
+  /** Ask for an in-place confirmation before Deliver / Decline. */
+  confirmLifecycle: boolean
+  /** Hide the Declined kanban column (declined cards leave the board view). */
+  hideDeclinedColumn: boolean
+  /** Kanban card density. */
+  cardDensity: IdeasDensity
 }
 
-/** Patch accepted by POST /api/ideas/config (exact keys, numbers clamped). */
-export interface IdeasSettingsPatch {
-  tagRows?: number
-}
+/** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
+export type IdeasSettingsPatch = Partial<IdeasSettingsValue>
 
 /**
  * Wire view of the plugin settings. `available` is false when the deployment
@@ -362,7 +390,16 @@ export interface IdeasSettingsView {
  * here rather than imported from the host entry so the client bundle never
  * pulls the Node-side module — same discipline as IDEAS_SETTINGS_NAMESPACE.
  */
-export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = { tagRows: 3 }
+export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
+  tagRows: 3,
+  defaultTab: 'overview',
+  renderMarkdown: true,
+  rememberWorkspaceScope: false,
+  workspaceScope: '',
+  confirmLifecycle: false,
+  hideDeclinedColumn: false,
+  cardDensity: 'comfortable',
+}
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
 export const TAG_ROWS_MIN = 1
@@ -380,21 +417,78 @@ export function clampTagRows(value: unknown): number {
   return Math.min(TAG_ROWS_MAX, Math.max(TAG_ROWS_MIN, Math.round(value)))
 }
 
+/** Unknown -> one of `allowed`, else the fallback (enum fields). */
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : fallback
+}
+
+/** Unknown -> a real boolean, else the fallback. */
+function booleanOr(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+/**
+ * Sanitize a raw section into a COMPLETE legal value: both read paths (host
+ * viewOf, client loadConfig) run every field through its guard, so a
+ * hand-edited document or a corrupt wire can never widen what the UI renders.
+ * Policy on READS: numbers clamp, enums/booleans fall back to the default,
+ * strings bound. (Writes are stricter: a non-boolean rejects — see
+ * parseSettingsBody.)
+ */
+export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
+  const row = record(raw) ?? {}
+  return {
+    tagRows: clampTagRows(row.tagRows),
+    defaultTab: oneOf(row.defaultTab, IDEAS_TABS, IDEAS_SETTINGS_DEFAULTS.defaultTab),
+    renderMarkdown: booleanOr(row.renderMarkdown, IDEAS_SETTINGS_DEFAULTS.renderMarkdown),
+    rememberWorkspaceScope: booleanOr(row.rememberWorkspaceScope, IDEAS_SETTINGS_DEFAULTS.rememberWorkspaceScope),
+    workspaceScope: typeof row.workspaceScope === 'string'
+      ? row.workspaceScope.slice(0, WORKSPACE_SCOPE_MAX_LENGTH)
+      : IDEAS_SETTINGS_DEFAULTS.workspaceScope,
+    confirmLifecycle: booleanOr(row.confirmLifecycle, IDEAS_SETTINGS_DEFAULTS.confirmLifecycle),
+    hideDeclinedColumn: booleanOr(row.hideDeclinedColumn, IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
+    cardDensity: oneOf(row.cardDensity, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity),
+  }
+}
+
+/** Every patchable field (exactKeys allow-list of the write body). */
+const SETTINGS_PATCH_KEYS = [
+  'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
+  'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
+] as const
+
 /**
  * Strict parser for the config write body ({ patch, expectedRevision? }).
- * Unknown keys and a non-number tagRows reject; a present number is clamped
- * before it ever reaches the settings service. An absent tagRows yields an
- * empty patch (a no-op merge that still carries the revision fence).
+ * Unknown keys reject; booleans must be REAL booleans (no meaningful clamp —
+ * a non-boolean is a corrupt wire); tagRows clamps and the enums sanitize to
+ * their default (the lenient read policy); workspaceScope is a bounded
+ * string. An absent field yields an empty patch (a no-op merge that still
+ * carries the revision fence).
  */
 export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; expectedRevision: number | undefined } | undefined {
   const body = record(value)
   if (body === undefined || !exactKeys(body, ['patch', 'expectedRevision'])) return undefined
   if (!optionalFiniteNumber(body.expectedRevision)) return undefined
-  const patch = record(body.patch)
-  if (patch === undefined || !exactKeys(patch, ['tagRows'])) return undefined
-  if (patch.tagRows !== undefined && (typeof patch.tagRows !== 'number' || !Number.isFinite(patch.tagRows))) return undefined
-  return {
-    patch: patch.tagRows === undefined ? {} : { tagRows: clampTagRows(patch.tagRows) },
-    expectedRevision: body.expectedRevision as number | undefined,
+  const raw = record(body.patch)
+  if (raw === undefined || !exactKeys(raw, SETTINGS_PATCH_KEYS)) return undefined
+  const patch: IdeasSettingsPatch = {}
+  for (const key of SETTINGS_PATCH_KEYS) {
+    const field = raw[key]
+    if (field === undefined) continue
+    if (key === 'renderMarkdown' || key === 'rememberWorkspaceScope' || key === 'confirmLifecycle' || key === 'hideDeclinedColumn') {
+      if (typeof field !== 'boolean') return undefined
+      patch[key] = field
+    } else if (key === 'workspaceScope') {
+      if (typeof field !== 'string') return undefined
+      patch.workspaceScope = field.slice(0, WORKSPACE_SCOPE_MAX_LENGTH)
+    } else if (key === 'tagRows') {
+      if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
+      patch.tagRows = clampTagRows(field)
+    } else if (key === 'defaultTab') {
+      patch.defaultTab = oneOf(field, IDEAS_TABS, IDEAS_SETTINGS_DEFAULTS.defaultTab)
+    } else {
+      patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
+    }
   }
+  return { patch, expectedRevision: body.expectedRevision as number | undefined }
 }

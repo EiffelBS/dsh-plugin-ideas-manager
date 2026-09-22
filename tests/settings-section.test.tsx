@@ -23,6 +23,7 @@ import { classes } from '../src/client/style.ts'
 import { t, fr, en } from '../src/client/locales.ts'
 import {
   IDEAS_SCHEMA_VERSION,
+  IDEAS_SETTINGS_DEFAULTS,
   type IdeasEventPayload,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
@@ -36,7 +37,7 @@ const SNAPSHOT: IdeasSnapshot = { schemaVersion: IDEAS_SCHEMA_VERSION, revision:
 
 class ConfigTransport implements IdeasHostTransport {
   saved: IdeasSettingsPatch[] = []
-  loaded: IdeasSettingsView = { available: true, value: { tagRows: 3 }, revision: 1 }
+  loaded: IdeasSettingsView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 3 }, revision: 1 }
   failSave: unknown | undefined
 
   async state(): Promise<IdeasSnapshot> { return SNAPSHOT }
@@ -46,7 +47,13 @@ class ConfigTransport implements IdeasHostTransport {
   async saveConfig(patch: IdeasSettingsPatch, _expectedRevision?: number): Promise<IdeasSettingsView> {
     this.saved.push(patch)
     if (this.failSave !== undefined) throw this.failSave
-    this.loaded = { available: true, value: { tagRows: patch.tagRows ?? 3 }, revision: this.loaded.revision! + 1 }
+    // Merge like the real settings service: the fresh view carries the whole
+    // value (the section renders it back after a successful save).
+    this.loaded = {
+      available: true,
+      value: { ...this.loaded.value, ...patch },
+      revision: (this.loaded.revision ?? 0) + 1,
+    }
     return this.loaded
   }
 }
@@ -67,31 +74,31 @@ function pressEnter(input: HTMLInputElement): void {
 
 describe('applyTagChipRows', () => {
   beforeEach(() => {
-    document.documentElement.style.removeProperty('--dsh-ideas-tag-chip-rows')
+    document.documentElement.style.removeProperty('--dsh-ideas-tag-rows')
   })
 
   it('writes the clamped row budget onto the document', () => {
     applyTagChipRows(3)
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('3')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('3')
     applyTagChipRows(99)
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('5')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('5')
     applyTagChipRows(0)
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('1')
     applyTagChipRows(Number.NaN)
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('3')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('3')
   })
 })
 
 describe('registerIdeasSettingsSection', () => {
   beforeEach(() => {
-    document.documentElement.style.removeProperty('--dsh-ideas-tag-chip-rows')
+    document.documentElement.style.removeProperty('--dsh-ideas-tag-rows')
   })
 
   it('wires the style even without a slots registry (graceful degradation)', () => {
     const client = makeClient()
     const off = registerIdeasSettingsSection({}, client)
     expect(typeof off).toBe('function')
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('3')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('3')
     off()
   })
 
@@ -110,7 +117,7 @@ describe('registerIdeasSettingsSection', () => {
       const client = makeClient()
       const off = registerIdeasSettingsSection(hostile, client)
       expect(typeof off).toBe('function')
-      expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('3')
+      expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('3')
       expect(spy).toHaveBeenCalledTimes(1)
       off()
     } finally {
@@ -145,16 +152,16 @@ describe('registerIdeasSettingsSection', () => {
 
   it('keeps the style subscriber alive across config loads until disposed', async () => {
     const transport = new ConfigTransport()
-    transport.loaded = { available: true, value: { tagRows: 5 }, revision: 2 }
+    transport.loaded = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 5 }, revision: 2 }
     const client = makeClient(transport)
     const off = registerIdeasSettingsSection({}, client)
     await client.loadConfig()
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('5')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('5')
     off()
     // After dispose the subscriber no longer pushes updates.
-    transport.loaded = { available: true, value: { tagRows: 1 }, revision: 3 }
+    transport.loaded = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 1 }, revision: 3 }
     await client.loadConfig()
-    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('5')
+    expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-rows')).toBe('5')
   })
 })
 
@@ -165,7 +172,7 @@ describe('IdeasSettingsSection page', () => {
   beforeEach(() => {
     host = document.createElement('div')
     document.body.appendChild(host)
-    document.documentElement.style.removeProperty('--dsh-ideas-tag-chip-rows')
+    document.documentElement.style.removeProperty('--dsh-ideas-tag-rows')
   })
   afterEach(() => {
     if (root !== undefined) {
@@ -209,7 +216,7 @@ describe('IdeasSettingsSection page', () => {
   it('disables the control and explains when no settings surface exists', async () => {
     const transport = new ConfigTransport()
     // The deployment answers available:false (no settings service).
-    transport.loaded = { available: false, value: { tagRows: 3 } }
+    transport.loaded = { available: false, value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 3 } }
     const client = makeClient(transport)
     await render(client)
     expect(numberInput().disabled).toBe(true)
@@ -252,11 +259,74 @@ describe('IdeasSettingsSection page', () => {
       'settings.nav', 'settings.title', 'settings.intro', 'settings.group',
       'settings.tagRows', 'settings.tagRowsDesc', 'settings.loading',
       'settings.unavailable', 'settings.saveFailed', 'settings.conflict',
+      'settings.groupBehavior', 'settings.defaultTab', 'settings.defaultTabDesc',
+      'settings.renderMarkdown', 'settings.renderMarkdownDesc',
+      'settings.rememberScope', 'settings.rememberScopeDesc',
+      'settings.confirmLifecycle', 'settings.confirmLifecycleDesc',
+      'settings.hideDeclined', 'settings.hideDeclinedDesc',
+      'settings.cardDensity', 'settings.cardDensityDesc',
+      'settings.densityComfortable', 'settings.densityCompact',
+      'card.confirmLifecycle',
     ] as const) {
       expect(typeof fr[key]).toBe('string')
       expect(typeof en[key]).toBe('string')
       expect(fr[key]).not.toBe('')
       expect(en[key]).not.toBe('')
     }
+    // Vocabulary discipline: the EN copy says "tags", never the design jargon.
+    expect(en['settings.tagRowsDesc']).toContain('rows of tags')
+    expect(en['settings.tagRowsDesc']).not.toContain('chips')
+  })
+
+  it('renders both groups with every option row and its control', async () => {
+    await render(makeClient())
+    const groups = Array.from(host.querySelectorAll(`.${classes.settingsGroup}`))
+    expect(groups.map(node => node.textContent)).toEqual([t('settings.group'), t('settings.groupBehavior')])
+    const titles = Array.from(host.querySelectorAll(`.${classes.settingsRowTitle}`)).map(node => node.textContent)
+    expect(titles).toEqual([
+      t('settings.tagRows'),
+      t('settings.cardDensity'),
+      t('settings.renderMarkdown'),
+      t('settings.defaultTab'),
+      t('settings.rememberScope'),
+      t('settings.confirmLifecycle'),
+      t('settings.hideDeclined'),
+    ])
+    // One number row, two selects (density + open tab), four checkboxes.
+    expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(1)
+    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(2)
+    const checks = Array.from(host.querySelectorAll(`.${classes.settingsCheck}`)) as HTMLInputElement[]
+    expect(checks.map(box => box.checked)).toEqual([true, false, false, false])
+  })
+
+  it('saves a boolean option immediately on toggle', async () => {
+    const transport = new ConfigTransport()
+    const client = makeClient(transport)
+    await render(client)
+    const checks = Array.from(host.querySelectorAll(`.${classes.settingsCheck}`)) as HTMLInputElement[]
+    // rememberScope (second checkbox) is off by default; toggle it ON.
+    await act(async () => {
+      checks[1]!.click()
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    expect(transport.saved).toEqual([{ rememberWorkspaceScope: true }])
+    expect((Array.from(host.querySelectorAll(`.${classes.settingsCheck}`)) as HTMLInputElement[])[1]!.checked).toBe(true)
+  })
+
+  it('saves the card density select on change', async () => {
+    const transport = new ConfigTransport()
+    const client = makeClient(transport)
+    await render(client)
+    const selects = Array.from(host.querySelectorAll(`.${classes.settingsSelect}`)) as HTMLSelectElement[]
+    expect(selects[0]!.value).toBe('comfortable')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(selects[0], 'compact')
+      selects[0]!.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    expect(transport.saved).toEqual([{ cardDensity: 'compact' }])
+    const fresh = host.querySelector(`.${classes.settingsSelect}`) as HTMLSelectElement
+    expect(fresh.value).toBe('compact')
   })
 })

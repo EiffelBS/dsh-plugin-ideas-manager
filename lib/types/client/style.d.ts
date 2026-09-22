@@ -77,6 +77,8 @@ export declare const classes: {
     readonly settingsRowTitle: "dsh-ideas-settings-row-title";
     readonly settingsRowDesc: "dsh-ideas-settings-row-desc";
     readonly settingsNumber: "dsh-ideas-settings-number";
+    readonly settingsSelect: "dsh-ideas-settings-select";
+    readonly settingsCheck: "dsh-ideas-settings-check";
     readonly settingsError: "dsh-ideas-settings-error";
     readonly settingsNote: "dsh-ideas-settings-note";
     readonly filterChip: "dsh-ideas-filter-chip";

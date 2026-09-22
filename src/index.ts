@@ -14,7 +14,7 @@ import { IdeasHostService } from './host-service.ts'
 import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
 import { makeIdeasRoutes, type IdeasConfigPort } from './host-routes.ts'
-import { clampTagRows, IDEAS_SETTINGS_DEFAULTS, type IdeasSettingsView } from './protocol.ts'
+import { sanitizeSettings, IDEAS_SETTINGS_DEFAULTS, type IdeasSettingsView } from './protocol.ts'
 import { mountOnce } from './mount-once.ts'
 
 /** Order of the announcement section within the tool-guidance band. */
@@ -88,10 +88,19 @@ function applyImpl(ctx: Context, config?: Config): void {
     describe(options?: { redactSecrets?: boolean }): Array<{ ns: string; value: unknown; revision: number }>
     update(ns: string, patch: object, expectedRevision?: number): Promise<void>
   }
-  /** Display-settings schema: a permissive number, clamped at every boundary
-   *  (a ranged schema would reject a bad stored section AT REGISTRATION and
-   *  brick the namespace — the clamp keeps a hand-edited file working). */
-  const IdeasSettingsSchema = z.object({ tagRows: z.number().default(IDEAS_SETTINGS_DEFAULTS.tagRows) })
+  /** Display-settings schema: permissive types (clamped/sanitized at every
+   *  boundary — a ranged schema would reject a bad stored section AT
+   *  REGISTRATION and brick the namespace; see sanitizeSettings). */
+  const IdeasSettingsSchema = z.object({
+    tagRows: z.number().default(IDEAS_SETTINGS_DEFAULTS.tagRows),
+    defaultTab: z.string().default(IDEAS_SETTINGS_DEFAULTS.defaultTab),
+    renderMarkdown: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.renderMarkdown),
+    rememberWorkspaceScope: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.rememberWorkspaceScope),
+    workspaceScope: z.string().default(IDEAS_SETTINGS_DEFAULTS.workspaceScope),
+    confirmLifecycle: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.confirmLifecycle),
+    hideDeclinedColumn: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
+    cardDensity: z.string().default(IDEAS_SETTINGS_DEFAULTS.cardDensity),
+  })
 
   ctx.effect(() => {
     const disposers: Array<() => void> = []
@@ -133,14 +142,16 @@ function applyImpl(ctx: Context, config?: Config): void {
     const viewOf = (): IdeasSettingsView => {
       const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === ns)
       if (descriptor === undefined) return { available: true, value: IDEAS_SETTINGS_DEFAULTS }
-      const raw = (descriptor.value ?? {}) as { tagRows?: unknown }
-      return { available: true, value: { tagRows: clampTagRows(raw.tagRows) }, revision: descriptor.revision }
+      // Every field through sanitizeSettings: a hand-edited section can never
+      // widen what the UI renders.
+      return { available: true, value: sanitizeSettings(descriptor.value), revision: descriptor.revision }
     }
     configPort = {
       read: viewOf,
       write: async (patch, expectedRevision) => {
-        const section = patch.tagRows === undefined ? {} : { tagRows: clampTagRows(patch.tagRows) }
-        await settings.update(ns, section, expectedRevision)
+        // The route parser already sanitized every present field (exact keys,
+        // clamped numbers, sanitized enums, bounded scope): merge as-is.
+        await settings.update(ns, patch, expectedRevision)
         return viewOf()
       },
     }

@@ -6,7 +6,7 @@
  */
 
 import type { IdeaStatus } from '../core/ideas.ts'
-import { IDEAS_SETTINGS_DEFAULTS, type IdeasAction, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
+import { IDEAS_SETTINGS_DEFAULTS, sanitizeSettings, type IdeasAction, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
@@ -40,6 +40,9 @@ export class IdeasClient {
   configError: string | undefined
   /** Whether a config write is in flight (the settings row disables its input). */
   configPending = false
+  /** Whether the first config load has SETTLED (available or not) — the board
+   *  applies persisted preferences once, guarded on this flag. */
+  configLoaded = false
   /**
    * Phase 3: optional "Start AI analysis and create the idea" launcher,
    * resolved from the DSH session controller. Undefined keeps the plain
@@ -148,16 +151,21 @@ export class IdeasClient {
   async loadConfig(): Promise<void> {
     if (this.transport.config === undefined) {
       this.config = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
+      this.configLoaded = true
       this.emit()
       return
     }
     try {
-      this.config = await this.transport.config()
+      const view = await this.transport.config()
+      // Sanitize at the arrival: whatever the wire carried, the board and the
+      // section only ever read a COMPLETE legal value.
+      this.config = { ...view, value: sanitizeSettings(view.value) }
       this.configError = undefined
     } catch (error) {
       console.warn('[dsh-plugin-ideas-manager] settings load failed', error)
       this.config = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
     }
+    this.configLoaded = true
     this.emit()
   }
 

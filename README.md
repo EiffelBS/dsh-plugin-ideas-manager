@@ -72,7 +72,7 @@ ships with an explicit title and a description stating what it changes, its
 range and its default:
 
 - **Visible tag-filter lines** (`tagRows`, 1–5, default 3): how many rows of
-  tag chips the board shows under the tabs before the chip zone scrolls; the
+  tags the board shows under the tabs before the zone scrolls; the sticky
   header (label + search + clear-filter) always stays visible. Applied
   immediately, stored per DSH profile.
 

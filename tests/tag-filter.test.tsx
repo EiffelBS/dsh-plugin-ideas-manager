@@ -192,38 +192,37 @@ describe('filterKnownTags (pure chip search)', () => {
 })
 
 describe('tag filter zone CSS bound', () => {
-  it('caps the chip zone at ~3 rows with its own scrollbar', () => {
+  it('caps the whole row (sticky header + tags) at the tagRows budget with one scrollbar', () => {
     ensureIdeasStyle()
     const style = document.querySelector('style[data-plugin-css="dsh-plugin-ideas-manager/style"]')
     expect(style).not.toBeNull()
     const css = style?.textContent ?? ''
-    const zone = css.match(/\.dsh-ideas-tag-filter-chips\s*\{[^}]*\}/)?.[0] ?? ''
-    expect(zone).toContain('calc(var(--dsh-ideas-tag-chip-rows, 3)')
-    expect(zone).toContain('max-height:')
-    expect(zone).toContain('!important')
-    expect(zone).toContain('overflow-y: auto')
-    expect(zone).toContain('flex-wrap: wrap')
-    // Compact layout: the zone takes the rest of the header line (first chip
-    // row shares it) and packs its lines at the top of the capped height.
-    expect(zone).toContain('flex: 1 1 260px')
-    expect(zone).toContain('min-width: 0')
-    expect(zone).toContain('align-content: flex-start')
+    const shell = css.match(/\.dsh-ideas-tag-filter-row\s*\{[^}]*\}/)?.[0] ?? ''
+    // Header AND tags share ONE scroll zone: the cap carries the sticky
+    // header line (~35px) on top of the tagRows budget.
+    expect(shell).toContain('calc(var(--dsh-ideas-tag-rows, 3)')
+    expect(shell).toContain('max-height:')
+    expect(shell).toContain('!important')
+    expect(shell).toContain('overflow-y: auto')
+    expect(shell).toContain('flex-direction: column')
+    expect(shell).toContain('overscroll-behavior')
   })
 
-  it('keeps the header as its own non-scrolling column left of the chips', () => {
+  it('keeps the header sticky at the top of the zone (clear never scrolls away)', () => {
     ensureIdeasStyle()
     const css = document.querySelector('style[data-plugin-css="dsh-plugin-ideas-manager/style"]')?.textContent ?? ''
-    const shell = css.match(/\.dsh-ideas-tag-filter-row\s*\{[^}]*\}/)?.[0] ?? ''
     const head = css.match(/\.dsh-ideas-tag-filter-header\s*\{[^}]*\}/)?.[0] ?? ''
-    // Inline two-column row (wraps under narrow panels), header never shrinks.
-    expect(shell).toContain('flex-direction: row')
-    expect(shell).toContain('flex-wrap: wrap')
-    expect(shell).toContain('align-items: flex-start')
+    expect(head).toContain('position: sticky')
+    expect(head).toContain('top: 0')
+    expect(head).toContain('background:')
     expect(head).toContain('flex: none')
-    // The scroll container is the chips zone only: no overflow on the shell
-    // or the header, so the clear button can never scroll out of view.
-    expect(shell).not.toContain('overflow')
+    // The sticky bar itself must not become a second scroll container.
     expect(head).not.toContain('overflow')
+    const zone = css.match(/\.dsh-ideas-tag-filter-chips\s*\{[^}]*\}/)?.[0] ?? ''
+    expect(zone).toContain('flex-wrap: wrap')
+    expect(zone).toContain('align-content: flex-start')
+    // The cap lives on the row, never duplicated on the inner block.
+    expect(zone).not.toContain('overflow')
   })
 })
 

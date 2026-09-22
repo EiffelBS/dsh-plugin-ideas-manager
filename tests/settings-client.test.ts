@@ -21,7 +21,7 @@ const SNAPSHOT: IdeasSnapshot = { schemaVersion: IDEAS_SCHEMA_VERSION, revision:
 class ConfigTransport implements IdeasHostTransport {
   configCalls = 0
   saved: Array<{ patch: { tagRows?: number }; expectedRevision: number | undefined }> = []
-  loaded: IdeasSettingsView = { available: true, value: { tagRows: 5 }, revision: 2 }
+  loaded: IdeasSettingsView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 5 }, revision: 2 }
   saved_view: IdeasSettingsView | undefined
   failLoad: unknown | undefined
   failSave: unknown | undefined
@@ -39,7 +39,11 @@ class ConfigTransport implements IdeasHostTransport {
   async saveConfig(patch: { tagRows?: number }, expectedRevision?: number): Promise<IdeasSettingsView> {
     this.saved.push({ patch, expectedRevision })
     if (this.failSave !== undefined) throw this.failSave
-    this.saved_view = { available: true, value: { tagRows: patch.tagRows ?? 3 }, revision: 3 }
+    this.saved_view = {
+      available: true,
+      value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: patch.tagRows ?? IDEAS_SETTINGS_DEFAULTS.tagRows },
+      revision: (this.loaded.revision ?? 0) + 1,
+    }
     return this.saved_view
   }
 }
@@ -57,12 +61,22 @@ describe('IdeasClient display settings', () => {
     const client = new IdeasClient(transport, undefined)
     const listener = vi.fn()
     client.subscribe(listener)
+    expect(client.configLoaded).toBe(false)
     await client.loadConfig()
     expect(transport.configCalls).toBe(1)
+    expect(client.configLoaded).toBe(true)
     expect(client.config.available).toBe(true)
     expect(client.config.value.tagRows).toBe(5)
     expect(client.config.revision).toBe(2)
     expect(listener).toHaveBeenCalled()
+  })
+
+  it('marks the load as settled even without the capability (board apply-once guard)', async () => {
+    const client = new IdeasClient(new LegacyTransport(), undefined)
+    expect(client.configLoaded).toBe(false)
+    await client.loadConfig()
+    expect(client.configLoaded).toBe(true)
+    expect(client.config.available).toBe(false)
   })
 
   it('start() loads the config alongside the initial refresh', async () => {

@@ -7,15 +7,17 @@
  *
  * Two jobs, one install function:
  *  - applyTagChipRows runs on every IdeasClient config change and pushes the
- *    `tagRows` row budget onto the document (--dsh-ideas-tag-chip-rows), which
- *    the chip-zone rule reads through calc();
+ *    `tagRows` row budget onto the document (--dsh-ideas-tag-rows), which
+ *    the tag-zone rule reads through calc();
  *  - registerIdeasSettingsSection contributes the nav row + page when the
  *    shell exposes the slots contract; a shell without it still gets the
  *    style wiring (never throws - the GUI must survive this plugin).
  *
  * Copy discipline: every option carries an explicit title AND a description
- * stating what it changes, its range and its default; failures render inline
- * instead of silently reverting.
+ * stating what it changes, its range/default and when it applies; failures
+ * render inline instead of silently reverting. Controls commit immediately
+ * (selects and checkboxes), except the number row which stages its draft and
+ * commits on blur/Enter so typing never writes per keystroke.
  */
 import type { IdeasClient } from './ideas-client.ts';
 /** Structural face of the shell slot registry (no ui-slots dependency). */
@@ -25,7 +27,7 @@ export interface SettingsSlotsFace {
 }
 /**
  * Push the tag-filter row budget (settings option `tagRows`, 1..5) onto the
- * document as --dsh-ideas-tag-chip-rows; the chips rule reads it through
+ * document as --dsh-ideas-tag-rows; the tag-zone rule reads it through
  * calc(). Idempotent and clamped, so a corrupt wire can never break layout.
  */
 export declare function applyTagChipRows(rows: number): void;
@@ -35,7 +37,7 @@ export interface IdeasSettingsSectionProps {
     /** Shell runtime props (ignored - the page renders the plugin's own copy). */
     [key: string]: unknown;
 }
-/** The section page: heading, intro, and the option rows (settings recipe). */
+/** The section page: heading, intro, status lines, and the option rows. */
 export declare function IdeasSettingsSection({ client }: IdeasSettingsSectionProps): import("react").JSX.Element;
 /**
  * Install the settings glue: wire `tagRows` from the client's config onto the
