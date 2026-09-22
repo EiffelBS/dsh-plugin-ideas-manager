@@ -70,6 +70,8 @@ export interface IdeasActionEnvelope {
 export interface IdeaUpdatePatch {
   title?: string
   body?: string
+  /** Compact card summary (<= 300 chars enforced by the ledger); null clears. */
+  summary?: string | null
   rank?: number
   value?: number
   effort?: number
@@ -154,6 +156,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   if (row.archivedAt !== undefined && row.archivedAt !== null && typeof row.archivedAt !== 'number') return undefined
   if (row.followUpOfId !== undefined && row.followUpOfId !== null && typeof row.followUpOfId !== 'string') return undefined
   if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
+  if (row.summary !== undefined && row.summary !== null && typeof row.summary !== 'string') return undefined
   if (row.analysisAudit !== undefined && row.analysisAudit !== null && !isAnalysisAudit(row.analysisAudit)) return undefined
   return {
     id: row.id,
@@ -162,6 +165,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     status: row.status as IdeaStatus,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    ...(typeof row.summary === 'string' ? { summary: row.summary } : {}),
     ...(typeof row.rank === 'number' ? { rank: row.rank } : {}),
     ...(typeof row.value === 'number' ? { value: row.value } : {}),
     ...(typeof row.effort === 'number' ? { effort: row.effort } : {}),
@@ -181,20 +185,24 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
 
 function createInput(value: unknown): value is NewIdeaInput {
   const input = record(value)
-  if (input === undefined || !exactKeys(input, ['title', 'body', 'workspaceId', 'rank', 'value', 'effort', 'rationale', 'tags'])) return false
+  if (input === undefined || !exactKeys(input, ['title', 'body', 'summary', 'workspaceId', 'rank', 'value', 'effort', 'rationale', 'tags'])) return false
   if (typeof input.title !== 'string' || typeof input.body !== 'string') return false
   if (!optionalString(input.workspaceId)) return false
   if (!optionalString(input.rationale)) return false
+  if (!optionalString(input.summary)) return false
   if (!optionalFiniteNumber(input.rank) || !optionalFiniteNumber(input.value) || !optionalFiniteNumber(input.effort)) return false
   return input.tags === undefined || isIdeaTagList(input.tags)
 }
 
 function updatePatch(value: unknown): value is IdeaUpdatePatch {
   const patch = record(value)
-  if (patch === undefined || !exactKeys(patch, ['title', 'body', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId'])) return false
+  if (patch === undefined || !exactKeys(patch, ['title', 'body', 'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId'])) return false
   for (const key of ['title', 'body', 'workspaceId', 'rationale'] as const) {
     if (!optionalString(patch[key])) return false
   }
+  // The summary is a plain string; null (like a blank value) clears it — the
+  // ledger caps the stored value at IDEA_SUMMARY_MAX_LENGTH.
+  if (patch.summary !== undefined && patch.summary !== null && typeof patch.summary !== 'string') return false
   for (const key of ['rank', 'value', 'effort'] as const) {
     if (patch[key] !== undefined && (typeof patch[key] !== 'number' || !Number.isFinite(patch[key] as number))) return false
   }
@@ -222,8 +230,9 @@ function followUpInput(value: unknown): value is FollowUpInput {
 /** Whether an unknown value is a well-formed preserved prior analysis. */
 function isAnalysisAudit(value: unknown): value is IdeaRecord['analysisAudit'] {
   const audit = record(value)
-  if (audit === undefined || !exactKeys(audit, ['at', 'title', 'body', 'tags', 'value', 'effort', 'rationale'])) return false
+  if (audit === undefined || !exactKeys(audit, ['at', 'title', 'body', 'summary', 'tags', 'value', 'effort', 'rationale'])) return false
   if (typeof audit.at !== 'number' || typeof audit.title !== 'string' || typeof audit.body !== 'string') return false
+  if (audit.summary !== undefined && typeof audit.summary !== 'string') return false
   if (audit.tags !== undefined && !isIdeaTagList(audit.tags)) return false
   for (const key of ['value', 'effort'] as const) {
     if (audit[key] !== undefined && (typeof audit[key] !== 'number' || !Number.isFinite(audit[key] as number))) return false

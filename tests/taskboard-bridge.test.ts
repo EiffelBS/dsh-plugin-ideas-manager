@@ -20,6 +20,7 @@ import { IdeasHostService } from '../src/host-service.ts'
 import {
   HttpTaskBoardTransport,
   TaskBoardMirror,
+  deriveSummary,
   type TaskBoardActionEnvelope,
   type TaskBoardTransport,
 } from '../src/taskboard-bridge.ts'
@@ -282,6 +283,47 @@ describe('TaskBoardMirror duplicate guard (idea #35)', () => {
     expect(taskId).toBe('idea-idea-1')
     expect(transport.posts[0]!.action).toMatchObject({ kind: 'create', id: 'idea-idea-1' })
     expect(transport.posts[1]!.action).toEqual({ kind: 'move', taskId: 'idea-idea-1', status: 'backlog' })
+  })
+})
+
+describe('TaskBoard card description weight (idea summary)', () => {
+  it('ships the analyst summary as the description while the prompt keeps the full body', async () => {
+    const transport = new FakeTransport()
+    const mirror = new TaskBoardMirror({ transport })
+    const longBody = `## Context\n\n${'The analysis paragraph. '.repeat(40)}\n\n## Value\n\nMore.`
+    // No promptPrefix tag: the prompt falls back to the derived mission, which
+    // is the production case (0 of 13 live ideas carry a promptPrefix).
+    await mirror.mirrorCreate(idea({ body: longBody, summary: 'Tight abstract of the idea.', tags: [{ name: 'ideas-manager' }] }))
+    const input = transport.posts[0]!.action as { input: { description: string; prompt: string } }
+    expect(input.input.description).toBe('Tight abstract of the idea.')
+    // The run instruction is UNCHANGED: it still carries the full analysis.
+    expect(input.input.prompt).toContain('The analysis paragraph.')
+    expect(input.input.prompt).toContain('## Value')
+  })
+
+  it('patches the description to the summary too (update path)', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'task-9', status: 'backlog' }]
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorUpdate(idea({ taskBoardId: 'task-9', summary: 'Patched abstract.' }))
+    const update = transport.posts[0]!.action as { kind: 'update'; patch: { description: string; prompt: string } }
+    expect(update.patch.description).toBe('Patched abstract.')
+    // Prompt logic untouched: the fixture's promptPrefix tag still wins.
+    expect(update.patch.prompt).toBe('Render music scores.')
+  })
+
+  it('deriveSummary skips pure heading blocks and collapses to the first content paragraph', () => {
+    expect(deriveSummary('## Context\n\ntext content')).toBe('text content')
+    expect(deriveSummary('## Context\n\n## Value')).toBe('')
+    expect(deriveSummary('')).toBe('')
+    expect(deriveSummary('# Title only line\n\nReal first paragraph.')).toBe('Real first paragraph.')
+  })
+
+  it('deriveSummary cuts a long first paragraph at a word boundary within 300 chars', () => {
+    const derived = deriveSummary('word '.repeat(200))
+    expect(derived.length).toBeLessThanOrEqual(300)
+    expect(derived.endsWith('...')).toBe(true)
+    expect(derived.includes('  ')).toBe(false)
   })
 })
 

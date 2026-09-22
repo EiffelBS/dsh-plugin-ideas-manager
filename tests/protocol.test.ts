@@ -197,4 +197,48 @@ describe('parseActionEnvelope', () => {
     }))?.action).toEqual({ kind: 'update', ideaId: 'idea-1', patch: { rationale: 're-ranked after delivery' } })
     expect(parseActionEnvelope(envelope({ kind: 'update', ideaId: 'idea-1', patch: { rationale: 42 } }))).toBeUndefined()
   })
+
+  it('accepts summary on create input and update patches (null clears, wrong type rejected)', () => {
+    expect(parseActionEnvelope(envelope({
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'A', body: 'B', summary: 'Tight abstract.' },
+    }))?.action).toEqual({
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'A', body: 'B', summary: 'Tight abstract.' },
+    })
+    expect(parseActionEnvelope(envelope({
+      kind: 'update',
+      ideaId: 'idea-1',
+      patch: { summary: null },
+    }))).toBeDefined()
+    expect(parseActionEnvelope(envelope({
+      kind: 'update', ideaId: 'idea-1', patch: { summary: 42 },
+    }))).toBeUndefined()
+    expect(parseActionEnvelope(envelope({
+      kind: 'create', id: 'idea-1', input: { title: 'A', body: 'B', summary: ['x'] },
+    }))).toBeUndefined()
+  })
+
+  it('round-trips summary through an import (idea + prior-analysis audit)', () => {
+    const parsed = parseActionEnvelope(envelope({
+      kind: 'import',
+      sourceId: 'src-1',
+      ideas: [{
+        id: 'idea-1',
+        title: 'T',
+        body: 'B',
+        status: 'open',
+        createdAt: 1,
+        updatedAt: 2,
+        summary: 'Imported abstract',
+        analysisAudit: { at: 1, title: 'Old', body: 'Old body', summary: 'Old abstract' },
+      }],
+    }))
+    expect(parsed).toBeDefined()
+    const idea = parsed && parsed.action.kind === 'import' ? parsed.action.ideas[0] : undefined
+    expect(idea?.summary).toBe('Imported abstract')
+    expect(idea?.analysisAudit?.summary).toBe('Old abstract')
+  })
 })

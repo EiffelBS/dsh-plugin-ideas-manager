@@ -80,6 +80,8 @@ export interface IdeasActionEnvelope {
 export interface IdeaUpdatePatch {
     title?: string;
     body?: string;
+    /** Compact card summary (<= 300 chars enforced by the ledger); null clears. */
+    summary?: string | null;
     rank?: number;
     value?: number;
     effort?: number;

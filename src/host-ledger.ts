@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { createIdea, normalizeStatus, normalizeTags, rankGroupKey, withStatus, type IdeaRecord } from './core/ideas.ts'
+import { createIdea, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -119,6 +119,8 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
       createdAt: typeof row.createdAt === 'number' ? row.createdAt : Date.now(),
       updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : Date.now(),
     }
+    const summary = normalizeSummary(typeof row.summary === 'string' ? row.summary : undefined)
+    if (summary !== undefined) idea.summary = summary
     if (typeof row.rank === 'number' && Number.isFinite(row.rank)) idea.rank = row.rank
     if (typeof row.value === 'number' && Number.isFinite(row.value)) idea.value = row.value
     if (typeof row.effort === 'number' && Number.isFinite(row.effort)) idea.effort = row.effort
@@ -147,10 +149,12 @@ function auditOf(value: unknown): IdeaRecord['analysisAudit'] {
   const row = value as Record<string, unknown>
   if (typeof row.at !== 'number' || typeof row.title !== 'string' || typeof row.body !== 'string') return undefined
   const tags = normalizeTags(row.tags)
+  const summary = normalizeSummary(typeof row.summary === 'string' ? row.summary : undefined)
   return {
     at: row.at,
     title: row.title,
     body: row.body,
+    ...(summary === undefined ? {} : { summary }),
     ...(tags === undefined ? {} : { tags }),
     ...(typeof row.value === 'number' ? { value: row.value } : {}),
     ...(typeof row.effort === 'number' ? { effort: row.effort } : {}),
@@ -404,6 +408,7 @@ export class IdeasHostLedger {
           at: now,
           title: idea.title,
           body: idea.body,
+          ...(idea.summary === undefined ? {} : { summary: idea.summary }),
           ...(idea.tags === undefined ? {} : { tags: idea.tags }),
           ...(idea.value === undefined ? {} : { value: idea.value }),
           ...(idea.effort === undefined ? {} : { effort: idea.effort }),
@@ -616,6 +621,11 @@ function applyPatch(idea: IdeaRecord, patch: IdeaUpdatePatch, now: number): Idea
   const next: IdeaRecord = { ...idea, updatedAt: now }
   if (patch.title !== undefined && patch.title !== null) next.title = patch.title.trim()
   if (patch.body !== undefined && patch.body !== null) next.body = patch.body.trim()
+  // A present summary (string or null) REPLACES the stored value: blank/null
+  // clears it, anything else is trimmed and capped at the 300-char contract.
+  if (patch.summary !== undefined) {
+    next.summary = patch.summary === null ? undefined : normalizeSummary(patch.summary)
+  }
   if (patch.workspaceId !== undefined && patch.workspaceId !== null) {
     const workspaceId = patch.workspaceId.trim()
     next.workspaceId = workspaceId === '' ? undefined : workspaceId

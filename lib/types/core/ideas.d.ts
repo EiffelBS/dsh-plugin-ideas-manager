@@ -32,6 +32,11 @@ export declare const TAG_PROMPT_MAX_LENGTH = 200;
 export declare const IDEA_TITLE_MAX_LENGTH = 200;
 /** Maximum size of an idea body (bytes). */
 export declare const IDEA_BODY_MAX_BYTES: number;
+/**
+ * Maximum length of the compact card summary: the abstract the ideas-analyst
+ * produces and the TaskBoard mirror ships as the card description.
+ */
+export declare const IDEA_SUMMARY_MAX_LENGTH = 300;
 /** Whether an unknown value is a well-formed tag (strict: the wire gate). */
 export declare function isIdeaTag(value: unknown): value is IdeaTag;
 /**
@@ -56,6 +61,12 @@ export declare function isIdeaStatus(value: unknown): value is IdeaStatus;
 /** Normalize one optional target string: trim; blank collapses to undefined. */
 export declare function normalizeOptionalId(value: string | undefined): string | undefined;
 /**
+ * Normalize a stored card summary: trim, blank collapses to undefined, hard
+ * cap at IDEA_SUMMARY_MAX_LENGTH. The wire gate accepts any string; this is
+ * the single place that enforces the size contract on persisted values.
+ */
+export declare function normalizeSummary(value: string | undefined): string | undefined;
+/**
  * Rank group of an idea: its manual rank is a position RELATIVE to the other
  * ideas of the same (status, workspace) pair — the "rank by workspace" model.
  * The workspace-less ideas (workspaceId undefined) share one generic group, so
@@ -71,6 +82,8 @@ export interface AnalysisAudit {
     title: string;
     /** The idea body BEFORE the re-analysis replaced it. */
     body: string;
+    /** The card summary BEFORE the re-analysis replaced it. */
+    summary?: string;
     /** The label set BEFORE the re-analysis replaced it. */
     tags?: IdeaTag[];
     /** The priority scores BEFORE the re-triage replaced them. */
@@ -86,6 +99,13 @@ export interface IdeaRecord {
     title: string;
     /** Longer body shown in the detail view (<= 32 KiB). */
     body: string;
+    /**
+     * Compact card abstract (<= 300 chars) produced by the ideas-analyst: the
+     * TaskBoard mirror ships it as the card DESCRIPTION, so the snapshot never
+     * carries the full analysis twice (it already rides the card prompt + this
+     * ledger). Optional: the mirror derives a body excerpt when absent.
+     */
+    summary?: string;
     /** Current column. */
     status: IdeaStatus;
     /** Manual rank used by the board ordering (1..n after a reorder). */
@@ -147,6 +167,8 @@ export interface NewIdeaInput {
     title: string;
     /** Longer body. */
     body: string;
+    /** Optional compact abstract (<= 300 chars); the mirror's card description. */
+    summary?: string;
     /** Workspace the idea belongs to; empty/absent = generic. */
     workspaceId?: string;
     /** Manual rank (optional). */

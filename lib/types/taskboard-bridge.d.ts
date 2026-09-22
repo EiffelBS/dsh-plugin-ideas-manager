@@ -21,8 +21,13 @@
  * branch. A transiently empty/unreadable snapshot therefore keeps the binding
  * and attempts the patch instead of minting a second card, and re-running any
  * path re-touches the same card id instead of duplicating it.
+ *
+ * Weight contract: the card DESCRIPTION carries the idea's <= 300-char
+ * `summary` (analyst-produced, derived excerpt otherwise) while the full
+ * analysis rides the card PROMPT — the body is never stored twice in the
+ * snapshot (see summaryDescriptionOf).
  */
-import type { IdeaRecord } from './core/ideas.ts';
+import { type IdeaRecord } from './core/ideas.ts';
 export declare const TASK_BOARD_API_PREFIX = "/api/task-board";
 /** Read-only permission stamped on every mirrored card. */
 declare const MIRROR_TASK_PERMISSION: "read-only";
@@ -96,6 +101,25 @@ export interface TaskBoardHttpResult {
  * issuing the create.
  */
 export declare function mirrorCardIdFor(idea: IdeaRecord): string;
+/**
+ * The TaskBoard card DESCRIPTION for an idea: the analyst's `summary`
+ * (<= 300 chars) when present, otherwise a derived excerpt of the body.
+ *
+ * Weight contract (why this exists): the snapshot serves every card's
+ * description AND prompt, and the prompt already carries the full body as the
+ * run instruction — shipping the body again as the description DOUBLED the
+ * state payload (190,947 bytes on production before this rule, 90% of it
+ * description+prompt). The full analysis stays in the ledger (source of
+ * truth) and in the prompt; the description becomes a readable blurb.
+ */
+export declare function summaryDescriptionOf(idea: IdeaRecord): string;
+/**
+ * Derived <= 300-char excerpt of an idea body: the first paragraph holding
+ * actual content (pure heading blocks like a lone "## Context" are skipped),
+ * markdown heading markers stripped, whitespace collapsed, cut at a word
+ * boundary with an ASCII ellipsis when too long.
+ */
+export declare function deriveSummary(body: string): string;
 /** Injectable HTTP surface for the bridge (tests substitute a fake). */
 export interface TaskBoardTransport {
     /** Feature-detect probe: GET /api/task-board/state. */

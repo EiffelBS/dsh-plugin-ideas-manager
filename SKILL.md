@@ -83,8 +83,8 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 
 | kind | keys | notes |
 |---|---|---|
-| `create` | kind, id, input | input keys: `title`*, `body`*, `workspaceId`, `rank`, `value`, `effort`, `rationale`, `tags`. Starts `open`, stamped with the next `ideaNumber`. |
-| `update` | kind, ideaId, patch | patch keys: `title`, `body`, `rank`, `value`, `effort`, `rationale`, `tags`, `workspaceId`; `null` tags clears. |
+| `create` | kind, id, input | input keys: `title`*, `body`*, `summary`, `workspaceId`, `rank`, `value`, `effort`, `rationale`, `tags`. Starts `open`, stamped with the next `ideaNumber`. |
+| `update` | kind, ideaId, patch | patch keys: `title`, `body`, `summary`, `rank`, `value`, `effort`, `rationale`, `tags`, `workspaceId`; `null` tags clears. |
 | `move` | kind, ideaId, status | `open` / `underReview` / `archived` (manual drag; declined only via `decline`). |
 | `triage` | kind, ideaId, patch | record the priority opinion and re-rank transactionally; patch keys: `value`, `effort`, `rationale`, `rank` (open ideas only). |
 | `decline` | kind, ideaId, decision | → `declined` + `archivedAt` + optional `decision` note. |
@@ -98,8 +98,9 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 
 Errors: `forbidden` (403), `json-required` (415), `invalid-action` (400),
 `body-too-large` (413). `IdeaRecord`: see `src/core/ideas.ts` — `id`, `title`
-(≤200), `body` (≤32 KiB), `status`, optional `rank/value/effort/rationale/
-tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoardId`/
+(≤200), `body` (≤32 KiB), `summary` (≤300, compact abstract — the TaskBoard
+card description; blank/`null` clears), `status`, optional `rank/value/effort/
+rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoardId`/
 `deliveredAt`/`decision`, `ideaNumber` (stable capture `#N`), timestamps.
 
 ## TaskBoard mirror (P2)

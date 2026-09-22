@@ -83,6 +83,11 @@ absent the Ideas manager simply works standalone.
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a
 backlog opinion, not a board state.
 
+Card weight: the card `description` carries the idea's `summary` (<= 300
+chars, produced by the ideas-analyst; a derived body excerpt otherwise) while
+the full analysis rides the card `prompt` (the run instruction) and the ledger
+— the body is never stored twice in the snapshot.
+
 ### Duplicate guard (exactly one card per idea)
 
 Card ids are **deterministic** (`idea-` + the idea id), so re-running any

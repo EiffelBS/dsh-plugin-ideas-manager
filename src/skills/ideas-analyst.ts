@@ -62,14 +62,21 @@ skill.
    it in the project (read the source or grep) rather than copying it
    verbatim - stale references creep into drafts and your analysis should
    correct them.
-3. TAGS - keep the relevant human tags and ADD your own (at most 8, each name
+3. SUMMARY - a tight abstract of the analyzed idea in AT MOST 300
+   characters: plain text (no markdown headings, no line breaks) saying what
+   the idea is and why it matters, in one breath. It becomes the TaskBoard
+   card description while the full body stays in this ledger and in the run
+   prompt (the analysis is never stored twice), so keep it human-readable.
+   Send it as the "summary" field of your create/update patch, next to the
+   body.
+4. TAGS - keep the relevant human tags and ADD your own (at most 8, each name
    at most 32 characters, unique). Examples: a subsystem, a platform
    constraint. Persist them as an array of OBJECTS, never plain strings:
 
        [ { "name": "subsystem" }, { "name": "windows" } ]
 
-4. VALUE / EFFORT - scale 1 = low, 2 = medium, 3 = high.
-5. RANK - ranks are RELATIVE per workspace: the rank is the 1-based position
+5. VALUE / EFFORT - scale 1 = low, 2 = medium, 3 = high.
+6. RANK - ranks are RELATIVE per workspace: the rank is the 1-based position
    of the idea INSIDE the open backlog of THIS workspace only (1 = highest).
    Other workspaces and the generic "no workspace" group rank separately -
    never rank against them. Choose the position that reflects the idea's
@@ -78,7 +85,7 @@ skill.
    open backlog whenever the content justifies it (a new idea, a delivery,
    a scope change); you are not limited to "neither disturbing". When this
    workspace has no open idea yet, rank = 1.
-6. RATIONALE - one or two sentences justifying the VALUE, the EFFORT and the
+7. RATIONALE - one or two sentences justifying the VALUE, the EFFORT and the
    RANK together.
 
 ## The write channel
@@ -108,6 +115,7 @@ CREATE:
   { "kind": "create", "id": "<fresh uuid>", "input": {
       "title": "<final title>",
       "body": "<your full markdown analysis, quotes/backslashes escaped>",
+      "summary": "<your at-most-300-char abstract>",
       "tags": [ { "name": "..." } ],
       "workspaceId": "<the capture workspace id>" } }
   IMPORTANT: "tags" is an array of OBJECTS { "name": "..." } - an array of
@@ -115,7 +123,9 @@ CREATE:
 
 UPDATE (only when you merge the capture into an existing duplicate):
   { "kind": "update", "ideaId": "<id>", "patch": {
-      "title": "<final title>", "body": "<your analysis>", "tags": [ { "name": "..." } ] } }
+      "title": "<final title>", "body": "<your analysis>",
+      "summary": "<your at-most-300-char abstract>",
+      "tags": [ { "name": "..." } ] } }
 
 TRIAGE (priority opinion + rank):
   { "kind": "triage", "ideaId": "<id>", "patch": {
@@ -127,8 +137,8 @@ Procedure:
 1. GET the state. Dedupe: compare the INTENT against the open AND archived
    ideas of THIS workspace ONLY (ideas of other workspaces and of the
    "no workspace" group are out of scope). On a match: UPDATE that idea with
-   your final title/analysis/tags, then TRIAGE it - never create a duplicate.
-   Otherwise: CREATE, then TRIAGE the created card.
+   your final title/analysis/summary/tags, then TRIAGE it - never create a
+   duplicate. Otherwise: CREATE, then TRIAGE the created card.
    If the GET /api/ideas/state response is too large to display in one output,
    re-run it through a compact projection (only id, workspaceId, status, rank,
    ideaNumber, title) so you can still deduplicate and rank against the full
@@ -160,8 +170,8 @@ procedure above for that run:
 - NEVER use the create verb: the idea already exists. Dedupe is already
   answered - the prompt names the exact idea id to work on.
 - You MUST issue an update verb on that idea id (final title, your full
-  markdown analysis body, tags as OBJECTS) and then a triage verb on the SAME
-  idea id.
+  markdown analysis body, your FRESH summary, tags as OBJECTS) and then a
+  triage verb on the SAME idea id.
 - Rank history matters: keep the existing rank unless your analysis actually
   justifies a different position - an unjustified re-rank churns the backlog.
   ideaNumber and createdAt are never yours to change.

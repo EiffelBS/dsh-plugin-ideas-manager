@@ -35,6 +35,11 @@ export const TAG_PROMPT_MAX_LENGTH = 200
 export const IDEA_TITLE_MAX_LENGTH = 200
 /** Maximum size of an idea body (bytes). */
 export const IDEA_BODY_MAX_BYTES = 32 * 1024
+/**
+ * Maximum length of the compact card summary: the abstract the ideas-analyst
+ * produces and the TaskBoard mirror ships as the card description.
+ */
+export const IDEA_SUMMARY_MAX_LENGTH = 300
 
 /** Whether an unknown value is a well-formed tag (strict: the wire gate). */
 export function isIdeaTag(value: unknown): value is IdeaTag {
@@ -102,6 +107,17 @@ export function normalizeOptionalId(value: string | undefined): string | undefin
 }
 
 /**
+ * Normalize a stored card summary: trim, blank collapses to undefined, hard
+ * cap at IDEA_SUMMARY_MAX_LENGTH. The wire gate accepts any string; this is
+ * the single place that enforces the size contract on persisted values.
+ */
+export function normalizeSummary(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  if (trimmed === undefined || trimmed === '') return undefined
+  return trimmed.slice(0, IDEA_SUMMARY_MAX_LENGTH)
+}
+
+/**
  * Rank group of an idea: its manual rank is a position RELATIVE to the other
  * ideas of the same (status, workspace) pair — the "rank by workspace" model.
  * The workspace-less ideas (workspaceId undefined) share one generic group, so
@@ -120,6 +136,8 @@ export interface AnalysisAudit {
   title: string
   /** The idea body BEFORE the re-analysis replaced it. */
   body: string
+  /** The card summary BEFORE the re-analysis replaced it. */
+  summary?: string
   /** The label set BEFORE the re-analysis replaced it. */
   tags?: IdeaTag[]
   /** The priority scores BEFORE the re-triage replaced them. */
@@ -136,6 +154,13 @@ export interface IdeaRecord {
   title: string
   /** Longer body shown in the detail view (<= 32 KiB). */
   body: string
+  /**
+   * Compact card abstract (<= 300 chars) produced by the ideas-analyst: the
+   * TaskBoard mirror ships it as the card DESCRIPTION, so the snapshot never
+   * carries the full analysis twice (it already rides the card prompt + this
+   * ledger). Optional: the mirror derives a body excerpt when absent.
+   */
+  summary?: string
   /** Current column. */
   status: IdeaStatus
   /** Manual rank used by the board ordering (1..n after a reorder). */
@@ -198,6 +223,8 @@ export interface NewIdeaInput {
   title: string
   /** Longer body. */
   body: string
+  /** Optional compact abstract (<= 300 chars); the mirror's card description. */
+  summary?: string
   /** Workspace the idea belongs to; empty/absent = generic. */
   workspaceId?: string
   /** Manual rank (optional). */
@@ -218,6 +245,7 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
   const record = value as Record<string, unknown>
   if (typeof record.id !== 'string' || record.id === '') return false
   if (typeof record.title !== 'string' || typeof record.body !== 'string') return false
+  if (record.summary !== undefined && typeof record.summary !== 'string') return false
   if (typeof record.createdAt !== 'number' || typeof record.updatedAt !== 'number') return false
   if (record.rank !== undefined && (typeof record.rank !== 'number' || !Number.isFinite(record.rank))) return false
   if (record.value !== undefined && (typeof record.value !== 'number' || !Number.isFinite(record.value))) return false
@@ -236,6 +264,7 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
     const audit = record.analysisAudit as Record<string, unknown>
     if (typeof audit !== 'object' || audit === null || Array.isArray(audit)) return false
     if (typeof audit.at !== 'number' || typeof audit.title !== 'string' || typeof audit.body !== 'string') return false
+    if (audit.summary !== undefined && typeof audit.summary !== 'string') return false
     if (audit.tags !== undefined && !Array.isArray(audit.tags)) return false
   }
   if (record.tags !== undefined && !Array.isArray(record.tags)) return false
@@ -260,6 +289,7 @@ export function normalizeStatus(status: unknown): IdeaStatus {
 export function createIdea(input: NewIdeaInput, now: number, id: string): IdeaRecord {
   const tags = normalizeTags(input.tags)
   const rationale = input.rationale?.trim()
+  const summary = normalizeSummary(input.summary)
   return {
     id,
     title: input.title.trim().slice(0, IDEA_TITLE_MAX_LENGTH),
@@ -267,6 +297,7 @@ export function createIdea(input: NewIdeaInput, now: number, id: string): IdeaRe
     status: 'open',
     createdAt: now,
     updatedAt: now,
+    ...(summary === undefined ? {} : { summary }),
     ...(input.rank === undefined ? {} : { rank: input.rank }),
     ...(input.value === undefined ? {} : { value: input.value }),
     ...(input.effort === undefined ? {} : { effort: input.effort }),

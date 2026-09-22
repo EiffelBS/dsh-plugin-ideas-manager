@@ -21,11 +21,16 @@
  * branch. A transiently empty/unreadable snapshot therefore keeps the binding
  * and attempts the patch instead of minting a second card, and re-running any
  * path re-touches the same card id instead of duplicating it.
+ *
+ * Weight contract: the card DESCRIPTION carries the idea's <= 300-char
+ * `summary` (analyst-produced, derived excerpt otherwise) while the full
+ * analysis rides the card PROMPT — the body is never stored twice in the
+ * snapshot (see summaryDescriptionOf).
  */
 
 import { request as httpRequest } from 'node:http'
 import { randomUUID } from 'node:crypto'
-import type { IdeaRecord } from './core/ideas.ts'
+import { IDEA_SUMMARY_MAX_LENGTH, type IdeaRecord } from './core/ideas.ts'
 
 export const TASK_BOARD_API_PREFIX = '/api/task-board'
 /** Read-only permission stamped on every mirrored card. */
@@ -106,6 +111,51 @@ export interface TaskBoardHttpResult {
  */
 export function mirrorCardIdFor(idea: IdeaRecord): string {
   return `idea-${idea.id}`
+}
+
+/**
+ * The TaskBoard card DESCRIPTION for an idea: the analyst's `summary`
+ * (<= 300 chars) when present, otherwise a derived excerpt of the body.
+ *
+ * Weight contract (why this exists): the snapshot serves every card's
+ * description AND prompt, and the prompt already carries the full body as the
+ * run instruction — shipping the body again as the description DOUBLED the
+ * state payload (190,947 bytes on production before this rule, 90% of it
+ * description+prompt). The full analysis stays in the ledger (source of
+ * truth) and in the prompt; the description becomes a readable blurb.
+ */
+export function summaryDescriptionOf(idea: IdeaRecord): string {
+  const summary = idea.summary === undefined ? undefined : idea.summary.trim()
+  if (summary !== undefined && summary !== '') {
+    return summary.slice(0, IDEA_SUMMARY_MAX_LENGTH)
+  }
+  return deriveSummary(idea.body)
+}
+
+/**
+ * Derived <= 300-char excerpt of an idea body: the first paragraph holding
+ * actual content (pure heading blocks like a lone "## Context" are skipped),
+ * markdown heading markers stripped, whitespace collapsed, cut at a word
+ * boundary with an ASCII ellipsis when too long.
+ */
+export function deriveSummary(body: string): string {
+  const paragraphs = body.split(/\n\s*\n/).map(chunk => chunk.trim()).filter(chunk => chunk !== '')
+  const content = paragraphs.find(chunk =>
+    chunk.split('\n').some(line => {
+      const trimmed = line.trim()
+      return trimmed !== '' && !/^#{1,6}\s/.test(trimmed)
+    })) ?? ''
+  const flattened = content
+    .split('\n')
+    .map(line => line.replace(/^\s*#{1,6}\s+/, '').trim())
+    .filter(line => line !== '')
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (flattened.length <= IDEA_SUMMARY_MAX_LENGTH) return flattened
+  const window = flattened.slice(0, IDEA_SUMMARY_MAX_LENGTH - 1)
+  const boundary = window.lastIndexOf(' ')
+  return `${(boundary > 40 ? window.slice(0, boundary) : window).trimEnd()}...`
 }
 
 /** Injectable HTTP surface for the bridge (tests substitute a fake). */
@@ -397,7 +447,7 @@ export class TaskBoardMirror {
       id: taskId,
       input: {
         title: idea.title,
-        description: idea.body,
+        description: summaryDescriptionOf(idea),
         prompt: this.taskPrompt(idea),
         permission: MIRROR_TASK_PERMISSION,
         ...(idea.workspaceId === undefined ? {} : { workspaceId: idea.workspaceId }),
@@ -411,7 +461,7 @@ export class TaskBoardMirror {
   private taskPatch(idea: IdeaRecord): TaskBoardTaskPatch {
     return {
       title: idea.title,
-      description: idea.body,
+      description: summaryDescriptionOf(idea),
       prompt: this.taskPrompt(idea),
       workspaceId: idea.workspaceId,
       ...(idea.tags === undefined || idea.tags.length === 0 ? {} : { tags: idea.tags }),

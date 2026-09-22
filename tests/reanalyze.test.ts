@@ -251,6 +251,7 @@ describe('reanalysis launch', () => {
     expect(prompt).toContain('http://127.0.0.1:3101')
     expect(prompt).toContain('plugin:ideas-manager:ai-reanalyze')
     expect(prompt).toContain('NEVER use the create verb')
+    expect(prompt).toContain('your summary')
     expect(prompt).toContain('#7')
     expect(prompt).toContain('Stored title')
     expect(prompt).toContain('Stored analysis')
@@ -264,6 +265,13 @@ describe('reanalysis launch', () => {
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('plugin:ideas-manager:ai-reanalyze')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('NEVER use the create verb')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Report and stop.')
+  })
+
+  it('the skill requires the <=300-char summary on every analysis', () => {
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('SUMMARY - a tight abstract')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('AT MOST 300')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('"summary": "<your at-most-300-char abstract>"')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('your FRESH summary')
   })
 
   it('the launcher face exposes launchReanalyze', () => {

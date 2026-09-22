@@ -383,3 +383,58 @@ describe('IdeasHostLedger under-review cycle (recette)', () => {
     ledger.dispose()
   })
 })
+
+describe('IdeasHostLedger summary (compact card abstract)', () => {
+  it('trims on create, caps at 300 chars, and clears on a blank or null patch', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', {
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'T', body: 'Body', summary: '  A tight abstract.  ' },
+    })
+    expect(ledger.snapshot().ideas[0]!.summary).toBe('A tight abstract.')
+    ledger.applyRequest('r2', { kind: 'update', ideaId: 'idea-1', patch: { summary: 'x'.repeat(500) } })
+    expect(ledger.snapshot().ideas[0]!.summary).toHaveLength(300)
+    ledger.applyRequest('r3', { kind: 'update', ideaId: 'idea-1', patch: { summary: '   ' } })
+    expect(ledger.snapshot().ideas[0]!.summary).toBeUndefined()
+    ledger.applyRequest('r4', { kind: 'update', ideaId: 'idea-1', patch: { summary: 'Back again' } })
+    expect(ledger.snapshot().ideas[0]!.summary).toBe('Back again')
+    ledger.applyRequest('r5', { kind: 'update', ideaId: 'idea-1', patch: { summary: null } })
+    expect(ledger.snapshot().ideas[0]!.summary).toBeUndefined()
+    ledger.dispose()
+  })
+
+  it('persists the summary across instances (restart-safe)', () => {
+    const first = new IdeasHostLedger({ dir: freshDir() })
+    first.applyRequest('r1', {
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'T', body: 'Body', summary: 'Stored abstract' },
+    })
+    first.dispose()
+    const second = new IdeasHostLedger({ dir })
+    expect(second.snapshot().ideas[0]!.summary).toBe('Stored abstract')
+    second.dispose()
+  })
+
+  it('keeps the prior summary in the re-analyze audit', () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir(), now: () => 1000 })
+    ledger.applyRequest('r1', {
+      kind: 'create',
+      id: 'idea-1',
+      input: { title: 'Before', body: 'Old', summary: 'Old abstract' },
+    })
+    ledger.applyRequest('r2', { kind: 'reanalyze', ideaId: 'idea-1' })
+    expect(ledger.snapshot().ideas[0]!.analysisAudit).toMatchObject({
+      at: 1000,
+      title: 'Before',
+      body: 'Old',
+      summary: 'Old abstract',
+    })
+    // The analyst's rewrite replaces the live summary; the audit keeps the old one.
+    ledger.applyRequest('r3', { kind: 'update', ideaId: 'idea-1', patch: { summary: 'New abstract' } })
+    expect(ledger.snapshot().ideas[0]!.summary).toBe('New abstract')
+    expect(ledger.snapshot().ideas[0]!.analysisAudit?.summary).toBe('Old abstract')
+    ledger.dispose()
+  })
+})

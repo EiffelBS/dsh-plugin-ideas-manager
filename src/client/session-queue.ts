@@ -256,7 +256,7 @@ Load the skill named "ideas-analyst" from the available_skills catalog and follo
 === Re-analysis overrides (precedence over the skill for this run) ===
 - Envelope initiator: "plugin:ideas-manager:ai-reanalyze" (NOT ai-capture).
 - NEVER use the create verb. The idea already exists.
-- You MUST issue an update verb with ideaId ${input.ideaId} (your new title, your full markdown analysis body, your tags) and then a triage verb on the SAME ideaId.
+- You MUST issue an update verb with ideaId ${input.ideaId} (your new title, your full markdown analysis body, your summary, your tags) and then a triage verb on the SAME ideaId.
 - Only re-triage the rank when your analysis actually justifies a different position; an unjustified re-rank churns the backlog. The rank history matters: keep ideaNumber, createdAt and the existing rank unless the content justifies moving it.
 - Do NOT re-analyze again or launch anything recursive: this run was explicitly triggered by a human; report and stop.
 

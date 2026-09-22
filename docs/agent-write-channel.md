@@ -55,8 +55,8 @@ is the accepted trust boundary. Content-type must be `application/json`
 
 | kind        | Fields (besides `kind`)                            | Effect |
 | ----------- | -------------------------------------------------- | ------ |
-| `create`    | `id`, `input: { title, body, tags?, value?, effort?, rationale?, rank?, workspaceId? }` | New open idea; `workspaceId` absent = generic group |
-| `update`    | `ideaId`, `patch: { title?, body?, tags?, value?, effort?, rationale?, rank?, workspaceId? }` | Plain field update (no re-rank) |
+| `create`    | `id`, `input: { title, body, summary?, tags?, value?, effort?, rationale?, rank?, workspaceId? }` | New open idea; `workspaceId` absent = generic group; `summary` = compact abstract (<= 300 chars) |
+| `update`    | `ideaId`, `patch: { title?, body?, summary?, tags?, value?, effort?, rationale?, rank?, workspaceId? }` | Plain field update (no re-rank); `summary` null/blank clears |
 | `triage`    | `ideaId`, `patch: { value?, effort?, rationale?, rank? }` | Priority opinion; re-ranks the idea's OWN workspace group transactionally |
 | `move`      | `ideaId`, `status: open \| underReview \| archived` | Column move |
 | `deliver`   | `ideaId`                                          | Archive + delivery stamp |

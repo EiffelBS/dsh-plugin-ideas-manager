@@ -94,7 +94,8 @@ ok(`both APIs live (ideas=${ideas0.ideas.length}, cards=${board0.tasks.length})`
 // --- 2. create + deterministic binding --------------------------------------
 const ideaId = randomUUID()
 const title = `Mirror cycle #35 ${Date.now()}`
-const created = await ideasAction({ kind: 'create', id: ideaId, input: { title, body: 'Cycle validation body.' } }, 'create')
+const seedBody = `Cycle validation body: ${'lorem ipsum dolor sit amet '.repeat(80)}`
+const created = await ideasAction({ kind: 'create', id: ideaId, input: { title, body: seedBody } }, 'create')
 check(created.status === 200, `create -> ${created.status}`)
 await waitFor('the deterministic card binding', async () => {
   const state = await getJson('/api/ideas/state')
@@ -104,12 +105,16 @@ const bound = (await getJson('/api/ideas/state')).ideas.find(idea => idea.id ===
 check(bound === `idea-${ideaId}`, `binding is ${bound}, expected deterministic idea-${ideaId}`)
 ok(`create bound the DETERMINISTIC card id ${bound}`)
 
-// --- 3. exactly one card -----------------------------------------------------
+// --- 3. exactly one card, light description ---------------------------------
 await waitFor('exactly one card for the idea', async () => cardsFor(await getJson('/api/task-board/state'), title).length === 1)
 let cards = cardsFor(await getJson('/api/task-board/state'), title)
 check(cards[0].id === bound, `card id ${cards[0].id} != bound ${bound}`)
 check(cards[0].status === 'backlog', `card status ${cards[0].status}, expected backlog`)
-ok('board holds exactly one backlog card, id = binding')
+// Weight contract: description <= ~300 chars (derived excerpt, no summary
+// yet), full body still riding the prompt.
+check(cards[0].description.length <= 305, `description too heavy: ${cards[0].description.length} chars`)
+check(cards[0].prompt.includes('Cycle validation body'), 'prompt must keep the full body')
+ok('board holds exactly one backlog card, light description, full-body prompt')
 
 // --- 4. re-analyze mirrors nothing ------------------------------------------
 const reanalyzed = await ideasAction({ kind: 'reanalyze', ideaId }, 'reanalyze')
@@ -121,7 +126,8 @@ ok('re-analyze verb mirrored nothing (still one card)')
 
 // --- 5. analyst rewrite patches in place ------------------------------------
 const rewritten = `${title} - rewritten`
-const updated = await ideasAction({ kind: 'update', ideaId, patch: { title: rewritten, body: 'Rewritten analysis body.' } }, 'update')
+const rewriteSummary = 'Rewritten summary for the recette (<= 300 chars).'
+const updated = await ideasAction({ kind: 'update', ideaId, patch: { title: rewritten, body: 'Rewritten analysis body.', summary: rewriteSummary } }, 'update')
 check(updated.status === 200, `update -> ${updated.status}`)
 const triaged = await ideasAction({ kind: 'triage', ideaId, patch: { value: 3, effort: 1, rank: 1 } }, 'triage')
 check(triaged.status === 200, `triage -> ${triaged.status}`)
@@ -132,10 +138,11 @@ await waitFor('the rewritten card title', async () => {
 cards = cardsFor(await getJson('/api/task-board/state'), rewritten)
 check(cards.length === 1, `rewrite produced ${cards.length} cards with the new title`)
 check(cards[0].id === bound, `rewrite rebound the card: ${cards[0].id} != ${bound}`)
+check(cards[0].description === rewriteSummary, `description is not the wire summary: ${cards[0].description}`)
 check(cardsFor(await getJson('/api/task-board/state'), title).length === 0, 'old-title card still present (a duplicate)')
 const bindingAfter = (await getJson('/api/ideas/state')).ideas.find(idea => idea.id === ideaId).taskBoardId
 check(bindingAfter === bound, `binding drifted to ${bindingAfter}`)
-ok('analyst update PATCHED the bound card in place: one card, same id, same binding')
+ok('analyst update PATCHED the bound card in place: one card, same id, description = summary')
 
 // --- 6. contract probe: duplicate create is refused --------------------------
 const clash = await postJson('/api/task-board/action', {
