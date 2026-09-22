@@ -277,7 +277,12 @@ export function registerIdeasSettingsSection(ctx: unknown, client: IdeasClient):
     offSection = slots.inject('settings.section', () => slots.register({
       name: 'settings.section',
       id: 'ideas',
-      order: 200,
+      // 60, not 200: the Settings nav rail has no overflow while the panel is
+      // capped at 800px (~16 fully visible 44px rows), so a last-in-order row
+      // lands below the fold once the roster reaches ~18 sections (reproduced
+      // live: Ideas was the only hidden row). 60 sits in the free band between
+      // mcp-manager (50) and better-sidebar (100) -> row ~11, always visible.
+      order: 60,
       label: () => t('settings.nav'),
       inject: () => ({ client }),
     }, IdeasSettingsSection))

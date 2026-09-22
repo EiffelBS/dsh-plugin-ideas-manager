@@ -142,7 +142,7 @@ describe('registerIdeasSettingsSection', () => {
     expect(inject.mock.calls[0]![0]).toBe('settings.section')
     expect(register).toHaveBeenCalledTimes(1)
     const [options, component] = register.mock.calls[0]! as unknown as [Record<string, unknown>, unknown]
-    expect(options).toMatchObject({ name: 'settings.section', id: 'ideas', order: 200 })
+    expect(options).toMatchObject({ name: 'settings.section', id: 'ideas', order: 60 })
     expect((options.label as () => string)()).toBe(t('settings.nav'))
     expect((options.inject as () => { client: IdeasClient })()).toEqual({ client })
     expect(typeof component).toBe('function')
