@@ -62,7 +62,11 @@ export declare const classes: {
     readonly modalActions: "dsh-ideas-modal-actions";
     readonly editActions: "dsh-ideas-edit-actions";
     readonly tagFilterRow: "dsh-ideas-tag-filter-row";
+    readonly tagFilterHeader: "dsh-ideas-tag-filter-header";
     readonly tagFilterLabel: "dsh-ideas-tag-filter-label";
+    readonly tagFilterSearch: "dsh-ideas-tag-filter-search";
+    readonly tagFilterChips: "dsh-ideas-tag-filter-chips";
+    readonly tagFilterNoMatch: "dsh-ideas-tag-filter-no-match";
     readonly filterChip: "dsh-ideas-filter-chip";
     readonly filterChipActive: "dsh-ideas-filter-chip-active";
     readonly dragHint: "dsh-ideas-drag-hint";

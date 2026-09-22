@@ -19,6 +19,8 @@ export declare const fr: {
     'board.hostError': string;
     'board.retryHost': string;
     'board.tagFilter': string;
+    'board.tagFilterSearch': string;
+    'board.tagFilterNoMatch': string;
     'board.tagFilterClear': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -135,6 +137,8 @@ export declare const en: {
     'board.hostError': string;
     'board.retryHost': string;
     'board.tagFilter': string;
+    'board.tagFilterSearch': string;
+    'board.tagFilterNoMatch': string;
     'board.tagFilterClear': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
