@@ -121,10 +121,28 @@ interface DshPromptSession {
     mode: 'queue',
   ): Promise<{ ok: boolean; value?: { accepted: true }; error?: unknown }>
 }
+/**
+ * Defensive shape of the Host >= 0.1.7 `ClientSessionReference` returned by
+ * `retainAgentScope(id)`: the retained record exposes the scoped context on
+ * `binding.ctx` (NOT `binding.session` — that is the live Session object) and
+ * the reference carries a synchronous, idempotent `release()`.
+ */
+interface RetainedAgentScope {
+  binding?: { ctx?: unknown }
+  release?: () => void
+}
 interface DshSessionsController {
   create(opts?: { workspaceId?: string; cwd?: string; sessionId?: string }): Promise<string>
   scope(id: string): unknown
   sessionOf(ctx: unknown): DshPromptSession | undefined
+  /**
+   * Optional identity retention (Host >= 0.1.7): retain the Agent scope of a
+   * freshly created session SYNCHRONOUSLY, materializing it when it is not yet
+   * catalogued. On Host <= 0.1.5 the method does not exist and `scope(id)`
+   * still materializes on demand, so the caller falls back to it — typed as
+   * optional so the face stays compatible with both Host definitions.
+   */
+  retainAgentScope?(id: string): RetainedAgentScope | undefined
   /** Optional Host model catalog (the `remote.session.modelCatalog` RPC). */
   modelCatalog?(): Promise<{ ok: boolean; value?: DshModelCatalog; error?: { code?: string; message?: string } }>
   /** Optional Session-local model selection (the `remote.session.selectModel` RPC). */
@@ -331,8 +349,12 @@ export function matchSessionSelection(selection: ModelSelection | undefined, cho
 /**
  * Shared session mechanics of both analyst launches (capture and re-analyze):
  * create the fresh session in the workspace, optionally install the selected
- * model, then queue the prompt. A model rejection is best-effort (the analyst
- * still runs, on the session default).
+ * model, then queue the prompt. The Agent scope is reached Host-adaptively:
+ * retained through `retainAgentScope` on Host >= 0.1.7 (where `scope(id)` is a
+ * pure read), through the materializing `scope(id)` on Host <= 0.1.5 — and a
+ * taken retention is ALWAYS released (missing face, prompt success or
+ * failure). A model rejection is best-effort (the analyst still runs, on the
+ * session default).
  */
 async function launchAnalystSession(
   controller: DshSessionsController,
@@ -359,13 +381,36 @@ async function launchAnalystSession(
       }
     }
   }
-  const scopeCtx = controller.scope(sessionId)
+  // Host 0.1.7+: scope(id) is a PURE READ (the scope map is only populated by
+  // retention), so a session created a moment ago is not visible through it
+  // yet — materialization moved into identity retention. Retain the Agent
+  // scope first (retainAgentScope materializes it: get(id) ?? materialize(id))
+  // and take the context from the reference's binding. Fallback for Host
+  // <= 0.1.5: no retainAgentScope there, scope(id) itself materializes on
+  // demand — same call sequence as before this bridge.
+  let retained: RetainedAgentScope | undefined
+  try {
+    if (typeof controller.retainAgentScope === 'function')
+      retained = controller.retainAgentScope(sessionId)
+  } catch (error) {
+    console.warn('[dsh-plugin-ideas-manager] retainAgentScope failed', error)
+  }
+  let scopeCtx = retained?.binding?.ctx
+  if (scopeCtx === undefined) scopeCtx = controller.scope(sessionId)
   const session = scopeCtx === undefined ? undefined : controller.sessionOf(scopeCtx)
-  if (session === undefined) throw new Error('session-face-unavailable')
-  const result = await session.prompt(
-    [{ type: 'text', text: prompt }],
-    'queue',
-  )
+  if (session === undefined) {
+    retained?.release?.() // no prompt was queued: drop the retention before failing
+    throw new Error('session-face-unavailable')
+  }
+  let result
+  try {
+    result = await session.prompt(
+      [{ type: 'text', text: prompt }],
+      'queue',
+    )
+  } finally {
+    retained?.release?.() // always release the retention, success or failure
+  }
   if (result.ok !== true) throw new Error('session-prompt-rejected')
   return { accepted: true }
 }

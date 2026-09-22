@@ -109,6 +109,21 @@ Full contract (verb table, mirror mapping, PowerShell gotchas) lives in
 
 ---
 
+## Host compatibility
+
+- **Requires Host >= 0.1.5** (see `dsh.engines.dsh` in `package.json`).
+- On **Host >= 0.1.7** the client retains the agent scope before prompting:
+  `sessions.scope(id)` became a pure read there (a just-created session is no
+  longer visible through it until its scope is retained), so the AI capture /
+  re-analyze launcher first calls `retainAgentScope(id)` — which materializes
+  the scope — takes the context from the reference's `binding.ctx`, prompts,
+  and always releases the retention (success, prompt rejection or missing
+  session face).
+- On **Host <= 0.1.5** the method does not exist and the launcher keeps the
+  exact previous call sequence (`scope(id)` materializes the scope on demand).
+
+---
+
 ## Install & update
 
 From npm (recommended):

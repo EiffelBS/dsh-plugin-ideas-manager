@@ -11,7 +11,7 @@
  * and that the skill really is the home of the contract.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildAnalysisPrompt,
   currentSessionSelectionOf,
@@ -148,6 +148,148 @@ describe('resolveSessionLauncher', () => {
     }) as SessionLauncher
     await expect(failingCreate.launch({ workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [] }))
       .rejects.toThrow('gateway-down')
+  })
+
+  // Host >= 0.1.7 bridge: sessions.scope(id) became a PURE READ (the scope map
+  // is populated by identity retention only), so a just-created session is not
+  // visible through it until retainAgentScope(id) materializes it. On Host
+  // <= 0.1.5 scope(id) materializes on demand and there is no retainAgentScope
+  // — the launcher must keep the exact old call sequence there.
+  describe('analyst launch scope retention (Host >= 0.1.7 bridge)', () => {
+    /** Every hop the launcher may take, recorded for assertions. */
+    const tracedController = (
+      host: '0.1.5' | '0.1.7',
+      opts: {
+        /** Override the sessionOf face (e.g. to simulate an unavailable face). */
+        sessionOf?: () => unknown
+        /** Retention face: default derives from the host family. */
+        retain?: 'ok' | 'throws'
+        /** Prompt result of the resolved session. */
+        promptResult?: () => { ok: boolean; error?: unknown }
+      } = {},
+    ): { controller: unknown; trace: { retainCalls: string[]; scopeCalls: string[]; releases: number; prompted: boolean } } => {
+      const trace = { retainCalls: [] as string[], scopeCalls: [] as string[], releases: 0, prompted: false }
+      const session = {
+        prompt: async () => {
+          trace.prompted = true
+          return opts.promptResult?.() ?? { ok: true, value: { accepted: true } }
+        },
+      }
+      const controller: Record<string, unknown> = {
+        create: async (): Promise<string> => 'session-x',
+        // 0.1.7: pure read (nothing materialized until retention); 0.1.5:
+        // materializes and returns a context.
+        scope: (id: string): unknown => {
+          trace.scopeCalls.push(id)
+          return host === '0.1.7' ? undefined : { id }
+        },
+        sessionOf: opts.sessionOf ?? ((): unknown => session),
+      }
+      const retainFace = opts.retain ?? (host === '0.1.7' ? 'ok' : 'none')
+      if (retainFace === 'ok') {
+        controller.retainAgentScope = (id: string) => {
+          trace.retainCalls.push(id)
+          return {
+            // 0.1.7 reference shape: the context lives on binding.ctx.
+            binding: { ctx: { retained: id } },
+            release: () => { trace.releases += 1 },
+          }
+        }
+      } else if (retainFace === 'throws') {
+        controller.retainAgentScope = (): never => { throw new Error('Session Controller is disposed') }
+      }
+      return { controller, trace }
+    }
+
+    const launcherOf = (controller: unknown): SessionLauncher =>
+      resolveSessionLauncher({ get: (name: string): unknown => name === 'sessions' ? controller : undefined }) as SessionLauncher
+
+    it('materializes the fresh scope through retainAgentScope and releases it after the prompt', async () => {
+      const { controller, trace } = tracedController('0.1.7')
+      const result = await launcherOf(controller).launch({
+        workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      })
+      expect(result).toEqual({ accepted: true })
+      expect(trace.retainCalls).toEqual(['session-x'])
+      // The context came from the retained binding: scope(id) stays a pure
+      // read that never had to be consulted.
+      expect(trace.scopeCalls).toEqual([])
+      expect(trace.prompted).toBe(true)
+      expect(trace.releases).toBe(1)
+    })
+
+    it('falls back to the materializing scope(id) on a Host <= 0.1.5 controller', async () => {
+      const { controller, trace } = tracedController('0.1.5')
+      const result = await launcherOf(controller).launch({
+        workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      })
+      expect(result).toEqual({ accepted: true })
+      expect(trace.retainCalls).toEqual([])
+      expect(trace.scopeCalls).toEqual(['session-x'])
+      expect(trace.prompted).toBe(true)
+      expect(trace.releases).toBe(0)
+    })
+
+    it('releases the retention before throwing when the session face is unavailable', async () => {
+      const { controller, trace } = tracedController('0.1.7', { sessionOf: () => undefined })
+      await expect(launcherOf(controller).launch({
+        workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      })).rejects.toThrow(/session-face-unavailable/)
+      expect(trace.releases).toBe(1)
+      expect(trace.prompted).toBe(false)
+    })
+
+    it('releases the retention when the queued prompt is rejected', async () => {
+      const { controller, trace } = tracedController('0.1.7', { promptResult: () => ({ ok: false, error: { code: 'session/agent-busy' } }) })
+      await expect(launcherOf(controller).launch({
+        workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      })).rejects.toThrow(/session-prompt-rejected/)
+      expect(trace.releases).toBe(1)
+      expect(trace.prompted).toBe(true)
+    })
+
+    it('falls back to scope(id) when retainAgentScope itself throws', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        // A mixed controller: retention face exists but is broken (disposed),
+        // scope(id) still materializes like on <= 0.1.5.
+        const { controller, trace } = tracedController('0.1.5', { retain: 'throws' })
+        const result = await launcherOf(controller).launch({
+          workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+        })
+        expect(result).toEqual({ accepted: true })
+        expect(trace.retainCalls).toEqual([])
+        expect(trace.scopeCalls).toEqual(['session-x'])
+        expect(trace.prompted).toBe(true)
+        expect(trace.releases).toBe(0)
+        expect(warn).toHaveBeenCalledWith('[dsh-plugin-ideas-manager] retainAgentScope failed', expect.any(Error))
+      } finally {
+        warn.mockRestore()
+      }
+    })
+
+    it('falls back to scope(id) when the retained reference carries no binding', async () => {
+      const trace = { retainCalls: [] as string[], scopeCalls: [] as string[], releases: 0, prompted: false }
+      const controller = {
+        create: async (): Promise<string> => 'session-x',
+        scope: (id: string): unknown => { trace.scopeCalls.push(id); return { id } },
+        sessionOf: (): unknown => ({
+          prompt: async () => { trace.prompted = true; return { ok: true, value: { accepted: true } } },
+        }),
+        retainAgentScope: (id: string): unknown => {
+          trace.retainCalls.push(id)
+          return { release: () => { trace.releases += 1 } } // no binding.ctx
+        },
+      }
+      const result = await launcherOf(controller).launch({
+        workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      })
+      expect(result).toEqual({ accepted: true })
+      expect(trace.retainCalls).toEqual(['session-x'])
+      expect(trace.scopeCalls).toEqual(['session-x'])
+      expect(trace.prompted).toBe(true)
+      expect(trace.releases).toBe(1)
+    })
   })
 
   it('lists models by flattening the catalog groups', async () => {
