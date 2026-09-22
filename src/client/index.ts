@@ -26,9 +26,12 @@ import { resolveSessionLauncher } from './session-queue.ts'
  * without them (ledger-derived workspace ids only, scope-or-generic capture
  * default). `remote` / `remote.session` are required so the model picker can
  * read the Host catalog and select a model; without them the AI capture stays
- * functional but the model selector is hidden.
+ * functional but the model selector is hidden. `slots` is the shell slot
+ * registry (settings.section...): cordis REFUSES ctx.slots access without the
+ * declaration ("cannot get property without inject") — same inject the Side
+ * card plugin declares; the web shell bundle provides the service.
  */
-export const inject = [WORKSPACES_SERVICE, SESSIONS_SERVICE, 'remote', 'remote.session'] as const
+export const inject = ['slots', WORKSPACES_SERVICE, SESSIONS_SERVICE, 'remote', 'remote.session'] as const
 
 // A duplicated client injection (module factory executed twice in one page
 // lifetime) would otherwise mount a second sidebar entry and board view.
@@ -55,17 +58,25 @@ export function apply(ctx: ClientContext): void {
     client.sessionLauncher = resolveSessionLauncher(ctx)
     client.start()
     const disposers: Array<() => void> = []
-    // Settings glue: push tagRows onto the document on every config change
-    // (the CSS default of 3 covers the gap before the first answer) and
-    // register the Settings-modal section when the shell exposes slots.
-    // A context/slots failure degrades, never throws (see the module doc).
+    // The two mounting surfaces FIRST: whatever happens to the settings glue
+    // below must never cost the sidebar entry or the board (live regression:
+    // an undeclared ctx.slots getter threw inside this try before the mounts
+    // ran and the Ideas entry vanished).
     try {
-      disposers.push(registerIdeasSettingsSection(ctx, client))
       disposers.push(mountSidebarEntry(client))
       disposers.push(mountBoard(client))
     } catch (error) {
       // DOM failures degrade the board, never the GUI.
       console.error('[dsh-plugin-ideas-manager] mount failed:', error)
+    }
+    // Settings glue LAST and isolated: push tagRows onto the document on every
+    // config change (the CSS default of 3 covers the gap before the first
+    // answer) and register the Settings-modal section. The helper swallows its
+    // own failures; this belt catches anything it might still throw.
+    try {
+      disposers.push(registerIdeasSettingsSection(ctx, client))
+    } catch (error) {
+      console.error('[dsh-plugin-ideas-manager] settings glue failed:', error)
     }
     return () => {
       for (const dispose of disposers.splice(0)) dispose()

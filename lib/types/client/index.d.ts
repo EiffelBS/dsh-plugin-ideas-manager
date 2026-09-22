@@ -15,7 +15,10 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis';
  * without them (ledger-derived workspace ids only, scope-or-generic capture
  * default). `remote` / `remote.session` are required so the model picker can
  * read the Host catalog and select a model; without them the AI capture stays
- * functional but the model selector is hidden.
+ * functional but the model selector is hidden. `slots` is the shell slot
+ * registry (settings.section...): cordis REFUSES ctx.slots access without the
+ * declaration ("cannot get property without inject") — same inject the Side
+ * card plugin declares; the web shell bundle provides the service.
  */
-export declare const inject: readonly ["workspaces", "sessions", "remote", "remote.session"];
+export declare const inject: readonly ["slots", "workspaces", "sessions", "remote", "remote.session"];
 export declare function apply(ctx: ClientContext): void;

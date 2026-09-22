@@ -95,6 +95,29 @@ describe('registerIdeasSettingsSection', () => {
     off()
   })
 
+  it('contains a THROWING slots getter (the undeclared-cordis-service case)', () => {
+    // Regression (live bug): an undeclared cordis service getter throws
+    // `cannot get property "slots" without inject` instead of returning
+    // undefined — the helper must swallow it and keep the style wiring, so a
+    // slots surprise can never cost the sidebar entry / board again.
+    const originalError = console.error
+    const spy = vi.fn()
+    console.error = spy
+    try {
+      const hostile = {
+        get slots(): never { throw new Error('cannot get property "slots" without inject') },
+      }
+      const client = makeClient()
+      const off = registerIdeasSettingsSection(hostile, client)
+      expect(typeof off).toBe('function')
+      expect(document.documentElement.style.getPropertyValue('--dsh-ideas-tag-chip-rows')).toBe('3')
+      expect(spy).toHaveBeenCalledTimes(1)
+      off()
+    } finally {
+      console.error = originalError
+    }
+  })
+
   it('registers the section under the settings.section slot with clear options', () => {
     const client = makeClient()
     const injected = vi.fn(() => ({ client }))

@@ -136,12 +136,15 @@ export function registerIdeasSettingsSection(ctx: unknown, client: IdeasClient):
   const applyStyle = (): void => { applyTagChipRows(client.config.value.tagRows) }
   applyStyle()
   const offStyle = client.subscribe(applyStyle)
-  const slots = (ctx as SlotsCarrier | null | undefined)?.slots
-  if (slots === undefined || typeof slots.inject !== 'function' || typeof slots.register !== 'function') {
-    return offStyle
-  }
   let offSection: (() => void) | undefined
   try {
+    // The extraction itself is inside the try: an undeclared cordis service
+    // getter THROWS ("cannot get property without inject") instead of
+    // returning undefined, and this helper must never propagate.
+    const slots = (ctx as SlotsCarrier | null | undefined)?.slots
+    if (slots === undefined || typeof slots.inject !== 'function' || typeof slots.register !== 'function') {
+      return offStyle
+    }
     offSection = slots.inject('settings.section', () => slots.register({
       name: 'settings.section',
       id: 'ideas',
