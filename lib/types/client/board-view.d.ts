@@ -14,11 +14,12 @@
 import type { IdeasClient } from './ideas-client.ts';
 /**
  * Shared tag-filter row (idea #36): an ALWAYS-visible header — the "Filter:"
- * label, the chip search box and the clear button — above a chip zone capped
- * at ~3 rows with its own scrollbar, so a large label union can no longer
- * grow the row line by line and push the panel content down. The header sits
- * outside the scroll container, so the clear button is reachable at any scroll
- * position.
+ * label, the chip search box and the clear button — sitting INLINE at the
+ * LEFT of the chips zone, so the first chip row shares the header line and
+ * the block costs no extra vertical line. The zone is capped at ~3 rows with
+ * its own scrollbar; the header stays OUTSIDE that scroll container, so the
+ * clear button is reachable at any scroll position, and the zone wraps under
+ * the header only on panels too narrow for both columns.
  *
  * The search narrows the CHIPS only (the board-header search narrows the
  * CARDS: two controls, two behaviours, two labels) and never hides a

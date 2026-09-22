@@ -913,11 +913,12 @@ type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; hal
 
 /**
  * Shared tag-filter row (idea #36): an ALWAYS-visible header — the "Filter:"
- * label, the chip search box and the clear button — above a chip zone capped
- * at ~3 rows with its own scrollbar, so a large label union can no longer
- * grow the row line by line and push the panel content down. The header sits
- * outside the scroll container, so the clear button is reachable at any scroll
- * position.
+ * label, the chip search box and the clear button — sitting INLINE at the
+ * LEFT of the chips zone, so the first chip row shares the header line and
+ * the block costs no extra vertical line. The zone is capped at ~3 rows with
+ * its own scrollbar; the header stays OUTSIDE that scroll container, so the
+ * clear button is reachable at any scroll position, and the zone wraps under
+ * the header only on panels too narrow for both columns.
  *
  * The search narrows the CHIPS only (the board-header search narrows the
  * CARDS: two controls, two behaviours, two labels) and never hides a
@@ -1257,10 +1258,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       )}
 
       {/* Shared tag filter (idea #36): rendered above all three tabs. The
-          header (label + chip search + clear) always stays visible; the
-          chips live in a ~3-row scrollable zone under it, and a selected
-          chip is never hidden by the search. The same selection narrows the
-          Overview columns, the Priorities ranking and the Delivered log. */}
+          header (label + chip search + clear) always stays visible INLINE at
+          the left of the chips, whose first row shares its line; the rest of
+          the chips live in a ~3-row scrollable zone (wrapping under the
+          header on narrow panels), and a selected chip is never hidden by the
+          search. The same selection narrows the Overview columns, the
+          Priorities ranking and the Delivered log. */}
       {knownTags.length > 0 && (
         <TagFilterRow
           knownTags={knownTags}

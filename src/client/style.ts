@@ -876,15 +876,18 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
-/* Shared tag filter block (idea #36): a header row that ALWAYS stays visible
-   (label + chip search + clear button) above the chips, and a separate chip
-   zone capped at ~3 rows with its own scrollbar. The header lives outside
-   the scroll container, so the reset can never scroll away with the chips;
-   and the cap stops the label union from growing the row line by line and
-   pushing the panel content (columns, ranking, log) down. */
+/* Shared tag filter block (idea #36, compact layout): the header (label +
+   chip search + clear button) sits INLINE at the LEFT of the chips zone, so
+   the FIRST chip row shares the header line and the whole block saves a full
+   line of panel height (the zone cap below IS the block height). The header
+   stays OUTSIDE the scroll container, so the clear button can never scroll
+   away; the chips zone wraps UNDER the header only when the panel is too
+   narrow to hold both columns. */
 .dsh-ideas-tag-filter-row {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
   flex: none;
 }
@@ -925,9 +928,16 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 .dsh-ideas-tag-filter-chips {
   display: flex;
   align-items: center;
+  /* Lines pack at the TOP of the capped zone (default align-content would
+     spread 1-2 rows over the full 84px height when the header line already
+     hosts the first chips row). */
+  align-content: flex-start;
   gap: 6px;
   flex-wrap: wrap;
-  flex: none;
+  /* Take the rest of the row next to the header; the 260px basis lets the
+     zone wrap UNDER the header on very narrow panels. */
+  flex: 1 1 260px;
+  min-width: 0;
   /* Row budget (settings option "tagRows", 1..5, default 3): 27px per chip
      row (21px chip + 6px gap) + 3px tail = 84px at the default, the value
      applyTagChipRows() pushes. The !important stands against a Skin Center

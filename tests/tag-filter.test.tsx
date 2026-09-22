@@ -203,14 +203,22 @@ describe('tag filter zone CSS bound', () => {
     expect(zone).toContain('!important')
     expect(zone).toContain('overflow-y: auto')
     expect(zone).toContain('flex-wrap: wrap')
+    // Compact layout: the zone takes the rest of the header line (first chip
+    // row shares it) and packs its lines at the top of the capped height.
+    expect(zone).toContain('flex: 1 1 260px')
+    expect(zone).toContain('min-width: 0')
+    expect(zone).toContain('align-content: flex-start')
   })
 
-  it('keeps the header as its own non-scrolling row above the zone', () => {
+  it('keeps the header as its own non-scrolling column left of the chips', () => {
     ensureIdeasStyle()
     const css = document.querySelector('style[data-plugin-css="dsh-plugin-ideas-manager/style"]')?.textContent ?? ''
     const shell = css.match(/\.dsh-ideas-tag-filter-row\s*\{[^}]*\}/)?.[0] ?? ''
     const head = css.match(/\.dsh-ideas-tag-filter-header\s*\{[^}]*\}/)?.[0] ?? ''
-    expect(shell).toContain('flex-direction: column')
+    // Inline two-column row (wraps under narrow panels), header never shrinks.
+    expect(shell).toContain('flex-direction: row')
+    expect(shell).toContain('flex-wrap: wrap')
+    expect(shell).toContain('align-items: flex-start')
     expect(head).toContain('flex: none')
     // The scroll container is the chips zone only: no overflow on the shell
     // or the header, so the clear button can never scroll out of view.
