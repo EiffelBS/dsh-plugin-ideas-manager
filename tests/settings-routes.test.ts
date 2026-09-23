@@ -15,6 +15,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { IdeasHostService } from '../src/host-service.ts'
 import { makeIdeasRoutes, type IdeasConfigPort } from '../src/host-routes.ts'
+import { IdeasSettingsStore } from '../src/host-settings.ts'
 import {
   IDEAS_API_PREFIX,
   IDEAS_SETTINGS_DEFAULTS,
@@ -197,5 +198,44 @@ describe('POST /api/ideas/config', () => {
       body: JSON.stringify({ patch: {} }),
     })
     expect(fenced.status).toBe(403)
+  })
+})
+
+describe('POST /api/ideas/config against the plugin-owned store (0.1.7 path)', () => {
+  it('serves the store revision over HTTP and maps a stale one to 409 settings-conflict', async () => {
+    const storeFile = join(tmpdir(), `ideas-config-store-${process.pid}-${randomUUID()}.json`)
+    const port = new IdeasSettingsStore({ file: storeFile })
+    try {
+      const base = await serve(() => port)
+
+      // No document yet: defaults, no fence, still editable.
+      const initial = await get(`${base}${IDEAS_API_PREFIX}/config`, true)
+      expect(initial.status).toBe(200)
+      expect(await initial.json()).toEqual({ available: true, value: IDEAS_SETTINGS_DEFAULTS })
+
+      // First write creates the document (revision 1) through the wire.
+      const first = await post(`${base}${IDEAS_API_PREFIX}/config`, { patch: { tagRows: 5 } })
+      expect(first.status).toBe(200)
+      expect(await first.json()).toEqual({
+        available: true,
+        value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 5 },
+        revision: 1,
+      })
+
+      // A writer still holding a stale view is refused with the 409 code.
+      const stale = await post(`${base}${IDEAS_API_PREFIX}/config`, { patch: { tagRows: 2 }, expectedRevision: 0 })
+      expect(stale.status).toBe(409)
+      expect(await stale.json()).toEqual({ ok: false, error: 'settings-conflict' })
+      expect(port.read().value.tagRows).toBe(5)
+
+      // The current revision writes through.
+      const current = await post(`${base}${IDEAS_API_PREFIX}/config`, { patch: { tagRows: 2 }, expectedRevision: 1 })
+      expect(current.status).toBe(200)
+      expect(await current.json()).toMatchObject({ revision: 2, value: { tagRows: 2 } })
+    } finally {
+      try { rmSync(storeFile, { force: true }) } catch {
+        // Best-effort cleanup.
+      }
+    }
   })
 })

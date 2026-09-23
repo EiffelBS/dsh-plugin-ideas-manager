@@ -14,7 +14,7 @@ import { IdeasHostService } from './host-service.ts'
 import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
 import { makeIdeasRoutes, type IdeasConfigPort } from './host-routes.ts'
-import { sanitizeSettings, IDEAS_SETTINGS_DEFAULTS, type IdeasSettingsView } from './protocol.ts'
+import { createIdeasConfigPort } from './host-settings.ts'
 import { mountOnce } from './mount-once.ts'
 
 /** Order of the announcement section within the tool-guidance band. */
@@ -29,10 +29,11 @@ Workflow: (1) CAPTURE into the ledger, never into a markdown file: title + a bod
 
 /**
  * Settings namespace of the ideas announcement capability — the section the
- * web settings surface will edit (P1). Spelled here rather than imported: the
- * browser half spells the same value and must not depend on a Host package.
+ * web settings surface edits (P1). Owned by the host-settings wiring (both
+ * host contracts) and re-exported here so the public entry surface of the
+ * plugin stays put.
  */
-export const IDEAS_SETTINGS_NAMESPACE = 'ideas' as const
+export { IDEAS_SETTINGS_NAMESPACE } from './host-settings.ts'
 
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
@@ -82,26 +83,6 @@ function applyImpl(ctx: Context, config?: Config): void {
   // the mirror / autoMirror).
   if (config?.autoMirror ?? true) host.startUnderReviewPoll()
 
-  /** Structural face of the host `settings` service (no dsh-settings dependency). */
-  interface SettingsFace {
-    register(ns: string, schema: unknown, options?: { applies?: 'live' | 'restart' }): unknown
-    describe(options?: { redactSecrets?: boolean }): Array<{ ns: string; value: unknown; revision: number }>
-    update(ns: string, patch: object, expectedRevision?: number): Promise<void>
-  }
-  /** Display-settings schema: permissive types (clamped/sanitized at every
-   *  boundary — a ranged schema would reject a bad stored section AT
-   *  REGISTRATION and brick the namespace; see sanitizeSettings). */
-  const IdeasSettingsSchema = z.object({
-    tagRows: z.number().default(IDEAS_SETTINGS_DEFAULTS.tagRows),
-    defaultTab: z.string().default(IDEAS_SETTINGS_DEFAULTS.defaultTab),
-    renderMarkdown: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.renderMarkdown),
-    rememberWorkspaceScope: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.rememberWorkspaceScope),
-    workspaceScope: z.string().default(IDEAS_SETTINGS_DEFAULTS.workspaceScope),
-    confirmLifecycle: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.confirmLifecycle),
-    hideDeclinedColumn: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
-    cardDensity: z.string().default(IDEAS_SETTINGS_DEFAULTS.cardDensity),
-  })
-
   ctx.effect(() => {
     const disposers: Array<() => void> = []
     try {
@@ -120,41 +101,23 @@ function applyImpl(ctx: Context, config?: Config): void {
     }
   }, 'ideas: host ledger and routes')
 
-  // User-facing display settings (the DSH Settings modal section). The
-  // namespace is registered with the host settings provider here; the browser
-  // half reads and writes it through the plugin's own fenced
-  // /api/ideas/config route, because the DSH settings RPC domain serves only
-  // allowlisted namespaces to configuration clients (the Side card lesson).
-  // A deployment without a settings service never fills the face and the
-  // client keeps the spelled defaults; a corrupt stored section rejects the
-  // registration itself and degrades the same way (settings are a nicety).
+  // User-facing display settings (the DSH Settings modal section). The port
+  // the /api/ideas/config route serves is chosen by CONTRACT DETECTION at
+  // injection time (see src/host-settings.ts):
+  //  - host <= 0.1.5 (`settings.register` present): the legacy namespace port,
+  //    byte-identical to 0.3.3;
+  //  - host >= 0.1.7 (SettingsForms refactor, no `register`): the plugin-owned
+  //    versioned document under DSH_HOME — no call into the refactored
+  //    service, so boot logs stay clean on 0.1.7.
+  // The browser half keeps reading and writing through its own fenced
+  // /api/ideas/config route either way (the DSH settings RPC domain serves
+  // only allowlisted namespaces to configuration clients — the Side card
+  // lesson). A deployment without a settings service never fills the face and
+  // the client keeps the spelled defaults.
   let configPort: IdeasConfigPort | undefined
   ctx.inject(['settings'], (sctx) => {
-    const settings = (sctx as unknown as { settings?: SettingsFace }).settings
-    if (settings === undefined) return
-    const ns = IDEAS_SETTINGS_NAMESPACE
-    try {
-      settings.register(ns, IdeasSettingsSchema, { applies: 'live' })
-    } catch (error) {
-      console.error('[dsh-plugin-ideas-manager] settings namespace registration failed', error)
-      return
-    }
-    const viewOf = (): IdeasSettingsView => {
-      const descriptor = settings.describe({ redactSecrets: true }).find(candidate => candidate.ns === ns)
-      if (descriptor === undefined) return { available: true, value: IDEAS_SETTINGS_DEFAULTS }
-      // Every field through sanitizeSettings: a hand-edited section can never
-      // widen what the UI renders.
-      return { available: true, value: sanitizeSettings(descriptor.value), revision: descriptor.revision }
-    }
-    configPort = {
-      read: viewOf,
-      write: async (patch, expectedRevision) => {
-        // The route parser already sanitized every present field (exact keys,
-        // clamped numbers, sanitized enums, bounded scope): merge as-is.
-        await settings.update(ns, patch, expectedRevision)
-        return viewOf()
-      },
-    }
+    const settings = (sctx as unknown as { settings?: unknown }).settings
+    configPort = createIdeasConfigPort(settings)
     return () => { configPort = undefined }
   })
 
