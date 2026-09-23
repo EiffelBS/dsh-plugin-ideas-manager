@@ -133,6 +133,16 @@ function IconReanalyze() {
   )
 }
 
+/** Feather "settings": the header gear opening the DSH Settings modal on this plugin's section. */
+function IconSettings() {
+  return (
+    <svg {...actionIcon}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1.03 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1.03H2a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1.03-1.51V2a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1.03 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1.03H22a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1.03z" />
+    </svg>
+  )
+}
+
 function tagsText(idea: IdeaRecord | undefined): string {
   return idea?.tags === undefined ? '' : idea.tags.map(tag => tag.name).join(', ')
 }
@@ -1013,6 +1023,74 @@ function LifecycleAction({ confirming, pending, title, icon, label, onRun, onCan
   )
 }
 
+/* --- DSH Settings modal navigation (the header gear) ---
+ *
+ * The shell keeps its active settings section as private React state and
+ * exposes no open-section API, so the gear drives the DOM instead. Two hooks,
+ * both verified against the host dist build:
+ *  - the trigger button is the only shell button carrying BOTH
+ *    aria-haspopup="dialog" AND an aria-label from the host locale dict
+ *    ("Settings" / "设置"); hashed CSS-module classes are not a stable hook;
+ *  - once the dialog renders, our nav row is the button inside it whose
+ *    textContent equals OUR OWN localized label (t('settings.nav')) — stable
+ *    across locales because both sides come from this plugin's i18n dict.
+ * Opening via the trigger lands on rows[0] (first section in order), so the
+ * nav-row click is what selects Ideas even when the dialog was just opened.
+ */
+
+/** Find our "Ideas board" settings nav row inside an open dialog, or undefined. */
+function findIdeasSettingsNavRow(): HTMLButtonElement | undefined {
+  const label = t('settings.nav')
+  for (const dialog of Array.from(document.querySelectorAll('[role="dialog"]'))) {
+    if (!dialog.isConnected) continue
+    for (const button of Array.from(dialog.querySelectorAll('nav button'))) {
+      if ((button.textContent ?? '').trim() === label) return button as HTMLButtonElement
+    }
+  }
+  return undefined
+}
+
+/** Find the host settings trigger button, or undefined when its label moved. */
+function findHostSettingsTrigger(): HTMLButtonElement | undefined {
+  for (const button of Array.from(document.querySelectorAll('button[aria-haspopup="dialog"]'))) {
+    const label = button.getAttribute('aria-label') ?? ''
+    if (label === 'Settings' || label === '设置') return button as HTMLButtonElement
+  }
+  return undefined
+}
+
+/**
+ * Open the DSH Settings modal on this plugin's section: click our nav row
+ * when a dialog is already open, otherwise click the host trigger and poll
+ * (rAF, ~800 ms deadline) for the dialog to render before selecting. When
+ * neither hook matches (a host build moved the trigger label), log and leave
+ * the GUI untouched — graceful degradation, never a throw.
+ */
+function openIdeasSettingsSection(): void {
+  const navRow = findIdeasSettingsNavRow()
+  if (navRow !== undefined) {
+    navRow.click()
+    return
+  }
+  const trigger = findHostSettingsTrigger()
+  if (trigger === undefined) {
+    console.warn('[dsh-plugin-ideas-manager] settings trigger not found: the host build may have moved its label ("Settings"/"设置")')
+    return
+  }
+  trigger.click()
+  const deadline = performance.now() + 800
+  const selectSection = (): void => {
+    const row = findIdeasSettingsNavRow()
+    if (row !== undefined) {
+      row.click()
+      return
+    }
+    if (performance.now() < deadline) requestAnimationFrame(selectSection)
+    else console.warn('[dsh-plugin-ideas-manager] settings dialog did not render in time: section select skipped')
+  }
+  requestAnimationFrame(selectSection)
+}
+
 /** Board component; subscribes to the client snapshot. */
 export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [snapshot, setSnapshot] = useState(client.snapshot)
@@ -1302,6 +1380,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             {t('board.textView')}
           </button>
         </div>
+        <button
+          type="button"
+          className={`${classes.ghostButton} ${classes.settingsGear}`}
+          aria-label={t('board.settings')}
+          title={t('board.settings')}
+          onClick={() => { openIdeasSettingsSection() }}
+        >
+          <IconSettings />
+        </button>
         <button
           type="button"
           className={classes.primaryButton}

@@ -56,6 +56,7 @@ export declare const fr: {
     'board.allWorkspaces': string;
     'board.noWorkspace': string;
     'board.workspaceHint': string;
+    'board.settings': string;
     'tab.label': string;
     'tab.overview': string;
     'tab.priorities': string;
@@ -200,6 +201,7 @@ export declare const en: {
     'board.allWorkspaces': string;
     'board.noWorkspace': string;
     'board.workspaceHint': string;
+    'board.settings': string;
     'tab.label': string;
     'tab.overview': string;
     'tab.priorities': string;

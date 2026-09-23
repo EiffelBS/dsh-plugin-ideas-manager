@@ -16,8 +16,8 @@
  * Copy discipline: every option carries an explicit title AND a description
  * stating what it changes, its range/default and when it applies; failures
  * render inline instead of silently reverting. Controls commit immediately
- * (selects and checkboxes), except the number row which stages its draft and
- * commits on blur/Enter so typing never writes per keystroke.
+ * (selects and toggle switches), except the number row which stages its draft
+ * and commits on blur/Enter so typing never writes per keystroke.
  */
 
 import { useEffect, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react'
@@ -62,15 +62,23 @@ export interface IdeasSettingsSectionProps {
   [key: string]: unknown
 }
 
-/** One option row: title + description on the left, the control on the right. */
-function SettingsRow({ title, desc, control }: { title: string; desc: string; control: ReactNode }) {
+/** One option row: title and description, with an optional control on the title line. */
+function SettingsRow({ title, desc, control, controlOnTitle = false }: {
+  title: string
+  desc: string
+  control: ReactNode
+  controlOnTitle?: boolean
+}) {
   return (
     <div className={classes.settingsRow}>
-      <div className={classes.settingsRowText}>
-        <span className={classes.settingsRowTitle}>{title}</span>
+      <div className={`${classes.settingsRowText}${controlOnTitle ? ` ${classes.settingsRowTextWithTitleControl}` : ''}`}>
+        <div className={classes.settingsRowHeading}>
+          <span className={classes.settingsRowTitle}>{title}</span>
+          {controlOnTitle && control}
+        </div>
         <span className={classes.settingsRowDesc}>{desc}</span>
       </div>
-      {control}
+      {!controlOnTitle && control}
     </div>
   )
 }
@@ -176,9 +184,10 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
         <SettingsRow
           title={t('settings.renderMarkdown')}
           desc={t('settings.renderMarkdownDesc')}
+          controlOnTitle
           control={(
             <input
-              className={classes.settingsCheck}
+              className={classes.settingsToggle}
               type="checkbox"
               checked={value.renderMarkdown}
               disabled={disabled}
@@ -211,9 +220,10 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
         <SettingsRow
           title={t('settings.rememberScope')}
           desc={t('settings.rememberScopeDesc')}
+          controlOnTitle
           control={(
             <input
-              className={classes.settingsCheck}
+              className={classes.settingsToggle}
               type="checkbox"
               checked={value.rememberWorkspaceScope}
               disabled={disabled}
@@ -225,9 +235,10 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
         <SettingsRow
           title={t('settings.confirmLifecycle')}
           desc={t('settings.confirmLifecycleDesc')}
+          controlOnTitle
           control={(
             <input
-              className={classes.settingsCheck}
+              className={classes.settingsToggle}
               type="checkbox"
               checked={value.confirmLifecycle}
               disabled={disabled}
@@ -239,9 +250,10 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
         <SettingsRow
           title={t('settings.hideDeclined')}
           desc={t('settings.hideDeclinedDesc')}
+          controlOnTitle
           control={(
             <input
-              className={classes.settingsCheck}
+              className={classes.settingsToggle}
               type="checkbox"
               checked={value.hideDeclinedColumn}
               disabled={disabled}

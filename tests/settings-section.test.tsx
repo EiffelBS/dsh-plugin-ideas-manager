@@ -292,25 +292,31 @@ describe('IdeasSettingsSection page', () => {
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
-    // One number row, two selects (density + open tab), four checkboxes.
+    // One number row, two selects (density + open tab), four toggle switches.
     expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(1)
     expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(2)
-    const checks = Array.from(host.querySelectorAll(`.${classes.settingsCheck}`)) as HTMLInputElement[]
+    const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
     expect(checks.map(box => box.checked)).toEqual([true, false, false, false])
+    for (const toggle of checks) {
+      const heading = toggle.parentElement
+      expect(heading?.classList.contains(classes.settingsRowHeading)).toBe(true)
+      expect(heading?.querySelector(`.${classes.settingsRowTitle}`)).not.toBeNull()
+      expect(heading?.nextElementSibling?.classList.contains(classes.settingsRowDesc)).toBe(true)
+    }
   })
 
   it('saves a boolean option immediately on toggle', async () => {
     const transport = new ConfigTransport()
     const client = makeClient(transport)
     await render(client)
-    const checks = Array.from(host.querySelectorAll(`.${classes.settingsCheck}`)) as HTMLInputElement[]
-    // rememberScope (second checkbox) is off by default; toggle it ON.
+    const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
+    // rememberScope (second switch) is off by default; toggle it ON.
     await act(async () => {
       checks[1]!.click()
       await new Promise(resolve => { setTimeout(resolve, 0) })
     })
     expect(transport.saved).toEqual([{ rememberWorkspaceScope: true }])
-    expect((Array.from(host.querySelectorAll(`.${classes.settingsCheck}`)) as HTMLInputElement[])[1]!.checked).toBe(true)
+    expect((Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[])[1]!.checked).toBe(true)
   })
 
   it('saves the card density select on change', async () => {

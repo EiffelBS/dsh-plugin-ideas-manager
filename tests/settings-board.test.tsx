@@ -231,3 +231,101 @@ describe('board settings application', () => {
     expect(host.querySelector(`.${classes.confirmLabel}`)).toBeNull()
   })
 })
+
+describe('settings gear navigation (header)', () => {
+  const gearButton = (): HTMLButtonElement | undefined =>
+    host.querySelector(`.${classes.settingsGear}`) as HTMLButtonElement | null ?? undefined
+
+  it('renders an icon-only gear button with the localized label', async () => {
+    await renderBoard(new ConfigTransport())
+    const gear = gearButton()
+    expect(gear).toBeDefined()
+    expect(gear?.getAttribute('aria-label')).toBe(t('board.settings'))
+    expect(gear?.querySelector('svg[aria-hidden="true"]')).not.toBeNull()
+  })
+
+  it('clicks the nav row of an already-open settings dialog directly', async () => {
+    await renderBoard(new ConfigTransport())
+    // Simulate the host Settings modal already open on another section:
+    // a role=dialog with a nav rail whose rows are plain buttons.
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const nav = document.createElement('nav')
+    const otherRow = document.createElement('button')
+    otherRow.type = 'button'
+    otherRow.textContent = 'Other section'
+    const ourRow = document.createElement('button')
+    ourRow.type = 'button'
+    ourRow.textContent = t('settings.nav')
+    let clicked = 0
+    ourRow.addEventListener('click', () => { clicked++ })
+    nav.append(otherRow, ourRow)
+    dialog.appendChild(nav)
+    document.body.appendChild(dialog)
+    try {
+      await act(async () => {
+        gearButton()!.click()
+        await new Promise(resolve => { setTimeout(resolve, 0) })
+      })
+      expect(clicked).toBe(1)
+    } finally {
+      dialog.remove()
+    }
+  })
+
+  it('clicks the host trigger and selects our section once the dialog renders', async () => {
+    await renderBoard(new ConfigTransport())
+    // Simulate the closed host: only the settings trigger exists. The
+    // dialog commits on a later frame (React), like the real shell.
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.setAttribute('aria-haspopup', 'dialog')
+    trigger.setAttribute('aria-label', 'Settings')
+    let opened = false
+    let rowClicked = 0
+    trigger.addEventListener('click', () => {
+      opened = true
+      requestAnimationFrame(() => {
+        const dialog = document.createElement('div')
+        dialog.setAttribute('role', 'dialog')
+        const nav = document.createElement('nav')
+        const row = document.createElement('button')
+        row.type = 'button'
+        row.textContent = t('settings.nav')
+        row.addEventListener('click', () => { rowClicked++ })
+        nav.appendChild(row)
+        dialog.appendChild(nav)
+        document.body.appendChild(dialog)
+      })
+    })
+    document.body.appendChild(trigger)
+    try {
+      await act(async () => {
+        gearButton()!.click()
+        // Let the rAF chain run (dialog commit, then the polling select).
+        await new Promise(resolve => { setTimeout(resolve, 100) })
+      })
+      expect(opened).toBe(true)
+      expect(rowClicked).toBe(1)
+    } finally {
+      trigger.remove()
+      document.body.querySelector('[role="dialog"]')?.remove()
+    }
+  })
+
+  it('warns gracefully when neither hook matches (trigger label moved)', async () => {
+    await renderBoard(new ConfigTransport())
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (message?: unknown) => { warnings.push(String(message)) }
+    try {
+      await act(async () => {
+        gearButton()!.click()
+        await new Promise(resolve => { setTimeout(resolve, 0) })
+      })
+    } finally {
+      console.warn = originalWarn
+    }
+    expect(warnings.some(text => text.includes('settings trigger not found'))).toBe(true)
+  })
+})

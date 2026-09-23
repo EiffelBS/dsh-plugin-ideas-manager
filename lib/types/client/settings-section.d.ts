@@ -16,8 +16,8 @@
  * Copy discipline: every option carries an explicit title AND a description
  * stating what it changes, its range/default and when it applies; failures
  * render inline instead of silently reverting. Controls commit immediately
- * (selects and checkboxes), except the number row which stages its draft and
- * commits on blur/Enter so typing never writes per keystroke.
+ * (selects and toggle switches), except the number row which stages its draft
+ * and commits on blur/Enter so typing never writes per keystroke.
  */
 import type { IdeasClient } from './ideas-client.ts';
 /** Structural face of the shell slot registry (no ui-slots dependency). */

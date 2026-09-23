@@ -373,6 +373,11 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
   color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
 }
 
+/* Icon-only ghost variant for the header settings gear (square hit area). */
+.dsh-ideas-settings-gear {
+  padding: 6px;
+}
+
 .dsh-ideas-error {
   padding: 8px 12px;
   border-radius: 8px;
@@ -1001,6 +1006,18 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   min-width: 0;
 }
 
+.dsh-ideas-settings-row-text-with-title-control {
+  flex: 1 1 100%;
+}
+
+.dsh-ideas-settings-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
 .dsh-ideas-settings-row-title {
   font-size: 13px;
   font-weight: 600;
@@ -1050,15 +1067,54 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   flex: none;
 }
 
-/* Boolean option rows: a real checkbox with the brand accent (native
-   semantics and focus, zero custom-switch machinery). */
-.dsh-ideas-settings-check {
+/* Boolean option rows: sliding switches on a real checkbox (native semantics,
+   focus and AT support kept; only the appearance is custom). */
+.dsh-ideas-settings-toggle {
+  appearance: none;
   box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
   cursor: pointer;
   flex: none;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.dsh-ideas-settings-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  transform: translateY(-50%);
+  transition: left 120ms ease-out, background-color 120ms ease-out;
+}
+
+.dsh-ideas-settings-toggle:checked {
+  border-color: transparent;
+  background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
+.dsh-ideas-settings-toggle:checked::after {
+  left: calc(100% - 16px);
+  background: var(--dsw-alias-label-primary-foreground, var(--dsh-ideas-fb-accent-fg));
+}
+
+.dsh-ideas-settings-toggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  outline-offset: 1px;
+}
+
+.dsh-ideas-settings-toggle:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* Card density (settings option cardDensity = compact): the kanban card HIDES
@@ -1552,6 +1608,7 @@ export const classes = {
   mdToggleActive: 'dsh-ideas-md-toggle-active',
   primaryButton: 'dsh-ideas-primary-button',
   ghostButton: 'dsh-ideas-ghost-button',
+  settingsGear: 'dsh-ideas-settings-gear',
   error: 'dsh-ideas-error',
   columns: 'dsh-ideas-columns',
   column: 'dsh-ideas-column',
@@ -1602,11 +1659,13 @@ export const classes = {
   settingsGroup: 'dsh-ideas-settings-group',
   settingsRow: 'dsh-ideas-settings-row',
   settingsRowText: 'dsh-ideas-settings-row-text',
+  settingsRowTextWithTitleControl: 'dsh-ideas-settings-row-text-with-title-control',
+  settingsRowHeading: 'dsh-ideas-settings-row-heading',
   settingsRowTitle: 'dsh-ideas-settings-row-title',
   settingsRowDesc: 'dsh-ideas-settings-row-desc',
   settingsNumber: 'dsh-ideas-settings-number',
   settingsSelect: 'dsh-ideas-settings-select',
-  settingsCheck: 'dsh-ideas-settings-check',
+  settingsToggle: 'dsh-ideas-settings-toggle',
   settingsError: 'dsh-ideas-settings-error',
   settingsNote: 'dsh-ideas-settings-note',
   filterChip: 'dsh-ideas-filter-chip',

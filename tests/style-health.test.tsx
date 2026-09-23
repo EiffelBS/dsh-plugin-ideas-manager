@@ -62,7 +62,9 @@ describe('injected sheet parse (what the browser keeps)', () => {
       '.dsh-ideas-tag-filter-label',
       '.dsh-ideas-tag-filter-search',
       '.dsh-ideas-settings-section',
-      '.dsh-ideas-settings-check',
+      '.dsh-ideas-settings-row-heading',
+      '.dsh-ideas-settings-row-text-with-title-control',
+      '.dsh-ideas-settings-toggle',
       '.dsh-ideas-column-body',
     ]) {
       expect({ critical, present: selectors.includes(critical) })
