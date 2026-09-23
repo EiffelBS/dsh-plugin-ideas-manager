@@ -169,6 +169,16 @@ export type IdeasTab = (typeof IDEAS_TABS)[number];
 export declare const IDEAS_DENSITIES: readonly ["comfortable", "compact"];
 /** One card-density mode. */
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number];
+/**
+ * Interface languages of the panel: `auto` follows the DSH shell language
+ * (the shipped default), the others pin the panel to one dictionary
+ * independently of the shell. DSH serves en + zh today, so `auto` gives an
+ * English panel on an English shell and a Chinese one on a Chinese shell;
+ * `fr` exists for a French-reading operator and future-proofs a French shell.
+ */
+export declare const IDEAS_LANGUAGES: readonly ["auto", "en", "fr", "zh"];
+/** One panel language choice. */
+export type IdeasLanguage = (typeof IDEAS_LANGUAGES)[number];
 /** Bound of the remembered workspace scope (aligned on the envelope ids). */
 export declare const WORKSPACE_SCOPE_MAX_LENGTH = 256;
 /** Resolved display-settings value served by the config routes. */
@@ -189,6 +199,8 @@ export interface IdeasSettingsValue {
     hideDeclinedColumn: boolean;
     /** Kanban card density. */
     cardDensity: IdeasDensity;
+    /** Panel interface language: `auto` follows the DSH shell, else pinned. */
+    language: IdeasLanguage;
 }
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
 export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;

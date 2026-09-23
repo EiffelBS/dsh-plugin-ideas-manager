@@ -79,6 +79,7 @@ export const IdeasSettingsSchema = z.object({
   confirmLifecycle: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.confirmLifecycle),
   hideDeclinedColumn: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
   cardDensity: z.string().default(IDEAS_SETTINGS_DEFAULTS.cardDensity),
+  language: z.string().default(IDEAS_SETTINGS_DEFAULTS.language),
 })
 
 /**

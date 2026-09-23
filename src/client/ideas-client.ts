@@ -7,6 +7,7 @@
 
 import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts'
 import { IDEAS_SETTINGS_DEFAULTS, sanitizeSettings, type IdeasAction, type IdeasListSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
+import { setLanguageOverride } from './locales.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
@@ -164,6 +165,7 @@ export class IdeasClient {
   async loadConfig(): Promise<void> {
     if (this.transport.config === undefined) {
       this.config = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
+      this.applyInterfaceLanguage()
       this.configLoaded = true
       this.emit()
       return
@@ -178,8 +180,19 @@ export class IdeasClient {
       console.warn('[dsh-plugin-ideas-manager] settings load failed', error)
       this.config = { available: false, value: IDEAS_SETTINGS_DEFAULTS }
     }
+    this.applyInterfaceLanguage()
     this.configLoaded = true
     this.emit()
+  }
+
+  /**
+   * Push the `language` setting to the i18n lookup (0.4.0): the panel language
+   * is plugin-owned and independent of the DSH shell language. Called on every
+   * config load and save, so switching the row re-renders the whole panel in
+   * the chosen language (and a failed load falls back to `auto` = the shell).
+   */
+  private applyInterfaceLanguage(): void {
+    setLanguageOverride(this.config.value.language)
   }
 
   /**
@@ -204,6 +217,7 @@ export class IdeasClient {
       this.configError = error instanceof Error ? error.message : String(error)
     } finally {
       this.configPending = false
+      this.applyInterfaceLanguage()
       this.emit()
     }
   }

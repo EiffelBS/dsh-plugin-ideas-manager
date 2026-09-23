@@ -419,6 +419,17 @@ export const IDEAS_DENSITIES = ['comfortable', 'compact'] as const
 /** One card-density mode. */
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number]
 
+/**
+ * Interface languages of the panel: `auto` follows the DSH shell language
+ * (the shipped default), the others pin the panel to one dictionary
+ * independently of the shell. DSH serves en + zh today, so `auto` gives an
+ * English panel on an English shell and a Chinese one on a Chinese shell;
+ * `fr` exists for a French-reading operator and future-proofs a French shell.
+ */
+export const IDEAS_LANGUAGES = ['auto', 'en', 'fr', 'zh'] as const
+/** One panel language choice. */
+export type IdeasLanguage = (typeof IDEAS_LANGUAGES)[number]
+
 /** Bound of the remembered workspace scope (aligned on the envelope ids). */
 export const WORKSPACE_SCOPE_MAX_LENGTH = 256
 
@@ -440,6 +451,8 @@ export interface IdeasSettingsValue {
   hideDeclinedColumn: boolean
   /** Kanban card density. */
   cardDensity: IdeasDensity
+  /** Panel interface language: `auto` follows the DSH shell, else pinned. */
+  language: IdeasLanguage
 }
 
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
@@ -471,6 +484,7 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   confirmLifecycle: false,
   hideDeclinedColumn: false,
   cardDensity: 'comfortable',
+  language: 'auto',
 }
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
@@ -520,6 +534,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     confirmLifecycle: booleanOr(row.confirmLifecycle, IDEAS_SETTINGS_DEFAULTS.confirmLifecycle),
     hideDeclinedColumn: booleanOr(row.hideDeclinedColumn, IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
     cardDensity: oneOf(row.cardDensity, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity),
+    language: oneOf(row.language, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language),
   }
 }
 
@@ -527,6 +542,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
 const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
+  'language',
 ] as const
 
 /**
@@ -558,6 +574,8 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
       patch.tagRows = clampTagRows(field)
     } else if (key === 'defaultTab') {
       patch.defaultTab = oneOf(field, IDEAS_TABS, IDEAS_SETTINGS_DEFAULTS.defaultTab)
+    } else if (key === 'language') {
+      patch.language = oneOf(field, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language)
     } else {
       patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
     }

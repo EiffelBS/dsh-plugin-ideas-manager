@@ -266,6 +266,8 @@ describe('IdeasSettingsSection page', () => {
       'settings.hideDeclined', 'settings.hideDeclinedDesc',
       'settings.cardDensity', 'settings.cardDensityDesc',
       'settings.densityComfortable', 'settings.densityCompact',
+      'settings.language', 'settings.languageDesc', 'settings.languageAuto',
+      'settings.languageEn', 'settings.languageFr', 'settings.languageZh',
       'card.confirmLifecycle',
     ] as const) {
       expect(typeof fr[key]).toBe('string')
@@ -286,15 +288,17 @@ describe('IdeasSettingsSection page', () => {
     expect(titles).toEqual([
       t('settings.tagRows'),
       t('settings.cardDensity'),
+      t('settings.language'),
       t('settings.renderMarkdown'),
       t('settings.defaultTab'),
       t('settings.rememberScope'),
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
-    // One number row, two selects (density + open tab), four toggle switches.
+    // One number row, three selects (density + language + open tab), four
+    // toggle switches.
     expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(1)
-    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(2)
+    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(3)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
     expect(checks.map(box => box.checked)).toEqual([true, false, false, false])
     for (const toggle of checks) {

@@ -77,6 +77,13 @@ export declare class IdeasClient {
      */
     loadConfig(): Promise<void>;
     /**
+     * Push the `language` setting to the i18n lookup (0.4.0): the panel language
+     * is plugin-owned and independent of the DSH shell language. Called on every
+     * config load and save, so switching the row re-renders the whole panel in
+     * the chosen language (and a failed load falls back to `auto` = the shell).
+     */
+    private applyInterfaceLanguage;
+    /**
      * Persist a settings patch (revision-fenced by the view the client holds).
      * Failures surface verbatim as `configError` ('settings-conflict' and
      * 'settings-unavailable' are wire codes the section localizes); the stored

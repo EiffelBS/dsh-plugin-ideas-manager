@@ -633,11 +633,32 @@ export class IdeasHostLedger {
     return document
   }
 
-  /** Atomic tmp+rename write; the tmp path never survives a successful commit. */
+  /**
+   * Atomic tmp+rename write; the tmp path never survives a successful commit.
+   *
+   * Windows fallback: a transient EPERM on `renameSync` (an AV scanner or an
+   * indexer holding the destination for a few ms) would otherwise fail the
+   * user's whole action with a 400. When the rename fails we write the very
+   * same bytes straight to the final file and drop the tmp - the same
+   * mitigation the settings store already applies (host-settings.persist,
+   * "Windows EPERM rename flake"). The window without atomicity is one write
+   * on a file the single-writer lock already protects, and the reader
+   * quarantines an unparsable document on the next boot if the process dies
+   * mid-write - the discipline the whole file system relies on.
+   */
   private writeAtomic(document: LedgerDocument): void {
     const tmpFile = `${this.file}.tmp-${process.pid}`
-    writeFileSync(tmpFile, `${JSON.stringify(document, null, 2)}\n`)
-    renameSync(tmpFile, this.file)
+    const text = `${JSON.stringify(document, null, 2)}\n`
+    writeFileSync(tmpFile, text)
+    try {
+      renameSync(tmpFile, this.file)
+    } catch {
+      try {
+        writeFileSync(this.file, text)
+      } finally {
+        try { unlinkSync(tmpFile) } catch { /* best effort */ }
+      }
+    }
   }
 
   /** Persist a mutation and its request-cache snapshot in one atomic write. */

@@ -151,4 +151,18 @@ describe('IdeasSettingsStore writes', () => {
     // ...and keeps fencing against the revision the first instance produced.
     await expect(new IdeasSettingsStore({ file }).write({ tagRows: 2 }, 5)).rejects.toMatchObject({ code: 'SETTINGS_CONFLICT' })
   })
+
+  it('persists the interface language and repairs an illegal stored one (0.4.0)', async () => {
+    const file = scratch()
+    await new IdeasSettingsStore({ file }).write({ language: 'zh' }, undefined)
+    expect(new IdeasSettingsStore({ file }).read().value.language).toBe('zh')
+
+    // A hand-edited document can never store an illegal language: sanitize on read.
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      revision: 4,
+      value: { language: 'klingon' },
+    }), 'utf8')
+    expect(new IdeasSettingsStore({ file }).read().value.language).toBe('auto')
+  })
 })

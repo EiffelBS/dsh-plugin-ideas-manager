@@ -97,6 +97,14 @@ and a description stating what it changes, its range and its default:
   tags the board shows under the tabs before the zone scrolls; the sticky
   header (label + search + clear-filter) always stays visible. Applied
   immediately, stored per DSH profile.
+- **Interface language** (`language`, default `auto`): the panel's OWN
+  language, independent of the DSH shell setting. `auto` follows the shell
+  (a Chinese shell now shows a Chinese panel, English an English one), and
+  `en` / `fr` / `zh` pin the panel to one dictionary. Applied immediately —
+  switching the row re-renders the whole panel, and the board root carries
+  the matching `lang` attribute for assistive tech and CJK font stacks.
+  Dictionaries: English (default fallback), French, Simplified Chinese —
+  kept in strict key parity (the build fails on a missing key).
 
 Deployments without a settings service keep the spelled defaults (the section
 says so) — the board never depends on the settings surface.

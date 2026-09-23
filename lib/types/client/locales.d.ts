@@ -1,7 +1,10 @@
 /**
- * Ideas board copy: per-document-language dictionary (`fr` and `en`) with an
- * English default. Kept dependency-free (no dsh locale service) so the
+ * Ideas board copy: per-document-language dictionary (`fr`, `en`, `zh`) with
+ * an English default. Kept dependency-free (no dsh locale service) so the
  * DOM-injected entry row and the standalone board tree share one lookup.
+ *
+ * A plugin-owned language override (the `language` setting, applied by
+ * IdeasClient) wins over the DSH shell language; see setLanguageOverride.
  */
 export declare const fr: {
     'entry.label': string;
@@ -149,6 +152,12 @@ export declare const fr: {
     'followUp.submit': string;
     'followUp.cancel': string;
     'followUp.required': string;
+    'settings.language': string;
+    'settings.languageDesc': string;
+    'settings.languageAuto': string;
+    'settings.languageEn': string;
+    'settings.languageFr': string;
+    'settings.languageZh': string;
 };
 export declare const en: {
     'entry.label': string;
@@ -296,8 +305,183 @@ export declare const en: {
     'followUp.submit': string;
     'followUp.cancel': string;
     'followUp.required': string;
+    'settings.language': string;
+    'settings.languageDesc': string;
+    'settings.languageAuto': string;
+    'settings.languageEn': string;
+    'settings.languageFr': string;
+    'settings.languageZh': string;
+};
+/**
+ * Simplified Chinese copy (the language DSH serves besides English), so a
+ * Chinese shell gets a Chinese panel under `language: auto` and any shell
+ * can pin `zh` from the plugin settings. The key set is structurally typed
+ * against `fr` (see IdeasKey), so a missing or extra key fails the build.
+ */
+export declare const zh: {
+    'entry.label': string;
+    'entry.tooltip': string;
+    'board.title': string;
+    'board.close': string;
+    'board.new': string;
+    'board.search': string;
+    'board.revision': string;
+    'board.status.open': string;
+    'board.status.archived': string;
+    'board.status.declined': string;
+    'board.empty': string;
+    'board.emptyFiltered': string;
+    'board.hostError': string;
+    'board.retryHost': string;
+    'board.tagFilter': string;
+    'board.tagFilterSearch': string;
+    'board.tagFilterNoMatch': string;
+    'board.tagFilterClear': string;
+    'settings.nav': string;
+    'settings.title': string;
+    'settings.intro': string;
+    'settings.group': string;
+    'settings.tagRows': string;
+    'settings.tagRowsDesc': string;
+    'settings.loading': string;
+    'settings.unavailable': string;
+    'settings.saveFailed': string;
+    'settings.conflict': string;
+    'settings.groupBehavior': string;
+    'settings.defaultTab': string;
+    'settings.defaultTabDesc': string;
+    'settings.renderMarkdown': string;
+    'settings.renderMarkdownDesc': string;
+    'settings.rememberScope': string;
+    'settings.rememberScopeDesc': string;
+    'settings.confirmLifecycle': string;
+    'settings.confirmLifecycleDesc': string;
+    'settings.hideDeclined': string;
+    'settings.hideDeclinedDesc': string;
+    'settings.cardDensity': string;
+    'settings.cardDensityDesc': string;
+    'settings.densityComfortable': string;
+    'settings.densityCompact': string;
+    'card.confirmLifecycle': string;
+    'board.dragHint': string;
+    'board.mdToggleLabel': string;
+    'board.mdView': string;
+    'board.textView': string;
+    'board.workspace': string;
+    'board.allWorkspaces': string;
+    'board.noWorkspace': string;
+    'board.workspaceHint': string;
+    'board.settings': string;
+    'tab.label': string;
+    'tab.overview': string;
+    'tab.priorities': string;
+    'tab.delivered': string;
+    'delivered.hint': string;
+    'delivered.empty': string;
+    'delivered.deliverAt': string;
+    'delivered.archivedAt': string;
+    'delivered.archivedHint': string;
+    'priorities.hint': string;
+    'priorities.empty': string;
+    'priorities.moveUp': string;
+    'priorities.moveDown': string;
+    'priorities.rationale': string;
+    'new.title': string;
+    'new.titlePlaceholder': string;
+    'new.body': string;
+    'new.bodyPlaceholder': string;
+    'new.tags': string;
+    'new.tagsPlaceholder': string;
+    'new.rationale': string;
+    'new.rationalePlaceholder': string;
+    'new.rank': string;
+    'new.rankValueEffortHint': string;
+    'new.rankInvalid': string;
+    'new.value': string;
+    'new.effort': string;
+    'new.levelNone': string;
+    'new.submit': string;
+    'new.submitAi': string;
+    'new.aiCaptureHint': string;
+    'new.cancel': string;
+    'new.required': string;
+    'new.workspace': string;
+    'new.workspaceNone': string;
+    'new.model': string;
+    'new.modelProvider': string;
+    'new.modelFilterPlaceholder': string;
+    'new.modelSessionDefault': string;
+    'new.modelHint': string;
+    'new.sessionWorkspaceHint': string;
+    'card.drag': string;
+    'card.clickToEdit': string;
+    'card.value': string;
+    'card.effort': string;
+    'card.updated': string;
+    'card.edit': string;
+    'card.archive': string;
+    'card.decline': string;
+    'card.deliver': string;
+    'card.deliverHint': string;
+    'card.delivered': string;
+    'card.deliveredHint': string;
+    'card.restore': string;
+    'card.delete': string;
+    'card.confirmDelete': string;
+    'card.deleteYes': string;
+    'card.deleteNo': string;
+    'card.workspaceHint': string;
+    'edit.title': string;
+    'edit.save': string;
+    'edit.preview': string;
+    'edit.previewOff': string;
+    'edit.workspaceUnknown': string;
+    'level.low': string;
+    'level.medium': string;
+    'level.high': string;
+    'board.status.underReview': string;
+    'card.underReviewHint': string;
+    'card.taskFailed': string;
+    'card.taskFailedHint': string;
+    'card.reviewOk': string;
+    'card.reviewOkHint': string;
+    'card.followUp': string;
+    'card.followUpHint': string;
+    'card.followUpOf': string;
+    'card.followUpOfHint': string;
+    'card.reanalyze': string;
+    'card.reanalyzeHint': string;
+    'reanalyze.title': string;
+    'reanalyze.hint': string;
+    'reanalyze.submit': string;
+    'reanalyze.cancel': string;
+    'followUp.title': string;
+    'followUp.parent': string;
+    'followUp.childTitle': string;
+    'followUp.childTitlePlaceholder': string;
+    'followUp.justification': string;
+    'followUp.summaryLabel': string;
+    'followUp.submit': string;
+    'followUp.cancel': string;
+    'followUp.required': string;
+    'settings.language': string;
+    'settings.languageDesc': string;
+    'settings.languageAuto': string;
+    'settings.languageEn': string;
+    'settings.languageFr': string;
+    'settings.languageZh': string;
 };
 export type IdeasKey = keyof typeof fr;
+/**
+ * Apply (or clear, with 'auto') the plugin-owned interface language. The
+ * resolution order is override -> DSH shell document language -> English, so
+ * `auto` is byte-identical to the pre-0.4.0 behavior.
+ */
+export declare function setLanguageOverride(language: 'auto' | 'en' | 'fr' | 'zh'): void;
+/** The dictionary the panel currently renders with (after the override). */
+export declare function interfaceDictionary(): typeof fr;
+/** BCP-47 tag of the interface language, for the board root's lang attribute. */
+export declare function interfaceLanguage(): string;
 /** Interpolate {placeholders} with the given params. */
 export declare function translate(key: IdeasKey, params?: Record<string, string | number>): string;
 /** Short alias used across the board/entry code. */

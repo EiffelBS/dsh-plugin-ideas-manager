@@ -25,6 +25,7 @@ import type { IdeasClient } from './ideas-client.ts'
 import {
   clampTagRows,
   IDEAS_DENSITIES,
+  IDEAS_LANGUAGES,
   IDEAS_TABS,
   sanitizeSettings,
   TAG_ROWS_MAX,
@@ -132,6 +133,13 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
     comfortable: t('settings.densityComfortable'),
     compact: t('settings.densityCompact'),
   }
+  // Endonym labels: a language picker stays readable whatever it renders in.
+  const languageLabels: Record<(typeof IDEAS_LANGUAGES)[number], string> = {
+    auto: t('settings.languageAuto'),
+    en: t('settings.languageEn'),
+    fr: t('settings.languageFr'),
+    zh: t('settings.languageZh'),
+  }
   return (
     <section className={classes.settingsSection} data-dsh-ideas-settings="">
       <h3 className={classes.settingsTitle}>{t('settings.title')}</h3>
@@ -177,6 +185,23 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
             >
               {IDEAS_DENSITIES.map(density => (
                 <option key={density} value={density}>{densityLabels[density]}</option>
+              ))}
+            </select>
+          )}
+        />
+        <SettingsRow
+          title={t('settings.language')}
+          desc={t('settings.languageDesc')}
+          control={(
+            <select
+              className={classes.settingsSelect}
+              value={value.language}
+              disabled={disabled}
+              aria-label={t('settings.language')}
+              onChange={event => { save({ language: event.target.value as typeof value.language }) }}
+            >
+              {IDEAS_LANGUAGES.map(language => (
+                <option key={language} value={language}>{languageLabels[language]}</option>
               ))}
             </select>
           )}

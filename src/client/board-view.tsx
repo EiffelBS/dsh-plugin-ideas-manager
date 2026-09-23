@@ -16,7 +16,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type F
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
 import type { IdeaListRow } from '../protocol.ts'
-import { t, type IdeasKey } from './locales.ts'
+import { t, interfaceLanguage, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IdeaPreview } from './idea-preview.tsx'
@@ -1382,6 +1382,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       data-dsh-plugin="ideas"
       /* Card-density option (settings): the compact rules hook on this root. */
       data-dsh-ideas-density={cfg.cardDensity === 'compact' ? 'compact' : undefined}
+      /* The panel renders in its own language (0.4.0 language setting): the
+         attribute tells assistive tech and CJK font stacks which locale the
+         subtree is written in, independently of the DSH shell. */
+      lang={interfaceLanguage()}
     >
       <header className={classes.boardHeader}>
         <button
