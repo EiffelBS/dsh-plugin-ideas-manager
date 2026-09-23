@@ -11,11 +11,11 @@ import {
   IDEAS_SETTINGS_DEFAULTS,
   IDEAS_SCHEMA_VERSION,
   type IdeasEventPayload,
+  type IdeasListSnapshot,
   type IdeasSettingsView,
-  type IdeasSnapshot,
 } from '../src/protocol.ts'
 
-const SNAPSHOT: IdeasSnapshot = { schemaVersion: IDEAS_SCHEMA_VERSION, revision: 1, ideas: [] }
+const SNAPSHOT: IdeasListSnapshot = { schemaVersion: IDEAS_SCHEMA_VERSION, revision: 1, ideas: [] }
 
 /** Transport WITH the optional config capability (records every call). */
 class ConfigTransport implements IdeasHostTransport {
@@ -26,8 +26,8 @@ class ConfigTransport implements IdeasHostTransport {
   failLoad: unknown | undefined
   failSave: unknown | undefined
 
-  async state(): Promise<IdeasSnapshot> { return SNAPSHOT }
-  async action(): Promise<IdeasSnapshot> { return SNAPSHOT }
+  async state(): Promise<IdeasListSnapshot> { return SNAPSHOT }
+  async action(): Promise<IdeasListSnapshot> { return SNAPSHOT }
   subscribe(_listener: (event?: IdeasEventPayload) => void): () => void { return () => {} }
 
   async config(): Promise<IdeasSettingsView> {
@@ -50,8 +50,8 @@ class ConfigTransport implements IdeasHostTransport {
 
 /** Transport WITHOUT the optional capability (pre-config Host / other fakes). */
 class LegacyTransport implements IdeasHostTransport {
-  async state(): Promise<IdeasSnapshot> { return SNAPSHOT }
-  async action(): Promise<IdeasSnapshot> { return SNAPSHOT }
+  async state(): Promise<IdeasListSnapshot> { return SNAPSHOT }
+  async action(): Promise<IdeasListSnapshot> { return SNAPSHOT }
   subscribe(_listener: (event?: IdeasEventPayload) => void): () => void { return () => {} }
 }
 

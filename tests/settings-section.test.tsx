@@ -25,23 +25,23 @@ import {
   IDEAS_SCHEMA_VERSION,
   IDEAS_SETTINGS_DEFAULTS,
   type IdeasEventPayload,
+  type IdeasListSnapshot,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
-  type IdeasSnapshot,
 } from '../src/protocol.ts'
 
 // React 18 requires the act-environment flag in a plain jsdom setup.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const SNAPSHOT: IdeasSnapshot = { schemaVersion: IDEAS_SCHEMA_VERSION, revision: 1, ideas: [] }
+const SNAPSHOT: IdeasListSnapshot = { schemaVersion: IDEAS_SCHEMA_VERSION, revision: 1, ideas: [] }
 
 class ConfigTransport implements IdeasHostTransport {
   saved: IdeasSettingsPatch[] = []
   loaded: IdeasSettingsView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 3 }, revision: 1 }
   failSave: unknown | undefined
 
-  async state(): Promise<IdeasSnapshot> { return SNAPSHOT }
-  async action(): Promise<IdeasSnapshot> { return SNAPSHOT }
+  async state(): Promise<IdeasListSnapshot> { return SNAPSHOT }
+  async action(): Promise<IdeasListSnapshot> { return SNAPSHOT }
   subscribe(_listener: (event?: IdeasEventPayload) => void): () => void { return () => {} }
   async config(): Promise<IdeasSettingsView> { return this.loaded }
   async saveConfig(patch: IdeasSettingsPatch, _expectedRevision?: number): Promise<IdeasSettingsView> {

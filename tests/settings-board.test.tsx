@@ -20,8 +20,10 @@ import { t } from '../src/client/locales.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   IDEAS_SETTINGS_DEFAULTS,
+  toListSnapshot,
   type IdeasAction,
   type IdeasEventPayload,
+  type IdeasListSnapshot,
   type IdeasSettingsView,
   type IdeasSnapshot,
 } from '../src/protocol.ts'
@@ -48,15 +50,22 @@ function testSnapshot(): IdeasSnapshot {
   }
 }
 
-/** Transport with the optional config capability; records lifecycle actions. */
+/** Transport with the optional config capability; records lifecycle actions.
+ *  Serves the LIST projection and the per-idea deferred body like the real
+ *  transport (idea #34). */
 class ConfigTransport implements IdeasHostTransport {
   actions: IdeasAction[] = []
   loaded: IdeasSettingsView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS }, revision: 1 }
 
-  async state(): Promise<IdeasSnapshot> { return testSnapshot() }
-  async action(action: IdeasAction): Promise<IdeasSnapshot> {
+  async state(): Promise<IdeasListSnapshot> { return toListSnapshot(testSnapshot()) }
+  async action(action: IdeasAction): Promise<IdeasListSnapshot> {
     this.actions.push(action)
-    return testSnapshot()
+    return toListSnapshot(testSnapshot())
+  }
+  async idea(id: string): Promise<IdeaRecord> {
+    const found = testSnapshot().ideas.find(record => record.id === id)
+    if (found === undefined) throw new Error('not-found')
+    return found
   }
   subscribe(_listener: (event?: IdeasEventPayload) => void): () => void { return () => {} }
   async config(): Promise<IdeasSettingsView> { return this.loaded }
@@ -90,7 +99,7 @@ afterEach(() => {
 /** Mount the board with a snapshot, then settle the config load. */
 async function renderBoard(transport: ConfigTransport): Promise<IdeasClient> {
   const client = new IdeasClient(transport, undefined)
-  client.snapshot = testSnapshot()
+  client.snapshot = toListSnapshot(testSnapshot())
   act(() => {
     root = createRoot(host)
     root.render(<IdeasBoard client={client} />)

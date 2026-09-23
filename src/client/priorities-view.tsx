@@ -20,7 +20,7 @@
 
 import { useState, type DragEvent, type CSSProperties } from 'react'
 import type { IdeasClient } from './ideas-client.ts'
-import type { IdeaRecord } from '../core/ideas.ts'
+import type { IdeaListRow } from '../protocol.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { tagHue } from './tags.ts'
@@ -31,21 +31,22 @@ import {
   rebuildOrder,
   type OpenRankGroup,
 } from './ordering.ts'
-import { renderMarkdown } from './markdown.ts'
 import { ScoreBadge } from './score-badge.tsx'
+import { IdeaTitle } from './idea-title.tsx'
+import { IdeaPreview } from './idea-preview.tsx'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 
 export interface PrioritiesProps {
   client: IdeasClient
-  /** Open ideas of the current workspace scope, unsorted (ranked below). */
-  openIdeas: readonly IdeaRecord[]
-  /** Full ledger rows, for the group-major rebuild the reorder needs. */
-  allIdeas: readonly IdeaRecord[]
+  /** Open list rows of the current workspace scope, unsorted (ranked below). */
+  openIdeas: readonly IdeaListRow[]
+  /** Full ledger row ids/status/ranks, for the group-major rebuild the reorder needs. */
+  allIdeas: readonly IdeaListRow[]
   /** Resolve a workspace id to its display label. */
   workspaceTitle: (workspaceId: string) => string
-  /** Open the shared edit modal on the given idea. */
-  onEdit: (idea: IdeaRecord) => void
+  /** Open the shared edit modal on the given row (fetches the full body first). */
+  onEdit: (idea: IdeaListRow) => void
   /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
   onToggleTag: (name: string) => void
   /** Currently selected filter tags (highlighted pills + row meta). */
@@ -67,13 +68,13 @@ interface DropAt {
 
 /** Normalized group discriminator of an idea ('' = the generic group), used
  *  to accept drags inside one group only. */
-function groupKeyOfIdea(idea: IdeaRecord): string {
+function groupKeyOfIdea(idea: IdeaListRow): string {
   return idea.workspaceId ?? ''
 }
 
 /** Display title of a Priorities group (generic group gets the no-workspace
  *  label), with null for a workspace that has no registry title. */
-function groupTitle(group: OpenRankGroup, workspaceTitle: (workspaceId: string) => string): string {
+function groupTitle(group: OpenRankGroup<IdeaListRow>, workspaceTitle: (workspaceId: string) => string): string {
   return group.workspaceId === undefined ? t('board.noWorkspace') : workspaceTitle(group.workspaceId)
 }
 
@@ -89,12 +90,12 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
   const [dragId, setDragId] = useState<string | undefined>(undefined)
   const [dropAt, setDropAt] = useState<DropAt | undefined>(undefined)
 
-  const move = (idea: IdeaRecord, toward: 'up' | 'down'): void => {
+  const move = (idea: IdeaListRow, toward: 'up' | 'down'): void => {
     const ordered = moveIdeaInOpenBacklog(allIdeas, idea.id, toward)
     if (ordered !== undefined) void client.reorderIdea(ordered)
   }
 
-  const startDrag = (event: DragEvent<HTMLDivElement>, idea: IdeaRecord): void => {
+  const startDrag = (event: DragEvent<HTMLDivElement>, idea: IdeaListRow): void => {
     // Carry the idea id on the drag payload (task-board family contract) so
     // the drop target can read it; the state is a fallback for browsers that
     // do not share the payload with the drop target.
@@ -129,12 +130,12 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
 
   /** Same-group check for a hover/drop on a row: cross-workspace drags are
    *  rejected (no insertion point exists between two different groups). */
-  const sameGroupAsDrag = (draggedId: string, idea: IdeaRecord): boolean => {
+  const sameGroupAsDrag = (draggedId: string, idea: IdeaListRow): boolean => {
     const dragGroup = groupOfDrag(draggedId)
     return dragGroup !== undefined && dragGroup === groupKeyOfIdea(idea)
   }
 
-  const dropOnRow = (event: DragEvent<HTMLLIElement>, idea: IdeaRecord, index: number, groupRanked: readonly IdeaRecord[]): void => {
+  const dropOnRow = (event: DragEvent<HTMLLIElement>, idea: IdeaListRow, index: number, groupRanked: readonly IdeaListRow[]): void => {
     event.preventDefault()
     event.stopPropagation()
     const draggedId = draggedIdFrom(event, dragId)
@@ -152,7 +153,7 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
   // the group end, so the surface drop is group-correct by construction. The
   // indicator shows the insertion line below the group's last row while
   // hovering that surface.
-  const listDragOver = (event: DragEvent<HTMLOListElement>, groupRanked: readonly IdeaRecord[]): void => {
+  const listDragOver = (event: DragEvent<HTMLOListElement>, groupRanked: readonly IdeaListRow[]): void => {
     if (dragId === undefined || groupOfDrag(dragId) === undefined) return
     event.preventDefault()
     event.dataTransfer.dropEffect = 'move'
@@ -244,7 +245,7 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                             }
                           }}
                         >
-                          {idea.title}
+                          <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                         </div>
                         <div className={classes.cardMeta}>
                           {idea.workspaceId !== undefined && (
@@ -263,46 +264,7 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                           {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                           {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                         </div>
-                        {idea.body.trim() !== '' && (
-                          mdMode
-                            ? (
-                              <div
-                                className={`${classes.markdownBody} ${classes.bodyClickable}`}
-                                tabIndex={0}
-                                data-dsh-ideas-md=""
-                                dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.body) }}
-                                onClick={event => {
-                                  // A link inside the rendered body opens the
-                                  // target; anything else edits (kanban parity).
-                                  if ((event.target as HTMLElement).closest('a') !== null) return
-                                  onEdit(idea)
-                                }}
-                                onKeyDown={event => {
-                                  if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault()
-                                    onEdit(idea)
-                                  }
-                                }}
-                              />
-                            )
-                            : (
-                              <div
-                                className={`${classes.cardBody} ${classes.bodyClickable}`}
-                                role="button"
-                                tabIndex={0}
-                                title={t('card.clickToEdit')}
-                                onClick={() => { onEdit(idea) }}
-                                onKeyDown={event => {
-                                  if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault()
-                                    onEdit(idea)
-                                  }
-                                }}
-                              >
-                                {idea.body}
-                              </div>
-                            )
-                        )}
+                        <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
                         {idea.rationale !== undefined && (
                           <div className={classes.prioritiesRationale}>
                             <span className={classes.prioritiesRationaleLabel}>{t('priorities.rationale')}</span>

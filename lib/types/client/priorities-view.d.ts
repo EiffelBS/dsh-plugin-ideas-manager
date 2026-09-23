@@ -18,17 +18,17 @@
  * the same rank-write path the kanban uses.
  */
 import type { IdeasClient } from './ideas-client.ts';
-import type { IdeaRecord } from '../core/ideas.ts';
+import type { IdeaListRow } from '../protocol.ts';
 export interface PrioritiesProps {
     client: IdeasClient;
-    /** Open ideas of the current workspace scope, unsorted (ranked below). */
-    openIdeas: readonly IdeaRecord[];
-    /** Full ledger rows, for the group-major rebuild the reorder needs. */
-    allIdeas: readonly IdeaRecord[];
+    /** Open list rows of the current workspace scope, unsorted (ranked below). */
+    openIdeas: readonly IdeaListRow[];
+    /** Full ledger row ids/status/ranks, for the group-major rebuild the reorder needs. */
+    allIdeas: readonly IdeaListRow[];
     /** Resolve a workspace id to its display label. */
     workspaceTitle: (workspaceId: string) => string;
-    /** Open the shared edit modal on the given idea. */
-    onEdit: (idea: IdeaRecord) => void;
+    /** Open the shared edit modal on the given row (fetches the full body first). */
+    onEdit: (idea: IdeaListRow) => void;
     /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
     onToggleTag: (name: string) => void;
     /** Currently selected filter tags (highlighted pills + row meta). */

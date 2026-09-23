@@ -13,6 +13,7 @@ import { isLoopbackRequest } from './loopback.ts'
 import {
   parseActionEnvelope,
   parseSettingsBody,
+  toListSnapshot,
   IDEAS_API_PREFIX,
   IDEAS_SETTINGS_DEFAULTS,
   type IdeasSettingsPatch,
@@ -87,7 +88,26 @@ export function makeIdeasRoutes(
     handler: (req, res): void => {
       if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
       if (!guard(req, res)) return
-      writeJson(res, 200, service.snapshot(), { 'cache-control': 'no-store' })
+      // idea #34: ?view=list serves the deferred-body projection (list fields
+      // + a short excerpt) so a 140-card board poll stays a fraction of the
+      // full payload. The DEFAULT stays the full snapshot: backups and
+      // tooling (restore-3080-ideas, migration scripts) read GET /state and
+      // must keep seeing bodies.
+      const wantsList = new URL(req.url ?? '/', 'http://loopback').searchParams.get('view') === 'list'
+      writeJson(res, 200, wantsList ? toListSnapshot(service.snapshot()) : service.snapshot(), { 'cache-control': 'no-store' })
+    },
+  }
+  const ideaBody: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/idea`,
+    handler: (req, res): void => {
+      if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      const id = new URL(req.url ?? '/', 'http://loopback').searchParams.get('id')
+      if (id === null || id === '') return writeJson(res, 400, { ok: false, error: 'id-required' }, { 'cache-control': 'no-store' })
+      const record = service.idea(id)
+      if (record === undefined) return writeJson(res, 404, { ok: false, error: 'not-found' }, { 'cache-control': 'no-store' })
+      writeJson(res, 200, record, { 'cache-control': 'no-store' })
     },
   }
   const action: WebRoute = {
@@ -184,5 +204,5 @@ export function makeIdeasRoutes(
       }
     },
   }
-  return [state, action, events, config]
+  return [state, ideaBody, action, events, config]
 }

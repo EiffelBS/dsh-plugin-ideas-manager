@@ -212,6 +212,17 @@ export class IdeasHostLedger {
     return { revision: this.document.revision }
   }
 
+  /**
+   * One idea, deep-cloned like a snapshot row (idea #34): the deferred-body
+   * read GET /api/ideas/idea?id= clones a SINGLE record instead of paying
+   * the whole-ledger snapshot clone for one card.
+   */
+  idea(id: string): IdeaRecord | undefined {
+    const found = this.document.ideas.find(idea => idea.id === id)
+    if (found === undefined) return undefined
+    return cloneIdeas([found])[0]
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true

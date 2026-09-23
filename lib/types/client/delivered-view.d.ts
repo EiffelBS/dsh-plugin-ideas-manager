@@ -11,15 +11,15 @@
  * verb is the only way in, restore the only way out).
  */
 import type { IdeasClient } from './ideas-client.ts';
-import type { IdeaRecord } from '../core/ideas.ts';
+import type { IdeaListRow } from '../protocol.ts';
 export interface DeliveredViewProps {
     client: IdeasClient;
-    /** Archived ideas of the current scope, unsorted. */
-    archivedIdeas: readonly IdeaRecord[];
+    /** Archived list rows of the current scope, unsorted. */
+    archivedIdeas: readonly IdeaListRow[];
     /** Resolve a workspace id to its display label. */
     workspaceTitle: (workspaceId: string) => string;
-    /** Open the shared edit modal on the given idea. */
-    onEdit: (idea: IdeaRecord) => void;
+    /** Open the shared edit modal on the given row (fetches the full body first). */
+    onEdit: (idea: IdeaListRow) => void;
     /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
     onToggleTag: (name: string) => void;
     /** Currently selected filter tags (highlighted row pills). */

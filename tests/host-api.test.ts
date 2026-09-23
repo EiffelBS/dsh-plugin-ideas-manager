@@ -10,9 +10,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpIdeasHostTransport, type IdeasHostTransport } from '../src/client/host-api.ts'
 import { IdeasClient } from '../src/client/ideas-client.ts'
-import { IDEAS_SCHEMA_VERSION, type IdeasEventPayload, type IdeasSnapshot } from '../src/protocol.ts'
+import { IDEAS_SCHEMA_VERSION, type IdeasEventPayload, type IdeasListSnapshot } from '../src/protocol.ts'
 
-function snapshot(revision: number): IdeasSnapshot {
+function snapshot(revision: number): IdeasListSnapshot {
   return { schemaVersion: IDEAS_SCHEMA_VERSION, revision, ideas: [] }
 }
 
@@ -22,12 +22,12 @@ class FakeTransport implements IdeasHostTransport {
   subscribed: { listener: () => void; isActive: (() => boolean) | undefined; dispose: () => void } | undefined
   readonly gate: (() => boolean | undefined) | undefined
 
-  async state(): Promise<IdeasSnapshot> {
+  async state(): Promise<IdeasListSnapshot> {
     this.stateCalls += 1
     return snapshot(this.stateCalls)
   }
 
-  async action(): Promise<IdeasSnapshot> {
+  async action(): Promise<IdeasListSnapshot> {
     return snapshot(0)
   }
 

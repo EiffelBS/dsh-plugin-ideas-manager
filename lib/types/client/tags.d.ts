@@ -3,11 +3,15 @@
  * The tag pills on every card and row carry a stable per-name hue and toggle
  * the same conjunctive filter (see board-view.tsx for the state).
  */
-import type { IdeaRecord } from '../core/ideas.ts';
+import type { IdeaTag } from '../core/ideas.ts';
+/** Structural row face the tag helpers read (full records AND list rows, idea #34). */
+export type TaggedIdea = {
+    tags?: IdeaTag[];
+};
 /** Conjunctive tag filter: adding a label narrows the board. */
-export declare function matchesTags(idea: IdeaRecord, selected: readonly string[]): boolean;
+export declare function matchesTags(idea: TaggedIdea, selected: readonly string[]): boolean;
 /** Every label in use across the ledger, sorted (for the filter chips). */
-export declare function collectKnownTags(ideas: readonly IdeaRecord[]): string[];
+export declare function collectKnownTags(ideas: readonly TaggedIdea[]): string[];
 /**
  * Narrow the filter chips with the chip search box (idea #36): a
  * case-insensitive substring match on the label. Matched chips keep their

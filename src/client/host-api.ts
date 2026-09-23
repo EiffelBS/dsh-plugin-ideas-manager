@@ -8,13 +8,16 @@
 
 import {
   IDEAS_API_PREFIX,
+  toListSnapshot,
   type IdeasAction,
   type IdeasActionEnvelope,
   type IdeasEventPayload,
+  type IdeasListSnapshot,
   type IdeasSnapshot,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
 } from '../protocol.ts'
+import type { IdeaRecord } from '../core/ideas.ts'
 
 const REQUEST_TIMEOUT_MS = 15_000
 /** Poll cadence replacing the SSE subscription (see subscribe doc). */
@@ -31,8 +34,28 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 export interface IdeasHostTransport {
-  state(): Promise<IdeasSnapshot>
-  action(action: IdeasAction, initiator?: string): Promise<IdeasSnapshot>
+  /**
+   * Board state as the LIST projection (idea #34): list fields + a short
+   * body excerpt, voluminous analyses deferred to `idea()` / `stateFull()`.
+   */
+  state(): Promise<IdeasListSnapshot>
+  /**
+   * Apply one action. The wire response stays the FULL snapshot (the
+   * POST /api/ideas/action contract is frozen); the transport projects it
+   * to the list view at the edge so the client only ever holds list rows.
+   */
+  action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>
+  /**
+   * Full-body snapshot (no projection): the deep-search index and parity
+   * with pre-idea#34 consumers. Optional - a transport without it keeps
+   * excerpt-level search (see IdeasClient.ensureSearchIndex).
+   */
+  stateFull?(): Promise<IdeasSnapshot>
+  /**
+   * One full record (body + analysisAudit included): the deferred-body read
+   * behind edit / follow-up / re-analyze. Optional like `config`.
+   */
+  idea?(id: string): Promise<IdeaRecord>
   /**
    * Subscribe to refresh opportunities. No SSE stream is opened: the browser
    * HTTP/1.1 connection pool is shared across tabs and capped (~6 per
@@ -60,12 +83,27 @@ export interface IdeasHostTransport {
 }
 
 export class HttpIdeasHostTransport implements IdeasHostTransport {
-  async state(): Promise<IdeasSnapshot> {
-    return await this.request(`${IDEAS_API_PREFIX}/state`, { cache: 'no-store' })
+  async state(): Promise<IdeasListSnapshot> {
+    return await this.request<IdeasListSnapshot>(`${IDEAS_API_PREFIX}/state?view=list`, { cache: 'no-store' })
   }
 
-  async action(action: IdeasAction, initiator?: string): Promise<IdeasSnapshot> {
-    return await this.post(uuid(), action, initiator)
+  async stateFull(): Promise<IdeasSnapshot> {
+    return await this.request<IdeasSnapshot>(`${IDEAS_API_PREFIX}/state`, { cache: 'no-store' })
+  }
+
+  async idea(id: string): Promise<IdeaRecord> {
+    return await this.request<IdeaRecord>(`${IDEAS_API_PREFIX}/idea?id=${encodeURIComponent(id)}`, { cache: 'no-store' })
+  }
+
+  /**
+   * The action wire is untouched (full snapshot, frozen contract); the
+   * projection to list rows happens HERE so every client consumer - board,
+   * priorities, delivered - works from the same deferred-body shape as the
+   * lean `state()` poll.
+   */
+  async action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot> {
+    const full = await this.post(uuid(), action, initiator)
+    return toListSnapshot(full)
   }
 
   async config(): Promise<IdeasSettingsView> {

@@ -27,6 +27,75 @@ export interface IdeasSnapshot {
   ideas: IdeaRecord[]
 }
 
+/* --- list projection (idea #34: deferred body loading) --- */
+
+/**
+ * Hard cap of the list-view body excerpt: enough for a readable card
+ * preview and a useful board search, small enough that a 140-card snapshot
+ * stays a fraction of the full payload - the voluminous analyses ride
+ * GET /api/ideas/idea?id= on demand (edit / follow-up / re-analyze) and the
+ * full GET /api/ideas/state (deep search, backups) instead.
+ */
+export const BODY_EXCERPT_MAX_LENGTH = 280
+
+/**
+ * One list-view row: the full record minus the fields the list never shows
+ * (`body`, `analysisAudit`) plus a short `bodyExcerpt` teaser. The MISSING
+ * `body` field is deliberate: TypeScript then refuses every render/search
+ * site that would silently grow back a full-body dependency, and the edit
+ * modal can never save a partial body by accident (it always edits a full
+ * IdeaRecord fetched through GET /api/ideas/idea).
+ */
+export type IdeaListRow = Omit<IdeaRecord, 'body' | 'analysisAudit'> & {
+  /** Leading, whitespace-collapsed slice of the body (never the analysis). */
+  bodyExcerpt: string
+}
+
+/** Snapshot served by GET /api/ideas/state?view=list (and action views). */
+export interface IdeasListSnapshot {
+  schemaVersion: typeof IDEAS_SCHEMA_VERSION
+  revision: number
+  ideas: IdeaListRow[]
+}
+
+/**
+ * Leading slice of a body for previews and search: whitespace collapses to
+ * single spaces (this is a teaser, not markdown structure), the cut lands on
+ * a word boundary when one is reasonably close, and a truncated excerpt
+ * carries an ellipsis.
+ */
+export function bodyExcerptOf(body: string): string {
+  const flat = body.replace(/\s+/g, ' ').trim()
+  if (flat.length <= BODY_EXCERPT_MAX_LENGTH) return flat
+  const cut = flat.slice(0, BODY_EXCERPT_MAX_LENGTH)
+  const lastSpace = cut.lastIndexOf(' ')
+  const text = lastSpace > BODY_EXCERPT_MAX_LENGTH * 0.6 ? cut.slice(0, lastSpace) : cut
+  return `${text}…`
+}
+
+/** Project one full record to its list row (drops body + analysisAudit). */
+export function toListRow(idea: IdeaRecord): IdeaListRow {
+  // The omit pattern: `analysisAudit` is intentionally unused (dropped),
+  // `body` only feeds the excerpt.
+  const { body, analysisAudit, ...rest } = idea
+  void analysisAudit
+  return { ...rest, bodyExcerpt: bodyExcerptOf(body) }
+}
+
+/**
+ * Project a full snapshot to the list view. Shared by the host (the
+ * `?view=list` state route) and the client (action responses still carry
+ * the FULL snapshot - the POST /api/ideas/action contract is frozen - and
+ * are projected here at the transport edge).
+ */
+export function toListSnapshot(snapshot: IdeasSnapshot): IdeasListSnapshot {
+  return {
+    schemaVersion: snapshot.schemaVersion,
+    revision: snapshot.revision,
+    ideas: snapshot.ideas.map(toListRow),
+  }
+}
+
 /** SSE event frame: revision only, never the idea list. */
 export interface IdeasEventPayload {
   revision: number

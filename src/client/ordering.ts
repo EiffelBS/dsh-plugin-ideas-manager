@@ -13,7 +13,7 @@
  * Pure and unit-testable in isolation.
  */
 
-import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
+import { IDEA_COLUMNS, rankGroupKey, type RankableIdea, type IdeaStatus } from '../core/ideas.ts'
 
 /**
  * Sentinel workspace-filter value: the generic ideas (no workspace assigned).
@@ -26,19 +26,20 @@ export const NO_WORKSPACE_FILTER = '__no-workspace__'
  *  NO_WORKSPACE_FILTER = the workspace-less ideas only, a concrete id =
  *  exact match. Single source for every board derivation that scopes to a
  *  workspace (Overview columns, Priorities, Delivered). */
-export function matchesWorkspaceScope(idea: IdeaRecord, workspaceFilter: string): boolean {
+export function matchesWorkspaceScope(idea: { workspaceId?: string }, workspaceFilter: string): boolean {
   if (workspaceFilter === '') return true
   if (workspaceFilter === NO_WORKSPACE_FILTER) return idea.workspaceId === undefined
   return idea.workspaceId === workspaceFilter
 }
 
 /** Ideas without a rank sort after every ranked idea. */
-export function orderKey(idea: IdeaRecord): number {
+export function orderKey(idea: RankableIdea): number {
   return idea.rank ?? Number.MAX_SAFE_INTEGER
 }
 
-/** Stable rank-sorted copy (ties keep their input order). */
-export function orderIdeas(ideas: readonly IdeaRecord[]): IdeaRecord[] {
+/** Stable rank-sorted copy (ties keep their input order). Generic over the
+ *  row type so list rows and full records both pass through unchanged. */
+export function orderIdeas<T extends RankableIdea>(ideas: readonly T[]): T[] {
   return [...ideas].sort((a, b) => orderKey(a) - orderKey(b))
 }
 
@@ -47,7 +48,7 @@ export function orderIdeas(ideas: readonly IdeaRecord[]): IdeaRecord[] {
  * The workspace-less ideas share the generic group. (Re-exported from the
  * model so the client call sites read the wire/display semantics directly.)
  */
-export function groupKeyOf(idea: IdeaRecord): string {
+export function groupKeyOf(idea: RankableIdea): string {
   return rankGroupKey(idea.status, idea.workspaceId)
 }
 
@@ -60,10 +61,10 @@ export function groupKeyOf(idea: IdeaRecord): string {
  * preserves their ranks.
  */
 export function groupedIdOrder(
-  all: readonly IdeaRecord[],
+  all: readonly RankableIdea[],
   override?: { key: string; orderedIds: string[] },
 ): string[] {
-  const byGroup = new Map<string, IdeaRecord[]>()
+  const byGroup = new Map<string, RankableIdea[]>()
   for (const idea of all) {
     const key = groupKeyOf(idea)
     const rows = byGroup.get(key)
@@ -110,7 +111,7 @@ export function groupedIdOrder(
  * each workspace group rank-sorted.
  */
 export function rebuildOrder(
-  all: readonly IdeaRecord[],
+  all: readonly RankableIdea[],
   movedId: string,
   targetStatus: IdeaStatus,
   beforeId: string | undefined,
@@ -143,7 +144,7 @@ export function rebuildOrder(
  * no-op), so the caller skips the wire call.
  */
 export function moveIdeaInOpenBacklog(
-  all: readonly IdeaRecord[],
+  all: readonly RankableIdea[],
   movedId: string,
   toward: 'up' | 'down',
 ): string[] | undefined {
@@ -171,9 +172,9 @@ export function moveIdeaInOpenBacklog(
  * a workspace id come first in a stable key order; the presentation layer
  * may re-order them by title.
  */
-export function groupOpenByWorkspace(openIdeas: readonly IdeaRecord[]): OpenRankGroup[] {
-  const byWorkspace = new Map<string, IdeaRecord[]>()
-  const generic: IdeaRecord[] = []
+export function groupOpenByWorkspace<T extends RankableIdea>(openIdeas: readonly T[]): OpenRankGroup<T>[] {
+  const byWorkspace = new Map<string, T[]>()
+  const generic: T[] = []
   for (const idea of openIdeas) {
     if (idea.workspaceId === undefined) {
       generic.push(idea)
@@ -183,7 +184,7 @@ export function groupOpenByWorkspace(openIdeas: readonly IdeaRecord[]): OpenRank
       else rows.push(idea)
     }
   }
-  const groups: OpenRankGroup[] = [...byWorkspace.keys()]
+  const groups: OpenRankGroup<T>[] = [...byWorkspace.keys()]
     .sort()
     .map(workspaceId => ({ workspaceId, ideas: orderIdeas(byWorkspace.get(workspaceId)!) }))
   if (generic.length > 0) groups.push({ workspaceId: undefined, ideas: orderIdeas(generic) })
@@ -191,18 +192,19 @@ export function groupOpenByWorkspace(openIdeas: readonly IdeaRecord[]): OpenRank
 }
 
 /** One Priorities "all" group: a workspace (undefined = generic) and its
- *  rank-sorted open ideas (relative ranks). */
-export interface OpenRankGroup {
+ *  rank-sorted open ideas (relative ranks). Generic over the row type (list
+ *  rows or full records). */
+export interface OpenRankGroup<T = RankableIdea> {
   workspaceId: string | undefined
-  ideas: IdeaRecord[]
+  ideas: T[]
 }
 
 /** Display-order comparator of workspace groups: the named workspaces first
  *  (by registry title), the generic (workspace-less) group last regardless of
  *  its title. */
 export function compareWorkspaceGroups(
-  a: OpenRankGroup,
-  b: OpenRankGroup,
+  a: OpenRankGroup<unknown>,
+  b: OpenRankGroup<unknown>,
   workspaceTitle: (workspaceId: string) => string,
 ): number {
   if (a.workspaceId === undefined) return 1
@@ -214,10 +216,10 @@ export function compareWorkspaceGroups(
  *  contiguous (named by title, the generic group last) and rank-sorted inside
  *  itself — the "rank by workspace" presentation the Priorities view also
  *  uses. Under a single-workspace scope the plain rank sort is identical. */
-export function orderByWorkspaceGroups(
-  rows: readonly IdeaRecord[],
+export function orderByWorkspaceGroups<T extends RankableIdea>(
+  rows: readonly T[],
   workspaceTitle: (workspaceId: string) => string,
-): IdeaRecord[] {
+): T[] {
   return groupOpenByWorkspace(rows)
     .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
     .flatMap(group => group.ideas)
@@ -230,10 +232,10 @@ export function orderByWorkspaceGroups(
  * journal shows every idea that left the open backlog: delivered ones carry a
  * deliveredAt stamp, manually archived (abandoned) ones do not.
  */
-export function archivedIdeasOf(
-  ideas: readonly IdeaRecord[],
+export function archivedIdeasOf<T extends RankableIdea>(
+  ideas: readonly T[],
   workspaceFilter: string,
-): IdeaRecord[] {
+): T[] {
   return ideas.filter(idea =>
     idea.status === 'archived' && matchesWorkspaceScope(idea, workspaceFilter))
 }

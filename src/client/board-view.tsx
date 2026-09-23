@@ -14,10 +14,12 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
-import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus } from '../core/ideas.ts'
+import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
+import type { IdeaListRow } from '../protocol.ts'
 import { t, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
+import { IdeaPreview } from './idea-preview.tsx'
 import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
 import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, rebuildOrder, archivedIdeasOf } from './ordering.ts'
@@ -29,6 +31,7 @@ import { matchSessionSelection } from './session-queue.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
+import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
@@ -38,10 +41,14 @@ const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   declined: 'board.status.declined',
 }
 
-function matchesFilter(idea: IdeaRecord, filter: string): boolean {
+function matchesFilter(idea: IdeaListRow, filter: string, deepBody: string | undefined): boolean {
   if (filter.trim() === '') return true
   const needle = filter.trim().toLowerCase()
-  const haystacks = [idea.title, idea.body, ...(idea.tags ?? []).map(tag => tag.name)]
+  // The list snapshot carries only an excerpt (idea #34); `deepBody` - the
+  // whole body once the deep-search index is loaded - restores the
+  // full-body coverage the board had before the projection, while summary
+  // and excerpt keep the search useful before/without the index.
+  const haystacks = [idea.title, idea.summary ?? '', deepBody ?? idea.bodyExcerpt, ...(idea.tags ?? []).map(tag => tag.name)]
   return haystacks.some(text => text.toLowerCase().includes(needle))
 }
 
@@ -194,7 +201,7 @@ function LevelSelect({ id, label, value, onChange, disabled }: {
  *  then starts empty; the triage verb is the only path that re-ranks with a
  *  shift). Ranking is per workspace, so the peer set is the (open,
  *  workspace) group the idea belongs to, never the whole open column. */
-function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly IdeaRecord[]): string {
+function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly RankableIdea[]): string {
   if (idea === undefined || idea.status !== 'open') return ''
   const key = rankGroupKey('open', idea.workspaceId)
   const open = orderIdeas(ideas.filter(item =>
@@ -863,11 +870,11 @@ function FollowUpModal({ client, parent, onClose }: {
  */
 function ReanalyzeModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   client: IdeasClient
-  idea: IdeaRecord
+  idea: ReanalyzeSource
   /** Display title of the idea's workspace (context line). */
   workspaceTitle: string
   /** Start the run: stamp + launch with the picked (or default) model. */
-  onLaunch: (idea: IdeaRecord, model: ModelChoice | undefined) => void
+  onLaunch: (idea: ReanalyzeSource, model: ModelChoice | undefined) => void
   onClose: () => void
 }) {
   const picker = useAnalystModelPicker(client.sessionLauncher)
@@ -920,6 +927,9 @@ type DragState = { id: string; source: IdeaStatus } | undefined
  *  (beforeId undefined = append at the column end), and the hovered card +
  *  half that drives the accent insertion line while dragging. */
 type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; half?: 'before' | 'after' } | undefined
+/** Re-analyze source: a list row (card action) or the full record already
+ *  fetched for the edit modal - both carry everything the flow reads. */
+type ReanalyzeSource = IdeaListRow | IdeaRecord
 
 /**
  * Shared tag-filter row (idea #36): ONE scroll zone with a SINGLE flex-wrap
@@ -1097,6 +1107,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // Display settings ride the same subscription: every load/save produces a
   // fresh view reference, so the board re-renders when an option changes.
   const [settings, setSettings] = useState(client.config)
+  // Subscription wake-up counter (see the subscribe effect): renders the
+  // board when an emit carried NO snapshot/config reference change.
+  const [, setClientTick] = useState(0)
   const [filter, setFilter] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   // '': all workspaces; a concrete id scopes the columns + search to it.
@@ -1105,8 +1118,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
   // The under-review parent a recette-NOK follow-up is being raised for.
   const [followUp, setFollowUp] = useState<IdeaRecord | undefined>(undefined)
-  // The open idea a Re-analyze confirm modal is raised for (idea #30 flow).
-  const [reanalyzing, setReanalyzing] = useState<IdeaRecord | undefined>(undefined)
+  // The open idea a Re-analyze confirm modal is raised for (idea #30 flow):
+  // a list row from the card, or the full record from the edit modal.
+  const [reanalyzing, setReanalyzing] = useState<ReanalyzeSource | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   // Lifecycle confirmation (settings option confirmLifecycle): the Deliver /
   // Recette-OK / Decline button armed for an in-place Yes/No confirmation.
@@ -1126,6 +1140,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     () => client.subscribe(() => {
       setSnapshot(client.snapshot)
       setSettings(client.config)
+      // Every real emit wakes the board even when the snapshot/config
+      // references did not move (pending flips, error transitions from
+      // reportError/refresh) - the idle poll no longer emits at all, so a
+      // bump here is always an observable change worth rendering (idea #34).
+      setClientTick(tick => tick + 1)
     }),
     [client],
   )
@@ -1150,6 +1169,21 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
+
+  // Deep search (idea #34): list rows carry excerpts only, so an ACTIVE
+  // search loads the full bodies once per revision (client.ensureSearchIndex,
+  // fire-and-forget). The generation counter - bumped when the index lands -
+  // re-runs the render with the deeper haystacks; it is deliberately read
+  // nowhere else (a state SET is what wakes React here), hence the elision.
+  const [, setSearchIndexGen] = useState(0)
+  useEffect(() => {
+    if (filter.trim() === '') return
+    let cancelled = false
+    void client.ensureSearchIndex().then(() => {
+      if (!cancelled) setSearchIndexGen(gen => gen + 1)
+    })
+    return () => { cancelled = true }
+  }, [filter, client, revision])
   // id -> idea, to resolve a child's followUpOfId into the parent number.
   const ideaById = new Map(ideas.map(idea => [idea.id, idea]))
   // Idea #36: the chip set follows the workspace scope — the plain ledger
@@ -1168,7 +1202,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const filtering = filter.trim() !== '' || tagFilter.length > 0
   const visible = ideas.filter(idea =>
     matchesWorkspaceScope(idea, workspaceFilter)
-    && matchesFilter(idea, filter)
+    && matchesFilter(idea, filter, client.cachedBodyOf(idea.id))
     && matchesTags(idea, tagFilter))
   // The Priorities ranking ranks the OPEN backlog of the current workspace
   // scope — archived/declined ideas are simply not part of the ranking (see
@@ -1183,7 +1217,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // green delivery stamp renders only for rows carrying deliveredAt.
   const archivedIdeas = archivedIdeasOf(ideas, workspaceFilter)
     .filter(idea => matchesTags(idea, tagFilter))
-  const byStatus = (status: IdeaStatus): IdeaRecord[] => {
+  const byStatus = (status: IdeaStatus): IdeaListRow[] => {
     const rows = visible.filter(idea => idea.status === status)
     // "All workspaces": lay the column out per workspace group (named by
     // title, the generic group last), each group rank-sorted — the board side
@@ -1208,9 +1242,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
    * buttons (Deliver, Recette OK, Decline on open + under-review cards).
    */
   const lifecycleConfirmOn = cfg.confirmLifecycle
-  const armedFor = (idea: IdeaRecord, verb: 'deliver' | 'decline'): boolean =>
+  const armedFor = (idea: { id: string }, verb: 'deliver' | 'decline'): boolean =>
     confirmVerb?.id === idea.id && confirmVerb.verb === verb
-  const runLifecycle = (idea: IdeaRecord, verb: 'deliver' | 'decline', run: () => Promise<void>): void => {
+  const runLifecycle = (idea: { id: string }, verb: 'deliver' | 'decline', run: () => Promise<void>): void => {
     if (!lifecycleConfirmOn) {
       void run()
       return
@@ -1253,22 +1287,45 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   /** Start an HTML5 drag carrying the idea id, exactly like the task-board family. */
-  const startDrag = (idea: IdeaRecord): void => {
+  const startDrag = (idea: RankableIdea): void => {
     setDrag({ id: idea.id, source: idea.status })
     dragAutoscrollBegin()
   }
 
-  const openEdit = (idea: IdeaRecord): void => {
+  const openEdit = (idea: IdeaListRow): void => {
     setConfirmId(undefined)
     setConfirmVerb(undefined)
-    setEditing(idea)
+    // Deferred body (idea #34): the list row carries an excerpt only; the
+    // modal must edit the WHOLE body, so fetch the full record first. A
+    // failure never opens the modal (saving a partial body would silently
+    // truncate the analysis) and surfaces in the existing error bar.
+    void client.fetchIdea(idea).then(full => {
+      setEditing(full)
+    }, error => {
+      console.error('[dsh-plugin-ideas-manager] deferred body load failed:', error)
+      client.reportError(error instanceof Error ? error.message : String(error))
+    })
+  }
+
+  /** Recette-NOK follow-up from the card: same deferred-body fetch (the
+   *  composer quotes the parent's whole summary). The edit modal passes its
+   *  already-full record straight through. */
+  const openFollowUp = (idea: IdeaListRow): void => {
+    setConfirmId(undefined)
+    setConfirmVerb(undefined)
+    void client.fetchIdea(idea).then(parent => {
+      setFollowUp(parent)
+    }, error => {
+      console.error('[dsh-plugin-ideas-manager] deferred body load failed:', error)
+      client.reportError(error instanceof Error ? error.message : String(error))
+    })
   }
 
   /** Idea #30 flow: a Re-analyze affordance is offered on an open idea only
    *  when the analyst can actually run there — a session launcher resolved
    *  AND the idea's workspace known to the DSH app (a ledger-only workspace
    *  cannot host a session, exactly like the capture AI mode). */
-  const canReanalyze = (idea: IdeaRecord): boolean =>
+  const canReanalyze = (idea: ReanalyzeSource): boolean =>
     idea.status === 'open'
     && client.sessionLauncher !== undefined
     && idea.workspaceId !== undefined
@@ -1277,12 +1334,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   /** Stamp the audit cycle on the Host first (the prior analysis is preserved
    *  BEFORE the agent overwrites the card), then launch the fresh analyst
    *  session with the model picked in the confirm modal (undefined = session
-   *  default). A failed stamp aborts the run; a failed launch leaves the
+   *  default). The full body is fetched BEFORE the stamp: the analyst prompt
+   *  carries the whole analysis target (a list row holds only an excerpt);
+   *  a failed fetch or stamp aborts the run; a failed launch leaves the
    *  stamped card untouched (the human can retry the run). */
-  const reanalyzeIdea = (idea: IdeaRecord, model: ModelChoice | undefined): void => {
+  const reanalyzeIdea = (idea: ReanalyzeSource, model: ModelChoice | undefined): void => {
     const launcher = client.sessionLauncher
     if (launcher === undefined || idea.workspaceId === undefined) return
     const run = async (): Promise<void> => {
+      const full = await client.fetchIdea(idea)
       await client.reanalyzeIdea(idea.id)
       const input: ReanalyzeInput = {
         workspaceId: idea.workspaceId!,
@@ -1290,7 +1350,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         ideaId: idea.id,
         ...(idea.ideaNumber !== undefined ? { ideaNumber: idea.ideaNumber } : {}),
         title: idea.title,
-        body: idea.body,
+        body: full.body,
         tags: (idea.tags ?? []).map(tag => tag.name),
         ...(idea.value === undefined ? {} : { value: idea.value }),
         ...(idea.effort === undefined ? {} : { effort: idea.effort }),
@@ -1584,10 +1644,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   }
                                 }}
                               >
-                                {idea.ideaNumber !== undefined && (
-                                  <span className={classes.cardNumber}>#{idea.ideaNumber}</span>
-                                )}
-                                {idea.title}
+                                <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                               </div>
                               {idea.followUpOfId !== undefined && (
                                 <span
@@ -1662,47 +1719,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 ))}
                               </div>
                             )}
-                            {idea.body.trim() !== '' && (
-                              mdMode
-                                ? (
-                                  <div
-                                    className={`${classes.markdownBody} ${classes.bodyClickable}`}
-                                    tabIndex={0}
-                                    title={t('card.clickToEdit')}
-                                    data-dsh-ideas-md=""
-                                    dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.body) }}
-                                    onClick={event => {
-                                      // A link inside the rendered body opens
-                                      // the target; anything else edits.
-                                      if ((event.target as HTMLElement).closest('a') !== null) return
-                                      openEdit(idea)
-                                    }}
-                                    onKeyDown={event => {
-                                      if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault()
-                                        openEdit(idea)
-                                      }
-                                    }}
-                                  />
-                                )
-                                : (
-                                  <div
-                                    className={`${classes.cardBody} ${classes.bodyClickable}`}
-                                    role="button"
-                                    tabIndex={0}
-                                    title={t('card.clickToEdit')}
-                                    onClick={() => { openEdit(idea) }}
-                                    onKeyDown={event => {
-                                      if (event.key === 'Enter' || event.key === ' ') {
-                                        event.preventDefault()
-                                        openEdit(idea)
-                                      }
-                                    }}
-                                  >
-                                    {idea.body}
-                                  </div>
-                                )
-                            )}
+                            <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { openEdit(idea) }} />
                             {(idea.value !== undefined || idea.effort !== undefined) && (
                               <div className={classes.cardMeta}>
                                 {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
@@ -1778,7 +1795,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   className={classes.actionButton}
                                   disabled={client.pending}
                                   title={t('card.followUpHint')}
-                                  onClick={() => { setConfirmId(undefined); setConfirmVerb(undefined); setFollowUp(idea) }}
+                                  onClick={() => { openFollowUp(idea) }}
                                 >
                                   <IconFollowUp />
                                   {t('card.followUp')}

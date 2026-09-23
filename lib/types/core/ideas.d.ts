@@ -74,6 +74,21 @@ export declare function normalizeSummary(value: string | undefined): string | un
  * both the host (triage/reorder re-rank) and the client (order rebuilds).
  */
 export declare function rankGroupKey(status: IdeaStatus, workspaceId: string | undefined): string;
+/**
+ * Structural subset the ordering helpers read (idea #34): satisfied by both
+ * the full IdeaRecord and the deferred-body IdeaListRow, so client sorts and
+ * drop rebuilds never need the voluminous `body` field.
+ */
+export interface RankableIdea {
+    /** Stable idea id. */
+    id: string;
+    /** Current column. */
+    status: IdeaStatus;
+    /** Workspace peer-set discriminator (absent = generic group). */
+    workspaceId?: string;
+    /** Manual rank inside the (status, workspace) group (absent = unranked). */
+    rank?: number;
+}
 /** Prior analysis preserved by a re-analyze run (one level deep). */
 export interface AnalysisAudit {
     /** When the re-analyze cycle was started (ms epoch). */

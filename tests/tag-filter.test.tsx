@@ -24,7 +24,7 @@ import { fr, en, t } from '../src/client/locales.ts'
 import { IdeasBoard, TagFilterRow } from '../src/client/board-view.tsx'
 import { IdeasClient } from '../src/client/ideas-client.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
-import type { IdeasSnapshot } from '../src/protocol.ts'
+import { toListSnapshot, type IdeasSnapshot } from '../src/protocol.ts'
 import type { IdeaRecord } from '../src/core/ideas.ts'
 
 // React 18 requires the act-environment flag in a plain jsdom setup.
@@ -149,15 +149,17 @@ function boardSnapshot(): IdeasSnapshot {
   }
 }
 
-/** Client over a static snapshot (no polling, no workspace registry). */
+/** Client over a static snapshot (no polling, no workspace registry). The
+ *  transport serves the LIST projection like the real one (idea #34). */
 function makeClient(snapshot: IdeasSnapshot): IdeasClient {
+  const list = toListSnapshot(snapshot)
   const transport: IdeasHostTransport = {
-    state: async () => snapshot,
-    action: async () => snapshot,
+    state: async () => list,
+    action: async () => list,
     subscribe: () => () => {},
   }
   const client = new IdeasClient(transport, undefined)
-  client.snapshot = snapshot
+  client.snapshot = list
   return client
 }
 

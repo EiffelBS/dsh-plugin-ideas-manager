@@ -14,6 +14,48 @@ export interface IdeasSnapshot {
     revision: number;
     ideas: IdeaRecord[];
 }
+/**
+ * Hard cap of the list-view body excerpt: enough for a readable card
+ * preview and a useful board search, small enough that a 140-card snapshot
+ * stays a fraction of the full payload - the voluminous analyses ride
+ * GET /api/ideas/idea?id= on demand (edit / follow-up / re-analyze) and the
+ * full GET /api/ideas/state (deep search, backups) instead.
+ */
+export declare const BODY_EXCERPT_MAX_LENGTH = 280;
+/**
+ * One list-view row: the full record minus the fields the list never shows
+ * (`body`, `analysisAudit`) plus a short `bodyExcerpt` teaser. The MISSING
+ * `body` field is deliberate: TypeScript then refuses every render/search
+ * site that would silently grow back a full-body dependency, and the edit
+ * modal can never save a partial body by accident (it always edits a full
+ * IdeaRecord fetched through GET /api/ideas/idea).
+ */
+export type IdeaListRow = Omit<IdeaRecord, 'body' | 'analysisAudit'> & {
+    /** Leading, whitespace-collapsed slice of the body (never the analysis). */
+    bodyExcerpt: string;
+};
+/** Snapshot served by GET /api/ideas/state?view=list (and action views). */
+export interface IdeasListSnapshot {
+    schemaVersion: typeof IDEAS_SCHEMA_VERSION;
+    revision: number;
+    ideas: IdeaListRow[];
+}
+/**
+ * Leading slice of a body for previews and search: whitespace collapses to
+ * single spaces (this is a teaser, not markdown structure), the cut lands on
+ * a word boundary when one is reasonably close, and a truncated excerpt
+ * carries an ellipsis.
+ */
+export declare function bodyExcerptOf(body: string): string;
+/** Project one full record to its list row (drops body + analysisAudit). */
+export declare function toListRow(idea: IdeaRecord): IdeaListRow;
+/**
+ * Project a full snapshot to the list view. Shared by the host (the
+ * `?view=list` state route) and the client (action responses still carry
+ * the FULL snapshot - the POST /api/ideas/action contract is frozen - and
+ * are projected here at the transport edge).
+ */
+export declare function toListSnapshot(snapshot: IdeasSnapshot): IdeasListSnapshot;
 /** SSE event frame: revision only, never the idea list. */
 export interface IdeasEventPayload {
     revision: number;

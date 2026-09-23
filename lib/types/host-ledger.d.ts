@@ -60,6 +60,12 @@ export declare class IdeasHostLedger {
     summary(): {
         revision: number;
     };
+    /**
+     * One idea, deep-cloned like a snapshot row (idea #34): the deferred-body
+     * read GET /api/ideas/idea?id= clones a SINGLE record instead of paying
+     * the whole-ledger snapshot clone for one card.
+     */
+    idea(id: string): IdeaRecord | undefined;
     dispose(): void;
     /**
      * Apply one action with request-id dedupe: the same requestId replayed with

@@ -13,21 +13,22 @@
 
 import { type CSSProperties } from 'react'
 import type { IdeasClient } from './ideas-client.ts'
-import type { IdeaRecord } from '../core/ideas.ts'
+import type { IdeaListRow } from '../protocol.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
-import { renderMarkdown } from './markdown.ts'
 import { ScoreBadge } from './score-badge.tsx'
+import { IdeaTitle } from './idea-title.tsx'
+import { IdeaPreview } from './idea-preview.tsx'
 import { tagHue } from './tags.ts'
 
 export interface DeliveredViewProps {
   client: IdeasClient
-  /** Archived ideas of the current scope, unsorted. */
-  archivedIdeas: readonly IdeaRecord[]
+  /** Archived list rows of the current scope, unsorted. */
+  archivedIdeas: readonly IdeaListRow[]
   /** Resolve a workspace id to its display label. */
   workspaceTitle: (workspaceId: string) => string
-  /** Open the shared edit modal on the given idea. */
-  onEdit: (idea: IdeaRecord) => void
+  /** Open the shared edit modal on the given row (fetches the full body first). */
+  onEdit: (idea: IdeaListRow) => void
   /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
   onToggleTag: (name: string) => void
   /** Currently selected filter tags (highlighted row pills). */
@@ -37,12 +38,12 @@ export interface DeliveredViewProps {
 }
 
 /** Most recent exit first (deliveredAt for delivered, archivedAt otherwise). */
-function mostRecentFirst(ideas: readonly IdeaRecord[]): IdeaRecord[] {
+function mostRecentFirst(ideas: readonly IdeaListRow[]): IdeaListRow[] {
   return [...ideas].sort((a, b) => exitAt(b) - exitAt(a))
 }
 
 /** The stamp date: the delivery date when delivered, the archive date else. */
-function exitAt(idea: IdeaRecord): number {
+function exitAt(idea: IdeaListRow): number {
   return idea.deliveredAt ?? idea.archivedAt ?? idea.updatedAt ?? idea.createdAt
 }
 
@@ -90,7 +91,7 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                         }
                       }}
                     >
-                      {idea.title}
+                      <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                     </div>
                     {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined) && (
                       <div className={classes.cardMeta}>
@@ -111,45 +112,7 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                         {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                       </div>
                     )}
-                    {idea.body.trim() !== '' && (
-                      mdMode
-                        ? (
-                          <div
-                            className={`${classes.markdownBody} ${classes.bodyClickable}`}
-                            tabIndex={0}
-                            data-dsh-ideas-md=""
-                            dangerouslySetInnerHTML={{ __html: renderMarkdown(idea.body) }}
-                            title={t('card.clickToEdit')}
-                            onClick={event => {
-                              if ((event.target as HTMLElement).closest('a') !== null) return
-                              onEdit(idea)
-                            }}
-                            onKeyDown={event => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                onEdit(idea)
-                              }
-                            }}
-                          />
-                        )
-                        : (
-                          <div
-                            className={`${classes.cardBody} ${classes.bodyClickable}`}
-                            role="button"
-                            tabIndex={0}
-                            title={t('card.clickToEdit')}
-                            onClick={() => { onEdit(idea) }}
-                            onKeyDown={event => {
-                              if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault()
-                                onEdit(idea)
-                              }
-                            }}
-                          >
-                            {idea.body}
-                          </div>
-                        )
-                    )}
+                    <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
                   </div>
                   <div className={classes.prioritiesActions}>
                     <button

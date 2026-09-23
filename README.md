@@ -31,9 +31,13 @@ Open · Under review · Archived · Declined.
 - **Drag & drop** moves cards between columns and reorders them; the columns
   auto-scroll when you drag toward an edge (vertically and horizontally when
   Archived/Declined are off-screen on a narrow window).
-- **Search** and a **conjunctive tag filter** narrow the columns.
-- Single click on a card title or body opens the **edit modal** (raw text or
-  rendered markdown).
+- **Search** and a **conjunctive tag filter** narrow the columns. Cards
+  render a short **body excerpt** (idea #34): the full analysis is fetched
+  on demand when the edit modal, follow-up composer or re-analyze opens, and
+  the first active search loads a deep index once so whole-body matches keep
+  working.
+- Single click on a card title or description opens the **edit modal** (raw
+  text or rendered markdown of the full body).
 - Every card shows its stable **`#N` number**, **workspace chip**, **tags**,
   **value/effort badges** and update date.
 
@@ -267,7 +271,7 @@ src/
   protocol.ts         # /api/ideas prefix, types, parseActionEnvelope (exactKeys)
   host-service.ts     # apply + mirror scheduling
   host-ledger.ts      # persisted ledger, dedupe cache, lock, internal bind
-  host-routes.ts      # state / action / events + loopback guard
+  host-routes.ts      # state (+ ?view=list projection) / idea?id= / action / events + loopback guard
   taskboard-bridge.ts # runtime feature-detect + one-way mirror (no hard import)
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline
@@ -279,6 +283,10 @@ tests/                # vitest suites per module
 
 Persistence lives in `~/.dsh/ideas/ledger-v2.json` (atomic tmp+rename writes,
 corruption quarantine, single-writer lock, restart-safe request-id dedupe).
+
+High-card-load evaluation (before/after numbers, deferred-vs-priority
+decision): see `docs/perf-evaluation.md`; live profiler:
+`scripts/perf-live.mjs` (test instance only).
 
 ## License
 

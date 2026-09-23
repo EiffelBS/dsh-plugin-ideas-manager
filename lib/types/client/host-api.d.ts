@@ -5,10 +5,31 @@
  * in for the former SSE stream (see `subscribe` for the connection-pool
  * rationale). Mirrors the dsh-task-board host-api discipline.
  */
-import { type IdeasAction, type IdeasEventPayload, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import { type IdeasAction, type IdeasEventPayload, type IdeasListSnapshot, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import type { IdeaRecord } from '../core/ideas.ts';
 export interface IdeasHostTransport {
-    state(): Promise<IdeasSnapshot>;
-    action(action: IdeasAction, initiator?: string): Promise<IdeasSnapshot>;
+    /**
+     * Board state as the LIST projection (idea #34): list fields + a short
+     * body excerpt, voluminous analyses deferred to `idea()` / `stateFull()`.
+     */
+    state(): Promise<IdeasListSnapshot>;
+    /**
+     * Apply one action. The wire response stays the FULL snapshot (the
+     * POST /api/ideas/action contract is frozen); the transport projects it
+     * to the list view at the edge so the client only ever holds list rows.
+     */
+    action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>;
+    /**
+     * Full-body snapshot (no projection): the deep-search index and parity
+     * with pre-idea#34 consumers. Optional - a transport without it keeps
+     * excerpt-level search (see IdeasClient.ensureSearchIndex).
+     */
+    stateFull?(): Promise<IdeasSnapshot>;
+    /**
+     * One full record (body + analysisAudit included): the deferred-body read
+     * behind edit / follow-up / re-analyze. Optional like `config`.
+     */
+    idea?(id: string): Promise<IdeaRecord>;
     /**
      * Subscribe to refresh opportunities. No SSE stream is opened: the browser
      * HTTP/1.1 connection pool is shared across tabs and capped (~6 per
@@ -35,8 +56,16 @@ export interface IdeasHostTransport {
     saveConfig?(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
 }
 export declare class HttpIdeasHostTransport implements IdeasHostTransport {
-    state(): Promise<IdeasSnapshot>;
-    action(action: IdeasAction, initiator?: string): Promise<IdeasSnapshot>;
+    state(): Promise<IdeasListSnapshot>;
+    stateFull(): Promise<IdeasSnapshot>;
+    idea(id: string): Promise<IdeaRecord>;
+    /**
+     * The action wire is untouched (full snapshot, frozen contract); the
+     * projection to list rows happens HERE so every client consumer - board,
+     * priorities, delivered - works from the same deferred-body shape as the
+     * lean `state()` poll.
+     */
+    action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>;
     config(): Promise<IdeasSettingsView>;
     saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
     private post;

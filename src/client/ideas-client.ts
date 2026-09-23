@@ -5,8 +5,8 @@
  * the DOM mounts at the edges only.
  */
 
-import type { IdeaStatus } from '../core/ideas.ts'
-import { IDEAS_SETTINGS_DEFAULTS, sanitizeSettings, type IdeasAction, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
+import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts'
+import { IDEAS_SETTINGS_DEFAULTS, sanitizeSettings, type IdeasAction, type IdeasListSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
@@ -31,7 +31,8 @@ export interface IdeaClientPatch {
 
 export class IdeasClient {
   boardOpen = false
-  snapshot: IdeasSnapshot | undefined
+  /** Board state as LIST rows (bodies deferred, idea #34). */
+  snapshot: IdeasListSnapshot | undefined
   error: string | undefined
   pending = false
   /** Display settings (tag rows ...); the spelled defaults until the config route answers. */
@@ -56,6 +57,12 @@ export class IdeasClient {
   private readonly activeWorkspaceSource: ActiveWorkspaceSource | undefined
   private unsubscribeWorkspaces: (() => void) | undefined
   private unsubscribeActive: (() => void) | undefined
+  /** Full records fetched on demand (body + audit), keyed by idea id (idea #34). */
+  private readonly fullRecords = new Map<string, IdeaRecord>()
+  /** Highest revision whose full snapshot already filled {@link fullRecords}. */
+  private searchIndexedAtRevision = -1
+  /** In-flight deep-search index load (at most one at a time). */
+  private searchIndexLoad: Promise<void> | undefined
 
   constructor(
     private readonly transport: IdeasHostTransport,
@@ -133,13 +140,19 @@ export class IdeasClient {
   }
 
   async refresh(): Promise<void> {
+    const errorBefore = this.error
+    let adopted = false
     try {
-      this.snapshot = await this.transport.state()
+      adopted = this.adopt(await this.transport.state())
       this.error = undefined
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
     }
-    this.emit()
+    // Notify ONLY on observable movement: a snapshot change or an error
+    // transition. The idle short-poll (same revision, same error) now costs
+    // a fetch and nothing else - no subscriber wake-up, no re-render (the
+    // pre-idea#34 board rebuilt every card on every idle tick).
+    if (adopted || this.error !== errorBefore) this.emit()
   }
 
   /**
@@ -321,7 +334,7 @@ export class IdeasClient {
     this.pending = true
     this.emit()
     try {
-      this.snapshot = await this.transport.action(action)
+      this.adopt(await this.transport.action(action))
       this.error = undefined
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
@@ -332,8 +345,83 @@ export class IdeasClient {
     }
   }
 
+  /**
+   * Adopt a fresh snapshot (idea #34): an IDLE refresh - same revision, the
+   * Host bumps it on every commit - keeps the SAME reference, so the board's
+   * setSnapshot bails out by Object.is and React rebuilds nothing on the
+   * 2.5 s short-poll tick that found no change. The revision is the Host's
+   * single source of truth: equal revision means identical content (replayed
+   * requests and no-op applies return the current state verbatim).
+   * @returns whether the snapshot reference actually moved.
+   */
+  private adopt(fresh: IdeasListSnapshot): boolean {
+    if (this.snapshot !== undefined && fresh.revision === this.snapshot.revision) return false
+    this.snapshot = fresh
+    return true
+  }
+
   private emit(): void {
     for (const listener of [...this.listeners]) listener()
+  }
+
+  /**
+   * Full record behind one list row (idea #34 deferred body): the edit
+   * modal, the follow-up composer and the re-analyze input read the WHOLE
+   * body here, fetched once per change. Cached until the row's updatedAt
+   * moves - every commit stamps updatedAt on changed ideas - so the entry
+   * self-invalidates after each action.
+   */
+  async fetchIdea(row: Pick<IdeaRecord, 'id' | 'updatedAt'>): Promise<IdeaRecord> {
+    const hit = this.fullRecords.get(row.id)
+    if (hit !== undefined && hit.updatedAt === row.updatedAt) return hit
+    if (this.transport.idea === undefined) throw new Error('body-unavailable')
+    const full = await this.transport.idea(row.id)
+    this.fullRecords.set(full.id, full)
+    return full
+  }
+
+  /** The whole body when its full record is loaded (deep search), else undefined. */
+  cachedBodyOf(id: string): string | undefined {
+    return this.fullRecords.get(id)?.body
+  }
+
+  /**
+   * Deep-search index (idea #34): the list snapshot carries only excerpts,
+   * so the FIRST active search loads the full snapshot ONCE per revision and
+   * fills the record cache; matchesFilter then scans whole bodies exactly
+   * like before the projection. Idle boards and clean filters never pay it.
+   * Never rejects (a failed load logs and lets the next keystroke retry), so
+   * callers can fire-and-forget; the record cache - not the snapshot - is
+   * the deliverable (adopt() stays the only snapshot mutator).
+   */
+  async ensureSearchIndex(): Promise<void> {
+    if (this.snapshot === undefined || this.transport.stateFull === undefined) return
+    if (this.searchIndexedAtRevision >= this.snapshot.revision) return
+    if (this.searchIndexLoad !== undefined) {
+      await this.searchIndexLoad
+      return
+    }
+    this.searchIndexLoad = (async () => {
+      try {
+        // Bound call on purpose: the transport method must keep its `this`.
+        const full = await this.transport.stateFull!()
+        for (const idea of full.ideas) this.fullRecords.set(idea.id, idea)
+        this.searchIndexedAtRevision = Math.max(this.searchIndexedAtRevision, full.revision)
+      } catch (error) {
+        console.error('[dsh-plugin-ideas-manager] search index load failed:', error)
+      }
+    })()
+    try {
+      await this.searchIndexLoad
+    } finally {
+      this.searchIndexLoad = undefined
+    }
+  }
+
+  /** Surface a transport/UI failure through the board's existing error bar. */
+  reportError(message: string): void {
+    this.error = message
+    this.emit()
   }
 }
 

@@ -18,6 +18,7 @@
  */
 import { IdeasHostLedger } from './host-ledger.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
+import type { IdeaRecord } from './core/ideas.ts';
 import { type IdeasAction, type IdeasEventPayload, type IdeasSnapshot } from './protocol.ts';
 /** Apply response: the fresh snapshot, plus the generated export when asked. */
 export interface IdeasApplyResponse {
@@ -46,6 +47,8 @@ export declare class IdeasHostService {
     });
     setActive(active: boolean): void;
     snapshot(): IdeasSnapshot;
+    /** One full record for the deferred-body read (idea #34); undefined when absent. */
+    idea(id: string): IdeaRecord | undefined;
     /** SSE frame payload; deliberately skips the ideas deep-clone of {@link snapshot}. */
     eventPayload(): IdeasEventPayload;
     subscribe(listener: () => void): () => void;

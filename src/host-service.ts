@@ -77,6 +77,11 @@ export class IdeasHostService {
     }
   }
 
+  /** One full record for the deferred-body read (idea #34); undefined when absent. */
+  idea(id: string): IdeaRecord | undefined {
+    return this.ledger.idea(id)
+  }
+
   /** SSE frame payload; deliberately skips the ideas deep-clone of {@link snapshot}. */
   eventPayload(): IdeasEventPayload {
     return this.ledger.summary()
