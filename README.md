@@ -64,12 +64,24 @@ Open · Under review · Archived · Declined.
 ## Settings
 
 The plugin contributes an **Ideas board** section to the DSH Settings modal.
-It is backed by a registered `ideas` settings namespace on the Host (schemastery
-schema, revision-fenced writes, persisted in the profile's settings document)
-and edited through the plugin's own fenced `GET/POST /api/ideas/config` route —
-the DSH settings RPC domain does not serve third-party namespaces. Every option
-ships with an explicit title and a description stating what it changes, its
-range and its default:
+Options are read and written through the plugin's own fenced
+`GET/POST /api/ideas/config` route — the DSH settings RPC domain does not serve
+third-party namespaces — and the backing store follows the host generation,
+detected at runtime:
+
+- **Host <= 0.1.5**: a registered `ideas` settings namespace (schemastery
+  schema, `applies: 'live'`, revision-fenced writes persisted in the profile's
+  settings document) — the historical behaviour, unchanged.
+- **Host >= 0.1.7**: the SettingsForms refactor removed `ctx.settings.register`,
+  so the plugin keeps its options in its own versioned document,
+  `<DSH_HOME>/ideas-manager-settings.json`, behind the same incrementing
+  revision fence (an unreadable document is quarantined beside itself — renamed,
+  never deleted — and the defaults take over).
+
+Both hosts answer the identical wire contract (a complete sanitized value plus
+its revision; a stale write is refused with `409 settings-conflict`), so the
+section behaves the same everywhere. Every option ships with an explicit title
+and a description stating what it changes, its range and its default:
 
 - **Visible tag-filter lines** (`tagRows`, 1–5, default 3): how many rows of
   tags the board shows under the tabs before the zone scrolls; the sticky
@@ -155,6 +167,12 @@ Full contract (verb table, mirror mapping, PowerShell gotchas) lives in
 ## Host compatibility
 
 - **Requires Host >= 0.1.5** (see `dsh.engines.dsh` in `package.json`).
+- **Settings section works on host 0.1.5 and 0.1.7+**: the settings service
+  contract is detected at runtime (`settings.register` present = legacy `ideas`
+  namespace, exactly as before; absent after the 0.1.7 SettingsForms refactor =
+  plugin-owned `<DSH_HOME>/ideas-manager-settings.json`), so 0.1.7 boots with
+  no `settings namespace registration failed` line and 0.1.5 keeps the exact
+  0.3.3 behaviour.
 - On **Host >= 0.1.7** the client retains the agent scope before prompting:
   `sessions.scope(id)` became a pure read there (a just-created session is no
   longer visible through it until its scope is retained), so the AI capture /
@@ -178,7 +196,7 @@ dsh plugin --profile web add dsh-plugin-ideas-manager
 Pinned to a version:
 
 ```sh
-dsh plugin --profile web add dsh-plugin-ideas-manager@0.2.6
+dsh plugin --profile web add dsh-plugin-ideas-manager@0.3.4
 ```
 
 From a local checkout (no registry needed):
@@ -190,7 +208,7 @@ dsh plugin --profile web add link:/path/to/dsh-plugin-ideas-manager
 From a git URL (fallback, pinned to a released tag):
 
 ```sh
-dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.2.6
+dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.3.4
 ```
 
 `dsh plugin` runs `pnpm add` in the profile directory, then reconciles
@@ -205,7 +223,7 @@ dsh web --profile web --no-open   # then look for the Ideas entry in the sidebar
 ```
 
 To pick up a newer revision after a release (versions follow the package's
-`version` field; releases are tagged, e.g. `v0.2.6`):
+`version` field; releases are tagged, e.g. `v0.3.4`):
 
 ```sh
 dsh plugin --profile web add dsh-plugin-ideas-manager@latest
