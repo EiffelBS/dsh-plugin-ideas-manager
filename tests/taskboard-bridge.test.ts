@@ -498,7 +498,7 @@ describe('IdeasHostService mirror integration', () => {
     ledger.bindTaskBoardId('idea-2', 'task-8')
     const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
     await service.pollUnderReviewTransitions()
-    // Only the idea whose card reached done crossed the recette gate; the one
+    // Only the idea whose card reached done crossed the review gate; the one
     // still in backlog stays open.
     expect(service.snapshot().ideas.find(idea => idea.id === 'idea-1')!.status).toBe('underReview')
     expect(service.snapshot().ideas.find(idea => idea.id === 'idea-2')!.status).toBe('open')
@@ -529,7 +529,7 @@ describe('IdeasHostService mirror integration', () => {
     const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
     await service.pollUnderReviewTransitions()
     const idea = service.snapshot().ideas.find(row => row.id === 'idea-1')!
-    // A failed run delivered nothing: the idea stays open (the recette gate is
+    // A failed run delivered nothing: the idea stays open (the review gate is
     // for finished work) and only the observation is recorded.
     expect(idea.status).toBe('open')
     expect(idea.taskBoardStatus).toBe('failed')

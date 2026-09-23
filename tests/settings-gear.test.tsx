@@ -2,7 +2,7 @@
 /**
  * Board gear -> DSH Settings modal, section selection (0.4.0 fix).
  *
- * Reported in recette: with the interface language pinned to French or
+ * Reported in review: with the interface language pinned to French or
  * Chinese, the gear only OPENED the modal without selecting the Ideas
  * section, while English worked. Cause: the host resolves our `label()` thunk
  * when it builds the dialog, so the rendered nav row can carry the BOOT

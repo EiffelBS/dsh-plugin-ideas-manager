@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Failed-task badge (recette follow-up to idea #34): an open idea whose
+ * Failed-task badge (follow-up to idea #34): an open idea whose
  * mirrored TaskBoard card's LAST OBSERVED status is `failed` shows a red
  * "Task failed" pill in its card header, while the idea deliberately stays
- * in the backlog (a failed run delivered nothing - the recette gate is for
+ * in the backlog (a failed run delivered nothing - the review gate is for
  * finished work). The badge is display-only: it never moves the card, and it
  * never shows for a non-failed status nor on a closed column.
  */

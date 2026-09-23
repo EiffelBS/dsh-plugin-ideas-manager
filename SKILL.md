@@ -36,19 +36,19 @@ mentions ideas / backlog / idees / notes:
    (value/effort + rationale + rank are applied transactionally with the
    re-rank); use `reorder` for pure re-ordering. Re-rank only on material
    change; ranks stay advisory (scheduling is the author's call).
-4. **Lifecycle / recette**: finished work moves to UNDER REVIEW — the recette
-   gate (automatically when its task-board card reaches `done`). A recette OK
+4. **Lifecycle / review**: finished work moves to UNDER REVIEW — the review
+   gate (automatically when its task-board card reaches `done`). An approved review
    delivers the idea (`deliver` → `archived` + `deliveredAt`; record
-   commits/verification notes in the body first); a recette NOK raises a
+   commits/verification notes in the body first); a rejected review raises a
    linked follow-up idea with `followUp` (child, `open`, whose body carries
    the parent summary + the justification, `followUpOfId` → parent) and
-   archives the parent — or use `decline` (+ `decision`) when the recette
+   archives the parent — or use `decline` (+ `decision`) when the review
    rejects the idea outright. The ledger keeps a stable `#N` sequence per
    idea (`ideaNumber`) — the stable human reference for a captured idea.
 5. **TaskBoard mirror** (best-effort, one-way, when the board is present):
    capture → backlog card, updates → card update, decline / deliver →
    archive; a card reaching `done` moves its idea to under review
-   automatically (the recette gate) — the recette verdict stays human-owned.
+   automatically (the review gate) — the review verdict stays human-owned.
 
 ## Workspace adoption (replacing a hand-maintained file convention)
 
@@ -88,8 +88,8 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 | `move` | kind, ideaId, status | `open` / `underReview` / `archived` (manual drag; declined only via `decline`). |
 | `triage` | kind, ideaId, patch | record the priority opinion and re-rank transactionally; patch keys: `value`, `effort`, `rationale`, `rank` (open ideas only). |
 | `decline` | kind, ideaId, decision | → `declined` + `archivedAt` + optional `decision` note. |
-| `deliver` | kind, ideaId | → `archived` + `archivedAt` + `deliveredAt`; works from `open` AND `underReview` (recette OK). Mirrors the card archive; the card's `done` stays runner-owned. |
-| `followUp` | kind, ideaId, input | recette NOK: creates an `open` child idea (title/body, `followUpOfId` → parent, parent's workspace inherited) and archives the parent — one atomic commit; requires the parent `underReview`. Mirrors the child as a new card only. |
+| `deliver` | kind, ideaId | → `archived` + `archivedAt` + `deliveredAt`; works from `open` AND `underReview` (review approved). Mirrors the card archive; the card's `done` stays runner-owned. |
+| `followUp` | kind, ideaId, input | review rejected: creates an `open` child idea (title/body, `followUpOfId` → parent, parent's workspace inherited) and archives the parent — one atomic commit; requires the parent `underReview`. Mirrors the child as a new card only. |
 | `restore` | kind, ideaId | `archived`/`declined` → `open`. |
 | `delete` | kind, ideaId | hard remove. |
 | `reorder` | kind, orderedIds | rewrites ranks 1..n. |
@@ -118,13 +118,13 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
   - idea `delete` → **no-op** (the card outlives the idea)
 - Under-review poll: while the mirror is active, the Host polls the task
   statuses (`GET /api/task-board/state`, every 30 s) and moves any open idea
-  whose bound card is `done` to `underReview` — the automatic recette gate.
+  whose bound card is `done` to `underReview` — the automatic review gate.
 - Mirror-late: an idea created while the bridge was off is self-healed on the
   first update/decline (the card is created then the op applies).
 - The task `prompt` = the idea's tag `promptPrefix` lines joined with `\n`.
-- **The recette is human-owned**: when a card reaches `done`, the poll moves
-  the linked idea to under review automatically — but the recette verdict
-  (Recette OK → deliver, or NOK → follow-up / decline) is the author's call
+- **The review is human-owned**: when a card reaches `done`, the poll moves
+  the linked idea to under review automatically — but the review verdict
+  (review approved → deliver, or rejected → follow-up / decline) is the author's call
   on the board. Never automate an idea → done from the ideas side.
 - The bound card id persists on the idea as `taskBoardId` (internal field,
   never accepted from the wire). The settings namespace `ideas` exposes

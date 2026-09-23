@@ -93,20 +93,20 @@ describe('buildIdeasExport', () => {
     expect(result.ideasMd).not.toContain('- decision:')
   })
 
-  it('keeps under-review ideas in the active document (recette gate pending)', () => {
+  it('keeps under-review ideas in the active document (review gate pending)', () => {
     const underReview = {
-      ...createIdea({ title: 'Awaiting recette', body: '' }, T0, 'idea-1'),
+      ...createIdea({ title: 'Awaiting review', body: '' }, T0, 'idea-1'),
       status: 'underReview' as const,
       ideaNumber: 3,
     }
     const result = buildIdeasExport([underReview], undefined)
     // Under review is still an active idea: it lives in IDEAS.md, never in the
     // archive document.
-    expect(result.ideasMd).toContain('## Awaiting recette')
+    expect(result.ideasMd).toContain('## Awaiting review')
     expect(result.ideasMd).toContain('- status: underReview')
     expect(result.ideasMd).toContain('- number: #3')
     expect(result.ideasMd).not.toContain('- archived:')
-    expect(result.archiveMd).not.toContain('## Awaiting recette')
+    expect(result.archiveMd).not.toContain('## Awaiting review')
   })
 
   it('renders the follow-up lineage bullet on a child idea', () => {

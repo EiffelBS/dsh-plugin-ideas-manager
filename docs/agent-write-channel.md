@@ -61,7 +61,7 @@ is the accepted trust boundary. Content-type must be `application/json`
 | `move`      | `ideaId`, `status: open \| underReview \| archived` | Column move |
 | `deliver`   | `ideaId`                                          | Archive + delivery stamp |
 | `decline`   | `ideaId`, `decision?`                             | Reject |
-| `followUp`  | `ideaId`, `input: { title, body }`                | Recette-NOK: child idea + parent archived |
+| `followUp`  | `ideaId`, `input: { title, body }`                | Review rejected: child idea + parent archived |
 | `restore`   | `ideaId`                                          | Reopen an archived/under-review idea |
 | `delete`    | `ideaId`                                          | Remove the record |
 | `reorder`   | `orderedIds: string[]`                            | Re-derive per-(status, workspace) group ranks from the list order |

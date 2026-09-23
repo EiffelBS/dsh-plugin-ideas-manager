@@ -52,12 +52,12 @@ Open · Under review · Archived · Declined.
 
 ### The lifecycle
 - **Deliver** ✓ archives the idea with a green *Delivered {date}* stamp.
-- **Under review** is the *recette* gate: finished work lands there, and each
-  card offers **Recette OK** (deliver), **Follow-up needed** (creates a linked
+- **Under review** is the *review* gate: finished work lands there, and each
+  card offers **Approve** (deliver), **Follow-up needed** (creates a linked
   open child plus justification, archives the parent) and **Decline**.
 - A **Task failed** badge marks an open card whose linked TaskBoard task
   failed: the idea deliberately **stays in the backlog** (a failed run
-  delivered nothing, so the recette gate does not apply) - the human retries
+  delivered nothing, so the review gate does not apply) - the human retries
   the task or adjusts the idea. The badge follows the last status observed by
   the under-review poll (30 s) and clears itself when the task is retried.
 - **Delivered** tab shows the exit log (delivered vs. manually archived).
@@ -126,7 +126,7 @@ absent the Ideas manager simply works standalone.
 | Decline / drag to Archived | Card archived |
 | Restore | Card restored |
 | Delete | No-op (closing to `done` stays manual) |
-| **Task-Board card reaches `done`** | Idea auto-moves to **Under review** (the recette gate) |
+| **Task-Board card reaches `done`** | Idea auto-moves to **Under review** (the review gate) |
 
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a
 backlog opinion, not a board state.
@@ -152,7 +152,7 @@ Two scripts close the loop:
 - `node scripts/reconcile-taskboard-mirror.mjs [--url …] [--apply]` — detects
   orphan duplicates (unbound card whose exact title matches a bound idea) and
   archives them, always keeping the bound card; dry-run by default.
-- `node scripts/validate-mirror-cycle.mjs [--base …]` — live recette against a
+- `node scripts/validate-mirror-cycle.mjs [--base …]` — live acceptance run against a
   test instance: create → re-analyze → analyst rewrite → decline must end with
   exactly one card.
 

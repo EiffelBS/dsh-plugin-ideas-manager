@@ -305,7 +305,7 @@ describe('IdeasHostLedger T1 lifecycle (triage / deliver / decline / numbering)'
   })
 })
 
-describe('IdeasHostLedger under-review cycle (recette)', () => {
+describe('IdeasHostLedger under-review cycle (review)', () => {
   it('move sends an idea into the underReview column (open -> underReview)', () => {
     const ledger = new IdeasHostLedger({ dir: freshDir() })
     ledger.applyRequest('r1', createAction('idea-a'))
@@ -317,7 +317,7 @@ describe('IdeasHostLedger under-review cycle (recette)', () => {
     ledger.dispose()
   })
 
-  it('recette OK (deliver) archives an under-review idea with the delivery stamp', () => {
+  it('review approved (deliver) archives an under-review idea with the delivery stamp', () => {
     const ledger = new IdeasHostLedger({ dir: freshDir() })
     ledger.applyRequest('r1', createAction('idea-a'))
     ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-a', status: 'underReview' })
@@ -329,7 +329,7 @@ describe('IdeasHostLedger under-review cycle (recette)', () => {
     ledger.dispose()
   })
 
-  it('recette NOK (followUp) creates a linked open child and archives the parent atomically', () => {
+  it('review rejected (followUp) creates a linked open child and archives the parent atomically', () => {
     const ledger = new IdeasHostLedger({ dir: freshDir() })
     ledger.applyRequest('r1', { ...createAction('idea-a', 'Parent'), id: 'idea-a', input: { title: 'Parent', body: 'Parent summary', workspaceId: 'w1' } })
     ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-a', status: 'underReview' })

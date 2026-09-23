@@ -836,7 +836,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 }
 
 /* Lifecycle action row in the edit modal (deliver / archive / decline /
-   recette OK / follow-up / restore, by status): a quiet row above the form
+   review approved / follow-up / restore, by status): a quiet row above the form
    actions, separated by a hairline so it reads as part of the card, not of
    the form fields. */
 .dsh-ideas-edit-actions {
@@ -1553,7 +1553,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
-/* Under-review badge on a kanban card: amber pill marking the recette gate
+/* Under-review badge on a kanban card: amber pill marking the review gate
    (work finished, human acceptance pending). Rendered in the card header, to
    the right of the title. */
 .dsh-ideas-review-badge {
@@ -1585,7 +1585,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
 }
 
 /* Follow-up lineage chip on a child card: neutral pill referencing the parent
-   idea the recette NOK created it from ("suivi de #N"). */
+   idea the review rejected created it from ("suivi de #N"). */
 .dsh-ideas-followup-badge {
   flex: none;
   padding: 1px 8px;

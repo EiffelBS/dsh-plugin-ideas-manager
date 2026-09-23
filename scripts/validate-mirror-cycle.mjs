@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * validate-mirror-cycle.mjs - live recette for idea #35 against a RUNNING
+ * validate-mirror-cycle.mjs - live acceptance run for idea #35 against a RUNNING
  * test instance (DSH_HOME scratch, free port; NEVER the 3080 session server):
  *
  *   create -> re-analyze -> analyst rewrite (update+triage) -> archive
@@ -126,7 +126,7 @@ ok('re-analyze verb mirrored nothing (still one card)')
 
 // --- 5. analyst rewrite patches in place ------------------------------------
 const rewritten = `${title} - rewritten`
-const rewriteSummary = 'Rewritten summary for the recette (<= 300 chars).'
+const rewriteSummary = 'Rewritten summary for the review (<= 300 chars).'
 const updated = await ideasAction({ kind: 'update', ideaId, patch: { title: rewritten, body: 'Rewritten analysis body.', summary: rewriteSummary } }, 'update')
 check(updated.status === 200, `update -> ${updated.status}`)
 const triaged = await ideasAction({ kind: 'triage', ideaId, patch: { value: 3, effort: 1, rank: 1 } }, 'triage')
@@ -155,7 +155,7 @@ ok('task-board refuses create of an existing id (400 task id already exists)')
 
 // --- 7. under-review poll: done -> underReview ------------------------------
 // `done` is runner-owned on the board (MANUAL_STATUSES = backlog/todo), so the
-// recette marks the bound card done through the import path (the newer
+// the acceptance run marks the bound card done through the import path (the newer
 // updatedAt wins the merge), exactly like a settled run would. The state must
 // be fully readable here: a >cap snapshot would hang the poll forever (the
 // 2026-09-22 production incident: 190,947-byte state vs 128 KiB cap).

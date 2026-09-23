@@ -285,7 +285,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Host-internal mirrored-task STATUS (recette follow-up): records the last
+   * Host-internal mirrored-task STATUS (follow-up work): records the last
    * status observed by the under-review poll so a card whose TaskBoard task
    * failed can show a badge while the idea stays in the backlog. Same
    * system-field discipline as `bindTaskBoardId` (never accepted from the
@@ -356,7 +356,7 @@ export class IdeasHostLedger {
       case 'deliver': {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
-        // Both an open idea and an under-review idea (recette OK) can be
+        // Both an open idea and an under-review idea (review approved) can be
         // delivered; anything already closed is a no-op.
         if (idea.status !== 'open' && idea.status !== 'underReview') break
         // Delivered ideas leave the open backlog: same column as archived, but
@@ -394,7 +394,7 @@ export class IdeasHostLedger {
       case 'followUp': {
         const parent = this.document.ideas.find(item => item.id === action.ideaId)
         if (parent === undefined) throw new Error('idea not found')
-        // A follow-up is the recette-NOK answer to an under-review idea: the
+        // A follow-up is the review-rejected answer to an under-review idea: the
         // parent leaves the backlog (archived, not declined — the work was not
         // rejected, it needs rework) while the child re-enters it open.
         if (parent.status !== 'underReview') throw new Error('follow-up requires an under-review idea')

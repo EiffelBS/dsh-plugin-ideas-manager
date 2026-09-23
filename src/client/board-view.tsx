@@ -3,8 +3,8 @@
  * that replaces the center column while active. P1 scope: full CRUD — capture
  * and edit modals, per-card archive/restore/decline/delete, manual drag
  * between the move-verb columns (+ intra-column reorder), search and a
- * conjunctive tag filter. The under-review column is the recette gate: Recette
- * OK delivers, Follow-up raises a linked child idea and archives the parent,
+ * conjunctive tag filter. The under-review column is the review gate: Approve
+ * delivers, Follow-up raises a linked child idea and archives the parent,
  * Decline rejects.
  *
  * UI polish: markdown-rendered descriptions with a raw/MD toggle, value/effort
@@ -335,7 +335,7 @@ function ModelPickerField({ picker, disabled }: {
 }
 
 /** Shared capture/edit modal. The lifecycle actions of the card are mirrored
- *  here per status (deliver / archive / decline / recette OK / follow-up /
+ *  here per status (deliver / archive / decline / review approved / follow-up /
  *  restore), so the author can move an idea without leaving the editor. */
 function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onReanalyze }: {
   client: IdeasClient
@@ -344,7 +344,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
    *  NO_WORKSPACE_FILTER maps to the generic "no workspace" value ''). */
   initialWorkspace?: string
   onClose: () => void
-  /** Open the follow-up (recette NOK) modal for an under-review idea. */
+  /** Open the follow-up (review rejected) modal for an under-review idea. */
   onFollowUp?: (idea: IdeaRecord) => void
   /** Idea #30 flow: launch an analyst re-run on this open idea. */
   onReanalyze?: (idea: IdeaRecord) => void
@@ -763,7 +763,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
 }
 
 /**
- * Recette-NOK modal: raise a child follow-up idea that carries the parent
+ * Follow-up modal: raise a child follow-up idea that carries the parent
  * summary + the user's justification, and archive the parent — the atomic
  * `followUp` verb. The child title is prefilled from the parent (number +
  * title) so the lineage reads at a glance.
@@ -1056,7 +1056,7 @@ function LifecycleAction({ confirming, pending, title, icon, label, onRun, onCan
  * boot language while the panel renders in the pinned one. Matching every
  * label of every dictionary (SETTINGS_NAV_LABELS) is what makes the gear land
  * on the section in every language; matching only the current label silently
- * opened the modal without selecting Ideas (reported in recette: English
+ * opened the modal without selecting Ideas (reported during acceptance testing: English
  * only). The current label still wins when two rows ever collide.
  */
 function findIdeasSettingsNavRow(): HTMLButtonElement | undefined {
@@ -1128,14 +1128,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [workspaceFilter, setWorkspaceFilter] = useState('')
   const [showNew, setShowNew] = useState(false)
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
-  // The under-review parent a recette-NOK follow-up is being raised for.
+  // The under-review parent a review-rejected follow-up is being raised for.
   const [followUp, setFollowUp] = useState<IdeaRecord | undefined>(undefined)
   // The open idea a Re-analyze confirm modal is raised for (idea #30 flow):
   // a list row from the card, or the full record from the edit modal.
   const [reanalyzing, setReanalyzing] = useState<ReanalyzeSource | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   // Lifecycle confirmation (settings option confirmLifecycle): the Deliver /
-  // Recette-OK / Decline button armed for an in-place Yes/No confirmation.
+  // Approve / Decline button armed for an in-place Yes/No confirmation.
   const [confirmVerb, setConfirmVerb] = useState<{ id: string; verb: 'deliver' | 'decline' } | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
@@ -1219,7 +1219,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // The Priorities ranking ranks the OPEN backlog of the current workspace
   // scope — archived/declined ideas are simply not part of the ranking (see
   // priorities-view.tsx). The shared tag filter AND the header text search
-  // narrow it (recette follow-up: the search box used to be Overview-only),
+  // narrow it (follow-up work: the search box used to be Overview-only),
   // so a filtered board shows the same open rows everywhere.
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
@@ -1256,7 +1256,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
    * the first click ARMS the in-place Yes/No confirmation for (idea, verb)
    * and only the second click runs the verb; with it OFF every click runs
    * directly (today's behaviour). One armed state covers the four lifecycle
-   * buttons (Deliver, Recette OK, Decline on open + under-review cards).
+   * buttons (Deliver, Review approved, Decline on open + under-review cards).
    */
   const lifecycleConfirmOn = cfg.confirmLifecycle
   const armedFor = (idea: { id: string }, verb: 'deliver' | 'decline'): boolean =>
@@ -1324,7 +1324,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     })
   }
 
-  /** Recette-NOK follow-up from the card: same deferred-body fetch (the
+  /** Follow-up (review rejected) from the card: same deferred-body fetch (the
    *  composer quotes the parent's whole summary). The edit modal passes its
    *  already-full record straight through. */
   const openFollowUp = (idea: IdeaListRow): void => {
@@ -1433,7 +1433,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             </option>
           ))}
         </select>
-        {/* The header text search is SHARED by all three tabs (recette
+        {/* The header text search is SHARED by all three tabs (review
             follow-up: it used to be Overview-only) — it narrows the kanban
             columns, the Priorities ranking and the Delivered log alike, like
             the tag chips above already did. */}
@@ -1682,7 +1682,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('board.status.underReview')}
                                 </span>
                               )}
-                              {/* Failed mirrored task (recette follow-up): the
+                              {/* Failed mirrored task (follow-up work): the
                                   poll records the last observed status; the
                                   idea deliberately STAYS open (a failed run
                                   delivered nothing) - the badge only makes the
