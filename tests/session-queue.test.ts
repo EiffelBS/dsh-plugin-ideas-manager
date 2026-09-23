@@ -66,6 +66,9 @@ describe('buildAnalysisPrompt', () => {
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Context')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('ranks are RELATIVE per workspace')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('otherwise rewrite it to a more precise one')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('select ONLY the 3 most relevant tags')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/if fewer than 3 tags are\s+justified, keep fewer/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('at most 8')
     // Contract details that must live in the skill, not the prompt.
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Sec-Fetch-Site: same-origin')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('plugin:ideas-manager:ai-capture')
