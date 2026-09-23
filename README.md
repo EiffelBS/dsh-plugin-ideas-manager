@@ -31,11 +31,12 @@ Open · Under review · Archived · Declined.
 - **Drag & drop** moves cards between columns and reorders them; the columns
   auto-scroll when you drag toward an edge (vertically and horizontally when
   Archived/Declined are off-screen on a narrow window).
-- **Search** and a **conjunctive tag filter** narrow the columns. Cards
-  render a short **body excerpt** (idea #34): the full analysis is fetched
-  on demand when the edit modal, follow-up composer or re-analyze opens, and
-  the first active search loads a deep index once so whole-body matches keep
-  working.
+- **Search** and a **conjunctive tag filter** narrow the whole board — all
+  three tabs (Overview columns, Priorities ranking, Delivered log) share
+  both filters. Cards render a short **body excerpt** (idea #34): the full
+  analysis is fetched on demand when the edit modal, follow-up composer or
+  re-analyze opens, and the first active search loads a deep index once so
+  whole-body matches keep working.
 - Single click on a card title or description opens the **edit modal** (raw
   text or rendered markdown of the full body).
 - Every card shows its stable **`#N` number**, **workspace chip**, **tags**,

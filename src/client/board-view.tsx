@@ -1206,17 +1206,22 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     && matchesTags(idea, tagFilter))
   // The Priorities ranking ranks the OPEN backlog of the current workspace
   // scope — archived/declined ideas are simply not part of the ranking (see
-  // priorities-view.tsx). The shared tag filter narrows it (the search box is
-  // kanban-only), so a tag-filtered board shows the same open rows everywhere.
+  // priorities-view.tsx). The shared tag filter AND the header text search
+  // narrow it (recette follow-up: the search box used to be Overview-only),
+  // so a filtered board shows the same open rows everywhere.
   const scopedOpen = ideas.filter(idea =>
     idea.status === 'open'
     && matchesWorkspaceScope(idea, workspaceFilter)
+    && matchesFilter(idea, filter, client.cachedBodyOf(idea.id))
     && matchesTags(idea, tagFilter))
   // The Delivered log mirrors the Priorities scope: archived ideas of the
-  // current workspace ('' = all), narrowed by the shared tag filter; the
-  // green delivery stamp renders only for rows carrying deliveredAt.
+  // current workspace ('' = all), narrowed by the shared tag filter and the
+  // header text search; the green delivery stamp renders only for rows
+  // carrying deliveredAt.
   const archivedIdeas = archivedIdeasOf(ideas, workspaceFilter)
-    .filter(idea => matchesTags(idea, tagFilter))
+    .filter(idea =>
+      matchesFilter(idea, filter, client.cachedBodyOf(idea.id))
+      && matchesTags(idea, tagFilter))
   const byStatus = (status: IdeaStatus): IdeaListRow[] => {
     const rows = visible.filter(idea => idea.status === status)
     // "All workspaces": lay the column out per workspace group (named by
@@ -1412,16 +1417,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             </option>
           ))}
         </select>
-        {activeTab === 'overview' && (
-          <input
-            className={classes.search}
-            type="search"
-            placeholder={t('board.search')}
-            value={filter}
-            aria-label={t('board.search')}
-            onChange={event => { setFilter(event.target.value) }}
-          />
-        )}
+        {/* The header text search is SHARED by all three tabs (recette
+            follow-up: it used to be Overview-only) — it narrows the kanban
+            columns, the Priorities ranking and the Delivered log alike, like
+            the tag chips above already did. */}
+        <input
+          className={classes.search}
+          type="search"
+          placeholder={t('board.search')}
+          value={filter}
+          aria-label={t('board.search')}
+          onChange={event => { setFilter(event.target.value) }}
+        />
         <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
           <button
             type="button"
