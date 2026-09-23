@@ -141,6 +141,17 @@ export interface IdeaRecord {
     /** Mirror link to the TaskBoard card id when the bridge is active (P2). */
     taskBoardId?: string;
     /**
+     * LAST OBSERVED status of the linked TaskBoard card (recette follow-up):
+     * the under-review poll records it on the idea, and a card whose task
+     * failed shows a "Task failed" badge while the idea deliberately stays in
+     * the backlog (a failed run delivered nothing, so the recette gate does
+     * not apply and the human decides whether to retry the task or the idea).
+     * System field like `taskBoardId`: never written by the idea verbs. Kept
+     * as the last observation (not cleared when the card temporarily vanishes
+     * from a probe - the mirror self-heals a dangling link on the next write).
+     */
+    taskBoardStatus?: string;
+    /**
      * Recette NOK: id of the parent idea this idea is a follow-up of (set by
      * the `followUp` verb; the child carries the summary + justification and
      * stays open while the parent is archived).

@@ -104,6 +104,13 @@ function normalizeOptionalId(value: string | undefined): string | undefined {
   return trimmed === undefined || trimmed === '' ? undefined : trimmed
 }
 
+/** Normalize a mirrored task status: trim, lowercase, cap 32 chars; blank collapses to undefined. */
+function normalizeTaskBoardStatus(value: string | undefined): string | undefined {
+  const trimmed = value?.trim().toLowerCase()
+  if (trimmed === undefined || trimmed === '') return undefined
+  return trimmed.slice(0, 32)
+}
+
 /** Structural repair of a persisted idea list (mirrors the import repair). */
 function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
   const ideas: IdeaRecord[] = []
@@ -133,6 +140,8 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (workspaceId !== undefined) idea.workspaceId = workspaceId
     const taskBoardId = typeof row.taskBoardId === 'string' ? normalizeOptionalId(row.taskBoardId) : undefined
     if (taskBoardId !== undefined) idea.taskBoardId = taskBoardId
+    const taskBoardStatus = normalizeTaskBoardStatus(typeof row.taskBoardStatus === 'string' ? row.taskBoardStatus : undefined)
+    if (taskBoardStatus !== undefined) idea.taskBoardStatus = taskBoardStatus
     const tags = normalizeTags(row.tags)
     if (tags !== undefined) idea.tags = tags
     if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
@@ -271,6 +280,28 @@ export class IdeasHostLedger {
     const before = this.document.ideas
     this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, taskBoardId: trimmed } : idea)
     if (this.document.ideas === before) return false
+    this.commit()
+    return true
+  }
+
+  /**
+   * Host-internal mirrored-task STATUS (recette follow-up): records the last
+   * status observed by the under-review poll so a card whose TaskBoard task
+   * failed can show a badge while the idea stays in the backlog. Same
+   * system-field discipline as `bindTaskBoardId` (never accepted from the
+   * idea verbs), same commit + notify, and a no-op when the observation did
+   * not change (the 30 s poll must not churn the revision while idle).
+   * @returns true when the document changed and was committed.
+   */
+  setTaskBoardStatus(ideaId: string, status: string | undefined): boolean {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const next = normalizeTaskBoardStatus(status)
+    const current = this.document.ideas.find(idea => idea.id === ideaId)
+    if (current === undefined) return false
+    if (current.taskBoardStatus === next) return false
+    // `taskBoardStatus: undefined` is intentional: the JSON persist/clone
+    // drops the key entirely, which is how a cleared observation is stored.
+    this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, taskBoardStatus: next } : idea)
     this.commit()
     return true
   }

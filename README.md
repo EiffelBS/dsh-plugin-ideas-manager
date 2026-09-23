@@ -55,6 +55,11 @@ Open · Under review · Archived · Declined.
 - **Under review** is the *recette* gate: finished work lands there, and each
   card offers **Recette OK** (deliver), **Follow-up needed** (creates a linked
   open child plus justification, archives the parent) and **Decline**.
+- A **Task failed** badge marks an open card whose linked TaskBoard task
+  failed: the idea deliberately **stays in the backlog** (a failed run
+  delivered nothing, so the recette gate does not apply) - the human retries
+  the task or adjusts the idea. The badge follows the last status observed by
+  the under-review poll (30 s) and clears itself when the task is retried.
 - **Delivered** tab shows the exit log (delivered vs. manually archived).
 - Restore, archive and delete are one click away on each card.
 

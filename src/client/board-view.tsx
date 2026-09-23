@@ -1666,6 +1666,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('board.status.underReview')}
                                 </span>
                               )}
+                              {/* Failed mirrored task (recette follow-up): the
+                                  poll records the last observed status; the
+                                  idea deliberately STAYS open (a failed run
+                                  delivered nothing) - the badge only makes the
+                                  situation visible. */}
+                              {idea.status === 'open' && idea.taskBoardStatus === 'failed' && (
+                                <span
+                                  className={classes.taskFailedBadge}
+                                  title={t('card.taskFailedHint')}
+                                  data-dsh-ideas-task-failed=""
+                                >
+                                  {t('card.taskFailed')}
+                                </span>
+                              )}
                               {idea.deliveredAt !== undefined && (
                                 <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
                                   {t('card.delivered', { date: shortDate(idea.deliveredAt) })}

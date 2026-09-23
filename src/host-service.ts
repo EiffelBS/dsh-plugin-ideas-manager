@@ -124,16 +124,28 @@ export class IdeasHostService {
 
   /**
    * Start the under-review poll: every `intervalMs` the mirror's task-card
-   * statuses are read and any open idea whose linked card is `done` moves to
-   * `underReview` (the recette gate — the task is finished, human acceptance
-   * still pending). No-op when the mirror is absent or autoMirror is off.
+   * statuses are read, the LAST OBSERVED status of every open idea's linked
+   * card is recorded on the idea (a `failed` task leaves the idea in the
+   * backlog behind a "Task failed" badge), and any open idea whose card is
+   * `done` moves to `underReview` (the recette gate). No-op when the mirror
+   * is absent or autoMirror is off.
    */
   startUnderReviewPoll(intervalMs: number = UNDER_REVIEW_POLL_MS): void {
     if (this.reviewPoll !== undefined || this.mirror === undefined || !this.autoMirror) return
     this.reviewPoll = setInterval(() => { void this.pollUnderReviewTransitions() }, intervalMs)
   }
 
-  /** One poll pass (exposed for tests). Best-effort: any failure is ignored. */
+  /**
+   * One poll pass (exposed for tests). Two jobs on the SAME status read:
+   *  - record the last observed status of every open idea's linked card
+   *    (recette follow-up: the "Task failed" badge; the setter is a no-op on
+   *    an unchanged observation, so the 30 s poll never churns the revision;
+   *    a card missing from one probe keeps its last observation because the
+   *    mirror self-heals a dangling link on the next write);
+   *  - move an open idea whose card is `done` to `underReview` (the recette
+   *    gate - unchanged behavior).
+   * Best-effort: any failure is ignored.
+   */
   async pollUnderReviewTransitions(): Promise<void> {
     if (this.mirror === undefined || !this.autoMirror || this.disposed) return
     let statuses: Map<string, string> | undefined
@@ -146,10 +158,18 @@ export class IdeasHostService {
     if (statuses === undefined) return
     for (const idea of this.ledger.snapshot().ideas) {
       if (idea.status !== 'open' || idea.taskBoardId === undefined) continue
-      if (statuses.get(idea.taskBoardId) !== 'done') continue
+      const observed = statuses.get(idea.taskBoardId)
+      if (observed !== undefined && observed !== idea.taskBoardStatus) {
+        try {
+          this.ledger.setTaskBoardStatus(idea.id, observed)
+        } catch (error) {
+          console.error(`[dsh-plugin-ideas-manager] task status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      if (observed !== 'done') continue
       try {
         // A fresh request id per transition (the ledger dedupes replays); the
-        // move to underReview mirrors nothing — the card is already done.
+        // move to underReview mirrors nothing - the card is already done.
         this.ledger.applyRequest(`under-review-${idea.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`, {
           kind: 'move',
           ideaId: idea.id,

@@ -519,6 +519,69 @@ describe('IdeasHostService mirror integration', () => {
     off.dispose()
   })
 
+  it('records a FAILED task on the open idea and leaves it in the backlog', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'task-9', status: 'failed' }]
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.bindTaskBoardId('idea-1', 'task-9')
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+    await service.pollUnderReviewTransitions()
+    const idea = service.snapshot().ideas.find(row => row.id === 'idea-1')!
+    // A failed run delivered nothing: the idea stays open (the recette gate is
+    // for finished work) and only the observation is recorded.
+    expect(idea.status).toBe('open')
+    expect(idea.taskBoardStatus).toBe('failed')
+    // No mirror write for a status observation.
+    expect(transport.posts).toHaveLength(0)
+    service.dispose()
+  })
+
+  it('refreshes the recorded status when the task is retried, and does not churn the revision while idle', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'task-9', status: 'failed' }]
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.bindTaskBoardId('idea-1', 'task-9')
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+
+    await service.pollUnderReviewTransitions()
+    const afterFailure = service.snapshot().revision
+    expect(service.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
+
+    // Idle polls with the same observation: no ledger write, no revision churn.
+    await service.pollUnderReviewTransitions()
+    await service.pollUnderReviewTransitions()
+    expect(service.snapshot().revision).toBe(afterFailure)
+
+    // The task is retried and goes back to backlog: the observation follows.
+    transport.stateTasks = [{ id: 'task-9', status: 'backlog' }]
+    await service.pollUnderReviewTransitions()
+    expect(service.snapshot().ideas[0]!.taskBoardStatus).toBe('backlog')
+    expect(service.snapshot().ideas[0]!.status).toBe('open')
+    expect(service.snapshot().revision).toBeGreaterThan(afterFailure)
+    service.dispose()
+  })
+
+  it('keeps the last observation when the linked card disappears from a probe', async () => {
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'task-9', status: 'failed' }]
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.bindTaskBoardId('idea-1', 'task-9')
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+    await service.pollUnderReviewTransitions()
+
+    // A transient probe gap (task-board hiccup) must not blink the badge away.
+    transport.stateTasks = []
+    await service.pollUnderReviewTransitions()
+    expect(service.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
+    service.dispose()
+  })
+
   it('does not mirror when autoMirror is off', async () => {
     const transport = new FakeTransport()
     const mirror = new TaskBoardMirror({ transport })

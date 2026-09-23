@@ -82,6 +82,16 @@ export declare class IdeasHostLedger {
      * @returns true when the document changed and was committed.
      */
     bindTaskBoardId(ideaId: string, taskBoardId: string): boolean;
+    /**
+     * Host-internal mirrored-task STATUS (recette follow-up): records the last
+     * status observed by the under-review poll so a card whose TaskBoard task
+     * failed can show a badge while the idea stays in the backlog. Same
+     * system-field discipline as `bindTaskBoardId` (never accepted from the
+     * idea verbs), same commit + notify, and a no-op when the observation did
+     * not change (the 30 s poll must not churn the revision while idle).
+     * @returns true when the document changed and was committed.
+     */
+    setTaskBoardStatus(ideaId: string, status: string | undefined): boolean;
     private apply;
     private acquireLock;
     private readLockOwner;

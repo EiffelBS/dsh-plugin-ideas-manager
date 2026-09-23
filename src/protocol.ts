@@ -222,6 +222,8 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   for (const key of ['workspaceId', 'taskBoardId'] as const) {
     if (row[key] !== undefined && typeof row[key] !== 'string') return undefined
   }
+  if (row.taskBoardStatus !== undefined && row.taskBoardStatus !== null
+      && (typeof row.taskBoardStatus !== 'string' || row.taskBoardStatus.length > 32)) return undefined
   if (row.archivedAt !== undefined && row.archivedAt !== null && typeof row.archivedAt !== 'number') return undefined
   if (row.followUpOfId !== undefined && row.followUpOfId !== null && typeof row.followUpOfId !== 'string') return undefined
   if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
@@ -245,6 +247,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(isIdeaTagList(row.tags) ? { tags: row.tags } : {}),
     ...(typeof row.workspaceId === 'string' ? { workspaceId: row.workspaceId } : {}),
     ...(typeof row.taskBoardId === 'string' ? { taskBoardId: row.taskBoardId } : {}),
+    ...(typeof row.taskBoardStatus === 'string' ? { taskBoardStatus: row.taskBoardStatus.toLowerCase() } : {}),
     ...(typeof row.followUpOfId === 'string' ? { followUpOfId: row.followUpOfId } : {}),
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
   ...(typeof row.reanalyzeAt === 'number' ? { reanalyzeAt: row.reanalyzeAt } : {}),

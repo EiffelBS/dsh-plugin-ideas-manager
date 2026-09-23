@@ -1568,6 +1568,22 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
+/* Failed-task badge on an OPEN kanban card: red pill marking that the last
+   observed status of the linked TaskBoard card is failed. The idea
+   deliberately stays in the backlog (a failed run delivered nothing) - the
+   badge only makes the situation visible. Card header. */
+.dsh-ideas-task-failed-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(0 72% 45%) 40%, transparent);
+  background: color-mix(in srgb, hsl(0 72% 45%) 14%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(0 70% 40%) 88%, var(--dsh-ideas-fb-fg));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Follow-up lineage chip on a child card: neutral pill referencing the parent
    idea the recette NOK created it from ("suivi de #N"). */
 .dsh-ideas-followup-badge {
@@ -1697,6 +1713,7 @@ export const classes = {
   deliveredBadge: 'dsh-ideas-delivered-badge',
   archivedStamp: 'dsh-ideas-archived-stamp',
   reviewBadge: 'dsh-ideas-review-badge',
+  taskFailedBadge: 'dsh-ideas-task-failed-badge',
   followUpBadge: 'dsh-ideas-followup-badge',
   tabCount: 'dsh-ideas-tab-count',
   scoreIcon: 'dsh-ideas-score-icon',

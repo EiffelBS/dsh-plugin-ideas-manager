@@ -126,6 +126,8 @@ export declare const fr: {
     'level.high': string;
     'board.status.underReview': string;
     'card.underReviewHint': string;
+    'card.taskFailed': string;
+    'card.taskFailedHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;
@@ -271,6 +273,8 @@ export declare const en: {
     'level.high': string;
     'board.status.underReview': string;
     'card.underReviewHint': string;
+    'card.taskFailed': string;
+    'card.taskFailedHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;

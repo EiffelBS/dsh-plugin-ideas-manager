@@ -61,12 +61,24 @@ export declare class IdeasHostService {
     flushMirror(): Promise<void>;
     /**
      * Start the under-review poll: every `intervalMs` the mirror's task-card
-     * statuses are read and any open idea whose linked card is `done` moves to
-     * `underReview` (the recette gate — the task is finished, human acceptance
-     * still pending). No-op when the mirror is absent or autoMirror is off.
+     * statuses are read, the LAST OBSERVED status of every open idea's linked
+     * card is recorded on the idea (a `failed` task leaves the idea in the
+     * backlog behind a "Task failed" badge), and any open idea whose card is
+     * `done` moves to `underReview` (the recette gate). No-op when the mirror
+     * is absent or autoMirror is off.
      */
     startUnderReviewPoll(intervalMs?: number): void;
-    /** One poll pass (exposed for tests). Best-effort: any failure is ignored. */
+    /**
+     * One poll pass (exposed for tests). Two jobs on the SAME status read:
+     *  - record the last observed status of every open idea's linked card
+     *    (recette follow-up: the "Task failed" badge; the setter is a no-op on
+     *    an unchanged observation, so the 30 s poll never churns the revision;
+     *    a card missing from one probe keeps its last observation because the
+     *    mirror self-heals a dangling link on the next write);
+     *  - move an open idea whose card is `done` to `underReview` (the recette
+     *    gate - unchanged behavior).
+     * Best-effort: any failure is ignored.
+     */
     pollUnderReviewTransitions(): Promise<void>;
     dispose(): void;
     private emit;

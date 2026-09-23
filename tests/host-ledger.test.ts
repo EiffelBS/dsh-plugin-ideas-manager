@@ -438,3 +438,57 @@ describe('IdeasHostLedger summary (compact card abstract)', () => {
     ledger.dispose()
   })
 })
+
+describe('IdeasHostLedger mirrored task status (failed-task badge)', () => {
+  it('persists the observed status across a restart and no-ops when unchanged', () => {
+    const here = freshDir()
+    const first = new IdeasHostLedger({ dir: here })
+    first.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    const baseline = first.snapshot().revision
+    expect(first.setTaskBoardStatus('idea-1', 'failed')).toBe(true)
+    expect(first.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
+    const afterFailure = first.snapshot().revision
+    expect(afterFailure).toBeGreaterThan(baseline)
+    // Same observation: no write, no revision churn (the 30 s poll stays quiet).
+    expect(first.setTaskBoardStatus('idea-1', 'failed')).toBe(false)
+    expect(first.snapshot().revision).toBe(afterFailure)
+    // Unknown idea: ignored.
+    expect(first.setTaskBoardStatus('nope', 'failed')).toBe(false)
+    first.dispose()
+
+    // The observation survives a restart (it is part of the persisted record).
+    const second = new IdeasHostLedger({ dir: here })
+    expect(second.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
+    // A retry updates it; a blank value clears it.
+    expect(second.setTaskBoardStatus('idea-1', 'backlog')).toBe(true)
+    expect(second.snapshot().ideas[0]!.taskBoardStatus).toBe('backlog')
+    expect(second.setTaskBoardStatus('idea-1', '   ')).toBe(true)
+    expect(second.snapshot().ideas[0]!.taskBoardStatus).toBeUndefined()
+    second.dispose()
+  })
+
+  it('normalizes the stored status (trim, lowercase, cap) at repair time', () => {
+    const here = freshDir()
+    const file = join(here, 'ledger-v2.json')
+    mkdirSync(here, { recursive: true })
+    writeFileSync(file, JSON.stringify({
+      schemaVersion: 1,
+      revision: 3,
+      ideaSequence: 1,
+      importedSources: [],
+      recentRequests: [],
+      ideas: [{
+        id: 'idea-1',
+        title: 'T',
+        body: 'B',
+        status: 'open',
+        createdAt: 1,
+        updatedAt: 1,
+        taskBoardStatus: '  FaIlEd  ',
+      }],
+    }), 'utf8')
+    const ledger = new IdeasHostLedger({ dir: here })
+    expect(ledger.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
+    ledger.dispose()
+  })
+})
