@@ -155,7 +155,7 @@ export const fr = {
   'followUp.required': 'Le titre du suivi est requis',
   'settings.language': "Langue de l'interface",
   'settings.languageDesc': "Langue du panneau lui-même, indépendante du réglage DSH : par défaut « suivre le shell » (un shell en chinois affiche un panneau en chinois), ou fixez English, Français ou 中文.",
-  'settings.languageAuto': 'Suivre le shell',
+  'settings.languageAuto': '== Auto ==',
   'settings.languageEn': 'English',
   'settings.languageFr': 'Français',
   'settings.languageZh': '中文',
@@ -309,7 +309,7 @@ export const en = {
   'followUp.required': 'Follow-up title is required',
   'settings.language': 'Interface language',
   'settings.languageDesc': "The panel's own language, independent of the DSH shell setting: by default it follows the shell (a Chinese shell shows a Chinese panel), or pin English, Français or 中文.",
-  'settings.languageAuto': 'Follow the shell',
+  'settings.languageAuto': '== Auto ==',
   'settings.languageEn': 'English',
   'settings.languageFr': 'Français',
   'settings.languageZh': '中文',
@@ -469,7 +469,7 @@ export const zh = {
   'followUp.required': '跟进标题为必填项',
   'settings.language': '界面语言',
   'settings.languageDesc': '面板自身的语言，独立于 DSH 外壳语言：默认“跟随外壳”（中文外壳即显示中文），也可固定为 English、Français 或中文。',
-  'settings.languageAuto': '跟随外壳',
+  'settings.languageAuto': '== Auto ==',
   'settings.languageEn': 'English',
   'settings.languageFr': 'Français',
   'settings.languageZh': '中文',
@@ -506,6 +506,19 @@ export function interfaceLanguage(): string {
   if (typeof document === 'undefined') return 'en'
   return document.documentElement.lang || 'en'
 }
+
+/**
+ * Every label the DSH settings modal can carry for OUR nav row. The host
+ * resolves our `label()` thunk when it builds the dialog, so a panel whose
+ * interface language was pinned after boot can see the row rendered in the
+ * boot language: the board gear must match any of them, not just the current
+ * one (0.4.0 fix - it only worked while the interface was English).
+ */
+export const SETTINGS_NAV_LABELS: readonly string[] = [...new Set([
+  en['settings.nav'],
+  fr['settings.nav'],
+  zh['settings.nav'],
+])]
 
 /** Interpolate {placeholders} with the given params. */
 export function translate(key: IdeasKey, params?: Record<string, string | number>): string {

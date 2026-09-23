@@ -16,7 +16,7 @@ import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type F
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
 import type { IdeaListRow } from '../protocol.ts'
-import { t, interfaceLanguage, type IdeasKey } from './locales.ts'
+import { t, interfaceLanguage, SETTINGS_NAV_LABELS, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IdeaPreview } from './idea-preview.tsx'
@@ -1048,13 +1048,25 @@ function LifecycleAction({ confirming, pending, title, icon, label, onRun, onCan
  * nav-row click is what selects Ideas even when the dialog was just opened.
  */
 
-/** Find our "Ideas board" settings nav row inside an open dialog, or undefined. */
+/**
+ * Find our "Ideas board" settings nav row inside an open dialog, or undefined.
+ *
+ * 0.4.0 fix: the host resolves our `label()` thunk when it BUILDS the dialog,
+ * so after the interface language is pinned the rendered row can carry the
+ * boot language while the panel renders in the pinned one. Matching every
+ * label of every dictionary (SETTINGS_NAV_LABELS) is what makes the gear land
+ * on the section in every language; matching only the current label silently
+ * opened the modal without selecting Ideas (reported in recette: English
+ * only). The current label still wins when two rows ever collide.
+ */
 function findIdeasSettingsNavRow(): HTMLButtonElement | undefined {
-  const label = t('settings.nav')
+  const current = t('settings.nav')
+  const labels = [current, ...SETTINGS_NAV_LABELS]
   for (const dialog of Array.from(document.querySelectorAll('[role="dialog"]'))) {
     if (!dialog.isConnected) continue
     for (const button of Array.from(dialog.querySelectorAll('nav button'))) {
-      if ((button.textContent ?? '').trim() === label) return button as HTMLButtonElement
+      const text = (button.textContent ?? '').trim()
+      if (labels.includes(text)) return button as HTMLButtonElement
     }
   }
   return undefined
