@@ -1,0 +1,19 @@
+{
+  "requestId": "c1d2e3f4-a5b6-7890-cdef-123456789012",
+  "initiator": "plugin:ideas-manager:ai-capture",
+  "action": {
+    "kind": "create",
+    "id": "d1e2f3a4-b5c6-7890-defa-bc1234567890",
+    "input": {
+      "title": "Rendre les colonnes du kanban redimensionnables individuellement en largeur par l'utilisateur",
+      "body": "## Context\nLe tableau kanban de l'application d'idées permet déjà un ajustement de largeur général pour toutes les colonnes via une barre de redimensionnement, mais chaque colonne reste contrainte par une largeur fixe et ne peut pas être personnalisée individuellement par l'utilisateur. Le besoin provient directement d'une demande utilisateur souhaitant adapter la largeur des colonnes au contenu spécifique de chaque colonne (textes longs, cartes denses) et à ses préférences personnelles de travail. L'ajustement individuel permettra d'éviter les colonnes trop étroites pour des contenus riches ou trop larges pour des contenus légers.\n\n## Value\n- **Value 2 (moyen)** : Améliore modérément l'expérience utilisateur en offrant un contrôle plus fin sur la présentation du tableau. Répond directement au besoin exprimé et rend l'interface plus adaptable à différents styles de travail.\n- Une meilleure personnalisation visuelle augmente la satisfaction et la lisibilité pour les projets aux contenus variés.\n- L'adaptation individuelle des colonnes rend le tableau plus fonctionnel sans changer la logique métier sous-jacente.\n\n## Effort\n- **Effort 2 (moyen)** : Ce travail nécessite le développement d'un mécanisme de redimensionnement par colonne avec des limites minimale et maximale configurables, ainsi que la persistance des préférences utilisateur. Il s'appuie sur des composants d'interface existants et n'implique pas de modifications profondes du backend.\n- Les modifications se concentrent sur la structure du composant kanban, la gestion des événements de redimensionnement, et la persistance de l'état de largeur.\n\n## First steps\n1. Identifier dans le code du composant kanban où la largeur des colonnes est définie et comment le redimensionnement général fonctionne actuellement.\n2. Concevoir un mécanisme de redimensionnement individuel par colonne avec des limites min/max paramétrables.\n3. Implémenter les contrôles d'interface utilisateur permettant le glissement de la bordure et l'affichage des limites.\n4. Intégrer la persistance des préférences utilisateur (largeur par colonne, limites définies) dans le stockage de session/profil.\n5. Tester sur plusieurs navigateurs et tailles d'écran pour valider la stabilité du redimensionnement.\n\n## Risks\n- Un redimensionnement mal calibré peut causer des problèmes d'affichage sur les petits écrans ; il faut tester avec des largeurs minimales contraintes.\n- La persistance incorrecte des préférences pourrait entraîner la perte des réglages après un redémarrage ; il faut valider la sérialisation des données.\n- Les utilisateurs pourraient interpréter différemment les nouvelles limites ; une définition claire dans l'interface est nécessaire.\n- Un redimensionnement fréquent sans optimisation (debounce, batching) peut affecter la réactivité de l'application.",
+      "summary": "Permettre le redimensionnement individuel des colonnes kanban avec limites min/max pour adapter la présentation au contenu et aux préférences utilisateur",
+      "tags": [
+        { "name": "kanban" },
+        { "name": "ui" },
+        { "name": "ux" }
+      ],
+      "workspaceId": "bf100a9c-3252-4ca9-a720-678ad02ec5c0"
+    }
+  }
+}

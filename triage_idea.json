@@ -1,0 +1,14 @@
+{
+  "requestId": "d2f3e4a5-b6c7-8901-defa-bc1234567890",
+  "initiator": "plugin:ideas-manager:ai-capture",
+  "action": {
+    "kind": "triage",
+    "ideaId": "d1e2f3a4-b5c6-7890-defa-bc1234567890",
+    "patch": {
+      "value": 2,
+      "effort": 2,
+      "rank": 1,
+      "rationale": "Fonctionnalité UI/UX utile (redimensionnement individuel des colonnes du kanban) avec un effort modéré, répondant directement au besoin exprimé par l'utilisateur. Valeur moyenne car elle améliore l'expérience sans changer la logique métier fondamentale. Rang 1 dans le backlog ouvert de cet espace de travail (première idée ouverte)."
+    }
+  }
+}
