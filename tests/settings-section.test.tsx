@@ -238,6 +238,31 @@ describe('IdeasSettingsSection page', () => {
     expect(host.querySelector(`.${classes.settingsError}`)).toBeNull()
   })
 
+  it('commits the column-width bounds on Enter, saves clamped, and shows the fresh value', async () => {
+    const transport = new ConfigTransport()
+    const client = makeClient(transport)
+    await render(client)
+    // The two column-width rows are the 2nd and 3rd number inputs (after tagRows).
+    const numbers = Array.from(host.querySelectorAll(`.${classes.settingsNumber}`)) as HTMLInputElement[]
+    expect(numbers).toHaveLength(3)
+    const minInput = numbers[1]!
+    const maxInput = numbers[2]!
+    // Defaults render.
+    expect(minInput.value).toBe('200')
+    expect(maxInput.value).toBe('922')
+    await act(async () => {
+      setNativeValue(minInput, '99') // below the min range floor (120)
+      pressEnter(minInput)
+      setNativeValue(maxInput, '9999') // above the max range ceiling (1382)
+      pressEnter(maxInput)
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    expect(transport.saved).toEqual([{ columnMinWidth: 120 }, { columnMaxWidth: 1382 }])
+    expect(minInput.value).toBe('120')
+    expect(maxInput.value).toBe('1382')
+    expect(host.querySelector(`.${classes.settingsError}`)).toBeNull()
+  })
+
   it('reverts to the stored value and shows the inline error on a failed save', async () => {
     const transport = new ConfigTransport()
     transport.failSave = new Error('settings-conflict')
@@ -268,6 +293,8 @@ describe('IdeasSettingsSection page', () => {
       'settings.densityComfortable', 'settings.densityCompact',
       'settings.language', 'settings.languageDesc', 'settings.languageAuto',
       'settings.languageEn', 'settings.languageFr', 'settings.languageZh',
+      'settings.columnMinWidth', 'settings.columnMinWidthDesc',
+      'settings.columnMaxWidth', 'settings.columnMaxWidthDesc',
       'card.confirmLifecycle',
     ] as const) {
       expect(typeof fr[key]).toBe('string')
@@ -290,14 +317,16 @@ describe('IdeasSettingsSection page', () => {
       t('settings.cardDensity'),
       t('settings.language'),
       t('settings.renderMarkdown'),
+      t('settings.columnMinWidth'),
+      t('settings.columnMaxWidth'),
       t('settings.defaultTab'),
       t('settings.rememberScope'),
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
-    // One number row, three selects (density + language + open tab), four
-    // toggle switches.
-    expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(1)
+    // Three number rows (tagRows + the two column-width bounds), three selects
+    // (density + language + open tab), four toggle switches.
+    expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(3)
     expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(3)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
     expect(checks.map(box => box.checked)).toEqual([true, false, false, false])

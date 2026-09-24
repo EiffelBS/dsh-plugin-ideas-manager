@@ -158,6 +158,20 @@ export declare const fr: {
     'settings.languageEn': string;
     'settings.languageFr': string;
     'settings.languageZh': string;
+    'about.panelLabel': string;
+    'about.repository': string;
+    'about.version': string;
+    'about.license': string;
+    'about.compatibleVersions': string;
+    'about.checkUpdate': string;
+    'about.tabDisplay': string;
+    'about.tabAbout': string;
+    'about.tabs': string;
+    'settings.columnMinWidth': string;
+    'settings.columnMinWidthDesc': string;
+    'settings.columnMaxWidth': string;
+    'settings.columnMaxWidthDesc': string;
+    'board.columnResize': string;
 };
 export declare const en: {
     'entry.label': string;
@@ -280,6 +294,15 @@ export declare const en: {
     'level.low': string;
     'level.medium': string;
     'level.high': string;
+    'about.panelLabel': string;
+    'about.repository': string;
+    'about.version': string;
+    'about.license': string;
+    'about.compatibleVersions': string;
+    'about.checkUpdate': string;
+    'about.tabDisplay': string;
+    'about.tabAbout': string;
+    'about.tabs': string;
     'board.status.underReview': string;
     'card.underReviewHint': string;
     'card.taskFailed': string;
@@ -311,6 +334,11 @@ export declare const en: {
     'settings.languageEn': string;
     'settings.languageFr': string;
     'settings.languageZh': string;
+    'settings.columnMinWidth': string;
+    'settings.columnMinWidthDesc': string;
+    'settings.columnMaxWidth': string;
+    'settings.columnMaxWidthDesc': string;
+    'board.columnResize': string;
 };
 /**
  * Simplified Chinese copy (the language DSH serves besides English), so a
@@ -470,6 +498,20 @@ export declare const zh: {
     'settings.languageEn': string;
     'settings.languageFr': string;
     'settings.languageZh': string;
+    'about.panelLabel': string;
+    'about.repository': string;
+    'about.version': string;
+    'about.license': string;
+    'about.compatibleVersions': string;
+    'about.checkUpdate': string;
+    'about.tabDisplay': string;
+    'about.tabAbout': string;
+    'about.tabs': string;
+    'settings.columnMinWidth': string;
+    'settings.columnMinWidthDesc': string;
+    'settings.columnMaxWidth': string;
+    'settings.columnMaxWidthDesc': string;
+    'board.columnResize': string;
 };
 export type IdeasKey = keyof typeof fr;
 /**

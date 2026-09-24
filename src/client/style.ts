@@ -397,16 +397,61 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
 }
 
 .dsh-ideas-column {
+  position: relative;
+  /* Scope each column's reflow (idea #53): resizing one column must not
+     invalidate the others' card layout — they only shift position — so a dense
+     drag stays fast. "layout" only (not "paint") so the resizer, which sits in
+     the inter-column gap, is not clipped. */
+  contain: layout;
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
   min-width: 240px;
-  max-width: 420px;
+  /* Default cap of the equal-share layout (a resized column overrides this via
+     its explicit width, so it can honour the wider columnMaxWidth setting). */
+  max-width: 600px;
   min-height: 0;
   border-radius: 10px;
   background: var(--dsw-alias-bg-subtle, var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1)));
   padding: 10px;
   gap: 8px;
+}
+
+/* Per-column width resizer (idea #53): a thin grip centred on the column's
+   right edge (inside the 12px inter-column gap) that drags to resize THAT
+   column. Absolutely positioned so it never takes layout space; the hairline
+   affordance appears on hover, focus and while dragging ([data-resizing]). */
+.dsh-ideas-column-resizer {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  width: 12px;
+  height: 100%;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.dsh-ideas-column-resizer::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: transparent;
+}
+
+.dsh-ideas-column-resizer:hover::after,
+.dsh-ideas-column-resizer:focus-visible::after,
+.dsh-ideas-column-resizer[data-resizing]::after {
+  background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
+.dsh-ideas-column-resizer:focus-visible {
+  outline: none;
 }
 
 .dsh-ideas-column-header {
@@ -1604,6 +1649,83 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
+
+/* --- About panel (standardized plugin settings section) --- */
+
+.dsh-plugin-about-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-family: var(--dsw-font-family);
+}
+
+.dsh-plugin-about-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.dsh-plugin-about-repo-link {
+  color: var(--dsw-alias-color-accent, var(--dsh-ideas-fb-accent));
+  text-decoration: none;
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.dsh-plugin-about-repo-link:hover {
+  text-decoration: underline;
+}
+
+.dsh-plugin-about-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  border-bottom: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  font-size: 13px;
+}
+
+.dsh-plugin-about-row {
+  display: flex;
+  gap: 8px;
+}
+
+.dsh-plugin-about-label {
+  flex: none;
+  min-width: 110px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-plugin-about-value {
+  flex: 1;
+  word-break: break-word;
+}
+
+.dsh-plugin-about-check-update {
+  align-self: flex-start;
+  padding: 6px 14px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2, var(--dsh-ideas-fb-layer2));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.dsh-plugin-about-check-update:hover {
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+}
+
+.dsh-plugin-about-check-update:active {
+  border-color: var(--dsw-alias-color-accent, var(--dsh-ideas-fb-accent));
+}
 `
 
 /** Class map consumed by the sidebar core and the board JSX. */
@@ -1633,6 +1755,7 @@ export const classes = {
   columnCount: 'dsh-ideas-column-count',
   quickAdd: 'dsh-ideas-quick-add',
   columnBody: 'dsh-ideas-column-body',
+  columnResizer: 'dsh-ideas-column-resizer',
   empty: 'dsh-ideas-empty',
   card: 'dsh-ideas-card',
   cardHeader: 'dsh-ideas-card-header',
@@ -1718,6 +1841,13 @@ export const classes = {
   tabCount: 'dsh-ideas-tab-count',
   scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',
+  aboutPanel: 'dsh-plugin-about-panel',
+  aboutRepoLink: 'dsh-plugin-about-repo-link',
+  aboutDetails: 'dsh-plugin-about-details',
+  aboutRow: 'dsh-plugin-about-row',
+  aboutLabel: 'dsh-plugin-about-label',
+  aboutValue: 'dsh-plugin-about-value',
+  aboutCheckUpdate: 'dsh-plugin-about-check-update',
 } as const
 
 /** Inject the stylesheet once per page (idempotent, plugin-owned tag). */

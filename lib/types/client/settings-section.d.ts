@@ -20,6 +20,8 @@
  * and commits on blur/Enter so typing never writes per keystroke.
  */
 import type { IdeasClient } from './ideas-client.ts';
+/** One tab in the settings section. */
+export type SettingsTab = 'display' | 'about';
 /** Structural face of the shell slot registry (no ui-slots dependency). */
 export interface SettingsSlotsFace {
     inject(name: string, factory: () => unknown): () => void;
@@ -37,7 +39,7 @@ export interface IdeasSettingsSectionProps {
     /** Shell runtime props (ignored - the page renders the plugin's own copy). */
     [key: string]: unknown;
 }
-/** The section page: heading, intro, status lines, and the option rows. */
+/** The section page: heading, tabs, status lines, and the option rows. */
 export declare function IdeasSettingsSection({ client }: IdeasSettingsSectionProps): import("react").JSX.Element;
 /**
  * Install the settings glue: wire `tagRows` from the client's config onto the

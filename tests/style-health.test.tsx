@@ -66,6 +66,7 @@ describe('injected sheet parse (what the browser keeps)', () => {
       '.dsh-ideas-settings-row-text-with-title-control',
       '.dsh-ideas-settings-toggle',
       '.dsh-ideas-column-body',
+      '.dsh-ideas-column-resizer',
     ]) {
       expect({ critical, present: selectors.includes(critical) })
         .toEqual({ critical, present: true })

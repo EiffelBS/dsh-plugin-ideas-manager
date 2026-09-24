@@ -12,7 +12,7 @@
  * opening the edit modal.
  */
 
-import { useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
 import type { IdeaListRow } from '../protocol.ts'
@@ -33,6 +33,7 @@ import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
+import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
@@ -40,6 +41,15 @@ const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   archived: 'board.status.archived',
   declined: 'board.status.declined',
 }
+
+/**
+ * Minimum gap between two committed column widths while dragging (idea #53).
+ * A dense column reflows its cards' text on every width change, so committing
+ * per pointermove (per frame) is what makes the drag laggy; ~60 ms keeps the
+ * feedback feeling live while cutting the reflow rate to a third. The release
+ * always lands the exact final width regardless of this throttle.
+ */
+const RESIZE_THROTTLE_MS = 60
 
 function matchesFilter(idea: IdeaListRow, filter: string, deepBody: string | undefined): boolean {
   if (filter.trim() === '') return true
@@ -1179,6 +1189,122 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     if (cfg.rememberWorkspaceScope) setWorkspaceFilter(cfg.workspaceScope)
   }, [settings, client, cfg.defaultTab, cfg.renderMarkdown, cfg.rememberWorkspaceScope, cfg.workspaceScope])
 
+  /* --- per-column widths (idea #53) -------------------------------------
+   * Each kanban column can be resized individually by dragging its right
+   * edge. The chosen widths are persisted in localStorage (a display
+   * preference, like the active tab) and clamped to the [columnMinWidth,
+   * columnMaxWidth] settings bounds at render time, so a stored value is
+   * always legal even if the bounds moved after it was saved. An absent key
+   * means "default equal flex share" (the pre-#53 behaviour). */
+  const [columnWidths, setColumnWidths] = useState<ColumnWidths>(() => readColumnWidths(activeTabStorage()))
+  // The column currently being resized (drives the resizer's active affordance).
+  const [resizingStatus, setResizingStatus] = useState<IdeaStatus | undefined>(undefined)
+  // Bounds of a legal width for this render: the settings may store an inverted
+  // pair, so normalize to lo <= hi and the clamp/drag are always sane.
+  const colLo = Math.min(cfg.columnMinWidth, cfg.columnMaxWidth)
+  const colHi = Math.max(cfg.columnMinWidth, cfg.columnMaxWidth)
+  // The in-flight resize (status + pointer anchor + starting width), read by
+  // the stable window listeners below. Width commits are THROTTLED to at most
+  // one per RESIZE_THROTTLE_MS: a dense column (100+ cards) reflows its text on
+  // every width change, so committing on every pointermove (per-frame) is what
+  // makes the drag laggy; the release below always lands the exact final width.
+  const resizingRef = useRef<{ status: IdeaStatus; startX: number; startWidth: number } | null>(null)
+  // Timestamp of the last committed width (the throttle gate); 0 at resize start
+  // so the first move commits immediately.
+  const lastCommitRef = useRef(0)
+  // Bounds the move handler reads (assigned each render; read only from event
+  // handlers, never during render).
+  const colBoundsRef = useRef({ lo: colLo, hi: colHi })
+  colBoundsRef.current = { lo: colLo, hi: colHi }
+  // The card-scroll container of the column being resized. Its width is frozen
+  // (direct DOM) for the whole drag so the ~100 cards do not reflow on every
+  // width change — that reflow is what makes a dense column laggy; the column
+  // still grows live, and the freeze is released once on pointerup (one final
+  // reflow). React never sets this element's width, so the direct-DOM freeze
+  // survives re-renders without desync.
+  const frozenBodyRef = useRef<HTMLElement | null>(null)
+
+  /** Commit one column's width (clamped to the current bounds) into state. */
+  const applyColumnWidth = useCallback((status: IdeaStatus, raw: number): void => {
+    const bounds = colBoundsRef.current
+    setColumnWidths(prev => ({ ...prev, [status]: clampColumnWidth(raw, bounds.lo, bounds.hi) }))
+  }, [])
+
+  const onResizeMove = useCallback((event: PointerEvent): void => {
+    const live = resizingRef.current
+    if (live === null) return
+    event.preventDefault()
+    // Throttle: at most one width commit per RESIZE_THROTTLE_MS while dragging.
+    const now = performance.now()
+    if (now - lastCommitRef.current < RESIZE_THROTTLE_MS) return
+    lastCommitRef.current = now
+    applyColumnWidth(live.status, live.startWidth + (event.clientX - live.startX))
+  }, [applyColumnWidth])
+
+  const onResizeUp = useCallback((event: PointerEvent): void => {
+    const live = resizingRef.current
+    if (live !== null) {
+      // Land the exact final width from the release position (bypassing the
+      // throttle), so a fast drag never leaves a stale intermediate value.
+      applyColumnWidth(live.status, live.startWidth + (event.clientX - live.startX))
+    }
+    // Release the frozen card container in the same frame as the final width
+    // commit above: pointerup is a discrete event React flushes before paint, so
+    // the cards reflow exactly once to their new width.
+    const body = frozenBodyRef.current
+    if (body !== null) { body.style.width = ''; frozenBodyRef.current = null }
+    resizingRef.current = null
+    setResizingStatus(undefined)
+    window.removeEventListener('pointermove', onResizeMove)
+    window.removeEventListener('pointerup', onResizeUp)
+  }, [onResizeMove, applyColumnWidth])
+
+  // Release the resize listeners if the board unmounts mid-drag (the user can
+  // close the panel before releasing the pointer); stable callbacks make this
+  // a one-time mount/unmount cleanup.
+  useEffect(() => () => {
+    const body = frozenBodyRef.current
+    if (body !== null) { body.style.width = ''; frozenBodyRef.current = null }
+    window.removeEventListener('pointermove', onResizeMove)
+    window.removeEventListener('pointerup', onResizeUp)
+  }, [onResizeMove, onResizeUp])
+
+  // Persist the per-column widths on every change (the initial load is a
+  // harmless idempotent write of the same value); storage failures are swallowed.
+  useEffect(() => {
+    writeColumnWidths(activeTabStorage(), columnWidths)
+  }, [columnWidths])
+
+  /** Start a per-column resize: anchor the pointer, then track it on window. */
+  const beginResize = (status: IdeaStatus, event: ReactPointerEvent): void => {
+    if (drag !== undefined) return // a card drag owns the pointer; no resize mid-drag
+    const column = (event.currentTarget as HTMLElement).closest(`.${classes.column}`)
+    if (column === null) return
+    resizingRef.current = { status, startX: event.clientX, startWidth: column.getBoundingClientRect().width }
+    lastCommitRef.current = 0 // the first move commits immediately
+    // Freeze this column's card container so its cards do not reflow while the
+    // width changes (the dense-column lag source). The column still grows live;
+    // released once on pointerup for a single final reflow.
+    const body = column.querySelector<HTMLElement>('[data-dsh-column-scroll]')
+    if (body !== null) {
+      frozenBodyRef.current = body
+      body.style.width = `${Math.round(body.getBoundingClientRect().width)}px`
+    }
+    setResizingStatus(status)
+    window.addEventListener('pointermove', onResizeMove)
+    window.addEventListener('pointerup', onResizeUp)
+  }
+
+  /** Drop one column's stored width (double-click a resizer): back to the default share. */
+  const resetColumnWidth = (status: IdeaStatus): void => {
+    setColumnWidths(prev => {
+      if (prev[status] === undefined) return prev
+      const next: ColumnWidths = { ...prev }
+      delete next[status]
+      return next
+    })
+  }
+
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
 
@@ -1552,10 +1678,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             count still includes them). */}
         {IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn)).map(status => {
           const columnIdeas = byStatus(status)
+          // Per-column width (idea #53): a stored width pins the column to that
+          // many pixels (flex: 0 0); an absent one keeps the default equal share.
+          const storedWidth = columnWidths[status]
+          const columnWidth = storedWidth === undefined ? undefined : clampColumnWidth(storedWidth, colLo, colHi)
           return (
             <section
               key={status}
               className={classes.column}
+              style={columnWidth !== undefined ? { flex: `0 0 ${columnWidth}px`, width: `${columnWidth}px`, maxWidth: 'none' } : undefined}
               onDragEnter={() => { if (drag !== undefined) setDragTarget({ status }) }}
               onDragOver={event => {
                 if (drag !== undefined) {
@@ -1901,6 +2032,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                       )
                     })}
                 </div>
+              {/* Per-column width resizer (idea #53): drag to resize this column,
+                  double-click resets it to the default share. */}
+              <span
+                className={classes.columnResizer}
+                role="separator"
+                aria-orientation="vertical"
+                data-resizing={resizingStatus === status ? '' : undefined}
+                title={t('board.columnResize', { min: colLo, max: colHi })}
+                aria-label={t('board.columnResize', { min: colLo, max: colHi })}
+                onPointerDown={event => { event.preventDefault(); beginResize(status, event) }}
+                onDoubleClick={() => { resetColumnWidth(status) }}
+              />
             </section>
           )
         })}

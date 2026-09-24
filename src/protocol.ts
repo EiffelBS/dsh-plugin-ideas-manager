@@ -453,6 +453,10 @@ export interface IdeasSettingsValue {
   cardDensity: IdeasDensity
   /** Panel interface language: `auto` follows the DSH shell, else pinned. */
   language: IdeasLanguage
+  /** Minimum width (px) a kanban column can be dragged to (idea #53). */
+  columnMinWidth: number
+  /** Maximum width (px) a kanban column can be dragged to (idea #53). */
+  columnMaxWidth: number
 }
 
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
@@ -470,6 +474,17 @@ export interface IdeasSettingsView {
   revision?: number
 }
 
+/** Default bounds of the resizable kanban columns (idea #53), in pixels. */
+export const COLUMN_MIN_WIDTH_DEFAULT = 200
+// Max default raised twice by 20% from the original 640 (now 922) so a wide
+// column has room to hold dense cards without wrapping; the option ceiling
+// moves up by the same amount.
+export const COLUMN_MAX_WIDTH_DEFAULT = 922
+/** Inclusive bounds of the columnMinWidth option (settings row). */
+export const COLUMN_MIN_WIDTH_RANGE = { min: 120, max: 480 } as const
+/** Inclusive bounds of the columnMaxWidth option (settings row). */
+export const COLUMN_MAX_WIDTH_RANGE = { min: 240, max: 1382 } as const
+
 /**
  * Defaults the browser half keeps when no settings surface answers. Spelled
  * here rather than imported from the host entry so the client bundle never
@@ -485,6 +500,8 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   hideDeclinedColumn: false,
   cardDensity: 'comfortable',
   language: 'auto',
+  columnMinWidth: COLUMN_MIN_WIDTH_DEFAULT,
+  columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
 }
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
@@ -501,6 +518,22 @@ export const TAG_ROWS_MAX = 5
 export function clampTagRows(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return IDEAS_SETTINGS_DEFAULTS.tagRows
   return Math.min(TAG_ROWS_MAX, Math.max(TAG_ROWS_MIN, Math.round(value)))
+}
+
+/**
+ * Clamp an unknown input to a legal minimum column width: finite numbers round
+ * and clamp into the range; anything else falls back to the default. Same guard
+ * discipline as clampTagRows — the clamp, not a schema range, is the boundary.
+ */
+export function clampColumnMinWidth(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return COLUMN_MIN_WIDTH_DEFAULT
+  return Math.min(COLUMN_MIN_WIDTH_RANGE.max, Math.max(COLUMN_MIN_WIDTH_RANGE.min, Math.round(value)))
+}
+
+/** Clamp an unknown input to a legal maximum column width (see the min twin). */
+export function clampColumnMaxWidth(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return COLUMN_MAX_WIDTH_DEFAULT
+  return Math.min(COLUMN_MAX_WIDTH_RANGE.max, Math.max(COLUMN_MAX_WIDTH_RANGE.min, Math.round(value)))
 }
 
 /** Unknown -> one of `allowed`, else the fallback (enum fields). */
@@ -535,6 +568,8 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     hideDeclinedColumn: booleanOr(row.hideDeclinedColumn, IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
     cardDensity: oneOf(row.cardDensity, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity),
     language: oneOf(row.language, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language),
+    columnMinWidth: clampColumnMinWidth(row.columnMinWidth),
+    columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
   }
 }
 
@@ -542,7 +577,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
 const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
-  'language',
+  'language', 'columnMinWidth', 'columnMaxWidth',
 ] as const
 
 /**
@@ -576,6 +611,12 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
       patch.defaultTab = oneOf(field, IDEAS_TABS, IDEAS_SETTINGS_DEFAULTS.defaultTab)
     } else if (key === 'language') {
       patch.language = oneOf(field, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language)
+    } else if (key === 'columnMinWidth') {
+      if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
+      patch.columnMinWidth = clampColumnMinWidth(field)
+    } else if (key === 'columnMaxWidth') {
+      if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
+      patch.columnMaxWidth = clampColumnMaxWidth(field)
     } else {
       patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
     }

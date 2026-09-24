@@ -201,6 +201,10 @@ export interface IdeasSettingsValue {
     cardDensity: IdeasDensity;
     /** Panel interface language: `auto` follows the DSH shell, else pinned. */
     language: IdeasLanguage;
+    /** Minimum width (px) a kanban column can be dragged to (idea #53). */
+    columnMinWidth: number;
+    /** Maximum width (px) a kanban column can be dragged to (idea #53). */
+    columnMaxWidth: number;
 }
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
 export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;
@@ -215,6 +219,19 @@ export interface IdeasSettingsView {
     value: IdeasSettingsValue;
     revision?: number;
 }
+/** Default bounds of the resizable kanban columns (idea #53), in pixels. */
+export declare const COLUMN_MIN_WIDTH_DEFAULT = 200;
+export declare const COLUMN_MAX_WIDTH_DEFAULT = 922;
+/** Inclusive bounds of the columnMinWidth option (settings row). */
+export declare const COLUMN_MIN_WIDTH_RANGE: {
+    readonly min: 120;
+    readonly max: 480;
+};
+/** Inclusive bounds of the columnMaxWidth option (settings row). */
+export declare const COLUMN_MAX_WIDTH_RANGE: {
+    readonly min: 240;
+    readonly max: 1382;
+};
 /**
  * Defaults the browser half keeps when no settings surface answers. Spelled
  * here rather than imported from the host entry so the client bundle never
@@ -232,6 +249,14 @@ export declare const TAG_ROWS_MAX = 5;
  * a schema range would reject a bad stored section at registration).
  */
 export declare function clampTagRows(value: unknown): number;
+/**
+ * Clamp an unknown input to a legal minimum column width: finite numbers round
+ * and clamp into the range; anything else falls back to the default. Same guard
+ * discipline as clampTagRows — the clamp, not a schema range, is the boundary.
+ */
+export declare function clampColumnMinWidth(value: unknown): number;
+/** Clamp an unknown input to a legal maximum column width (see the min twin). */
+export declare function clampColumnMaxWidth(value: unknown): number;
 /**
  * Sanitize a raw section into a COMPLETE legal value: both read paths (host
  * viewOf, client loadConfig) run every field through its guard, so a
