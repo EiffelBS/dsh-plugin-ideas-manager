@@ -26,7 +26,7 @@ function makeHost(): HTMLDivElement {
 function makeProps(overrides: Partial<AboutPanelProps> = {}): AboutPanelProps {
   return {
     repositoryUrl: 'https://github.com/EiffelBS/dsh-plugin-ideas-manager',
-    version: '0.4.0',
+    version: '0.5.0',
     license: 'MIT',
     compatibleVersions: '>=0.1.5-rc.1',
     onCheckUpdate: vi.fn(),
@@ -60,7 +60,7 @@ describe('AboutPanel', () => {
     expect(host.querySelector('.dsh-plugin-about-repo-link')?.getAttribute('target')).toBe('_blank')
     expect(host.querySelector('.dsh-plugin-about-repo-link')?.getAttribute('rel')).toContain('noopener')
     expect(host.textContent).toContain(t('about.version'))
-    expect(host.textContent).toContain('0.4.0')
+    expect(host.textContent).toContain('0.5.0')
     expect(host.textContent).toContain(t('about.license'))
     expect(host.textContent).toContain('MIT')
     expect(host.textContent).toContain(t('about.compatibleVersions'))
