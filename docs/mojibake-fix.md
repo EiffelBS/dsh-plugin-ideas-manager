@@ -67,7 +67,7 @@ file -> `GET /api/ideas/state` re-read — for BOTH transports:
 - an ANSI (PowerShell 5.1) byte stream is recovered instead of corrupted to
   U+FFD, with the ledger file holding correct UTF-8 and no replacement char.
 
-## Existing corruption + cleanup plan
+## Existing corruption + cleanup (executed 2026-09-24)
 
 Two production cards were already corrupted before the fix landed (the
 information is lost, so they cannot be auto-repaired):
@@ -88,9 +88,19 @@ double-encoded UTF-8 signature. Exit code 1 when any field is flagged.
 
 Because U+FFD is lossy, the clean path is a controlled re-analysis of each
 affected card (the `reanalyze` verb, idea #30 flow): it snapshots the prior
-content into the card's `analysisAudit` trail, then re-runs the analyst to
-rewrite title / body / summary / tags / rationale with fresh UTF-8 content.
-Re-analyzing through the board UI is preferred over a manual edit because it
-preserves history and the new run lands clean (and, with this fix, even slips
-into an ANSI transport are recovered). Do not auto-mutate the production
-ledger from tooling — the re-analysis is deliberate and traceable.
+content into the card's `analysisAudit` trail, then rewrites title / body /
+summary / tags / rationale with fresh UTF-8 content. Re-analyzing through the
+board UI is preferred over a manual edit because it preserves history and the
+new run lands clean (and, with this fix, even slips into an ANSI transport are
+recovered). Do not auto-mutate the production ledger from tooling — the
+re-analysis is deliberate and traceable.
+
+Both cards were re-analyzed on 2026-09-24 via `scripts/reanalyze-53-54.mjs`,
+which posted `reanalyze` (snapshotting the prior corrupted content into
+`analysisAudit`) then `update` with corrected UTF-8, for each card. #53's
+title / body / summary / tags came from the clean create fixture
+(`create_idea2.json`, verified to match the stored content modulo U+FFD); its
+rationale and all of #54's fields were reconstructed from context (each U+FFD
+is unambiguous in French). The cards' main fields are now clean; the scanner
+still flags only their `analysisAudit` trail, which deliberately preserves the
+prior corrupted content for traceability.
