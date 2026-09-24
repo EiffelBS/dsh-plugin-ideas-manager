@@ -83,7 +83,7 @@ export declare class IdeasHostLedger {
      */
     bindTaskBoardId(ideaId: string, taskBoardId: string): boolean;
     /**
-     * Host-internal mirrored-task STATUS (recette follow-up): records the last
+     * Host-internal mirrored-task STATUS (follow-up work): records the last
      * status observed by the under-review poll so a card whose TaskBoard task
      * failed can show a badge while the idea stays in the backlog. Same
      * system-field discipline as `bindTaskBoardId` (never accepted from the

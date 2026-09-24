@@ -162,6 +162,10 @@ Rules:
   over 64 KiB.
 - When you use PowerShell against the channel, send each JSON body as UTF-8
   bytes ([Text.Encoding]::UTF8.GetBytes(...)) so accents survive the round-trip.
+  This is still the contract: it is the only encoding that carries every
+  codepoint (including CJK). The Host also repairs a request body that arrives
+  in the system ANSI codepage, so a stray single-byte accent is no longer lost
+  to mojibake - but do not rely on that repair; send UTF-8 bytes.
 
 ## Re-analysis runs (re-analyze action)
 

@@ -8,7 +8,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { IdeasHostService } from './host-service.ts'
-import { writeJson } from './http.ts'
+import { decodeRequestBody, writeJson } from './http.ts'
 import { isLoopbackRequest } from './loopback.ts'
 import {
   parseActionEnvelope,
@@ -45,7 +45,15 @@ export function isTrustedIdeasRequest(req: IncomingMessage): boolean {
   return isLoopbackRequest(req)
 }
 
-async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unknown }> {
+/**
+ * Read and decode the request body. The decode is robust (see
+ * {@link decodeRequestBody}): a valid UTF-8 body is decoded byte-for-byte as
+ * before, while a raw ANSI-codepage body (the PowerShell 5.1 string-body trap)
+ * is re-decoded as windows-1252 instead of being corrupted to U+FFFD. The
+ * received byte count is returned so the caller can cap on wire bytes rather
+ * than the (re-encoded) length of the decoded text.
+ */
+async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unknown; byteLength: number }> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
@@ -54,8 +62,8 @@ async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unk
     if (size > IMPORT_LIMIT) throw new Error('body-too-large')
     chunks.push(buffer)
   }
-  const raw = Buffer.concat(chunks).toString('utf8')
-  return { raw, value: JSON.parse(raw) }
+  const raw = decodeRequestBody(Buffer.concat(chunks))
+  return { raw, value: JSON.parse(raw), byteLength: size }
 }
 
 /**
@@ -123,7 +131,7 @@ export function makeIdeasRoutes(
         const body = await readBody(req)
         const parsed = parseActionEnvelope(body.value)
         if (parsed === undefined) return writeJson(res, 400, { ok: false, error: 'invalid-action' }, { 'cache-control': 'no-store' })
-        if (parsed.action.kind !== 'import' && Buffer.byteLength(body.raw) > ACTION_LIMIT) {
+        if (parsed.action.kind !== 'import' && body.byteLength > ACTION_LIMIT) {
           return writeJson(res, 413, { ok: false, error: 'body-too-large' }, { 'cache-control': 'no-store' })
         }
         const result = service.apply(parsed.requestId, parsed.action, parsed.initiator)
@@ -183,14 +191,14 @@ export function makeIdeasRoutes(
         return
       }
       if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
-      let body: { raw: string; value: unknown }
+      let body: { raw: string; value: unknown; byteLength: number }
       try {
         body = await readBody(req)
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         return deny(message === 'body-too-large' ? 413 : 400, message)
       }
-      if (Buffer.byteLength(body.raw) > ACTION_LIMIT) return deny(413, 'body-too-large')
+      if (body.byteLength > ACTION_LIMIT) return deny(413, 'body-too-large')
       const parsed = parseSettingsBody(body.value)
       if (parsed === undefined) return deny(400, 'invalid-patch')
       if (port === undefined) return deny(503, 'settings-unavailable')

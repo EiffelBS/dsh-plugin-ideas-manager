@@ -482,6 +482,14 @@ export declare function setLanguageOverride(language: 'auto' | 'en' | 'fr' | 'zh
 export declare function interfaceDictionary(): typeof fr;
 /** BCP-47 tag of the interface language, for the board root's lang attribute. */
 export declare function interfaceLanguage(): string;
+/**
+ * Every label the DSH settings modal can carry for OUR nav row. The host
+ * resolves our `label()` thunk when it builds the dialog, so a panel whose
+ * interface language was pinned after boot can see the row rendered in the
+ * boot language: the board gear must match any of them, not just the current
+ * one (0.4.0 fix - it only worked while the interface was English).
+ */
+export declare const SETTINGS_NAV_LABELS: readonly string[];
 /** Interpolate {placeholders} with the given params. */
 export declare function translate(key: IdeasKey, params?: Record<string, string | number>): string;
 /** Short alias used across the board/entry code. */

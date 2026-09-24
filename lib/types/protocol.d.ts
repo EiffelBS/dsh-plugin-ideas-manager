@@ -145,7 +145,7 @@ export interface TriagePatch {
     rank?: number;
 }
 /**
- * Input of the `followUp` verb: the child idea raised when the recette of an
+ * Input of the `followUp` verb: the child idea raised when the review of an
  * under-review idea is NOK. The UI composes `body` as the parent summary +
  * the requested follow-up justification; the host links the child
  * (`followUpOfId`), inherits the parent workspace, and archives the parent —

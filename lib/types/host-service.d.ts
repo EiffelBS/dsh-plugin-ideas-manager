@@ -4,7 +4,7 @@
  * The board is a passive Host-authoritative store (unlike the task board's
  * execution runner) — the only timer is the under-review poll, which watches
  * for mirrored task cards passing `done` and moves the linked idea to
- * `underReview` (the recette gate). No other background work runs.
+ * `underReview` (the review gate). No other background work runs.
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -64,18 +64,18 @@ export declare class IdeasHostService {
      * statuses are read, the LAST OBSERVED status of every open idea's linked
      * card is recorded on the idea (a `failed` task leaves the idea in the
      * backlog behind a "Task failed" badge), and any open idea whose card is
-     * `done` moves to `underReview` (the recette gate). No-op when the mirror
+     * `done` moves to `underReview` (the review gate). No-op when the mirror
      * is absent or autoMirror is off.
      */
     startUnderReviewPoll(intervalMs?: number): void;
     /**
      * One poll pass (exposed for tests). Two jobs on the SAME status read:
      *  - record the last observed status of every open idea's linked card
-     *    (recette follow-up: the "Task failed" badge; the setter is a no-op on
+     *    (follow-up work: the "Task failed" badge; the setter is a no-op on
      *    an unchanged observation, so the 30 s poll never churns the revision;
      *    a card missing from one probe keeps its last observation because the
      *    mirror self-heals a dangling link on the next write);
-     *  - move an open idea whose card is `done` to `underReview` (the recette
+     *  - move an open idea whose card is `done` to `underReview` (the review
      *    gate - unchanged behavior).
      * Best-effort: any failure is ignored.
      */

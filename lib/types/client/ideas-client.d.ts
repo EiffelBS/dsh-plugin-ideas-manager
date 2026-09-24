@@ -117,7 +117,7 @@ export declare class IdeasClient {
         rank?: number;
     }): Promise<void>;
     /**
-     * Recette NOK: create a child follow-up idea (linked to `ideaId` and
+     * Review rejected: create a child follow-up idea (linked to `ideaId` and
      * carrying the summary + justification) and archive the parent — one atomic
      * commit. The parent must currently be under review.
      */
