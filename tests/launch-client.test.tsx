@@ -14,9 +14,9 @@ import { IdeasBoard } from '../src/client/board-view.tsx'
 import { IdeasClient } from '../src/client/ideas-client.ts'
 import {
   canLaunch,
+  HostLaunchBackend,
   modelTargetIdOf,
   resolveLaunchBackend,
-  TaskBoardLaunchBackend,
   type LaunchTarget,
 } from '../src/client/launch.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
@@ -56,10 +56,16 @@ describe('launch visibility', () => {
     expect(canLaunch(target({ taskBoardStatus: 'archived' }))).toBe(false)
   })
 
-  it('is hidden without a workspace or without a bound card', () => {
+  it('needs a workspace, but NOT a card', () => {
     expect(canLaunch(target({ workspaceId: undefined }))).toBe(false)
     expect(canLaunch(target({ workspaceId: '' }))).toBe(false)
-    expect(canLaunch(target({ taskBoardId: undefined }))).toBe(false)
+    // No mirrored card is the normal state of a board on a Host that serves no
+    // task-board plugin: the direct-session backend runs it without one.
+    expect(canLaunch(target({ taskBoardId: undefined }))).toBe(true)
+    // A card that EXISTS still constrains the decision: a running or done card
+    // is the run of record, and a second invisible session next to it is a lie.
+    expect(canLaunch(target({ taskBoardId: 'task-1', taskBoardStatus: 'running' }))).toBe(false)
+    expect(canLaunch(target({ taskBoardId: 'task-1', taskBoardStatus: 'done' }))).toBe(false)
   })
 
   it('is hidden on every non-open column', () => {
@@ -80,18 +86,19 @@ describe('launch backend resolution', () => {
     launch: async () => ({ ok: true, runId: 'idea-idea-1', taskId: 'idea-idea-1', runStatus: 'running' }),
   }
 
-  it('resolves the TaskBoard backend when the host exposes the route', async () => {
-    expect((await resolveLaunchBackend(target(), withLaunch))?.id).toBe('taskboard')
+  it('resolves the host backend when the host exposes the route', async () => {
+    expect((await resolveLaunchBackend(target(), withLaunch))?.id).toBe('host')
   })
 
   it('resolves nothing without the capability (an older host shows no button)', async () => {
     expect(await resolveLaunchBackend(target(), noLaunch)).toBeUndefined()
-    expect(await new TaskBoardLaunchBackend(noLaunch).available(target())).toBe(false)
+    expect(await new HostLaunchBackend(noLaunch).available(target())).toBe(false)
   })
 
   it('resolves nothing for a card that cannot be launched', async () => {
     expect(await resolveLaunchBackend(target({ status: 'archived' }), withLaunch)).toBeUndefined()
-    expect(await resolveLaunchBackend(target({ taskBoardId: undefined }), withLaunch)).toBeUndefined()
+    expect(await resolveLaunchBackend(target({ taskBoardStatus: 'done' }), withLaunch)).toBeUndefined()
+    expect(await resolveLaunchBackend(target({ runStatus: 'running' }), withLaunch)).toBeUndefined()
   })
 
   it('qualifies a picked model as provider/model and drops an empty pick', () => {
@@ -101,11 +108,11 @@ describe('launch backend resolution', () => {
 
   it('passes the target id straight to the host route', async () => {
     const seen: Array<string | undefined> = []
-    const backend = new TaskBoardLaunchBackend({
+    const backend = new HostLaunchBackend({
       ...noLaunch,
-      launch: async (_id, model) => {
+      launch: async (_id: string, model?: string) => {
         seen.push(model)
-        return { ok: true, runId: 'r', taskId: 'r', runStatus: 'running' }
+        return { ok: true, runId: 'r', runStatus: 'running' }
       },
     })
     await backend.launch(target(), { provider: 'deepseek', model: 'deepseek-chat', label: 'x' })
@@ -204,11 +211,14 @@ function click(element: HTMLElement): void {
 }
 
 describe('board launch affordance', () => {
-  it('shows the button only on the launchable card', async () => {
+  it('shows the button on every card a launch can actually start', async () => {
     await renderBoard()
     expect(launchButtonIn('launchable')).not.toBeNull()
     expect(launchButtonIn('running')).toBeNull()
-    expect(launchButtonIn('unbound')).toBeNull()
+    // No mirrored card is the normal state of a board with no task-board
+    // plugin: the direct-session backend runs the idea without one.
+    expect(launchButtonIn('unbound')).not.toBeNull()
+    // No workspace, no run — ever: neither backend has a directory to work in.
     expect(launchButtonIn('no-workspace')).toBeNull()
   })
 

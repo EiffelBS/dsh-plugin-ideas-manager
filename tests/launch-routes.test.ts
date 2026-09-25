@@ -21,6 +21,18 @@ import {
   type TaskBoardTransport,
 } from '../src/taskboard-bridge.ts'
 import { IDEAS_API_PREFIX } from '../src/protocol.ts'
+import { SessionRunner, type HostSessionGateway } from '../src/session-runner.ts'
+
+/** Minimal gateway double: answers `session/create` and nothing else. */
+class FakeGateway implements HostSessionGateway {
+  methods: string[] = []
+  async invoke(request: { namespace: string; method: string }): Promise<unknown> {
+    this.methods.push(request.method)
+    if (request.method === 'create') return { sessionId: 'session-1' }
+    if (request.method === 'list') return { items: [] }
+    return { ok: true }
+  }
+}
 
 let dir = ''
 let server: Server | undefined
@@ -60,7 +72,7 @@ class FakeTaskBoard implements TaskBoardTransport {
   }
 }
 
-async function serve(options: { autoMirror?: boolean; withMirror?: boolean; stateStatus?: number } = {}): Promise<{ base: string; taskBoard: FakeTaskBoard; service: IdeasHostService }> {
+async function serve(options: { autoMirror?: boolean; withMirror?: boolean; stateStatus?: number; sessions?: SessionRunner } = {}): Promise<{ base: string; taskBoard: FakeTaskBoard; service: IdeasHostService }> {
   dir = join(tmpdir(), `ideas-launch-route-${process.pid}-${randomUUID()}`)
   mkdirSync(dir, { recursive: true })
   const taskBoard = new FakeTaskBoard()
@@ -71,6 +83,7 @@ async function serve(options: { autoMirror?: boolean; withMirror?: boolean; stat
     dir,
     mirror: options.withMirror === false ? undefined : mirror,
     autoMirror: options.autoMirror ?? true,
+    sessions: options.sessions,
   })
   service.apply('create-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws' } })
   await service.flushMirror()
@@ -178,8 +191,19 @@ describe('POST /api/ideas/launch', () => {
     expect(await refused.json()).toEqual({ ok: false, error: 'taskboard-unavailable' })
   })
 
-  it("relays the task-board's own refusal as the error message", async () => {
-    const { base, taskBoard } = await serve()
+  it('serves a card-less idea from a direct session, without a taskId', async () => {
+    // No task-board plugin at all: the same route, the same 200, no card.
+    const gateway = new FakeGateway()
+    const { base, taskBoard } = await serve({ withMirror: false, autoMirror: false, sessions: new SessionRunner(gateway) })
+
+    const response = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
+    expect(gateway.methods).toContain('create')
+    expect(taskBoard.posts).toHaveLength(0)
+  })
+
+  it("relays the task-board's own refusal as the error message", async () => {    const { base, taskBoard } = await serve()
     taskBoard.answers.set('run', { status: 400, body: { error: 'task is already running or missing' } })
     const response = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1' })
     expect(response.status).toBe(400)

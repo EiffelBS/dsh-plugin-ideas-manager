@@ -9,7 +9,11 @@
  * Launch (idea #66): the mirror is also an EXECUTION entry point, but only on
  * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
  * passivity above is unchanged: no idea mutation ever starts a run, and `done`
- * stays runner-owned.
+ * stays runner-owned. Two execution backends share that one entry point: the
+ * mirrored card when the task-board plugin is present, otherwise a FRESH direct
+ * session (v2) started through the Host `typertGateway`. Both settle from this
+ * service's run poll, so a launch keeps going — and keeps being observed — when
+ * the browser tab is closed.
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -23,6 +27,7 @@
  */
 
 import { IdeasHostLedger, type LedgerApplyResult } from './host-ledger.ts'
+import { SessionRunner, SessionLaunchError } from './session-runner.ts'
 import { TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts'
 import {
@@ -40,14 +45,15 @@ const LAUNCH_DEDUPE_TTL_MS = 60_000
 /** Bounded launch replay cache (the ledger action cache is NOT reused: a launch is not a ledger mutation). */
 const MAX_LAUNCH_CACHE = 64
 
-/** Answer of a launch (idea #66): backend-neutral on purpose, so the future
- *  direct-session backend can serve the same route with the same shape. */
+/** Answer of a launch (idea #66): backend-neutral on purpose, so the card
+ *  backend and the direct-session backend serve the same route with the same
+ *  shape. */
 export interface IdeasLaunchResult {
   ok: true
-  /** Backend-neutral run handle (v1: the mirrored TaskBoard card id). */
+  /** Backend-neutral run handle: the card id, or the session id for a direct run. */
   runId: string
   /** TaskBoard card id, undefined for a backend that owns no card (v2). */
-  taskId: string
+  taskId?: string
   /** Always `running` on a fresh accept: the settle is written by the poll. */
   runStatus: IdeaRunStatus
 }
@@ -66,11 +72,16 @@ export class IdeasHostService {
   private readonly listeners = new Set<() => void>()
   private readonly mirror: TaskBoardMirror | undefined
   private readonly autoMirror: boolean
+  private sessions: SessionRunner | undefined
   private readonly pendingMirrors: Promise<void>[] = []
   /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
   private readonly mirrorChains = new Map<string, Promise<void>>()
   /** Launch replays: requestId -> {at, result} (idea #66, in-memory only). */
   private readonly launchCache = new Map<string, { at: number; result: IdeasLaunchResult }>()
+  /** Direct-session runs in flight: sessionId -> ideaId (idea #66 v2). */
+  private readonly sessionRuns = new Map<string, string>()
+  /** Set once the poll re-attached to a persisted in-flight run. */
+  private sessionRunsReattached = false
   private active = true
   private disposed = false
   private reviewPoll: ReturnType<typeof setInterval> | undefined
@@ -80,10 +91,13 @@ export class IdeasHostService {
     dir?: string
     mirror?: TaskBoardMirror
     autoMirror?: boolean
+    /** Direct-session backend; absent when the Host serves no session gateway. */
+    sessions?: SessionRunner
   } = {}) {
     this.ledger = options.ledger ?? new IdeasHostLedger(options.dir === undefined ? {} : { dir: options.dir })
     this.mirror = options.mirror
     this.autoMirror = options.autoMirror ?? true
+    this.sessions = options.sessions
     this.ledger.subscribe(() => { this.emit() })
   }
 
@@ -154,13 +168,41 @@ export class IdeasHostService {
    * any open idea whose card is `done` moves to `underReview` (the review
    * gate). No-op when the mirror is absent or autoMirror is off.
    */
+  /**
+   * Arm the run poll. It is the ONE background timer of the service and it
+   * serves both execution backends: the card statuses (mirror on) and the
+   * session roster (gateway present). It stays disarmed when neither backend
+   * exists, so a deployment with neither runs no timer at all.
+   */
   startUnderReviewPoll(intervalMs: number = UNDER_REVIEW_POLL_MS): void {
-    if (this.reviewPoll !== undefined || this.mirror === undefined || !this.autoMirror) return
+    if (this.reviewPoll !== undefined || this.disposed) return
+    if ((this.mirror === undefined || !this.autoMirror) && this.sessions === undefined) return
     this.reviewPoll = setInterval(() => { void this.pollRunTransitions() }, intervalMs)
   }
 
   /**
-   * One poll pass (exposed for tests). Three jobs on the SAME status read:
+   * Attach the direct-session backend LATE (the `typertGateway` is an injected
+   * service, so it can appear after the plugin applied) and arm the poll if it
+   * was waiting for this. Safe to call with the same runner twice.
+   */
+  attachSessions(sessions: SessionRunner): void {
+    if (this.disposed) return
+    this.sessions = sessions
+    this.startUnderReviewPoll()
+  }
+
+  /**
+   * One poll pass (exposed for tests): each backend settles from its own
+   * single read, and a backend that is absent simply does nothing.
+   */
+  async pollRunTransitions(): Promise<void> {
+    if (this.disposed) return
+    await this.pollCardRuns()
+    await this.pollSessionRuns()
+  }
+
+  /**
+   * Card-backed runs. Three jobs on the SAME status read:
    *  - record the last observed status of every open idea's linked card
    *    (follow-up work: the "Task failed" badge; the setter is a no-op on
    *    an unchanged observation, so the 30 s poll never churns the revision;
@@ -182,8 +224,8 @@ export class IdeasHostService {
    *
    * Best-effort: any failure is ignored.
    */
-  async pollRunTransitions(): Promise<void> {
-    if (this.mirror === undefined || !this.autoMirror || this.disposed) return
+  private async pollCardRuns(): Promise<void> {
+    if (this.mirror === undefined || !this.autoMirror) return
     let statuses: Map<string, string> | undefined
     try {
       statuses = await this.mirror.fetchTaskStatuses()
@@ -212,13 +254,9 @@ export class IdeasHostService {
       }
       if (idea.status !== 'open' || observed !== 'done') continue
       try {
-        // A fresh request id per transition (the ledger dedupes replays); the
-        // move to underReview mirrors nothing - the card is already done.
-        this.ledger.applyRequest(`under-review-${idea.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`, {
-          kind: 'move',
-          ideaId: idea.id,
-          status: 'underReview',
-        })
+        // Same settle helper as the direct-session backend, so the review gate
+        // reads identically for a finished run whatever ran it.
+        this.settleRun(idea.id, 'done')
       } catch (error) {
         console.error(`[dsh-plugin-ideas-manager] under-review transition failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -226,21 +264,23 @@ export class IdeasHostService {
   }
 
   /**
-   * Launch the idea's execution (idea #66), through the resolved execution
-   * backend. v1 is TaskBoard-only and therefore an AWAITED, ordered write: the
-   * three card writes run on the idea's mirror chain (so a queued create/update
-   * can never interleave between the model patch and the run), and the caller
-   * gets the outcome instead of a fire-and-forget log line. The response
-   * contract stays backend-neutral so a direct-session backend can answer the
-   * same route later.
+   * Launch the idea's execution (idea #66) through the resolved execution
+   * backend: the mirrored card whenever the task-board plugin is present (the
+   * card is created when the idea has none yet), otherwise a FRESH direct
+   * session — the Host-serves-no-task-board case. Both paths are AWAITED,
+   * ordered writes: they run on the idea's mirror chain (so a queued
+   * create/update can never interleave between the model patch and the run),
+   * and the caller gets the outcome instead of a fire-and-forget log line. The
+   * response contract is identical for both, so the browser and the write
+   * channel cannot tell which one ran.
    *
-   * @throws when the plugin is disabled, the mirror is absent or off, the idea
-   *   is unknown, or the task-board refuses the run (the message carries its
-   *   own `body.error`, e.g. `task is already running or missing`).
+   * @throws when the plugin is disabled, no backend is available, the idea is
+   *   unknown, or the backend refuses the run (the message carries its own
+   *   reason: `task is already running or missing`, `workspace not found`,
+   *   `session selectModel rejected: ...`).
    */
   async launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult> {
     if (!this.active) throw new Error('ideas plugin is disabled')
-    if (this.mirror === undefined || !this.autoMirror) throw new TaskBoardMirrorDisabledError()
     const captured = this.ledger.idea(ideaId)
     if (captured === undefined) throw new Error('idea not found')
     // A replayed request id answers the FIRST outcome without re-posting the
@@ -253,21 +293,117 @@ export class IdeasHostService {
         this.launchCache.delete(requestId)
       }
     }
-    const taskId = await this.enqueueChain(ideaId, async () => {
-      // Fresh read at execution time, same discipline as runMirror: a queued
-      // launch sees the idea as it is NOW, including a card id a previous op
-      // on this chain just bound.
-      const idea = this.ledger.idea(ideaId) ?? captured
-      const launched = await this.mirror!.launchTask(idea, model)
-      this.ledger.bindTaskBoardId(ideaId, launched)
-      this.ledger.setRunStatus(ideaId, 'running')
-      return launched
+    // Fresh read at execution time, same discipline as runMirror: a queued
+    // launch sees the idea as it is NOW, including a card id a previous op on
+    // this chain just bound.
+    const idea = this.ledger.idea(ideaId) ?? captured
+    // Backend resolution (idea #66): the card wins whenever the task-board
+    // plugin is present AND the mirror is on — including for an idea that has
+    // no card YET, because `launchTask` mints it (that is what lets a freshly
+    // captured idea run, and it keeps the card as the single run of record).
+    // The direct session is the fallback, and it is a RUNTIME one: a board that
+    // turns out to be absent at launch time (plugin uninstalled since boot,
+    // bridge disabled) falls through to a fresh session instead of a dead end,
+    // as long as the Host serves a session gateway.
+    const viaCard = this.mirror !== undefined && this.autoMirror
+    if (!viaCard && this.sessions === undefined) throw new TaskBoardMirrorDisabledError()
+    const outcome = await this.enqueueChain(ideaId, async (): Promise<{ runId: string; taskId?: string }> => {
+      const fresh = this.ledger.idea(ideaId) ?? idea
+      if (!viaCard) return await this.launchInSession(fresh, model)
+      try {
+        const taskId = await this.mirror!.launchTask(fresh, model)
+        this.ledger.bindTaskBoardId(ideaId, taskId)
+        this.ledger.setRunStatus(ideaId, 'running')
+        return { runId: taskId, taskId }
+      } catch (error) {
+        if (this.sessions === undefined || !(error instanceof TaskBoardUnavailableError)) throw error
+        // The card could not run; the session can. Same route, same shape, and
+        // the human sees a run rather than a 503 on a board that is simply gone.
+        return await this.launchInSession(fresh, model)
+      }
     })
-    const result: IdeasLaunchResult = { ok: true, runId: taskId, taskId, runStatus: 'running' }
+    const result: IdeasLaunchResult = { ok: true, runId: outcome.runId, runStatus: 'running' }
+    if (outcome.taskId !== undefined) result.taskId = outcome.taskId
     if (requestId !== undefined) {
       this.rememberLaunch(requestId, result)
     }
     return result
+  }
+
+  /**
+   * Direct-session launch: create the session, stamp the run, and register it
+   * for settling. `runSessionId` is written with the stamp so a restarted Host
+   * re-attaches (see {@link pollSessionRuns}).
+   */
+  private async launchInSession(idea: IdeaRecord, model?: string): Promise<{ runId: string }> {
+    const sessionId = await this.sessions!.launchIdea(idea, model)
+    this.ledger.setRunStatus(idea.id, 'running')
+    this.ledger.setRunSession(idea.id, sessionId)
+    this.sessionRuns.set(sessionId, idea.id)
+    this.sessionRunsReattached = true
+    return { runId: sessionId }
+  }
+
+  /**
+   * Settle the direct-session runs in flight, from ONE roster read per tick.
+   * A session that stops running settles `done`; one that disappeared settles
+   * `failed` (the Host closed it under us — the closest observable there is to
+   * a cancelled run). An unknown roster (booting or unavailable runtime)
+   * settles nothing: the run stays `running` rather than being invented as
+   * finished. Card-backed runs never come through here.
+   *
+   * On the first tick after a restart, the in-memory tracker is re-seeded from
+   * the ledger (`runStatus: 'running'` + `runSessionId`), which is what makes a
+   * direct run survive the Host restarting mid-execution.
+   */
+  private async pollSessionRuns(): Promise<void> {
+    if (this.sessions === undefined || this.disposed) return
+    if (!this.sessionRunsReattached) {
+      this.sessionRunsReattached = true
+      for (const idea of this.ledger.snapshot().ideas) {
+        if (idea.runStatus === 'running' && idea.runSessionId !== undefined) {
+          this.sessionRuns.set(idea.runSessionId, idea.id)
+        }
+      }
+    }
+    if (this.sessionRuns.size === 0) return
+    let roster: ReadonlyMap<string, boolean>
+    try {
+      roster = await this.sessions.listRunning()
+    } catch (error) {
+      console.error(`[dsh-plugin-ideas-manager] session roster read failed: ${error instanceof Error ? error.message : String(error)}`)
+      return
+    }
+    for (const [sessionId, ideaId] of [...this.sessionRuns]) {
+      const running = roster.get(sessionId)
+      if (running === true) continue
+      this.sessionRuns.delete(sessionId)
+      try {
+        this.settleRun(ideaId, running === false ? 'done' : 'failed')
+      } catch (error) {
+        console.error(`[dsh-plugin-ideas-manager] run settle failed for ${ideaId}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+  }
+
+  /**
+   * Write a settled run and, for a finished one, open the review gate. Shared
+   * by both backends: a direct run that completes is finished work, so on a
+   * card-less board the idea must still reach `underReview` for the human —
+   * otherwise the review gate would silently depend on the task-board plugin.
+   */
+  private settleRun(ideaId: string, status: 'done' | 'failed'): void {
+    this.ledger.setRunStatus(ideaId, status)
+    this.ledger.setRunSession(ideaId, undefined)
+    if (status !== 'done') return
+    if (this.ledger.idea(ideaId)?.status !== 'open') return
+    // A fresh request id per transition (the ledger dedupes replays); the move
+    // to underReview mirrors nothing - the card is already done.
+    this.ledger.applyRequest(`under-review-${ideaId}-${Date.now()}-${Math.random().toString(36).slice(2)}`, {
+      kind: 'move',
+      ideaId,
+      status: 'underReview',
+    })
   }
 
   dispose(): void {
@@ -280,6 +416,7 @@ export class IdeasHostService {
     this.ledger.dispose()
     this.listeners.clear()
     this.launchCache.clear()
+    this.sessionRuns.clear()
   }
 
   private emit(): void {

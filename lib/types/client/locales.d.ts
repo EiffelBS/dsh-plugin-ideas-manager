@@ -147,6 +147,7 @@ export declare const fr: {
     'card.launchHint': string;
     'launch.title': string;
     'launch.hint': string;
+    'launch.sessionHint': string;
     'launch.submit': string;
     'launch.cancel': string;
     'followUp.title': string;
@@ -329,6 +330,7 @@ export declare const en: {
     'card.launchHint': string;
     'launch.title': string;
     'launch.hint': string;
+    'launch.sessionHint': string;
     'launch.submit': string;
     'launch.cancel': string;
     'followUp.title': string;
@@ -499,6 +501,7 @@ export declare const zh: {
     'card.launchHint': string;
     'launch.title': string;
     'launch.hint': string;
+    'launch.sessionHint': string;
     'launch.submit': string;
     'launch.cancel': string;
     'followUp.title': string;

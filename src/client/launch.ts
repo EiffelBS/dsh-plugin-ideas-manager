@@ -1,15 +1,18 @@
 /**
- * Launch an idea's execution from the board (idea #66, v1 = TaskBoard).
+ * Launch an idea's execution from the board (idea #66).
  *
- * One capability, two possible execution backends: today the mirrored
- * TaskBoard card (the Host owns the mirror, so the browser asks
- * `POST /api/ideas/launch` and never touches /api/task-board itself), later a
- * direct chat session with no board at all. The button and the modal resolve a
- * backend through {@link resolveLaunchBackend}, so adding the second backend is
- * a new class here and NOT a component change.
+ * ONE entry point, TWO execution backends, and the choice belongs to the HOST:
+ * `POST /api/ideas/launch` runs the mirrored TaskBoard card when the
+ * task-board plugin is present and the idea is bound to one, and otherwise
+ * starts a fresh direct session (v2). The browser never talks to
+ * /api/task-board and never creates a session itself — a run must keep going,
+ * and keep being observed, after the tab is closed. The response is
+ * backend-neutral (`runId` is the card id or the session id; `taskId` is
+ * absent for a backend that owns no card), so the modal, the button and the
+ * error surface here are the same for both.
  *
  * Visibility is a PURE predicate ({@link canLaunch}) so the whole
- * status x task-status x workspace matrix is unit-testable without a DOM, and
+ * status x card-status x workspace matrix is unit-testable without a DOM, and
  * the button disappears (never errors) whenever the flow cannot work.
  */
 
@@ -46,12 +49,18 @@ export const LAUNCHABLE_TASK_STATUSES: readonly string[] = ['backlog', 'todo', '
 /**
  * Whether the Launch affordance belongs on this card. Pure, synchronous, and
  * the single source of truth for the button (and its absence).
+ *
+ * A card is NOT required: on a Host that serves no task-board plugin no card is
+ * ever mirrored, and the direct-session backend runs the idea without one. The
+ * card status therefore only constrains a card that EXISTS — a card that is
+ * `running` or `done` is the run of record, and starting a second, invisible
+ * session next to it would be a lie, so the button stays hidden either way.
  */
 export function canLaunch(idea: LaunchTarget): boolean {
   if (idea.status !== 'open') return false
   if (idea.workspaceId === undefined || idea.workspaceId === '') return false
-  if (idea.taskBoardId === undefined || idea.taskBoardId === '') return false
   if (idea.runStatus === 'running') return false
+  if (idea.taskBoardId === undefined || idea.taskBoardId === '') return true
   const status = idea.taskBoardStatus
   return status === undefined || LAUNCHABLE_TASK_STATUSES.includes(status)
 }
@@ -72,7 +81,7 @@ export interface LaunchOutcome {
  * says no, the board simply shows no button.
  */
 export interface LaunchBackend {
-  readonly id: 'taskboard' | 'session'
+  readonly id: 'host'
   available(idea: LaunchTarget): Promise<boolean>
   launch(idea: LaunchTarget, model?: ModelChoice): Promise<LaunchOutcome>
 }
@@ -89,21 +98,23 @@ export function modelTargetIdOf(model: ModelChoice | undefined): string | undefi
 }
 
 /**
- * The TaskBoard backend: the Host mirrors and RUNS, this side only asks.
- * Rejects with the host's own message (`task is already running or missing`,
- * `archived task is read-only`, `taskboard-unavailable`, ...) so the board can
- * show what actually refused the launch instead of a generic failure.
+ * The Host backend: the HOST resolves which execution actually runs (mirrored
+ * card, or fresh direct session), and this side only asks. Rejects with the
+ * chosen backend's own message (`task is already running or missing`,
+ * `archived task is read-only`, `session create failed: …`,
+ * `taskboard-unavailable`, ...) so the board can show what actually refused
+ * the launch instead of a generic failure.
  */
-export class TaskBoardLaunchBackend implements LaunchBackend {
-  readonly id = 'taskboard' as const
+export class HostLaunchBackend implements LaunchBackend {
+  readonly id = 'host' as const
 
   constructor(private readonly transport: IdeasHostTransport) {}
 
   /**
    * Capability detection, not a health probe: the Host owns the
-   * task-board-plugin-present question (it feature-detects it on every mirror
-   * op). A transport without the method is an older host and simply gets no
-   * button; a live refusal arrives as a rejected launch, which the modal shows.
+   * execution-backend question. A transport without the method is an older
+   * host and simply gets no button; a live refusal arrives as a rejected
+   * launch, which the modal shows.
    */
   async available(_idea: LaunchTarget): Promise<boolean> {
     return this.transport.launch !== undefined
@@ -116,12 +127,13 @@ export class TaskBoardLaunchBackend implements LaunchBackend {
 }
 
 /**
- * Backends in resolution order. v2 appends the direct-session backend here
- * (and only here) — the button, the modal, the error surface and the run
- * lifecycle are already backend-neutral.
+ * Backends in resolution order. There is ONE today — the Host picks the
+ * execution backend per launch — and a remote runner would append here (and
+ * only here), the button, the modal, the error surface and the run lifecycle
+ * are already backend-neutral.
  */
 export function launchBackends(transport: IdeasHostTransport): LaunchBackend[] {
-  return [new TaskBoardLaunchBackend(transport)]
+  return [new HostLaunchBackend(transport)]
 }
 
 /** The first backend able to run this idea, or undefined (no button). */

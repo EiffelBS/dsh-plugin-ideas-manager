@@ -106,6 +106,19 @@ export declare class IdeasHostLedger {
      * @returns true when the document changed and was committed.
      */
     setRunStatus(ideaId: string, status: IdeaRunStatus | undefined): boolean;
+    /**
+     * Host-internal SESSION id of the latest launched run (idea #66 v2): written
+     * with the `running` stamp by a direct-session launch, cleared when the run
+     * settles. Same system-field discipline as `bindTaskBoardId`.
+     *
+     * Its real job is RESTART SAFETY: the in-memory run tracker is empty after a
+     * Host restart, so the poll re-attaches to a run still in flight from the
+     * `running` + `runSessionId` pair. Without it a restart mid-run would freeze
+     * the idea on `running` forever.
+     *
+     * @returns true when the document changed and was committed.
+     */
+    setRunSession(ideaId: string, sessionId: string | undefined): boolean;
     private apply;
     private acquireLock;
     private readLockOwner;

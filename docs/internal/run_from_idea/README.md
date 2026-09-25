@@ -7,12 +7,12 @@ observe.
 
 - **Scope (v1)**: TaskBoard plugin present on the same process (the current
   reality of the `web` profile).
-- **Scope (v2, anticipated)**: launch a chat session *directly* from an idea with
-  no TaskBoard at all. v1 is designed so v2 is additive (see §5 and §9).
-- **Status**: v1 (P0–P5) IMPLEMENTED — bridge `launchTask`, the `runStatus` /
-  `runSessionId` system fields, `POST /api/ideas/launch`, the client
-  `LaunchBackend` seam and the green Launch button. P6 (the direct-session
-  backend) stays open by design: it is additive behind `LaunchBackend`.
+- **Scope (v2)**: launch a chat session *directly* from an idea with
+  no TaskBoard at all. It shipped as P6, additive behind the same route.
+- **Status**: v1 (P0–P5) and v2 (P6) IMPLEMENTED — bridge `launchTask`, the
+  `runStatus` / `runSessionId` system fields, `POST /api/ideas/launch` with
+  HOST-side backend resolution, the card backend and the direct-session backend
+  (`session-runner.ts`), and the green Launch button.
 - **Tracked as**: idea *Run from idea…* in workspace `dsh-plugin-ideas-manager`
   (see §10).
 
@@ -352,10 +352,28 @@ Ordered so every step is independently testable and the mirror stays green.
 - [x] `docs/agent-write-channel.md`: new verb/route row.
 - [x] Analyst skill: mention that a launched idea is runner-owned.
 
-### P6 — v2 (direct session), later
-- [ ] `LaunchBackendSession` = `launchAnalystSession()` + `runPromptOf()`.
-- [ ] Persist `runSessionId`, observe completion, feed `runStatus` (source B).
-- [ ] Decide reload semantics (see D5).
+### P6 — v2 (direct session) — IMPLEMENTED
+- [x] `session-runner.ts` = the Host `typertGateway` RPCs (`session/create`,
+      `rename`, `selectModel`, `prompt`) + `runPromptOf()`, instead of
+      `launchAnalystSession()`. Host-side, not client-side: a direct run must
+      survive a closed tab.
+- [x] `runSessionId` persisted (`setRunSession`) + the run settled from the
+      roster (`session/list` -> per-session `running` bit): stops running
+      settles `done`, a vanished session settles `failed`, an unknown roster
+      settles nothing.
+- [x] Restart re-attach: the poll rebuilds its in-memory tracker from the
+      persisted `running` + `runSessionId` pair.
+- [x] Backend resolution lives in the HOST (`launchIdea`): card when the
+      task-board plugin is present (minting the card when the idea has none),
+      direct session otherwise — including a runtime fallback when the board
+      turns out to be absent at click time. The browser cannot choose.
+- [x] `canLaunch` no longer requires a bound card (a card that exists still
+      constrains it); the modal states which of the two will happen.
+- [x] One fresh session per launch (D5 settled): no reuse. A settled `done` run
+      opens the review gate on both backends, so the gate no longer depends on
+      the task-board plugin.
+- [x] `tests/session-launch.test.ts` (19) + a route test for the card-less
+      answer; live acceptance on a task-board-free profile (port 3102).
 
 **Acceptance (v1)**: in a workspace-assigned open idea whose card is
 `backlog`/`todo`, the green button opens the model modal; confirming patches
@@ -363,6 +381,14 @@ Ordered so every step is independently testable and the mirror stays green.
 starts on the chosen model; on success the card settles `done`, our poll stamps
 `runStatus`/`taskBoardStatus`, and the idea moves to **Under Review** within
 ~35 s; a failure settles `failed`, the badge shows and the idea stays **open**.
+
+**Acceptance (v2)**: on a profile with NO task-board plugin, an open,
+workspace-assigned idea with no mirrored card shows the button; confirming
+answers `{ok, runId: <sessionId>}` with **no** `taskId`, stamps
+`runStatus: 'running'` + `runSessionId`, and a real session runs; on success the
+roster stops reporting it running, the poll settles `done`, clears
+`runSessionId` and moves the idea to **Under Review** — verified live on port
+3102 (settle ~35 s, no card, no task-board).
 
 ---
 

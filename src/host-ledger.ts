@@ -343,6 +343,29 @@ export class IdeasHostLedger {
     return true
   }
 
+  /**
+   * Host-internal SESSION id of the latest launched run (idea #66 v2): written
+   * with the `running` stamp by a direct-session launch, cleared when the run
+   * settles. Same system-field discipline as `bindTaskBoardId`.
+   *
+   * Its real job is RESTART SAFETY: the in-memory run tracker is empty after a
+   * Host restart, so the poll re-attaches to a run still in flight from the
+   * `running` + `runSessionId` pair. Without it a restart mid-run would freeze
+   * the idea on `running` forever.
+   *
+   * @returns true when the document changed and was committed.
+   */
+  setRunSession(ideaId: string, sessionId: string | undefined): boolean {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const current = this.document.ideas.find(idea => idea.id === ideaId)
+    if (current === undefined) return false
+    const next = sessionId === undefined || sessionId === '' ? undefined : sessionId
+    if (current.runSessionId === next) return false
+    this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, runSessionId: next } : idea)
+    this.commit()
+    return true
+  }
+
   private apply(action: IdeasAction): LedgerApplyResult {
     const now = this.now()
     const beforeIdeas = this.document.ideas

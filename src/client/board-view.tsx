@@ -1002,6 +1002,14 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
         <div className={classes.field}>
           <div className={classes.fieldHint}>{t('launch.hint', { workspace: workspaceTitle })}</div>
         </div>
+        {/* No mirrored card means the Host has no task-board to run through, so
+            the run opens a NEW chat session instead: say so before the click,
+            and name the permission that session will inherit. */}
+        {(idea.taskBoardId === undefined || idea.taskBoardId === '') && (
+          <div className={classes.field}>
+            <div className={classes.fieldHint}>{t('launch.sessionHint')}</div>
+          </div>
+        )}
         {picker.modelChoices.length > 0 && <ModelPickerField picker={picker} disabled={pending} />}
         {error !== undefined && <div className={classes.error}>{error}</div>}
         <div className={classes.modalActions}>

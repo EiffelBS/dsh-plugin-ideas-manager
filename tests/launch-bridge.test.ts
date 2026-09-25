@@ -445,6 +445,9 @@ describe('run poll lifecycle', () => {
     const { service, taskBoard } = await startedService('backlog')
     // Closed BEFORE any launch: a card nobody ever ran must stay unwatched.
     service.apply('archive-1', { kind: 'move', ideaId: 'idea-1', status: 'archived' })
+    // The archive schedules a mirror op that binds the card id — a real ledger
+    // commit, so it must land BEFORE the revision this test watches.
+    await service.flushMirror()
     const revision = service.snapshot().revision
 
     taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'running' }]

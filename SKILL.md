@@ -141,12 +141,17 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
   never accepted from the wire). The settings namespace `ideas` exposes
   `enabled`, `announceToAgent` (default false) and `autoMirror` (default true).
 - **Launch (idea #66)**: `POST /api/ideas/launch` `{ ideaId, model? }` starts the
-  idea's execution on its bound card (a dedicated route, not a verb). Once a run
-  has been started the card is **runner-owned**: its content is frozen, so later
-  idea edits no longer replicate to the card, and `done` is the task-board's to
-  set. `runStatus` / `runSessionId` on the idea are host-written system fields —
-  an agent must never set them through `update`/`import` (the wire gate rejects
-  them), and a launched idea should not be edited "to fix" the running card.
+  idea's execution (a dedicated route, not a verb). The **host** picks the
+  backend: the mirrored card when the task-board plugin is present (minting the
+  `idea-<id>` card when the idea has none yet), otherwise a fresh direct chat
+  session created through the Host `typertGateway` — so the route works on a
+  board with no task-board at all, and the answer carries `taskId` only for the
+  card path. Once a run has been started the card is **runner-owned**: its
+  content is frozen, so later idea edits no longer replicate to the card, and
+  `done` is the task-board's to set. `runStatus` / `runSessionId` on the idea are
+  host-written system fields — an agent must never set them through
+  `update`/`import` (the wire gate rejects them), and a launched idea should not
+  be edited "to fix" the running card.
 
 ## Gotchas (Windows PowerShell, DSH host)
 
@@ -170,6 +175,7 @@ src/host-service.ts      apply + mirror scheduling
 src/host-routes.ts       /api/ideas/* fence + SSE
 src/taskboard-bridge.ts  feature-detect + one-way mirror + the `run` verb (no hard import)
 src/run-prompt.ts        execution prompt shared by every launch backend
+src/session-runner.ts    direct-session backend (Host RPCs + roster for the settle)
 src/export-markdown.ts   unidirectional ledger -> markdown
 src/core/ideas.ts        domain model + tag validation
 ```

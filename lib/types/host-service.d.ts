@@ -9,7 +9,11 @@
  * Launch (idea #66): the mirror is also an EXECUTION entry point, but only on
  * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
  * passivity above is unchanged: no idea mutation ever starts a run, and `done`
- * stays runner-owned.
+ * stays runner-owned. Two execution backends share that one entry point: the
+ * mirrored card when the task-board plugin is present, otherwise a FRESH direct
+ * session (v2) started through the Host `typertGateway`. Both settle from this
+ * service's run poll, so a launch keeps going — and keeps being observed — when
+ * the browser tab is closed.
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -22,17 +26,19 @@
  * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
 import { IdeasHostLedger } from './host-ledger.ts';
+import { SessionRunner } from './session-runner.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts';
 import { type IdeasAction, type IdeasEventPayload, type IdeasSnapshot } from './protocol.ts';
-/** Answer of a launch (idea #66): backend-neutral on purpose, so the future
- *  direct-session backend can serve the same route with the same shape. */
+/** Answer of a launch (idea #66): backend-neutral on purpose, so the card
+ *  backend and the direct-session backend serve the same route with the same
+ *  shape. */
 export interface IdeasLaunchResult {
     ok: true;
-    /** Backend-neutral run handle (v1: the mirrored TaskBoard card id). */
+    /** Backend-neutral run handle: the card id, or the session id for a direct run. */
     runId: string;
     /** TaskBoard card id, undefined for a backend that owns no card (v2). */
-    taskId: string;
+    taskId?: string;
     /** Always `running` on a fresh accept: the settle is written by the poll. */
     runStatus: IdeaRunStatus;
 }
@@ -49,11 +55,16 @@ export declare class IdeasHostService {
     private readonly listeners;
     private readonly mirror;
     private readonly autoMirror;
+    private sessions;
     private readonly pendingMirrors;
     /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
     private readonly mirrorChains;
     /** Launch replays: requestId -> {at, result} (idea #66, in-memory only). */
     private readonly launchCache;
+    /** Direct-session runs in flight: sessionId -> ideaId (idea #66 v2). */
+    private readonly sessionRuns;
+    /** Set once the poll re-attached to a persisted in-flight run. */
+    private sessionRunsReattached;
     private active;
     private disposed;
     private reviewPoll;
@@ -62,6 +73,8 @@ export declare class IdeasHostService {
         dir?: string;
         mirror?: TaskBoardMirror;
         autoMirror?: boolean;
+        /** Direct-session backend; absent when the Host serves no session gateway. */
+        sessions?: SessionRunner;
     });
     setActive(active: boolean): void;
     snapshot(): IdeasSnapshot;
@@ -85,9 +98,26 @@ export declare class IdeasHostService {
      * any open idea whose card is `done` moves to `underReview` (the review
      * gate). No-op when the mirror is absent or autoMirror is off.
      */
+    /**
+     * Arm the run poll. It is the ONE background timer of the service and it
+     * serves both execution backends: the card statuses (mirror on) and the
+     * session roster (gateway present). It stays disarmed when neither backend
+     * exists, so a deployment with neither runs no timer at all.
+     */
     startUnderReviewPoll(intervalMs?: number): void;
     /**
-     * One poll pass (exposed for tests). Three jobs on the SAME status read:
+     * Attach the direct-session backend LATE (the `typertGateway` is an injected
+     * service, so it can appear after the plugin applied) and arm the poll if it
+     * was waiting for this. Safe to call with the same runner twice.
+     */
+    attachSessions(sessions: SessionRunner): void;
+    /**
+     * One poll pass (exposed for tests): each backend settles from its own
+     * single read, and a backend that is absent simply does nothing.
+     */
+    pollRunTransitions(): Promise<void>;
+    /**
+     * Card-backed runs. Three jobs on the SAME status read:
      *  - record the last observed status of every open idea's linked card
      *    (follow-up work: the "Task failed" badge; the setter is a no-op on
      *    an unchanged observation, so the 30 s poll never churns the revision;
@@ -109,21 +139,50 @@ export declare class IdeasHostService {
      *
      * Best-effort: any failure is ignored.
      */
-    pollRunTransitions(): Promise<void>;
+    private pollCardRuns;
     /**
-     * Launch the idea's execution (idea #66), through the resolved execution
-     * backend. v1 is TaskBoard-only and therefore an AWAITED, ordered write: the
-     * three card writes run on the idea's mirror chain (so a queued create/update
-     * can never interleave between the model patch and the run), and the caller
-     * gets the outcome instead of a fire-and-forget log line. The response
-     * contract stays backend-neutral so a direct-session backend can answer the
-     * same route later.
+     * Launch the idea's execution (idea #66) through the resolved execution
+     * backend: the mirrored card whenever the task-board plugin is present (the
+     * card is created when the idea has none yet), otherwise a FRESH direct
+     * session — the Host-serves-no-task-board case. Both paths are AWAITED,
+     * ordered writes: they run on the idea's mirror chain (so a queued
+     * create/update can never interleave between the model patch and the run),
+     * and the caller gets the outcome instead of a fire-and-forget log line. The
+     * response contract is identical for both, so the browser and the write
+     * channel cannot tell which one ran.
      *
-     * @throws when the plugin is disabled, the mirror is absent or off, the idea
-     *   is unknown, or the task-board refuses the run (the message carries its
-     *   own `body.error`, e.g. `task is already running or missing`).
+     * @throws when the plugin is disabled, no backend is available, the idea is
+     *   unknown, or the backend refuses the run (the message carries its own
+     *   reason: `task is already running or missing`, `workspace not found`,
+     *   `session selectModel rejected: ...`).
      */
     launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult>;
+    /**
+     * Direct-session launch: create the session, stamp the run, and register it
+     * for settling. `runSessionId` is written with the stamp so a restarted Host
+     * re-attaches (see {@link pollSessionRuns}).
+     */
+    private launchInSession;
+    /**
+     * Settle the direct-session runs in flight, from ONE roster read per tick.
+     * A session that stops running settles `done`; one that disappeared settles
+     * `failed` (the Host closed it under us — the closest observable there is to
+     * a cancelled run). An unknown roster (booting or unavailable runtime)
+     * settles nothing: the run stays `running` rather than being invented as
+     * finished. Card-backed runs never come through here.
+     *
+     * On the first tick after a restart, the in-memory tracker is re-seeded from
+     * the ledger (`runStatus: 'running'` + `runSessionId`), which is what makes a
+     * direct run survive the Host restarting mid-execution.
+     */
+    private pollSessionRuns;
+    /**
+     * Write a settled run and, for a finished one, open the review gate. Shared
+     * by both backends: a direct run that completes is finished work, so on a
+     * card-less board the idea must still reach `underReview` for the human —
+     * otherwise the review gate would silently depend on the task-board plugin.
+     */
+    private settleRun;
     dispose(): void;
     private emit;
     /** Record a launch outcome for replay, bounded by TTL and entry count. */

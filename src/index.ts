@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from 'schemastery'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IdeasHostService } from './host-service.ts'
+import { SessionRunner, type HostSessionGateway } from './session-runner.ts'
 import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
 import { makeIdeasRoutes, type IdeasConfigPort } from './host-routes.ts'
@@ -101,10 +102,23 @@ function applyImpl(ctx: Context, config?: Config): void {
   })
   const host = new IdeasHostService({ mirror, autoMirror: config?.autoMirror ?? true })
   host.setActive(config?.enabled ?? true)
-  // The review gate: watch mirrored cards passing `done` and move the linked
-  // idea to underReview automatically (light poll, best-effort, no-op without
-  // the mirror / autoMirror).
-  if (config?.autoMirror ?? true) host.startUnderReviewPoll()
+  // The run poll: it settles card-backed runs (mirrored card reaching `done`
+  // moves the linked idea to underReview) and direct-session runs (idea #66
+  // v2). It arms itself only when at least one backend is available, so a
+  // deployment with neither runs no timer — and `attachSessions` re-arms it
+  // when the session gateway shows up after the plugin applied.
+  host.startUnderReviewPoll()
+
+  // v2 execution backend: the Host `typertGateway` is an OPTIONAL injected
+  // service (the task-board plugin declares it in its own inject list), so it
+  // is requested reactively rather than declared in `inject` — a Host that
+  // serves no session gateway simply never fires this, and the board keeps
+  // working with the card backend alone. No hard import of another plugin.
+  ctx.inject(['typertGateway'], (gatewayCtx) => {
+    const gateway = (gatewayCtx as unknown as { typertGateway?: unknown }).typertGateway
+    if (typeof gateway !== 'object' || gateway === null || typeof (gateway as HostSessionGateway).invoke !== 'function') return
+    host.attachSessions(new SessionRunner(gateway as HostSessionGateway))
+  })
 
   ctx.effect(() => {
     const disposers: Array<() => void> = []

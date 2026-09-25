@@ -242,7 +242,7 @@ export function makeIdeasRoutes(
    *
    * Status mapping (every failure is visible, never swallowed — the run gates
    * are the interesting part of this flow):
-   *  400 invalid-launch / the task-board's own refusal message,
+   *  400 invalid-launch / the backend's own refusal message,
    *  404 not-found, 409 taskboard-mirror-disabled, 413/415/405 discipline.
    */
   const launch: WebRoute = {
@@ -274,8 +274,9 @@ export function makeIdeasRoutes(
         if (error instanceof TaskBoardUnavailableError) return deny(503, 'taskboard-unavailable')
         const message = error instanceof Error ? error.message : String(error)
         if (message === 'idea not found') return deny(404, 'not-found')
-        // Anything else is the task-board's own gate message (already relayed
-        // from body.error by the bridge), or an ideas-disabled state.
+        // Anything else is the chosen backend's own gate message (the card
+        // backend relays it from body.error, the session backend composes
+        // `session create failed: …`), or an ideas-disabled state.
         deny(message === 'ideas plugin is disabled' ? 409 : 400, message)
       }
     },
