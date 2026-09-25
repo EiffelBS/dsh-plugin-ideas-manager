@@ -172,6 +172,14 @@ export class IdeasHostService {
    *    are no-ops on an unchanged value, so the idle poll stays free;
    *  - move an open idea whose card is `done` to `underReview` (the review
    *    gate - unchanged behavior).
+   *
+   * A run IN FLIGHT is always followed, even on an idea that has left the
+   * backlog: a launch started while the idea was already under review (or
+   * archived) used to leave its `runStatus: 'running'` forever, because the
+   * observation scope below is the OPEN column. Tracking starts on `open`
+   * only, and stops only when the stamp clears, so a non-open idea is never
+   * newly watched (no churn on the closed columns).
+   *
    * Best-effort: any failure is ignored.
    */
   async pollRunTransitions(): Promise<void> {
@@ -185,23 +193,24 @@ export class IdeasHostService {
     }
     if (statuses === undefined) return
     for (const idea of this.ledger.snapshot().ideas) {
-      if (idea.status !== 'open' || idea.taskBoardId === undefined) continue
+      if (idea.taskBoardId === undefined) continue
       const observed = statuses.get(idea.taskBoardId)
-      if (observed !== undefined && observed !== idea.taskBoardStatus) {
+      const tracking = idea.status === 'open' || idea.runStatus !== undefined
+      if (idea.status === 'open' && observed !== undefined && observed !== idea.taskBoardStatus) {
         try {
           this.ledger.setTaskBoardStatus(idea.id, observed)
         } catch (error) {
           console.error(`[dsh-plugin-ideas-manager] task status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      if (observed !== undefined && observed !== idea.runStatus) {
+      if (tracking && observed !== undefined && observed !== idea.runStatus) {
         try {
           this.ledger.setRunStatus(idea.id, runStatusOf(observed))
         } catch (error) {
           console.error(`[dsh-plugin-ideas-manager] run status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      if (observed !== 'done') continue
+      if (idea.status !== 'open' || observed !== 'done') continue
       try {
         // A fresh request id per transition (the ledger dedupes replays); the
         // move to underReview mirrors nothing - the card is already done.

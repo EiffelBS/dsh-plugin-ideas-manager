@@ -99,6 +99,14 @@ export declare class IdeasHostService {
      *    are no-ops on an unchanged value, so the idle poll stays free;
      *  - move an open idea whose card is `done` to `underReview` (the review
      *    gate - unchanged behavior).
+     *
+     * A run IN FLIGHT is always followed, even on an idea that has left the
+     * backlog: a launch started while the idea was already under review (or
+     * archived) used to leave its `runStatus: 'running'` forever, because the
+     * observation scope below is the OPEN column. Tracking starts on `open`
+     * only, and stops only when the stamp clears, so a non-open idea is never
+     * newly watched (no churn on the closed columns).
+     *
      * Best-effort: any failure is ignored.
      */
     pollRunTransitions(): Promise<void>;

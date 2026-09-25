@@ -420,8 +420,44 @@ describe('run poll lifecycle', () => {
     service.dispose()
   })
 
-  it('does not churn the revision while the observation is unchanged', async () => {
-    const { service } = await startedService('running')
+  it('settles a run started on an idea that already left the backlog', async () => {
+    const { service, taskBoard } = await startedService('backlog')
+    await service.launchIdea('idea-1')
+    // First run: the card reaches done and the review gate opens.
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'done' }]
+    await service.pollRunTransitions()
+    expect(service.snapshot().ideas[0]?.status).toBe('underReview')
+
+    // A relaunch over the API (the button is hidden there, the route is not)
+    // must still settle instead of freezing on `running` forever.
+    await service.launchIdea('idea-1')
+    expect(service.snapshot().ideas[0]?.runStatus).toBe('running')
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'done' }]
+    await service.pollRunTransitions()
+    const settled = service.snapshot().ideas[0]
+    expect(settled?.runStatus).toBe('done')
+    // The closed column is never re-moved by the poll.
+    expect(settled?.status).toBe('underReview')
+    service.dispose()
+  })
+
+  it('never starts watching a closed card that carries no run', async () => {
+    const { service, taskBoard } = await startedService('backlog')
+    // Closed BEFORE any launch: a card nobody ever ran must stay unwatched.
+    service.apply('archive-1', { kind: 'move', ideaId: 'idea-1', status: 'archived' })
+    const revision = service.snapshot().revision
+
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'running' }]
+    await service.pollRunTransitions()
+    await service.pollRunTransitions()
+
+    expect(service.snapshot().revision).toBe(revision)
+    expect(service.snapshot().ideas[0]?.runStatus).toBeUndefined()
+    expect(service.snapshot().ideas[0]?.taskBoardStatus).toBeUndefined()
+    service.dispose()
+  })
+
+  it('does not churn the revision while the observation is unchanged', async () => {    const { service } = await startedService('running')
     await service.launchIdea('idea-1')
     // First poll publishes the card observation itself (a real change).
     await service.pollRunTransitions()
