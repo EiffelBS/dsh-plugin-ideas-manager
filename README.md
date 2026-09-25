@@ -171,14 +171,21 @@ markers), JSON envelopes `{ requestId, action, initiator? }`.
 
 | Route | Purpose |
 |---|---|
-| `GET /api/ideas/state` | `{ schemaVersion: 1, revision, ideas[] }` |
+| `GET /api/ideas/state` | Frozen full snapshot `{ schemaVersion: 1, revision, ideas[] }` |
+| `GET /api/ideas/state?view=summary` | Bounded summary reads with workspace/id/number/status filters, pagination, selected fields, body-byte caps, and explicit truncation metadata |
+| `GET /api/ideas/state?view=detail` | Bounded field-selectable detail reads; use `GET /api/ideas/idea?id=<id>` for one complete raw record |
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
 | `GET /api/ideas/events` | SSE `{ revision }` |
 
 Every action is **deduplicated by `requestId`** (fresh id per call), and a
 mutating action returns the whole board so the caller can confirm the result.
-Full contract (verb table, mirror mapping, PowerShell gotchas) lives in
-[`SKILL.md`](SKILL.md).
+The bounded read envelope keeps `revision` at the top level and adds `meta`
+with `matched`, `returned`, `rowTruncated`, `nextOffset`, `bodyTruncated`, and
+`omittedFields`; at most 200 rows and 512 KiB are returned. The `./client`
+entry exports `HttpIdeasHostTransport` and `IdeasClient`; call `read(query)` or
+`readIdeas(query)` for the same bounded envelope without mutating board state.
+Full contract (verb table, read-query fields, mirror mapping, PowerShell
+gotchas) lives in [`SKILL.md`](SKILL.md).
 
 ---
 
@@ -285,7 +292,7 @@ src/
   protocol.ts         # /api/ideas prefix, types, parseActionEnvelope (exactKeys)
   host-service.ts     # apply + mirror scheduling
   host-ledger.ts      # persisted ledger, dedupe cache, lock, internal bind
-  host-routes.ts      # state (+ ?view=list projection) / idea?id= / action / events + loopback guard
+  host-routes.ts      # state (+ list and bounded summary/detail views) / idea?id= / action / events + loopback guard
   taskboard-bridge.ts # runtime feature-detect + one-way mirror (no hard import)
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline

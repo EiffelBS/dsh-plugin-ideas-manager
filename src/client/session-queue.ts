@@ -210,7 +210,9 @@ function pageOrigin(): string {
  *   - the human draft (title, body, suggested tags),
  *   - the optional priority hints,
  *   - the server **origin** (the address of the DSH web server hosting the
- *     board — it varies per instance, so only the prompt can supply it).
+ *     board — it varies per instance, so only the prompt can supply it),
+ *   - the bounded summary selector, which overrides an older first-wins
+ *     installed skill during rollout.
  *
  * This keeps the prompt tiny and free of duplication: the skill is the single
  * source of the contract.
@@ -229,6 +231,8 @@ export function buildAnalysisPrompt(input: AiCaptureInput, origin: string): stri
 A human captured a draft idea and asked you to analyze it and persist the full analysis as an idea card in the ledger. Do the work now — no clarifying questions.
 
 Load the skill named "ideas-analyst" from the available_skills catalog and follow it: it specifies the analysis methodology, the priority opinion and rank, the final report, AND the full write-channel contract. The only thing the skill does not know is the server origin — it is ${origin}. If the skill is not available, persist the idea through the write channel described by that origin and use your own judgement for the analysis and the report.
+
+Bounded-read override (also applies when an older first-wins skill file is installed): start with GET ${origin}/api/ideas/state?view=summary&workspaceId=${encodeURIComponent(input.workspaceId)}&status=open&status=archived. Follow meta.nextOffset until that filtered page is complete, inspect meta.omittedFields, and fetch the resolved target's complete body only through /api/ideas/idea?id=<target-id>. Never replace this with the full /state snapshot.
 
 === The human's draft ===
 Title: ${input.title}
@@ -279,7 +283,7 @@ Load the skill named "ideas-analyst" from the available_skills catalog and follo
 - tags hint: ${tagsHuman}
 - TaskBoard link: ${taskBoardLink}
 
-Load summary metadata first with GET ${origin}/api/ideas/state?view=list. Resolve this target by the exact ideaId, then verify the supplied ideaNumber (when present), workspaceId, and status before loading anything full. If any identity check fails, follow the skill escalation contract and do not write.
+Load summary metadata first with GET ${origin}/api/ideas/state?view=summary&id=${encodeURIComponent(input.ideaId)}. Inspect the response revision and meta before trusting the projection. Resolve this target by the exact ideaId, then verify the supplied ideaNumber (when present), workspaceId, and status before loading anything full. If any identity check fails, follow the skill escalation contract and do not write.
 
 Then fetch ONLY the target with GET ${origin}/api/ideas/idea?id=${encodeURIComponent(input.ideaId)}. Analyze its complete current body. Load full bodies only for directly related follow-ups identified by followUpOfId; never load the full /state snapshot and never load an unrelated body.
 

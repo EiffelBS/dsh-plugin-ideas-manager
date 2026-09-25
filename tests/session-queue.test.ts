@@ -4,8 +4,9 @@
  * against a stubbed DSH session controller.
  *
  * The split (see docs/agent-write-channel.md §Phase 3): the prompt is MINIMAL
- * and carries ONLY the per-capture data (workspace, draft, priority hints)
- * plus the dynamic server origin; the analysis methodology AND the full
+ * and carries ONLY the per-capture data (workspace, draft, priority hints),
+ * the dynamic server origin, and the rollout-safe bounded-read selector; the
+ * analysis methodology AND the full
  * write-channel contract live in the installed `ideas-analyst` skill, which
  * the analysing session loads itself. These tests assert the prompt is thin
  * and that the skill really is the home of the contract.
@@ -22,7 +23,7 @@ import {
 import { IDEAS_ANALYST_SKILL_CONTENT } from '../src/skills/ideas-analyst.ts'
 
 describe('buildAnalysisPrompt', () => {
-  it('carries the captured idea, the workspace and the server origin — nothing else technical', () => {
+  it('carries the captured idea, bounded workspace selector, and server origin', () => {
     const prompt = buildAnalysisPrompt(
       { workspaceId: 'ws-1', workspaceTitle: 'Alpha', title: 'Night mode', body: 'Context lines', tags: ['ui', 'polish'], value: 2 },
       'http://127.0.0.1:3101',
@@ -38,7 +39,8 @@ describe('buildAnalysisPrompt', () => {
     expect(prompt).not.toContain('plugin:ideas-manager:ai-capture')
     expect(prompt).not.toContain('`invalid-action`')
     expect(prompt).not.toContain('[Text.Encoding]::UTF8.GetBytes')
-    expect(prompt).not.toContain('/api/ideas/state')
+    expect(prompt).toContain('/api/ideas/state?view=summary&workspaceId=ws-1&status=open&status=archived')
+    expect(prompt).toContain('meta.nextOffset')
     expect(prompt).not.toContain('"kind": "create"')
     // The human's opinion is echoed, never replaced by a placeholder.
     expect(prompt).toContain('value: 2')
@@ -74,7 +76,7 @@ describe('buildAnalysisPrompt', () => {
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('plugin:ideas-manager:ai-capture')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('an array of\n  plain strings is REJECTED with 400 invalid-action')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('[Text.Encoding]::UTF8.GetBytes')
-    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('GET <origin>/api/ideas/state?view=list')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('GET <origin>/api/ideas/state?view=summary')
     // Report language follows the requester; never hard-coded.
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain("in the requester's language")
     expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('in French')

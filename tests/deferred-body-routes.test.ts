@@ -20,10 +20,13 @@ import { makeIdeasRoutes } from '../src/host-routes.ts'
 import {
   BODY_EXCERPT_MAX_LENGTH,
   IDEAS_API_PREFIX,
+  IDEAS_READ_MAX_RESPONSE_BYTES,
   IDEAS_SCHEMA_VERSION,
+  type IdeasReadSnapshot,
   type IdeasSnapshot,
 } from '../src/protocol.ts'
 import type { IdeaRecord } from '../src/core/ideas.ts'
+import { makePerfDataset, perfImportAction } from './perf-fixture.ts'
 
 let dir = ''
 let server: Server | undefined
@@ -156,8 +159,71 @@ describe('GET /api/ideas/state projection', () => {
     const base = await serve()
     await seed(service!)
     expect((await get(`${base}${IDEAS_API_PREFIX}/state?view=list`, false)).status).toBe(403)
+    expect((await get(`${base}${IDEAS_API_PREFIX}/state?view=summary`, false)).status).toBe(403)
     expect((await get(`${base}${IDEAS_API_PREFIX}/state`, false)).status).toBe(403)
     expect((await get(`${base}${IDEAS_API_PREFIX}/idea?id=proj-open`, false)).status).toBe(403)
+  })
+})
+
+describe('GET /api/ideas/state bounded read views', () => {
+  it('filters summary rows, selects fields, bounds the body, and reports revision', async () => {
+    const base = await serve()
+    const host = service!
+    await seed(host)
+    const before = host.snapshot().revision
+    const result = await get(
+      `${base}${IDEAS_API_PREFIX}/state?view=summary&workspaceId=ws-a&status=open&id=proj-open&fields=summary,body&bodyLimit=32`,
+    )
+    expect(result.status).toBe(200)
+    const payload = await result.json() as IdeasReadSnapshot
+    expect(payload.revision).toBe(before)
+    expect(payload.ideas).toHaveLength(0)
+
+    const detail = await get(
+      `${base}${IDEAS_API_PREFIX}/state?view=detail&id=proj-open&fields=summary,body&bodyLimit=32`,
+    )
+    const row = (await detail.json() as IdeasReadSnapshot).ideas[0]!
+    expect(row.id).toBe('proj-open')
+    expect(row.summary).toBe('short summary')
+    expect(Buffer.byteLength(row.body!, 'utf8')).toBeLessThanOrEqual(32)
+    expect(row.bodyTruncated).toBe(true)
+
+    host.apply('bounded-revision', { kind: 'update', ideaId: 'proj-open', patch: { summary: 'new revision' } })
+    const after = await get(`${base}${IDEAS_API_PREFIX}/state?view=summary&id=proj-open`)
+    const afterPayload = await after.json() as IdeasReadSnapshot
+    expect(afterPayload.revision).toBe(before + 1)
+    expect(afterPayload.ideas[0]?.summary).toBe('new revision')
+  })
+
+  it('rejects invalid bounded queries and answers empty results explicitly', async () => {
+    const base = await serve()
+    await seed(service!)
+    const invalid = await get(`${base}${IDEAS_API_PREFIX}/state?view=summary&status=deleted`)
+    expect(invalid.status).toBe(400)
+    expect((await invalid.json() as { error: string }).error).toBe('invalid-query')
+
+    const empty = await get(`${base}${IDEAS_API_PREFIX}/state?view=summary&workspaceId=missing`)
+    const payload = await empty.json() as IdeasReadSnapshot
+    expect(payload.ideas).toEqual([])
+    expect(payload.meta).toMatchObject({ matched: 0, returned: 0, rowTruncated: false, nextOffset: null })
+  })
+
+  it('keeps a 140-card bounded response under the hard response cap', async () => {
+    const base = await serve()
+    const host = service!
+    host.apply('large-bounded-read', perfImportAction(makePerfDataset()))
+    const response = await get(
+      `${base}${IDEAS_API_PREFIX}/state?view=detail&fields=body,rationale,summary,tags,workspaceId,taskBoardId&bodyLimit=4096&limit=200`,
+    )
+    expect(response.status).toBe(200)
+    const text = await response.text()
+    const payload = JSON.parse(text) as IdeasReadSnapshot
+    expect(payload.meta.matched).toBe(140)
+    expect(payload.meta.returned).toBeGreaterThan(0)
+    expect(payload.meta.rowTruncated).toBe(true)
+    expect(payload.meta.bodyTruncated).toBe(true)
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(IDEAS_READ_MAX_RESPONSE_BYTES)
+    expect(payload.ideas.every(row => !('analysisAudit' in row))).toBe(true)
   })
 })
 

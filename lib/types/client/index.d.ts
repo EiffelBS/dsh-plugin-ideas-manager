@@ -21,4 +21,8 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis';
  * card plugin declares; the web shell bundle provides the service.
  */
 export declare const inject: readonly ["slots", "workspaces", "sessions", "remote", "remote.session"];
+export { HttpIdeasHostTransport } from './host-api.ts';
+export type { IdeasHostTransport } from './host-api.ts';
+export { IdeasClient } from './ideas-client.ts';
+export type { IdeaClientPatch } from './ideas-client.ts';
 export declare function apply(ctx: ClientContext): void;

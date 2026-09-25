@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildReanalysisPrompt } from '../src/client/session-queue.ts'
 import { IdeasHostService } from '../src/host-service.ts'
-import { toListSnapshot } from '../src/protocol.ts'
+import { buildIdeasReadSnapshot, toListSnapshot } from '../src/protocol.ts'
 import { makePerfDataset, perfImportAction, PERF_IDEA_COUNT } from './perf-fixture.ts'
 
 let dir: string | undefined
@@ -38,7 +38,7 @@ describe('idea #64 summary-first analyst context', () => {
       tags: (target.tags ?? []).map(tag => tag.name),
     }, 'http://127.0.0.1:3101')
 
-    expect(prompt).toContain('state?view=list')
+    expect(prompt).toContain('state?view=summary&id=perf-idea-112')
     expect(prompt).toContain('idea?id=perf-idea-112')
     expect(prompt).not.toContain(target.body)
     for (const unrelated of ideas.filter(idea => idea.id !== target.id && idea.followUpOfId !== target.id)) {
@@ -48,7 +48,7 @@ describe('idea #64 summary-first analyst context', () => {
 
   it('loads target plus only directly related follow-ups, then fully analyzes and persists the target', () => {
     const { service: host } = fixtureService()
-    const list = toListSnapshot(host.snapshot())
+    const list = buildIdeasReadSnapshot(host.snapshot(), { view: 'summary', limit: 200 })
     expect(list.ideas).toHaveLength(PERF_IDEA_COUNT)
     expect(list.ideas.every(idea => !('body' in idea))).toBe(true)
 

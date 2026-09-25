@@ -11,7 +11,9 @@ import type { IdeasHostService } from './host-service.ts'
 import { decodeRequestBody, writeJson } from './http.ts'
 import { isLoopbackRequest } from './loopback.ts'
 import {
+  buildIdeasReadSnapshot,
   parseActionEnvelope,
+  parseIdeasReadQuery,
   parseSettingsBody,
   toListSnapshot,
   IDEAS_API_PREFIX,
@@ -101,8 +103,22 @@ export function makeIdeasRoutes(
       // full payload. The DEFAULT stays the full snapshot: backups and
       // tooling (restore-3080-ideas, migration scripts) read GET /state and
       // must keep seeing bodies.
-      const wantsList = new URL(req.url ?? '/', 'http://loopback').searchParams.get('view') === 'list'
-      writeJson(res, 200, wantsList ? toListSnapshot(service.snapshot()) : service.snapshot(), { 'cache-control': 'no-store' })
+      //
+      // idea #65: view=summary|detail is a separate additive contract with
+      // workspace/id/number/status filters, field selection, pagination, and
+      // explicit truncation metadata. It never mutates or caches the ledger.
+      const params = new URL(req.url ?? '/', 'http://loopback').searchParams
+      const view = params.get('view')
+      if (view === 'summary' || view === 'detail') {
+        const query = parseIdeasReadQuery(params)
+        if (query === undefined) {
+          writeJson(res, 400, { ok: false, error: 'invalid-query' }, { 'cache-control': 'no-store' })
+          return
+        }
+        writeJson(res, 200, buildIdeasReadSnapshot(service.snapshot(), query), { 'cache-control': 'no-store' })
+        return
+      }
+      writeJson(res, 200, view === 'list' ? toListSnapshot(service.snapshot()) : service.snapshot(), { 'cache-control': 'no-store' })
     },
   }
   const ideaBody: WebRoute = {

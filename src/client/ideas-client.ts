@@ -6,7 +6,16 @@
  */
 
 import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts'
-import { IDEAS_SETTINGS_DEFAULTS, sanitizeSettings, type IdeasAction, type IdeasListSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts'
+import {
+  IDEAS_SETTINGS_DEFAULTS,
+  sanitizeSettings,
+  type IdeasAction,
+  type IdeasListSnapshot,
+  type IdeasReadQuery,
+  type IdeasReadSnapshot,
+  type IdeasSettingsPatch,
+  type IdeasSettingsView,
+} from '../protocol.ts'
 import { setLanguageOverride } from './locales.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
@@ -220,6 +229,18 @@ export class IdeasClient {
       this.applyInterfaceLanguage()
       this.emit()
     }
+  }
+
+  /**
+   * Run one bounded filtered read without changing board state. This is the
+   * common agent/client path: summary-first metadata, explicit fields, and a
+   * capped body slice all arrive with revision and truncation metadata. The
+   * raw full snapshot and single-idea detail methods remain available for
+   * backward compatibility and deep workflows.
+   */
+  async readIdeas(query: IdeasReadQuery = {}): Promise<IdeasReadSnapshot> {
+    if (this.transport.read === undefined) throw new Error('read-view-unavailable')
+    return await this.transport.read(query)
   }
 
   async createIdea(input: {

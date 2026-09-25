@@ -8,11 +8,14 @@
 
 import {
   IDEAS_API_PREFIX,
+  ideasReadSearchParams,
   toListSnapshot,
   type IdeasAction,
   type IdeasActionEnvelope,
   type IdeasEventPayload,
   type IdeasListSnapshot,
+  type IdeasReadQuery,
+  type IdeasReadSnapshot,
   type IdeasSnapshot,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
@@ -45,6 +48,11 @@ export interface IdeasHostTransport {
    * to the list view at the edge so the client only ever holds list rows.
    */
   action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>
+  /**
+   * Bounded filtered read (idea #65). Optional so older hosts and lightweight
+   * test transports keep the pre-existing board controller contract intact.
+   */
+  read?(query?: IdeasReadQuery): Promise<IdeasReadSnapshot>
   /**
    * Full-body snapshot (no projection): the deep-search index and parity
    * with pre-idea#34 consumers. Optional - a transport without it keeps
@@ -89,6 +97,12 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
 
   async stateFull(): Promise<IdeasSnapshot> {
     return await this.request<IdeasSnapshot>(`${IDEAS_API_PREFIX}/state`, { cache: 'no-store' })
+  }
+
+  async read(query: IdeasReadQuery = {}): Promise<IdeasReadSnapshot> {
+    const view = query.view ?? 'summary'
+    const params = ideasReadSearchParams({ ...query, view })
+    return await this.request<IdeasReadSnapshot>(`${IDEAS_API_PREFIX}/state?${params.toString()}`, { cache: 'no-store' })
   }
 
   async idea(id: string): Promise<IdeaRecord> {

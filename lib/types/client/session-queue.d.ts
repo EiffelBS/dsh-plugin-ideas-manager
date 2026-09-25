@@ -64,10 +64,14 @@ export interface ReanalyzeInput {
     workspaceTitle: string;
     /** The stored idea id the analyst MUST update (never create). */
     ideaId: string;
-    /** The stable "#N" human reference of the idea (context only). */
+    /** The stable "#N" human reference of the idea (resolved and verified by the analyst). */
     ideaNumber?: number;
     title: string;
-    body: string;
+    /** Compact stored metadata; the analyst still reloads it from the list projection first. */
+    summary?: string;
+    status: 'open' | 'underReview' | 'archived' | 'declined';
+    /** Mirrored TaskBoard card id, when one exists. */
+    taskBoardId?: string;
     tags: readonly string[];
     /** Current stored priority opinion (the analyst re-decides them). */
     value?: number;
@@ -234,7 +238,9 @@ interface LauncherClientContext {
  *   - the human draft (title, body, suggested tags),
  *   - the optional priority hints,
  *   - the server **origin** (the address of the DSH web server hosting the
- *     board — it varies per instance, so only the prompt can supply it).
+ *     board — it varies per instance, so only the prompt can supply it),
+ *   - the bounded summary selector, which overrides an older first-wins
+ *     installed skill during rollout.
  *
  * This keeps the prompt tiny and free of duplication: the skill is the single
  * source of the contract.

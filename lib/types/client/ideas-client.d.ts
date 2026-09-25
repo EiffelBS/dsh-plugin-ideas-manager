@@ -5,7 +5,7 @@
  * the DOM mounts at the edges only.
  */
 import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts';
-import { type IdeasListSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import { type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
 import type { IdeasHostTransport } from './host-api.ts';
 import type { SessionLauncher } from './session-queue.ts';
 import type { ActiveWorkspaceSource } from './session-context.ts';
@@ -90,6 +90,14 @@ export declare class IdeasClient {
      * value only moves on success, so the settings row reverts for free.
      */
     saveConfig(patch: IdeasSettingsPatch): Promise<void>;
+    /**
+     * Run one bounded filtered read without changing board state. This is the
+     * common agent/client path: summary-first metadata, explicit fields, and a
+     * capped body slice all arrive with revision and truncation metadata. The
+     * raw full snapshot and single-idea detail methods remain available for
+     * backward compatibility and deep workflows.
+     */
+    readIdeas(query?: IdeasReadQuery): Promise<IdeasReadSnapshot>;
     createIdea(input: {
         title: string;
         body: string;

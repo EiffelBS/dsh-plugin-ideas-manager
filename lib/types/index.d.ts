@@ -17,6 +17,8 @@ export declare const IDEAS_GUIDANCE = "dsh-plugin-ideas-manager is installed (ge
  * plugin stays put.
  */
 export { IDEAS_SETTINGS_NAMESPACE } from './host-settings.ts';
+export { buildIdeasReadSnapshot, ideasReadSearchParams, parseIdeasReadQuery, IDEAS_API_PREFIX, IDEAS_READ_DEFAULT_LIMIT, IDEAS_READ_MAX_BODY_BYTES, IDEAS_READ_MAX_LIMIT, IDEAS_READ_MAX_RESPONSE_BYTES, } from './protocol.ts';
+export type { IdeasReadField, IdeasReadMetadata, IdeasReadQuery, IdeasReadRow, IdeasReadSnapshot, IdeasReadView, NormalizedIdeasReadQuery, } from './protocol.ts';
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
     /** Master switch for the plugin (browser half + host routes). */

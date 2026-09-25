@@ -40,6 +40,99 @@ export interface IdeasListSnapshot {
     revision: number;
     ideas: IdeaListRow[];
 }
+/** Read projection selected by `GET /api/ideas/state?view=`. */
+export type IdeasReadView = 'summary' | 'detail';
+/** Default number of rows in a bounded read. */
+export declare const IDEAS_READ_DEFAULT_LIMIT = 100;
+/** Hard row cap for one bounded read. */
+export declare const IDEAS_READ_MAX_LIMIT = 200;
+/** Hard UTF-8 byte cap for one selected idea body. */
+export declare const IDEAS_READ_MAX_BODY_BYTES: number;
+/** Hard UTF-8 byte cap for one bounded-read JSON response. */
+export declare const IDEAS_READ_MAX_RESPONSE_BYTES: number;
+/** Hard cap for each repeated selector group. */
+export declare const IDEAS_READ_MAX_SELECTORS = 100;
+/**
+ * Optional top-level fields a bounded read may select. Identity and timestamp
+ * fields are always present (revision is top-level); `analysisAudit` is
+ * intentionally unavailable in
+ * this projection because it can carry a second full body. The frozen raw
+ * single-idea route remains the explicit full-detail escape hatch.
+ */
+export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body"];
+/** One optional field accepted by the bounded field selector. */
+export type IdeasReadField = (typeof IDEAS_READ_SELECTABLE_FIELDS)[number];
+/** Fields always present on a bounded row, independent of field selection. */
+type IdeasReadCore = Pick<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt'> & {
+    ideaNumber?: number;
+    body?: string;
+    /** True only on this row when its selected body was shortened. */
+    bodyTruncated?: true;
+};
+/** One projected row. Unselected and absent optional record fields are omitted. */
+export type IdeasReadRow = IdeasReadCore & Partial<Omit<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'ideaNumber' | 'body' | 'analysisAudit'>>;
+/** Caller-facing bounded-read query. Defaults are summary + 100 rows. */
+export interface IdeasReadQuery {
+    view?: IdeasReadView;
+    workspaceId?: string;
+    status?: readonly IdeaStatus[];
+    ids?: readonly string[];
+    numbers?: readonly number[];
+    fields?: readonly IdeasReadField[];
+    /** Requested body cap in UTF-8 bytes (0 omits content while keeping the key). */
+    bodyLimit?: number;
+    limit?: number;
+    offset?: number;
+}
+/** Fully defaulted and validated bounded-read query. */
+export interface NormalizedIdeasReadQuery {
+    view: IdeasReadView;
+    workspaceId?: string;
+    status: IdeaStatus[];
+    ids: string[];
+    numbers: number[];
+    fields: IdeasReadField[];
+    bodyLimit: number;
+    limit: number;
+    offset: number;
+}
+/** Explicit row, body, and pagination metadata for a bounded read. */
+export interface IdeasReadMetadata {
+    view: IdeasReadView;
+    fields: readonly IdeasReadField[];
+    bodyLimitBytes: number;
+    limit: number;
+    offset: number;
+    matched: number;
+    returned: number;
+    rowTruncated: boolean;
+    nextOffset: number | null;
+    bodyTruncated: boolean;
+    omittedFields: Array<IdeasReadField | 'analysisAudit'>;
+}
+/** Response served by `GET /api/ideas/state?view=summary|detail`. */
+export interface IdeasReadSnapshot {
+    schemaVersion: typeof IDEAS_SCHEMA_VERSION;
+    revision: number;
+    ideas: IdeasReadRow[];
+    meta: IdeasReadMetadata;
+}
+/**
+ * Parse and bound the additive read query. `status`, `id`, `number`, and
+ * `fields` are repeatable; `status` and `fields` also accept comma-separated
+ * lists. Unknown keys and out-of-range values reject instead of silently
+ * broadening a read.
+ */
+export declare function parseIdeasReadQuery(params: URLSearchParams): NormalizedIdeasReadQuery | undefined;
+/** Serialize a bounded-read query for the browser transport. */
+export declare function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams;
+/**
+ * Project a source-of-truth snapshot into a bounded filtered read. No cache
+ * or mutable view state is introduced: every response is derived from the
+ * current ledger revision. If selected fields would exceed the hard wire
+ * budget, trailing rows are omitted and `nextOffset` makes that explicit.
+ */
+export declare function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input?: IdeasReadQuery): IdeasReadSnapshot;
 /**
  * Leading slice of a body for previews and search: whitespace collapses to
  * single spaces (this is a teaser, not markdown structure), the cut lands on

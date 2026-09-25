@@ -92,31 +92,37 @@ skill.
 7. RATIONALE - one or two sentences justifying the VALUE, the EFFORT and the
    RANK together.
 
-## Bounded context loading (idea #64)
+## Bounded context loading (ideas #64 and #65)
 
 The board can contain long analyses. Context loading is summary-first and the
 analyst MUST follow this order:
 
-1. GET <origin>/api/ideas/state?view=list. This is the metadata index. Resolve
-   the target explicitly by idea id when one is supplied, otherwise by the
-   capture workspace plus the draft intent. A target is identified by its id,
-   idea number, title, status, workspace, tags, summary, and TaskBoard link.
-2. Dedupe using summary metadata for open AND archived ideas in the target
-   workspace only. Never compare against another workspace or the generic group.
+1. GET <origin>/api/ideas/state?view=summary with the narrowest selectors. For
+   a capture, add workspaceId=<capture-workspace>, status=open, and
+   status=archived. For re-analysis, add id=<target-id>. The summary projection
+   contains the stable id and idea number, title, status, workspace, tags,
+   summary, TaskBoard link, and direct follow-up lineage, but no body.
+2. Inspect the response revision and meta. If meta.rowTruncated is true, follow
+   meta.nextOffset with the same filters until that page is complete. Respect
+   meta.omittedFields and never infer that an omitted optional field is empty.
+   Resolve the target by exact id when supplied, otherwise by workspace plus
+   draft intent. Dedupe using summary metadata for open AND archived ideas in
+   that workspace only. Never compare against another workspace or the generic
+   group.
 3. Fetch the complete body with GET <origin>/api/ideas/idea?id=<target-id>.
    This target body is mandatory: fully analyze it before writing anything.
-4. From the list rows, select only direct follow-ups where followUpOfId points
-   to the target (and the target's own parent when followUpOfId is present).
-   Fetch each selected full body with the same single-idea endpoint. Do not load
-   the full /state snapshot and do not fetch unrelated bodies.
-5. Follow only file/doc paths explicitly cited by the target or selected
+4. From the summary rows, select only direct follow-ups where followUpOfId
+   points to the target (and the target's own parent when followUpOfId is
+   present). Fetch each selected full body with the same single-idea endpoint.
+   Do not load the full /state snapshot and do not fetch unrelated bodies.
+5. A caller that only needs a bounded body preview may use
+   GET <origin>/api/ideas/state?view=detail&id=<target-id>&fields=body&bodyLimit=4096.
+   Its max body slice is 4096 UTF-8 bytes and meta.bodyTruncated reports
+   shortening. This preview NEVER replaces the mandatory complete single-idea
+   read above.
+6. Follow only file/doc paths explicitly cited by the target or selected
    follow-ups. Read selectively, record the path, and stop when the evidence
    needed for the decision is established. Do not crawl the workspace.
-
-Before analysis, write a bounded handoff note containing: target identifiers;
-decisions already supported by evidence; exact evidence paths; and unresolved
-questions. Keep it concise enough to remain useful in the persisted analysis.
-Never paste unrelated bodies into this note.
 
 Escalate explicitly and auditably when the target cannot be resolved, a fetched
 body conflicts with the list metadata, the body is missing, or required evidence
@@ -128,8 +134,8 @@ the smallest safe next action. Do not guess or write a partial analysis.
 
 The launch prompt tells you the exact server origin. The full, backward-
 compatible GET <origin>/api/ideas/state contract remains available for backups
-and tooling, but the analyst MUST use ?view=list plus single-idea reads as
-described above.
+and tooling, but the analyst MUST use view=summary, its explicit truncation
+metadata, and single-idea reads as described above.
 
 Every request must carry:
 
@@ -166,8 +172,9 @@ TRIAGE:
 
 Procedure:
 
-1. Load summary metadata, resolve/dedupe, then fetch the target and only direct
-   follow-up bodies. Fully analyze the resolved target before any write.
+1. Load filtered summary metadata, follow nextOffset when the bounded page is
+   truncated, resolve/dedupe, then fetch the target and only direct follow-up
+   bodies. Fully analyze the resolved target before any write.
 2. Each action uses a FRESH requestId. Preserve the action contract, full body
    replacement, analysis audit, persistence, dedupe, and public ledger behavior.
 3. CREATE when no duplicate exists, or UPDATE the resolved duplicate. Then

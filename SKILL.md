@@ -30,9 +30,11 @@ mentions ideas / backlog / idees / notes:
 2. **Priority opinion on capture**: set `value` + `effort` levels and a
    suggested `rank`.
 3. **Re-rank the whole open backlog** on every material change (new idea,
-   delivery, scope change): read `GET /api/ideas/state`, then re-order the
-   open ideas so the Priorities tab stays the current best ordering — never a
-   plain append. Use `triage` when you are recording a priority opinion
+   delivery, scope change): read the bounded open workspace view with
+   `GET /api/ideas/state?view=summary&workspaceId=<id>&status=open&fields=rank,value,effort,rationale&limit=200`,
+   then re-order the open ideas so the Priorities tab stays the current best
+   ordering — never a plain append. Follow `meta.nextOffset` if the page is
+   truncated. Use `triage` when you are recording a priority opinion
    (value/effort + rationale + rank are applied transactionally with the
    re-rank); use `reorder` for pure re-ordering. Re-rank only on material
    change; ranks stay advisory (scheduling is the author's call).
@@ -77,7 +79,16 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
   `{ "requestId": "<non-empty <256>", "action": { "kind": "...", ... }, "initiator": "<opt>" }`.
   The `requestId` is deduped by the Host (persisted across restarts) — use a
   stable id for retries; reusing it with a different action is rejected.
-- `GET /api/ideas/state` → `{ schemaVersion: 1, revision, ideas[] }`
+- `GET /api/ideas/state` → `{ schemaVersion: 1, revision, ideas[] }` (frozen
+  full-body snapshot; unchanged)
+- `GET /api/ideas/state?view=summary` → bounded summary rows plus `meta`
+  (revision is top-level; filters: repeated `workspaceId`, `status`, `id`,
+  `number`; `limit` ≤200; `offset`; `fields`; `bodyLimit` ≤4096 bytes)
+- `GET /api/ideas/state?view=detail` → the same bounded envelope with
+  field-selectable detail rows; the raw `GET /api/ideas/idea?id=<id>` remains
+  the full single-record read.
+- `meta` always reports `matched`, `returned`, `rowTruncated`, `nextOffset`,
+  `bodyTruncated`, and `omittedFields`. A response never exceeds 512 KiB.
 - `GET /api/ideas/events` → SSE frames `{ revision }` (no full list).
 - `POST /api/ideas/action` verbs:
 

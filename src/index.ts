@@ -35,6 +35,29 @@ Workflow: (1) CAPTURE into the ledger, never into a markdown file: title + a bod
  */
 export { IDEAS_SETTINGS_NAMESPACE } from './host-settings.ts'
 
+// Public read-query contract (idea #65). The frozen full state/action protocol
+// is unchanged; these additive helpers let integrations build bounded reads
+// without depending on a board snapshot or a parallel cache.
+export {
+  buildIdeasReadSnapshot,
+  ideasReadSearchParams,
+  parseIdeasReadQuery,
+  IDEAS_API_PREFIX,
+  IDEAS_READ_DEFAULT_LIMIT,
+  IDEAS_READ_MAX_BODY_BYTES,
+  IDEAS_READ_MAX_LIMIT,
+  IDEAS_READ_MAX_RESPONSE_BYTES,
+} from './protocol.ts'
+export type {
+  IdeasReadField,
+  IdeasReadMetadata,
+  IdeasReadQuery,
+  IdeasReadRow,
+  IdeasReadSnapshot,
+  IdeasReadView,
+  NormalizedIdeasReadQuery,
+} from './protocol.ts'
+
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
   /** Master switch for the plugin (browser half + host routes). */

@@ -55,3 +55,11 @@ same reanalysis embedded the complete stored body; the AFTER prompt embeds only
 selector metadata and instructs a single-idea fetch. This makes prompt growth
 independent of the 140-card total and of unrelated body sizes. Measurements are
 fixture bytes (UTF-8), not model-token estimates.
+
+## Follow-on: idea #65 bounded API
+
+Idea #65 keeps the workflow above and replaces its unbounded `?view=list`
+metadata fetch with filtered, paginated `?view=summary` reads. Summary rows
+remain body-free; `meta.nextOffset` completes a truncated page and
+`meta.omittedFields` prevents callers from treating projection omissions as
+empty data. Full target bodies still come from the frozen single-idea route.

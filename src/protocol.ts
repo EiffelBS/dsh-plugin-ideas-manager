@@ -58,6 +58,334 @@ export interface IdeasListSnapshot {
   ideas: IdeaListRow[]
 }
 
+/* --- bounded filtered reads (idea #65) --- */
+
+/** Read projection selected by `GET /api/ideas/state?view=`. */
+export type IdeasReadView = 'summary' | 'detail'
+
+/** Default number of rows in a bounded read. */
+export const IDEAS_READ_DEFAULT_LIMIT = 100
+/** Hard row cap for one bounded read. */
+export const IDEAS_READ_MAX_LIMIT = 200
+/** Hard UTF-8 byte cap for one selected idea body. */
+export const IDEAS_READ_MAX_BODY_BYTES = 4 * 1024
+/** Hard UTF-8 byte cap for one bounded-read JSON response. */
+export const IDEAS_READ_MAX_RESPONSE_BYTES = 512 * 1024
+/** Hard cap for each repeated selector group. */
+export const IDEAS_READ_MAX_SELECTORS = 100
+
+/**
+ * Optional top-level fields a bounded read may select. Identity and timestamp
+ * fields are always present (revision is top-level); `analysisAudit` is
+ * intentionally unavailable in
+ * this projection because it can carry a second full body. The frozen raw
+ * single-idea route remains the explicit full-detail escape hatch.
+ */
+export const IDEAS_READ_SELECTABLE_FIELDS = [
+  'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId',
+  'taskBoardId', 'taskBoardStatus', 'followUpOfId', 'deliveredAt', 'decision',
+  'archivedAt', 'reanalyzeAt', 'body',
+] as const
+
+/** One optional field accepted by the bounded field selector. */
+export type IdeasReadField = (typeof IDEAS_READ_SELECTABLE_FIELDS)[number]
+
+/** Fields always present on a bounded row, independent of field selection. */
+type IdeasReadCore = Pick<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt'> & {
+  ideaNumber?: number
+  body?: string
+  /** True only on this row when its selected body was shortened. */
+  bodyTruncated?: true
+}
+
+/** One projected row. Unselected and absent optional record fields are omitted. */
+export type IdeasReadRow = IdeasReadCore & Partial<Omit<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'ideaNumber' | 'body' | 'analysisAudit'>>
+
+/** Caller-facing bounded-read query. Defaults are summary + 100 rows. */
+export interface IdeasReadQuery {
+  view?: IdeasReadView
+  workspaceId?: string
+  status?: readonly IdeaStatus[]
+  ids?: readonly string[]
+  numbers?: readonly number[]
+  fields?: readonly IdeasReadField[]
+  /** Requested body cap in UTF-8 bytes (0 omits content while keeping the key). */
+  bodyLimit?: number
+  limit?: number
+  offset?: number
+}
+
+/** Fully defaulted and validated bounded-read query. */
+export interface NormalizedIdeasReadQuery {
+  view: IdeasReadView
+  workspaceId?: string
+  status: IdeaStatus[]
+  ids: string[]
+  numbers: number[]
+  fields: IdeasReadField[]
+  bodyLimit: number
+  limit: number
+  offset: number
+}
+
+/** Explicit row, body, and pagination metadata for a bounded read. */
+export interface IdeasReadMetadata {
+  view: IdeasReadView
+  fields: readonly IdeasReadField[]
+  bodyLimitBytes: number
+  limit: number
+  offset: number
+  matched: number
+  returned: number
+  rowTruncated: boolean
+  nextOffset: number | null
+  bodyTruncated: boolean
+  omittedFields: Array<IdeasReadField | 'analysisAudit'>
+}
+
+/** Response served by `GET /api/ideas/state?view=summary|detail`. */
+export interface IdeasReadSnapshot {
+  schemaVersion: typeof IDEAS_SCHEMA_VERSION
+  revision: number
+  ideas: IdeasReadRow[]
+  meta: IdeasReadMetadata
+}
+
+const SUMMARY_READ_FIELDS: IdeasReadField[] = [
+  'summary', 'workspaceId', 'tags', 'taskBoardId', 'followUpOfId',
+]
+const DETAIL_READ_FIELDS = IDEAS_READ_SELECTABLE_FIELDS.filter(
+  (field): field is IdeasReadField => field !== 'body',
+)
+
+const READ_QUERY_KEYS = new Set([
+  'view', 'workspaceId', 'status', 'id', 'number', 'fields', 'bodyLimit', 'limit', 'offset',
+])
+
+function uniqueBoundedStrings(
+  values: readonly string[],
+  maximum: number,
+): string[] | undefined {
+  const unique = [...new Set(values)]
+  return unique.length <= maximum ? unique : undefined
+}
+
+function queryValues(params: URLSearchParams, key: string, splitCommas = true): string[] {
+  const values = splitCommas
+    ? params.getAll(key).flatMap(value => value.split(','))
+    : params.getAll(key)
+  return values.map(value => value.trim())
+}
+
+function queryInteger(params: URLSearchParams, key: string, fallback: number, minimum: number, maximum: number): number | undefined {
+  const raw = params.get(key)
+  if (raw === null) return fallback
+  if (!/^(0|[1-9][0-9]*)$/.test(raw)) return undefined
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : undefined
+}
+
+/**
+ * Parse and bound the additive read query. `status`, `id`, `number`, and
+ * `fields` are repeatable; `status` and `fields` also accept comma-separated
+ * lists. Unknown keys and out-of-range values reject instead of silently
+ * broadening a read.
+ */
+export function parseIdeasReadQuery(params: URLSearchParams): NormalizedIdeasReadQuery | undefined {
+  if ([...params.keys()].some(key => !READ_QUERY_KEYS.has(key))) return undefined
+  const rawView = params.get('view')
+  if (rawView !== null && rawView !== 'summary' && rawView !== 'detail') return undefined
+  const view = rawView ?? 'summary'
+  const rawWorkspace = params.get('workspaceId')
+  const workspaceId = rawWorkspace?.trim()
+  if (params.has('workspaceId') && (workspaceId === undefined || workspaceId === '' || workspaceId.length > 256)) return undefined
+  const rawStatuses = queryValues(params, 'status')
+  if (rawStatuses.length > IDEAS_READ_MAX_SELECTORS || rawStatuses.some(status => !isIdeaStatus(status))) return undefined
+  const rawIds = queryValues(params, 'id', false)
+  if (rawIds.length > IDEAS_READ_MAX_SELECTORS || rawIds.some(id => id === '' || id.length > 256)) return undefined
+  const rawNumbers = queryValues(params, 'number', false)
+  if (rawNumbers.length > IDEAS_READ_MAX_SELECTORS || rawNumbers.some(value => !/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))) return undefined
+  const rawFields = queryValues(params, 'fields')
+  if (rawFields.length > IDEAS_READ_SELECTABLE_FIELDS.length || rawFields.some(field => !(IDEAS_READ_SELECTABLE_FIELDS as readonly string[]).includes(field))) return undefined
+  const limit = queryInteger(params, 'limit', IDEAS_READ_DEFAULT_LIMIT, 1, IDEAS_READ_MAX_LIMIT)
+  const offset = queryInteger(params, 'offset', 0, 0, 1_000_000)
+  const bodyLimit = queryInteger(params, 'bodyLimit', 0, 0, IDEAS_READ_MAX_BODY_BYTES)
+  if (limit === undefined || offset === undefined || bodyLimit === undefined) return undefined
+
+  const fields = uniqueBoundedStrings(rawFields as IdeasReadField[], IDEAS_READ_SELECTABLE_FIELDS.length) as IdeasReadField[] | undefined
+  const ids = uniqueBoundedStrings(rawIds, IDEAS_READ_MAX_SELECTORS)
+  const numbers = uniqueBoundedStrings(rawNumbers.map(String), IDEAS_READ_MAX_SELECTORS)?.map(Number)
+  const status = uniqueBoundedStrings(rawStatuses, IDEAS_READ_MAX_SELECTORS) as IdeaStatus[] | undefined
+  if (fields === undefined || ids === undefined || numbers === undefined || status === undefined) return undefined
+  return {
+    view,
+    ...(workspaceId === undefined ? {} : { workspaceId }),
+    status,
+    ids,
+    numbers,
+    fields: rawFields.length === 0 ? [...(view === 'detail' ? DETAIL_READ_FIELDS : SUMMARY_READ_FIELDS)] : fields,
+    bodyLimit,
+    limit,
+    offset,
+  }
+}
+
+/** Serialize a bounded-read query for the browser transport. */
+export function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams {
+  const params = new URLSearchParams()
+  if (query.view !== undefined) params.set('view', query.view)
+  if (query.workspaceId !== undefined) params.set('workspaceId', query.workspaceId)
+  for (const status of query.status ?? []) params.append('status', status)
+  for (const id of query.ids ?? []) params.append('id', id)
+  for (const number of query.numbers ?? []) params.append('number', String(number))
+  for (const field of query.fields ?? []) params.append('fields', field)
+  if (query.bodyLimit !== undefined) params.set('bodyLimit', String(query.bodyLimit))
+  if (query.limit !== undefined) params.set('limit', String(query.limit))
+  if (query.offset !== undefined) params.set('offset', String(query.offset))
+  return params
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength
+}
+
+/** Slice by UTF-8 bytes without splitting a Unicode code point. */
+function bodyPrefix(body: string, maximumBytes: number): { value: string; truncated: boolean } {
+  if (utf8Bytes(body) <= maximumBytes) return { value: body, truncated: false }
+  let bytes = 0
+  let end = 0
+  for (const character of body) {
+    const size = utf8Bytes(character)
+    if (bytes + size > maximumBytes) break
+    bytes += size
+    end += character.length
+  }
+  return { value: body.slice(0, end), truncated: true }
+}
+
+function projectReadRow(
+  idea: IdeaRecord,
+  query: NormalizedIdeasReadQuery,
+  selected: ReadonlySet<IdeasReadField>,
+): IdeasReadRow {
+  const row: IdeasReadRow = {
+    id: idea.id,
+    title: idea.title,
+    status: idea.status,
+    createdAt: idea.createdAt,
+    updatedAt: idea.updatedAt,
+    ...(idea.ideaNumber === undefined ? {} : { ideaNumber: idea.ideaNumber }),
+  }
+  for (const field of query.fields) {
+    if (field === 'body' || !Object.prototype.hasOwnProperty.call(idea, field)) continue
+    Object.assign(row, { [field]: idea[field] })
+  }
+  if (selected.has('body')) {
+    const body = bodyPrefix(idea.body, query.bodyLimit)
+    row.body = body.value
+    if (body.truncated) row.bodyTruncated = true
+  }
+  return row
+}
+
+function readResponse(
+  revision: number,
+  rows: IdeasReadRow[],
+  query: NormalizedIdeasReadQuery,
+  matched: number,
+  omittedFields: Array<IdeasReadField | 'analysisAudit'>,
+): IdeasReadSnapshot {
+  const bodyTruncated = rows.some(row => row.bodyTruncated === true)
+  const returned = rows.length
+  const next = query.offset + returned
+  const rowTruncated = next < matched
+  return {
+    schemaVersion: IDEAS_SCHEMA_VERSION,
+    revision,
+    ideas: rows,
+    meta: {
+      view: query.view,
+      fields: [...query.fields],
+      bodyLimitBytes: query.bodyLimit,
+      limit: query.limit,
+      offset: query.offset,
+      matched,
+      returned,
+      rowTruncated,
+      nextOffset: rowTruncated ? next : null,
+      bodyTruncated,
+      omittedFields,
+    },
+  }
+}
+
+function validReadQuery(input: IdeasReadQuery): boolean {
+  const statusValid = (input.status ?? []).every(status => isIdeaStatus(status))
+  const idsValid = (input.ids ?? []).every(id => id !== '' && id.length <= 256)
+  const numbersValid = (input.numbers ?? []).every(number => Number.isSafeInteger(number) && number > 0)
+  const fieldsValid = (input.fields ?? []).every(field => (IDEAS_READ_SELECTABLE_FIELDS as readonly string[]).includes(field))
+  const bounded = (value: number | undefined, minimum: number, maximum: number): boolean =>
+    value === undefined || (Number.isSafeInteger(value) && value >= minimum && value <= maximum)
+  return (input.workspaceId === undefined || (input.workspaceId !== '' && input.workspaceId.length <= 256))
+    && (input.status?.length ?? 0) <= IDEAS_READ_MAX_SELECTORS
+    && (input.ids?.length ?? 0) <= IDEAS_READ_MAX_SELECTORS
+    && (input.numbers?.length ?? 0) <= IDEAS_READ_MAX_SELECTORS
+    && (input.fields?.length ?? 0) <= IDEAS_READ_SELECTABLE_FIELDS.length
+    && statusValid
+    && idsValid
+    && numbersValid
+    && fieldsValid
+    && bounded(input.bodyLimit, 0, IDEAS_READ_MAX_BODY_BYTES)
+    && bounded(input.limit, 1, IDEAS_READ_MAX_LIMIT)
+    && bounded(input.offset, 0, 1_000_000)
+}
+
+/**
+ * Project a source-of-truth snapshot into a bounded filtered read. No cache
+ * or mutable view state is introduced: every response is derived from the
+ * current ledger revision. If selected fields would exceed the hard wire
+ * budget, trailing rows are omitted and `nextOffset` makes that explicit.
+ */
+export function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input: IdeasReadQuery = {}): IdeasReadSnapshot {
+  if (!validReadQuery(input)) throw new Error('invalid-query')
+  const query: NormalizedIdeasReadQuery = {
+    view: input.view ?? 'summary',
+    ...(input.workspaceId === undefined ? {} : { workspaceId: input.workspaceId }),
+    status: [...new Set(input.status ?? [])],
+    ids: [...new Set(input.ids ?? [])],
+    numbers: [...new Set(input.numbers ?? [])],
+    fields: [...new Set(input.fields ?? (input.view === 'detail' ? DETAIL_READ_FIELDS : SUMMARY_READ_FIELDS))],
+    bodyLimit: input.bodyLimit ?? 0,
+    limit: input.limit ?? IDEAS_READ_DEFAULT_LIMIT,
+    offset: input.offset ?? 0,
+  }
+  const statuses = new Set(query.status)
+  const ids = new Set(query.ids)
+  const numbers = new Set(query.numbers)
+  const hasSelector = ids.size > 0 || numbers.size > 0
+  const matchedIdeas = snapshot.ideas.filter(idea =>
+    (query.workspaceId === undefined || idea.workspaceId === query.workspaceId)
+    && (statuses.size === 0 || statuses.has(idea.status))
+    && (!hasSelector || ids.has(idea.id) || (idea.ideaNumber !== undefined && numbers.has(idea.ideaNumber))),
+  )
+  const selected = new Set<IdeasReadField>(query.fields)
+  const omittedFields: Array<IdeasReadField | 'analysisAudit'> = [
+    ...IDEAS_READ_SELECTABLE_FIELDS.filter(field => !selected.has(field)),
+    'analysisAudit',
+  ]
+  const rows = matchedIdeas
+    .slice(query.offset, query.offset + query.limit)
+    .map(idea => projectReadRow(idea, query, selected))
+  let response = readResponse(snapshot.revision, rows, query, matchedIdeas.length, omittedFields)
+  // The hard response cap is a final guard for field-rich imported records:
+  // drop trailing rows until the complete JSON envelope fits.
+  while (rows.length > 0 && utf8Bytes(JSON.stringify(response)) > IDEAS_READ_MAX_RESPONSE_BYTES) {
+    rows.pop()
+    response = readResponse(snapshot.revision, rows, query, matchedIdeas.length, omittedFields)
+  }
+  return response
+}
+
 /**
  * Leading slice of a body for previews and search: whitespace collapses to
  * single spaces (this is a teaser, not markdown structure), the cut lands on

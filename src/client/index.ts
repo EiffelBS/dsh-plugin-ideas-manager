@@ -33,6 +33,14 @@ import { resolveSessionLauncher } from './session-queue.ts'
  */
 export const inject = ['slots', WORKSPACES_SERVICE, SESSIONS_SERVICE, 'remote', 'remote.session'] as const
 
+// Programmatic client surface (idea #65): the board consumes these classes,
+// while agents and integrations can use the same bounded read/query contract
+// without reaching into private client modules.
+export { HttpIdeasHostTransport } from './host-api.ts'
+export type { IdeasHostTransport } from './host-api.ts'
+export { IdeasClient } from './ideas-client.ts'
+export type { IdeaClientPatch } from './ideas-client.ts'
+
 // A duplicated client injection (module factory executed twice in one page
 // lifetime) would otherwise mount a second sidebar entry and board view.
 // First application wins; later calls become no-ops until the fiber unloads

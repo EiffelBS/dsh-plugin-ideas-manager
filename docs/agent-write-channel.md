@@ -7,18 +7,54 @@ mutate the ledger programmatically — the same channel the Phase 3 "Start AI
 analysis and create the idea" flow drives, and the one the migration script
 uses.
 
-No plugin change is required for the channel itself: it is the already-shipped
-REST surface, validated end-to-end by the Phase 2 spike (see below).
+The base write channel remains the already-shipped REST surface. Idea #65 adds
+an additive bounded read contract without changing the action protocol.
 
 ## Endpoints (all under `IDEAS_API_PREFIX = /api/ideas`)
 
 | Method | Path            | Purpose                                                        |
 | ------ | --------------- | -------------------------------------------------------------- |
-| GET    | `/api/ideas/state`  | Full snapshot `{ revision, ideas: IdeaRecord[] }`, `no-store` |
-| GET    | `/api/ideas/state?view=list` | Summary-first list projection (metadata + body excerpt) |
+| GET    | `/api/ideas/state`  | Frozen full snapshot `{ revision, ideas: IdeaRecord[] }`, `no-store` |
+| GET    | `/api/ideas/state?view=list` | Existing board list projection (metadata + body excerpt) |
+| GET    | `/api/ideas/state?view=summary` | Bounded filtered summary rows + explicit read metadata |
+| GET    | `/api/ideas/state?view=detail` | Bounded field-selectable detail rows + explicit read metadata |
 | GET    | `/api/ideas/idea?id=<id>` | One full target/follow-up record |
-| POST   | `/api/ideas/action` | Apply ONE action, returns the resulting snapshot (200)        |
-| GET    | `/api/ideas/events` | SSE stream: full snapshot per event + 15 s heartbeat           |
+| POST   | `/api/ideas/action` | Apply ONE action, returns the resulting full snapshot (200)   |
+| GET    | `/api/ideas/events` | Revision-only stream + 15 s heartbeat                        |
+
+## Bounded read views
+
+`GET /api/ideas/state` without `view` remains the byte-compatible full ledger
+snapshot. Agent analysis and board operations should use the additive bounded
+contract instead:
+
+- `view=summary` defaults to identity, title, status, timestamps, idea number,
+  workspace, tags, summary, TaskBoard link, and direct follow-up lineage.
+- `view=detail` defaults to all bounded top-level fields except `body` and
+  `analysisAudit`.
+- `workspaceId` is an exact filter. `status`, `id`, `number`, and `fields` are
+  repeatable; `status` and `fields` also accept comma-separated values. IDs
+  and numbers form one selector group, then workspace/status filters apply.
+- `limit` is 1..200 (default 100), `offset` is non-negative, and `bodyLimit`
+  is 0..4096 UTF-8 bytes. Selecting `body` without enough budget is explicit:
+  the row is empty/short and `meta.bodyTruncated` is true.
+- The complete JSON response is capped at 512 KiB. Trailing rows are removed
+  first; `meta.rowTruncated` and `meta.nextOffset` make that loss visible.
+
+The response keeps the current ledger `revision` at the top level. `meta`
+always contains `view`, selected `fields`, `bodyLimitBytes`, `limit`, `offset`,
+`matched`, `returned`, `rowTruncated`, `nextOffset`, `bodyTruncated`, and
+`omittedFields`. `analysisAudit` is always listed as omitted because it may
+contain another full body. Use the existing raw single-idea route when the
+complete target body or audit is required.
+
+Example:
+
+    GET /api/ideas/state?view=summary&workspaceId=ws-1&status=open&status=archived&fields=summary&limit=100&offset=0
+
+No read view creates a cache: every response is projected from the current
+ledger document, and every write still commits atomically through the existing
+action protocol.
 
 ## Fence
 
@@ -129,10 +165,11 @@ session instead of creating it manually:
    face (`scope` → `sessionOf`), both duck-typed and optional — an absent
    service keeps the plain manual Create.
 3. The launch prompt is MINIMAL: it carries only what the skill cannot know —
-   the captured idea, the workspace (title + id), the priority hints, and the
-   server **origin** (dynamic per instance). Re-analysis prompts carry compact
+   the captured idea, the workspace (title + id), the priority hints, the
+   server **origin** (dynamic per instance), and a bounded summary selector
+   that overrides an older first-wins installed skill. Re-analysis prompts carry compact
    stored metadata plus an exact id selector, never the stored body. The analyst
-   then uses `state?view=list` and single-idea reads under the bounded workflow
+   then uses filtered `state?view=summary` pages and single-idea reads under the bounded workflow
    in `docs/idea-64-summary-first-context.md`. The analysis methodology AND the
    full write-channel contract live in the **`ideas-analyst` skill** the Host
    installs at `<dshHome>/skills/ideas-analyst/SKILL.md` (user-dsh root, rank

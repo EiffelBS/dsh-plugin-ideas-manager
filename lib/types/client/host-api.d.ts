@@ -5,7 +5,7 @@
  * in for the former SSE stream (see `subscribe` for the connection-pool
  * rationale). Mirrors the dsh-task-board host-api discipline.
  */
-import { type IdeasAction, type IdeasEventPayload, type IdeasListSnapshot, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import { type IdeasAction, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
 export interface IdeasHostTransport {
     /**
@@ -19,6 +19,11 @@ export interface IdeasHostTransport {
      * to the list view at the edge so the client only ever holds list rows.
      */
     action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>;
+    /**
+     * Bounded filtered read (idea #65). Optional so older hosts and lightweight
+     * test transports keep the pre-existing board controller contract intact.
+     */
+    read?(query?: IdeasReadQuery): Promise<IdeasReadSnapshot>;
     /**
      * Full-body snapshot (no projection): the deep-search index and parity
      * with pre-idea#34 consumers. Optional - a transport without it keeps
@@ -58,6 +63,7 @@ export interface IdeasHostTransport {
 export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     state(): Promise<IdeasListSnapshot>;
     stateFull(): Promise<IdeasSnapshot>;
+    read(query?: IdeasReadQuery): Promise<IdeasReadSnapshot>;
     idea(id: string): Promise<IdeaRecord>;
     /**
      * The action wire is untouched (full snapshot, frozen contract); the

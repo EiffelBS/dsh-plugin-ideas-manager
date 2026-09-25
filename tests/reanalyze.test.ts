@@ -260,7 +260,7 @@ describe('reanalysis launch', () => {
     expect(prompt).toContain('summary hint: Stored compact summary')
     expect(prompt).toContain('tags hint: a, b')
     expect(prompt).toContain('TaskBoard link: task-42')
-    expect(prompt).toContain('state?view=list')
+    expect(prompt).toContain('state?view=summary&id=idea-42')
     expect(prompt).toContain('idea?id=idea-42')
     expect(prompt).toContain('value: 2')
     expect(prompt).toContain('Load the skill named "ideas-analyst"')
