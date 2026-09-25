@@ -9,4 +9,5 @@ backups/
 # Tool transcripts written while iterating (typecheck / vitest / bundler)
 tc*.txt
 r[0-9]*.txt
+test-*.txt
 
