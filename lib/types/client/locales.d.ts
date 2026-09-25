@@ -131,6 +131,10 @@ export declare const fr: {
     'card.underReviewHint': string;
     'card.taskFailed': string;
     'card.taskFailedHint': string;
+    'card.taskRunning': string;
+    'card.taskRunningHint': string;
+    'card.openSession': string;
+    'card.openSessionHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;
@@ -314,6 +318,10 @@ export declare const en: {
     'card.underReviewHint': string;
     'card.taskFailed': string;
     'card.taskFailedHint': string;
+    'card.taskRunning': string;
+    'card.taskRunningHint': string;
+    'card.openSession': string;
+    'card.openSessionHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;
@@ -485,6 +493,10 @@ export declare const zh: {
     'card.underReviewHint': string;
     'card.taskFailed': string;
     'card.taskFailedHint': string;
+    'card.taskRunning': string;
+    'card.taskRunningHint': string;
+    'card.openSession': string;
+    'card.openSessionHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;

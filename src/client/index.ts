@@ -18,6 +18,7 @@ import { registerIdeasSettingsSection } from './settings-section.tsx'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 import { resolveSessionLauncher } from './session-queue.ts'
+import { resolveSessionOpener, sessionsServiceOf } from './session-opener.ts'
 
 /**
  * Cordis services this plugin consumes. Declared so apply runs once the DSH
@@ -64,6 +65,10 @@ export function apply(ctx: ClientContext): void {
     // Phase 3: the AI-capture launcher rides the same "sessions" service;
     // absent/malformed degrades to the plain manual Create.
     client.sessionLauncher = resolveSessionLauncher(ctx)
+    // Idea #66: the jump back into a run the board started. Same optional
+    // "sessions" face as the launcher, so a deployment without it renders no
+    // link instead of a broken one.
+    client.sessionOpener = resolveSessionOpener(sessionsServiceOf(ctx as unknown as Record<string, unknown>))
     client.start()
     const disposers: Array<() => void> = []
     // The two mounting surfaces FIRST: whatever happens to the settings glue

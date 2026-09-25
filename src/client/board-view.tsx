@@ -1931,6 +1931,40 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('card.taskFailed')}
                                 </span>
                               )}
+                              {/* A launch in flight (idea #66), whichever backend
+                                  runs it: the badge is what keeps the card from
+                                  looking ordinary the second after the button was
+                                  clicked, and the link is the way back into the
+                                  execution — a direct run lives in a session the
+                                  human never saw open. The card status counts too:
+                                  someone can start the mirrored card from the
+                                  task-board itself, and the next poll folds that
+                                  into runStatus anyway. */}
+                              {(idea.runStatus === 'running' || idea.taskBoardStatus === 'running') && (
+                                <span
+                                  className={classes.taskRunningBadge}
+                                  title={t('card.taskRunningHint')}
+                                  data-dsh-ideas-task-running=""
+                                >
+                                  <span className={classes.taskRunningDot} aria-hidden="true" />
+                                  {t('card.taskRunning')}
+                                </span>
+                              )}
+                              {idea.runStatus === 'running' && idea.runSessionId !== undefined && idea.runSessionId !== ''
+                                && client.sessionOpener !== undefined && (
+                                  <button
+                                    type="button"
+                                    className={classes.openSession}
+                                    title={t('card.openSessionHint')}
+                                    data-dsh-ideas-open-session=""
+                                    onClick={event => {
+                                      event.stopPropagation()
+                                      client.sessionOpener?.open(idea.runSessionId as string)
+                                    }}
+                                  >
+                                    {t('card.openSession')}
+                                  </button>
+                                )}
                               {idea.deliveredAt !== undefined && (
                                 <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
                                   {t('card.delivered', { date: shortDate(idea.deliveredAt) })}

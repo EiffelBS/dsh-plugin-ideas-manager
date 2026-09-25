@@ -1634,6 +1634,75 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
+/* Running badge on a kanban card: blue pill marking a launch in flight (idea
+   #66). The mirror image of the failed badge - it is what keeps a card from
+   looking ordinary the second after the Launch button was clicked, and what the
+   session link below hangs from. Card header. */
+.dsh-ideas-task-running-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, hsl(210 80% 50%) 40%, transparent);
+  background: color-mix(in srgb, hsl(210 80% 50%) 14%, var(--dsh-ideas-fb-layer2));
+  color: color-mix(in srgb, hsl(210 78% 38%) 88%, var(--dsh-ideas-fb-fg));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The pulsing dot inside the running badge. Motion is decorative and the only
+   one on the board, so it is disabled wholesale under reduced-motion. */
+.dsh-ideas-task-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dsh-ideas-running-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dsh-ideas-running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dsh-ideas-task-running-dot { animation: none; opacity: 0.7; }
+}
+
+/* "Open the session" affordance on a card whose run is in flight (idea #66):
+   the only way back into an execution the board started, whether it ran on a
+   mirrored card or in a direct chat session. Renders beside the running
+   badge, and degrades to nothing when the shell serves no sessions service. */
+.dsh-ideas-open-session {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: none;
+  color: color-mix(in srgb, hsl(210 78% 45%) 82%, var(--dsh-ideas-fb-fg));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dsh-ideas-open-session:hover {
+  border-color: color-mix(in srgb, hsl(210 80% 50%) 40%, transparent);
+  background: color-mix(in srgb, hsl(210 80% 50%) 12%, var(--dsh-ideas-fb-layer2));
+}
+
+.dsh-ideas-open-session:focus-visible {
+  outline: 2px solid color-mix(in srgb, hsl(210 80% 50%) 70%, transparent);
+  outline-offset: 1px;
+}
+
 /* Follow-up lineage chip on a child card: neutral pill referencing the parent
    idea the review rejected created it from ("suivi de #N"). */
 .dsh-ideas-followup-badge {
@@ -1842,6 +1911,9 @@ export const classes = {
   archivedStamp: 'dsh-ideas-archived-stamp',
   reviewBadge: 'dsh-ideas-review-badge',
   taskFailedBadge: 'dsh-ideas-task-failed-badge',
+  taskRunningBadge: 'dsh-ideas-task-running-badge',
+  taskRunningDot: 'dsh-ideas-task-running-dot',
+  openSession: 'dsh-ideas-open-session',
   followUpBadge: 'dsh-ideas-followup-badge',
   tabCount: 'dsh-ideas-tab-count',
   scoreIcon: 'dsh-ideas-score-icon',

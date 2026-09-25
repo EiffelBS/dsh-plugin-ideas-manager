@@ -176,6 +176,7 @@ src/host-routes.ts       /api/ideas/* fence + SSE
 src/taskboard-bridge.ts  feature-detect + one-way mirror + the `run` verb (no hard import)
 src/run-prompt.ts        execution prompt shared by every launch backend
 src/session-runner.ts    direct-session backend (Host RPCs + roster for the settle)
+src/session-opener.ts    "Open session" jump from a card whose run is in flight
 src/export-markdown.ts   unidirectional ledger -> markdown
 src/core/ideas.ts        domain model + tag validation
 ```

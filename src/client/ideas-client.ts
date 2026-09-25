@@ -20,6 +20,7 @@ import { setLanguageOverride } from './locales.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
+import type { SessionOpener } from './session-opener.ts'
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts'
 
 function uuid(): string {
@@ -60,6 +61,13 @@ export class IdeasClient {
    * manual Create for workspace-targeted captures.
    */
   sessionLauncher: SessionLauncher | undefined
+  /**
+   * Optional jump into a run the board started (idea #66). A run can execute
+   * in a session the human never saw open — the direct-session backend always
+   * does — so a card carrying a `runSessionId` offers this link. Undefined
+   * (no sessions service) simply renders no link.
+   */
+  sessionOpener: SessionOpener | undefined
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
   private workspaces: WorkspaceViewLite[] = []

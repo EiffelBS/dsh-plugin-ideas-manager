@@ -156,6 +156,10 @@ function snapshot(): IdeasListSnapshot {
       { id: 'running', title: 'Running', status: 'open', rank: 2, bodyExcerpt: 'b', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', taskBoardId: 'task-2', taskBoardStatus: 'running' },
       { id: 'unbound', title: 'Unbound', status: 'open', rank: 3, bodyExcerpt: 'c', createdAt: 1, updatedAt: 100, workspaceId: 'ws1' },
       { id: 'no-workspace', title: 'Generic', status: 'open', rank: 4, bodyExcerpt: 'd', createdAt: 1, updatedAt: 100, taskBoardId: 'task-4', taskBoardStatus: 'backlog' },
+      // A direct-session run in flight: no card, a run stamp, and the session
+      // the Host is executing it in.
+      { id: 'executing', title: 'Executing', status: 'open', rank: 5, bodyExcerpt: 'e', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'running', runSessionId: 'session-7' },
+      { id: 'settled', title: 'Settled', status: 'open', rank: 6, bodyExcerpt: 'f', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'done', taskBoardStatus: 'failed' },
     ],
   }
 }
@@ -200,6 +204,11 @@ async function renderBoard(transport: IdeasHostTransport = new FakeTransport()):
   })
   await act(async () => { await client.loadConfig() })
   return transport as FakeTransport
+}
+
+/** Re-render with a client field that is not reactive on its own. */
+function rerender(): void {
+  act(() => { root?.render(<IdeasBoard client={client} />) })
 }
 
 function launchButtonIn(ideaId: string): HTMLElement | null {
@@ -276,5 +285,52 @@ describe('board launch affordance', () => {
     const submit = host.querySelector('[data-dsh-ideas-launch-submit]') as HTMLElement
     await act(async () => { click(submit) })
     expect(transport.launches).toEqual([{ ideaId: 'launchable', model: 'deepseek/deepseek-reasoner' }])
+  })
+})
+
+describe('board run visibility (idea #66)', () => {
+  function badgeIn(ideaId: string): HTMLElement | null {
+    return host.querySelector(`[data-dsh-idea-id="${ideaId}"] [data-dsh-ideas-task-running]`)
+  }
+
+  function sessionLinkIn(ideaId: string): HTMLElement | null {
+    return host.querySelector(`[data-dsh-idea-id="${ideaId}"] [data-dsh-ideas-open-session]`)
+  }
+
+  it('marks an in-flight run on the card, whatever the backend', async () => {
+    await renderBoard()
+    // The direct-session run carries no card at all: the badge is the ONLY
+    // trace that a launch is in flight.
+    expect(badgeIn('executing')).not.toBeNull()
+    // A card someone started from the task-board itself still reads as in
+    // flight here, even before the poll folds it into runStatus.
+    expect(badgeIn('running')).not.toBeNull()
+    // Nothing is in flight on the others.
+    expect(badgeIn('launchable')).toBeNull()
+    expect(badgeIn('unbound')).toBeNull()
+    expect(badgeIn('settled')).toBeNull()
+  })
+
+  it('jumps into the run session from the card', async () => {
+    const opened: string[] = []
+    await renderBoard()
+    client.sessionOpener = { open: (id: string) => { opened.push(id) } }
+    rerender()
+
+    const link = sessionLinkIn('executing')
+    expect(link).not.toBeNull()
+    click(link as HTMLElement)
+    expect(opened).toEqual(['session-7'])
+  })
+
+  it('renders no link without a sessions service, and never on a settled run', async () => {
+    await renderBoard()
+    // No opener resolved (no shell sessions service): the badge stays, the
+    // affordance simply does not exist - never a broken button.
+    expect(sessionLinkIn('executing')).toBeNull()
+    expect(badgeIn('executing')).not.toBeNull()
+    // A settled run keeps no session link: the run is over, its session is
+    // not the thing the human needs.
+    expect(sessionLinkIn('settled')).toBeNull()
   })
 })

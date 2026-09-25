@@ -173,6 +173,18 @@ default) and the Host picks the **execution backend**:
   `done` card is the run of record, so no second, invisible session is started
   next to it. The modal says which of the two will happen before the click.
 
+**Watching a run.** A launch in flight is visible on the card: a blue
+**Running** pill (a pulsing dot, the board's only motion, disabled under
+`prefers-reduced-motion`) with an **Open session** link next to it whenever the
+idea carries a `runSessionId`. That link is the answer to "where is my run": it
+calls the shell's `sessions.open(id)`, so one click lands in the execution — the
+indispensable case being the direct-session backend, whose session is never
+opened in front of the human. Both degrade silently: no sessions service means
+no link (the pill stays), and a settled run keeps neither a pulse nor a link.
+The pill is deliberately not a column: a running idea stays in the backlog (a
+failed run delivered nothing), so "running" is an attribute of a row, not a
+place.
+
 **Known divergences, by design.** After a run, any later mirror `update` fails
 (`task has already been executed` — the card content is frozen), so the spec no
 longer replicates to the card; mirrored cards never arm a cron schedule (a
@@ -352,6 +364,7 @@ src/
   taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb (no hard import)
   run-prompt.ts       # the execution prompt shared by every launch backend (idea #66)
   session-runner.ts   # direct-session backend: Host RPCs + the roster the settle reads
+  session-opener.ts   # the "Open session" jump from a running card (idea #66)
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline
   core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation
