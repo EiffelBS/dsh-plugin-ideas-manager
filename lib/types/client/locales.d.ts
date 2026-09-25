@@ -143,6 +143,12 @@ export declare const fr: {
     'reanalyze.hint': string;
     'reanalyze.submit': string;
     'reanalyze.cancel': string;
+    'card.launch': string;
+    'card.launchHint': string;
+    'launch.title': string;
+    'launch.hint': string;
+    'launch.submit': string;
+    'launch.cancel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -319,6 +325,12 @@ export declare const en: {
     'reanalyze.hint': string;
     'reanalyze.submit': string;
     'reanalyze.cancel': string;
+    'card.launch': string;
+    'card.launchHint': string;
+    'launch.title': string;
+    'launch.hint': string;
+    'launch.submit': string;
+    'launch.cancel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -483,6 +495,12 @@ export declare const zh: {
     'reanalyze.hint': string;
     'reanalyze.submit': string;
     'reanalyze.cancel': string;
+    'card.launch': string;
+    'card.launchHint': string;
+    'launch.title': string;
+    'launch.hint': string;
+    'launch.submit': string;
+    'launch.cancel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;

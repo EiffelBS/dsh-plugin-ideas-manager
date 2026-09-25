@@ -1,12 +1,13 @@
 /**
- * Ideas host routes: GET /api/ideas/state, POST /api/ideas/action, and the
- * SSE /api/ideas/events stream, all behind the loopback + browser same-origin
- * fence. Follows the dsh-task-board route discipline (same error ids, same
- * body limits, same guard semantics) without importing any of its code.
+ * Ideas host routes: GET /api/ideas/state, POST /api/ideas/action,
+ * POST /api/ideas/launch (idea #66), and the SSE /api/ideas/events stream,
+ * all behind the loopback + browser same-origin fence. Follows the
+ * dsh-task-board route discipline (same error ids, same body limits, same
+ * guard semantics) without importing any of its code.
  */
 import type { IncomingMessage } from 'node:http';
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
-import type { IdeasHostService } from './host-service.ts';
+import { type IdeasHostService } from './host-service.ts';
 import { type IdeasSettingsPatch, type IdeasSettingsView } from './protocol.ts';
 /**
  * Ideas route fence. Direct desktop access uses the loopback socket + Host

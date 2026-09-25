@@ -59,7 +59,7 @@ export declare const IDEAS_READ_MAX_SELECTORS = 100;
  * this projection because it can carry a second full body. The frozen raw
  * single-idea route remains the explicit full-detail escape hatch.
  */
-export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body"];
+export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body"];
 /** One optional field accepted by the bounded field selector. */
 export type IdeasReadField = (typeof IDEAS_READ_SELECTABLE_FIELDS)[number];
 /** Fields always present on a bounded row, independent of field selection. */
@@ -371,4 +371,32 @@ export declare function parseSettingsBody(value: unknown): {
     patch: IdeasSettingsPatch;
     expectedRevision: number | undefined;
 } | undefined;
+/** Answer of `POST /api/ideas/launch`, shared by the host route and the client. */
+export interface LaunchResponse {
+    ok: true;
+    /** Backend-neutral run handle (v1: the mirrored TaskBoard card id). */
+    runId: string;
+    /** TaskBoard card id, absent for a backend that owns no card (v2). */
+    taskId?: string;
+    /** Always `running` on an accept; the settle is written by the host poll. */
+    runStatus: 'running';
+}
+/** Strict parser for `POST /api/ideas/launch` ({ requestId?, initiator?, ideaId, model? }). */
+export interface IdeasLaunchBody {
+    /** Optional replay key, honoured by the host service for a short window. */
+    requestId?: string;
+    /** Optional initiator label, accepted for envelope parity. */
+    initiator?: string;
+    ideaId: string;
+    /** `provider/model` target id; absent = the run keeps the session default. */
+    model?: string;
+}
+/**
+ * Strict parser for the launch body. Unknown keys reject (same discipline as
+ * every other ideas body), `ideaId` is required and non-blank, and the model is
+ * a plain string that trims to empty = "no model pinned" (never `null`: the
+ * task-board task field rejects null, and an empty selection is expressed by
+ * OMITTING the key).
+ */
+export declare function parseLaunchBody(value: unknown): IdeasLaunchBody | undefined;
 export {};

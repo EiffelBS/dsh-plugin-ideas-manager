@@ -1,19 +1,22 @@
 /**
- * Ideas host routes: GET /api/ideas/state, POST /api/ideas/action, and the
- * SSE /api/ideas/events stream, all behind the loopback + browser same-origin
- * fence. Follows the dsh-task-board route discipline (same error ids, same
- * body limits, same guard semantics) without importing any of its code.
+ * Ideas host routes: GET /api/ideas/state, POST /api/ideas/action,
+ * POST /api/ideas/launch (idea #66), and the SSE /api/ideas/events stream,
+ * all behind the loopback + browser same-origin fence. Follows the
+ * dsh-task-board route discipline (same error ids, same body limits, same
+ * guard semantics) without importing any of its code.
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import type { IdeasHostService } from './host-service.ts'
+import { TaskBoardMirrorDisabledError, type IdeasHostService } from './host-service.ts'
+import { TaskBoardUnavailableError } from './taskboard-bridge.ts'
 import { decodeRequestBody, writeJson } from './http.ts'
 import { isLoopbackRequest } from './loopback.ts'
 import {
   buildIdeasReadSnapshot,
   parseActionEnvelope,
   parseIdeasReadQuery,
+  parseLaunchBody,
   parseSettingsBody,
   toListSnapshot,
   IDEAS_API_PREFIX,
@@ -25,6 +28,8 @@ import {
 const ACTION_LIMIT = 64 * 1024
 const IMPORT_LIMIT = 2 * 1024 * 1024
 const HEARTBEAT_MS = 15_000
+/** Launch model target cap: `provider/model`, the task-board's own shape. */
+const LAUNCH_MODEL_MAX_LENGTH = 256
 
 /**
  * Browser-signal tripwire, NOT an authority check: a bare curl sends neither
@@ -228,5 +233,52 @@ export function makeIdeasRoutes(
       }
     },
   }
-  return [state, ideaBody, action, events, config]
+  /**
+   * Launch the idea's execution (idea #66). A DEDICATED route, not an
+   * `IdeasAction` verb (decision D1): a launch is not a ledger mutation — it
+   * must not consume the persisted action dedupe cache, and its answer is a
+   * small `{ok, runId, runStatus}` instead of a whole board snapshot. The
+   * requestId is still accepted and honours a replay inside a short window.
+   *
+   * Status mapping (every failure is visible, never swallowed — the run gates
+   * are the interesting part of this flow):
+   *  400 invalid-launch / the task-board's own refusal message,
+   *  404 not-found, 409 taskboard-mirror-disabled, 413/415/405 discipline.
+   */
+  const launch: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/launch`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string): void => {
+        writeJson(res, status, { ok: false, error }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { raw: string; value: unknown; byteLength: number }
+      try {
+        body = await readBody(req)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      if (body.byteLength > ACTION_LIMIT) return deny(413, 'body-too-large')
+      const parsed = parseLaunchBody(body.value)
+      if (parsed === undefined) return deny(400, 'invalid-launch')
+      if (parsed.model !== undefined && parsed.model.length > LAUNCH_MODEL_MAX_LENGTH) return deny(400, 'model-too-long')
+      try {
+        const result = await service.launchIdea(parsed.ideaId, parsed.model, parsed.requestId)
+        writeJson(res, 200, result, { 'cache-control': 'no-store' })
+      } catch (error) {
+        if (error instanceof TaskBoardMirrorDisabledError) return deny(409, 'taskboard-mirror-disabled')
+        if (error instanceof TaskBoardUnavailableError) return deny(503, 'taskboard-unavailable')
+        const message = error instanceof Error ? error.message : String(error)
+        if (message === 'idea not found') return deny(404, 'not-found')
+        // Anything else is the task-board's own gate message (already relayed
+        // from body.error by the bridge), or an ideas-disabled state.
+        deny(message === 'ideas plugin is disabled' ? 409 : 400, message)
+      }
+    },
+  }
+  return [state, ideaBody, action, events, config, launch]
 }

@@ -354,6 +354,33 @@ export class IdeasClient {
     await this.run({ kind: 'delete', ideaId })
   }
 
+  /**
+   * Start the idea's execution (idea #66) through the Host, which owns the
+   * mirrored card. NOT a ledger mutation: no `pending` banner for the whole
+   * board, no revision write here (the host stamps `runStatus` itself) — but a
+   * refresh follows so the card status the poll will publish is not the only
+   * visible change. A refusal is surfaced on the board's error bar verbatim
+   * (`task is already running or missing`, `taskboard-unavailable`, ...) and
+   * rethrown for the modal to keep the human in place.
+   *
+   * `model` is the `provider/model` target id, or undefined to let the run
+   * keep the session default.
+   *
+   * @throws when the transport predates the launch route (`launch-unavailable`).
+   */
+  async launchIdea(ideaId: string, model?: string): Promise<void> {
+    if (this.transport.launch === undefined) throw new Error('launch-unavailable')
+    try {
+      await this.transport.launch(ideaId, model)
+      this.error = undefined
+    } catch (error) {
+      this.error = error instanceof Error ? error.message : String(error)
+      this.emit()
+      throw error
+    }
+    await this.refresh()
+  }
+
   async reorderIdea(orderedIds: string[]): Promise<void> {
     await this.run({ kind: 'reorder', orderedIds })
   }

@@ -187,6 +187,9 @@ Rules:
 - Never read or modify an idea of another workspace; never touch the generic group.
 - The channel refuses requests missing the headers above (403), and bodies over 64 KiB.
 - With PowerShell, send JSON as UTF-8 bytes ([Text.Encoding]::UTF8.GetBytes(...)).
+- "runStatus" and "runSessionId" are HOST-WRITTEN system fields: they describe a
+  launched execution (idea #66) and the wire gate rejects them in a patch or an
+  import. Never send them, and never set them to make a card look launched.
 
 ## Re-analysis runs (re-analyze action)
 

@@ -14,6 +14,16 @@
  */
 export type IdeaStatus = 'open' | 'underReview' | 'archived' | 'declined'
 
+/**
+ * Lifecycle of one launched execution (idea #66), backend-neutral: the
+ * TaskBoard card and the planned direct-session launch both settle into one of
+ * these three states. `undefined` on the record means "no run observed".
+ */
+export type IdeaRunStatus = 'running' | 'done' | 'failed'
+
+/** The three run states, as a lookup for normalization. */
+export const IDEA_RUN_STATUSES: readonly IdeaRunStatus[] = ['running', 'done', 'failed']
+
 /** One idea label: the name is the badge and the filter key, the optional prompt line rides the TaskBoard mirror when connected. */
 export interface IdeaTag {
   /** Display name; trimmed, non-empty, unique within the idea. */
@@ -98,6 +108,11 @@ export const IDEA_COLUMNS: readonly IdeaStatus[] = ['open', 'underReview', 'arch
 /** Brand an unknown string as an idea status; undefined when it is not one. */
 export function isIdeaStatus(value: unknown): value is IdeaStatus {
   return typeof value === 'string' && (ALL_IDEA_STATUSES as readonly string[]).includes(value)
+}
+
+/** Brand an unknown string as a run status; undefined when it is not one. */
+export function isIdeaRunStatus(value: unknown): value is IdeaRunStatus {
+  return typeof value === 'string' && (IDEA_RUN_STATUSES as readonly string[]).includes(value)
 }
 
 /** Normalize one optional target string: trim; blank collapses to undefined. */
@@ -208,6 +223,25 @@ export interface IdeaRecord {
    */
   taskBoardStatus?: string
   /**
+   * State of the LATEST LAUNCHED EXECUTION of this idea (idea #66), kept
+   * deliberately separate from `taskBoardStatus` (the raw card observation):
+   * the launch lifecycle is backend-neutral, so the future direct-session
+   * backend can feed the same field without overloading a TaskBoard-shaped
+   * mirror status. `undefined` means "never launched (or no observation yet)";
+   * `running` is stamped by the launch route, the settle is written by the
+   * run poll. A failed run leaves the idea OPEN on purpose: it delivered
+   * nothing, so the review gate does not apply.
+   * System field like `taskBoardId`: never written by the idea verbs.
+   */
+  runStatus?: IdeaRunStatus
+  /**
+   * Id of the session a direct launch (v2 backend) created for the current
+   * run, so a `running` state survives a board reload (idea #66 decision D5).
+   * The TaskBoard backend does NOT write it: that session id is owned by the
+   * task-board runner. System field, host-written only.
+   */
+  runSessionId?: string
+  /**
    * Review rejected: id of the parent idea this idea is a follow-up of (set by
    * the `followUp` verb; the child carries the summary + justification and
    * stays open while the parent is archived).
@@ -281,6 +315,8 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
   if (record.workspaceId !== undefined && typeof record.workspaceId !== 'string') return false
   if (record.taskBoardId !== undefined && typeof record.taskBoardId !== 'string') return false
   if (record.taskBoardStatus !== undefined && typeof record.taskBoardStatus !== 'string') return false
+  if (record.runStatus !== undefined && !isIdeaRunStatus(record.runStatus)) return false
+  if (record.runSessionId !== undefined && typeof record.runSessionId !== 'string') return false
   if (record.followUpOfId !== undefined && typeof record.followUpOfId !== 'string') return false
   if (record.ideaNumber !== undefined && (typeof record.ideaNumber !== 'number' || !Number.isFinite(record.ideaNumber))) return false
   if (record.rationale !== undefined && typeof record.rationale !== 'string') return false

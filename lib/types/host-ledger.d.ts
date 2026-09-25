@@ -17,7 +17,7 @@
  * the family guarantees (single writer, stale takeover, loud refusal while
  * another live host owns the ledger) without descriptor APIs.
  */
-import { type IdeaRecord } from './core/ideas.ts';
+import { type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts';
 import { type IdeasExport } from './export-markdown.ts';
 import { IDEAS_SCHEMA_VERSION, type IdeasAction } from './protocol.ts';
 export declare const IDEAS_LEDGER_DIR_NAME = "ideas";
@@ -92,6 +92,20 @@ export declare class IdeasHostLedger {
      * @returns true when the document changed and was committed.
      */
     setTaskBoardStatus(ideaId: string, status: string | undefined): boolean;
+    /**
+     * Host-internal LAUNCH-LIFECYCLE stamp (idea #66): `running` is written by
+     * the launch route the moment the execution is accepted, the settled state by
+     * the run poll. Same system-field discipline as `bindTaskBoardId` (the
+     * protocol gate never accepts `runStatus` from the wire) and the same
+     * no-op-on-unchanged rule, so an idle poll cannot churn the revision.
+     *
+     * `undefined` CLEARS the stamp (a card observed outside a run, e.g. back in
+     * `backlog`): the JSON persist/clone drops the key entirely, exactly like a
+     * cleared `taskBoardStatus`.
+     *
+     * @returns true when the document changed and was committed.
+     */
+    setRunStatus(ideaId: string, status: IdeaRunStatus | undefined): boolean;
     private apply;
     private acquireLock;
     private readLockOwner;

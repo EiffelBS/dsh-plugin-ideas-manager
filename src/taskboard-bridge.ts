@@ -9,10 +9,11 @@
  * Mapping (frozen design decision): idea create -> task create + move to
  * `backlog` (the card is `read-only`); idea update -> task update; idea
  * decline / move-to-archived -> task archive; idea restore -> task restore;
- * idea delete -> no-op (the card outlives the idea — closing the loop to
- * `done` is a manual run, never automated). Every failure is logged and the
- * ideas ledger stays the source of truth: the mirror never rolls back a
- * committed idea mutation.
+ * idea delete -> no-op (the card outlives the idea). Every failure is logged
+ * and the ideas ledger stays the source of truth: the mirror never rolls back
+ * a committed idea mutation. `done` is RUNNER-OWNED, and idea #66 added the
+ * one verb that reaches it: a launch is an explicit human action
+ * (`launchTask`), never a side effect of an idea mutation.
  *
  * Duplicate guard (idea #35 — "update must never mean create"): card ids are
  * DETERMINISTIC (`idea-` + idea.id, see mirrorCardIdFor), a bound idea is
@@ -31,6 +32,7 @@
 import { request as httpRequest } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { IDEA_SUMMARY_MAX_LENGTH, type IdeaRecord } from './core/ideas.ts'
+import { runPromptOf } from './run-prompt.ts'
 
 export const TASK_BOARD_API_PREFIX = '/api/task-board'
 /** Read-only permission stamped on every mirrored card. */
@@ -60,6 +62,14 @@ export type TaskBoardAction =
   | { kind: 'move'; taskId: string; status: 'backlog' }
   | { kind: 'archive'; taskId: string }
   | { kind: 'restore'; taskId: string }
+  /**
+   * Start an execution of the card (idea #66). The task-board accepts EXACTLY
+   * `['kind','taskId']` on this kind — the model can NOT travel with the run
+   * (it is a task field, pinned by the runner through `session.selectModel`),
+   * so {@link TaskBoardMirror.launchTask} patches `model` first and posts the
+   * bare `run` after it.
+   */
+  | { kind: 'run'; taskId: string }
 
 /** Local mirror of the task-board action envelope. */
 export interface TaskBoardActionEnvelope {
@@ -75,6 +85,8 @@ export interface TaskBoardNewTaskInput {
   workspaceId?: string
   permission?: typeof MIRROR_TASK_PERMISSION
   tags?: { name: string; promptPrefix?: string }[]
+  /** `provider/model` target id; absent = the launched session's own default. */
+  model?: string
 }
 
 /** Local mirror of the task update patch — only the fields ideas control. */
@@ -84,6 +96,13 @@ export interface TaskBoardTaskPatch {
   prompt?: string
   workspaceId?: string | null
   tags?: { name: string; promptPrefix?: string }[] | null
+  /**
+   * `provider/model` target id. NOT a content field (`title`/`description`/
+   * `prompt` are): a model-only patch stays editable after the first execution
+   * and does not touch `permissionConfirmedAt`, which is what lets a launch
+   * re-pin the model on a card that already ran (idea #66).
+   */
+  model?: string
 }
 
 /** Local mirror of a task-board task row — only the fields the poll reads. */
@@ -426,6 +445,41 @@ export class TaskBoardMirror {
     await this.post({ kind: 'restore', taskId: idea.taskBoardId })
   }
 
+  /**
+   * Launch the idea's execution on its TaskBoard card (idea #66): the human
+   * trigger turns the board into a starting point of execution, not only a
+   * capture target.
+   *
+   * Three writes, in this exact order and on the caller's serialized chain:
+   *  1. `ensureTask` — reuses the whole duplicate guard, so the card is the
+   *     deterministic `idea-<id>` one and is (re)created when it was deleted
+   *     out-of-band. A launch is never a second card.
+   *  2. `update{model}` — MODEL-ONLY patch, and only when a model was chosen.
+   *     Never `taskPatch()`: that sends title/description/prompt, which the
+   *     task-board rejects with `task has already been executed` on any card
+   *     that already ran. A model-only patch stays legal forever, and the
+   *     `run` action itself cannot carry the model (exact keys).
+   *  3. `run` — the bare envelope; the task-board pins the model on the fresh
+   *     session and queues the shared run prompt.
+   *
+   * Throws `TaskBoardUnavailableError` when the plugin is absent and a plain
+   * Error carrying the task-board's own `body.error` message on a gate refusal
+   * (`task is already running or missing`, `archived task is read-only`,
+   * `confirmation-required: ...`, `task board is disabled`) — the caller
+   * surfaces it instead of swallowing it.
+   *
+   * @returns the launched task id.
+   */
+  async launchTask(idea: IdeaRecord, model?: string): Promise<string> {
+    const taskId = await this.ensureTask(idea)
+    const chosen = model?.trim()
+    if (chosen !== undefined && chosen !== '') {
+      await this.post({ kind: 'update', taskId, patch: { model: chosen } })
+    }
+    await this.post({ kind: 'run', taskId })
+    return taskId
+  }
+
   /** The task-board plugin is not registered or did not answer. */
   get isUnavailable(): boolean {
     return !this.available
@@ -437,9 +491,10 @@ export class TaskBoardMirror {
   }
 
   /**
-   * Create the card at `taskId` (the DETERMINISTIC mirrorCardIdFor id — never
-   * a fresh uuid) and move it to backlog. The id is passed in rather than
-   * minted so no code path can accidentally re-introduce a random id.
+   * The executable prompt, shared with the direct-session launch backend
+   * (see src/run-prompt.ts). `model` is intentionally NOT part of the card
+   * content: the card is created with no model, so the run starts on the
+   * session default unless a launch re-pins it through a model-only patch.
    */
   private async createCard(idea: IdeaRecord, taskId: string): Promise<string> {
     await this.post({
@@ -448,7 +503,7 @@ export class TaskBoardMirror {
       input: {
         title: idea.title,
         description: summaryDescriptionOf(idea),
-        prompt: this.taskPrompt(idea),
+        prompt: runPromptOf(idea),
         permission: MIRROR_TASK_PERMISSION,
         ...(idea.workspaceId === undefined ? {} : { workspaceId: idea.workspaceId }),
         ...(idea.tags === undefined || idea.tags.length === 0 ? {} : { tags: idea.tags }),
@@ -462,38 +517,44 @@ export class TaskBoardMirror {
     return {
       title: idea.title,
       description: summaryDescriptionOf(idea),
-      prompt: this.taskPrompt(idea),
+      prompt: runPromptOf(idea),
       workspaceId: idea.workspaceId,
       ...(idea.tags === undefined || idea.tags.length === 0 ? {} : { tags: idea.tags }),
     }
   }
 
   /**
-   * The executable prompt = the tag prompt lines, one per line; when no tag
-   * carries a prompt line, a mission prompt derived from the card itself.
-   * The fallback is mandatory: Task Board launches a run with
-   * `task.prompt !== '' ? task.prompt : task.title` (the description is never
-   * injected into the session), so an empty prompt would ship the card's bare
-   * TITLE to the launched agent — unexploitable for the common idea whose tags
-   * are all plain names. The body is the captured spec, so it becomes the run
-   * instruction instead.
+   * Post one action envelope and surface the task-board's own refusal.
+   *
+   * Error relay (idea #66): the reply body used to be dropped and only the
+   * status line read, which made every run gate opaque (`400 task is already
+   * running or missing` looked exactly like a malformed request). The body
+   * carries `{error}` and sometimes `{code}`; both are folded into the thrown
+   * message so the launch route can hand a readable reason to the board.
    */
-  private taskPrompt(idea: IdeaRecord): string {
-    if (idea.tags !== undefined) {
-      const lines = idea.tags.map(tag => tag.promptPrefix?.trim() ?? '').filter(line => line !== '')
-      if (lines.length > 0) return lines.join('\n')
-    }
-    const numeral = idea.ideaNumber === undefined ? '' : ` #${String(idea.ideaNumber)}`
-    return `You are implementing the idea below${numeral} — "${idea.title}" — from the DSH Ideas board. Work in the current workspace directory.\n\nThe idea's spec (Body):\n${idea.body}`
-  }
-
   private async post(action: TaskBoardAction): Promise<void> {
     const requestId = `ideas-mirror-${randomUUID()}`
     const result = await this.options.transport.postAction({ requestId, action })
     if (result.status < 200 || result.status >= 300) {
-      throw new Error(`task-board ${action.kind} -> ${result.status}`)
+      const detail = actionErrorOf(result.body)
+      throw new Error(`task-board ${action.kind} -> ${result.status}${detail === undefined ? '' : `: ${detail}`}`)
     }
   }
+}
+
+/**
+ * Extract a readable reason from a rejected task-board reply: `{error}` first
+ * (the human message the gates throw), then `{code}`; a body that is a bare
+ * string is used as-is. Anything else (snapshot objects, empty bodies) yields
+ * undefined so the caller keeps the status-only message.
+ */
+function actionErrorOf(body: unknown): string | undefined {
+  if (typeof body === 'string') return body.trim() === '' ? undefined : body.trim()
+  if (typeof body !== 'object' || body === null) return undefined
+  const row = body as { error?: unknown; code?: unknown }
+  if (typeof row.error === 'string' && row.error.trim() !== '') return row.error.trim()
+  if (typeof row.code === 'string' && row.code.trim() !== '') return row.code.trim()
+  return undefined
 }
 
 /** Thrown when the task-board plugin is absent; the service logs and moves on. */

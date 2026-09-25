@@ -8,6 +8,7 @@
 
 import {
   createIdea,
+  isIdeaRunStatus,
   isIdeaStatus,
   isIdeaTagList,
   normalizeTags,
@@ -83,8 +84,8 @@ export const IDEAS_READ_MAX_SELECTORS = 100
  */
 export const IDEAS_READ_SELECTABLE_FIELDS = [
   'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId',
-  'taskBoardId', 'taskBoardStatus', 'followUpOfId', 'deliveredAt', 'decision',
-  'archivedAt', 'reanalyzeAt', 'body',
+  'taskBoardId', 'taskBoardStatus', 'runStatus', 'runSessionId', 'followUpOfId',
+  'deliveredAt', 'decision', 'archivedAt', 'reanalyzeAt', 'body',
 ] as const
 
 /** One optional field accepted by the bounded field selector. */
@@ -552,6 +553,11 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   }
   if (row.taskBoardStatus !== undefined && row.taskBoardStatus !== null
       && (typeof row.taskBoardStatus !== 'string' || row.taskBoardStatus.length > 32)) return undefined
+  // Launch lifecycle (idea #66): host-written system fields, importable only as
+  // the closed run-status union (lowercased) and a plain bounded session id.
+  if (row.runStatus !== undefined && row.runStatus !== null && !isIdeaRunStatus(row.runStatus)) return undefined
+  if (row.runSessionId !== undefined && row.runSessionId !== null
+      && (typeof row.runSessionId !== 'string' || row.runSessionId.length > 128)) return undefined
   if (row.archivedAt !== undefined && row.archivedAt !== null && typeof row.archivedAt !== 'number') return undefined
   if (row.followUpOfId !== undefined && row.followUpOfId !== null && typeof row.followUpOfId !== 'string') return undefined
   if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
@@ -576,6 +582,8 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(typeof row.workspaceId === 'string' ? { workspaceId: row.workspaceId } : {}),
     ...(typeof row.taskBoardId === 'string' ? { taskBoardId: row.taskBoardId } : {}),
     ...(typeof row.taskBoardStatus === 'string' ? { taskBoardStatus: row.taskBoardStatus.toLowerCase() } : {}),
+    ...(isIdeaRunStatus(row.runStatus) ? { runStatus: row.runStatus } : {}),
+    ...(typeof row.runSessionId === 'string' ? { runSessionId: row.runSessionId } : {}),
     ...(typeof row.followUpOfId === 'string' ? { followUpOfId: row.followUpOfId } : {}),
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
   ...(typeof row.reanalyzeAt === 'number' ? { reanalyzeAt: row.reanalyzeAt } : {}),
@@ -950,4 +958,51 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
     }
   }
   return { patch, expectedRevision: body.expectedRevision as number | undefined }
+}
+
+/* --- launch (idea #66) --- */
+
+/** Answer of `POST /api/ideas/launch`, shared by the host route and the client. */
+export interface LaunchResponse {
+  ok: true
+  /** Backend-neutral run handle (v1: the mirrored TaskBoard card id). */
+  runId: string
+  /** TaskBoard card id, absent for a backend that owns no card (v2). */
+  taskId?: string
+  /** Always `running` on an accept; the settle is written by the host poll. */
+  runStatus: 'running'
+}
+
+/** Strict parser for `POST /api/ideas/launch` ({ requestId?, initiator?, ideaId, model? }). */
+export interface IdeasLaunchBody {
+  /** Optional replay key, honoured by the host service for a short window. */
+  requestId?: string
+  /** Optional initiator label, accepted for envelope parity. */
+  initiator?: string
+  ideaId: string
+  /** `provider/model` target id; absent = the run keeps the session default. */
+  model?: string
+}
+
+/**
+ * Strict parser for the launch body. Unknown keys reject (same discipline as
+ * every other ideas body), `ideaId` is required and non-blank, and the model is
+ * a plain string that trims to empty = "no model pinned" (never `null`: the
+ * task-board task field rejects null, and an empty selection is expressed by
+ * OMITTING the key).
+ */
+export function parseLaunchBody(value: unknown): IdeasLaunchBody | undefined {
+  const body = record(value)
+  if (body === undefined || !exactKeys(body, ['requestId', 'initiator', 'ideaId', 'model'])) return undefined
+  if (typeof body.ideaId !== 'string' || body.ideaId.trim() === '') return undefined
+  if (body.requestId !== undefined && (typeof body.requestId !== 'string' || body.requestId.trim() === '')) return undefined
+  if (body.initiator !== undefined && typeof body.initiator !== 'string') return undefined
+  if (body.model !== undefined && typeof body.model !== 'string') return undefined
+  const model = typeof body.model === 'string' ? body.model.trim() : ''
+  return {
+    ideaId: body.ideaId.trim(),
+    ...(typeof body.requestId === 'string' ? { requestId: body.requestId.trim() } : {}),
+    ...(typeof body.initiator === 'string' && body.initiator !== '' ? { initiator: body.initiator } : {}),
+    ...(model === '' ? {} : { model }),
+  }
 }

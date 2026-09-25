@@ -38,6 +38,10 @@ body {
   --dsh-ideas-fb-accent: #0f6fbe;
   --dsh-ideas-fb-accent-fg: #ffffff;
   --dsh-ideas-fb-danger: #d04a4a;
+  /* Launch affordance (idea #66): the one GREEN action — it starts the work,
+     while every other card action only moves the card. A lighter green on the
+     dark theme so the triangle keeps its contrast on dark cards. */
+  --dsh-ideas-run: #16a34a;
 }
 
 body[data-ds-dark-theme] {
@@ -51,6 +55,7 @@ body[data-ds-dark-theme] {
   --dsh-ideas-fb-accent: #3b82f6;
   --dsh-ideas-fb-accent-fg: #0f1115;
   --dsh-ideas-fb-danger: #e5484d;
+  --dsh-ideas-run: #34d399;
 }
 
 /* The board container rides inside the conversation grid item as an extra

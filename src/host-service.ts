@@ -2,9 +2,14 @@
  * Ideas host service: owns the ledger and fans its change notifications out to
  * the SSE route, and (P2) schedules the optional one-way TaskBoard mirror.
  * The board is a passive Host-authoritative store (unlike the task board's
- * execution runner) — the only timer is the under-review poll, which watches
- * for mirrored task cards passing `done` and moves the linked idea to
+ * execution runner) — the only timer is the run poll, which watches for
+ * mirrored task cards passing `done` and moves the linked idea to
  * `underReview` (the review gate). No other background work runs.
+ *
+ * Launch (idea #66): the mirror is also an EXECUTION entry point, but only on
+ * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
+ * passivity above is unchanged: no idea mutation ever starts a run, and `done`
+ * stays runner-owned.
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -18,8 +23,8 @@
  */
 
 import { IdeasHostLedger, type LedgerApplyResult } from './host-ledger.ts'
-import { TaskBoardMirror } from './taskboard-bridge.ts'
-import type { IdeaRecord } from './core/ideas.ts'
+import { TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
+import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   type IdeasAction,
@@ -27,8 +32,25 @@ import {
   type IdeasSnapshot,
 } from './protocol.ts'
 
-/** How often the under-review poll re-reads the task-board card statuses. */
+/** How often the run poll re-reads the task-board card statuses. */
 const UNDER_REVIEW_POLL_MS = 30_000
+
+/** How long a launch request id replays its first outcome (idea #66). */
+const LAUNCH_DEDUPE_TTL_MS = 60_000
+/** Bounded launch replay cache (the ledger action cache is NOT reused: a launch is not a ledger mutation). */
+const MAX_LAUNCH_CACHE = 64
+
+/** Answer of a launch (idea #66): backend-neutral on purpose, so the future
+ *  direct-session backend can serve the same route with the same shape. */
+export interface IdeasLaunchResult {
+  ok: true
+  /** Backend-neutral run handle (v1: the mirrored TaskBoard card id). */
+  runId: string
+  /** TaskBoard card id, undefined for a backend that owns no card (v2). */
+  taskId: string
+  /** Always `running` on a fresh accept: the settle is written by the poll. */
+  runStatus: IdeaRunStatus
+}
 
 /** Apply response: the fresh snapshot, plus the generated export when asked. */
 export interface IdeasApplyResponse {
@@ -47,6 +69,8 @@ export class IdeasHostService {
   private readonly pendingMirrors: Promise<void>[] = []
   /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
   private readonly mirrorChains = new Map<string, Promise<void>>()
+  /** Launch replays: requestId -> {at, result} (idea #66, in-memory only). */
+  private readonly launchCache = new Map<string, { at: number; result: IdeasLaunchResult }>()
   private active = true
   private disposed = false
   private reviewPoll: ReturnType<typeof setInterval> | undefined
@@ -123,36 +147,40 @@ export class IdeasHostService {
   }
 
   /**
-   * Start the under-review poll: every `intervalMs` the mirror's task-card
-   * statuses are read, the LAST OBSERVED status of every open idea's linked
-   * card is recorded on the idea (a `failed` task leaves the idea in the
-   * backlog behind a "Task failed" badge), and any open idea whose card is
-   * `done` moves to `underReview` (the review gate). No-op when the mirror
-   * is absent or autoMirror is off.
+   * Start the run poll: every `intervalMs` the mirror's task-card statuses are
+   * read, the LAST OBSERVED status of every open idea's linked card is recorded
+   * on the idea (a `failed` task leaves the idea in the backlog behind a "Task
+   * failed" badge), the generic `runStatus` follows that same observation, and
+   * any open idea whose card is `done` moves to `underReview` (the review
+   * gate). No-op when the mirror is absent or autoMirror is off.
    */
   startUnderReviewPoll(intervalMs: number = UNDER_REVIEW_POLL_MS): void {
     if (this.reviewPoll !== undefined || this.mirror === undefined || !this.autoMirror) return
-    this.reviewPoll = setInterval(() => { void this.pollUnderReviewTransitions() }, intervalMs)
+    this.reviewPoll = setInterval(() => { void this.pollRunTransitions() }, intervalMs)
   }
 
   /**
-   * One poll pass (exposed for tests). Two jobs on the SAME status read:
+   * One poll pass (exposed for tests). Three jobs on the SAME status read:
    *  - record the last observed status of every open idea's linked card
    *    (follow-up work: the "Task failed" badge; the setter is a no-op on
    *    an unchanged observation, so the 30 s poll never churns the revision;
    *    a card missing from one probe keeps its last observation because the
    *    mirror self-heals a dangling link on the next write);
+   *  - feed the backend-neutral `runStatus` (idea #66) from that observation:
+   *    `running` / `done` / `failed` map straight across, and a card observed
+   *    OUTSIDE a run (back in `backlog`/`todo`) clears the stamp. Both setters
+   *    are no-ops on an unchanged value, so the idle poll stays free;
    *  - move an open idea whose card is `done` to `underReview` (the review
    *    gate - unchanged behavior).
    * Best-effort: any failure is ignored.
    */
-  async pollUnderReviewTransitions(): Promise<void> {
+  async pollRunTransitions(): Promise<void> {
     if (this.mirror === undefined || !this.autoMirror || this.disposed) return
     let statuses: Map<string, string> | undefined
     try {
       statuses = await this.mirror.fetchTaskStatuses()
     } catch (error) {
-      console.error(`[dsh-plugin-ideas-manager] under-review poll failed: ${error instanceof Error ? error.message : String(error)}`)
+      console.error(`[dsh-plugin-ideas-manager] run poll failed: ${error instanceof Error ? error.message : String(error)}`)
       return
     }
     if (statuses === undefined) return
@@ -164,6 +192,13 @@ export class IdeasHostService {
           this.ledger.setTaskBoardStatus(idea.id, observed)
         } catch (error) {
           console.error(`[dsh-plugin-ideas-manager] task status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+      if (observed !== undefined && observed !== idea.runStatus) {
+        try {
+          this.ledger.setRunStatus(idea.id, runStatusOf(observed))
+        } catch (error) {
+          console.error(`[dsh-plugin-ideas-manager] run status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
       if (observed !== 'done') continue
@@ -181,6 +216,51 @@ export class IdeasHostService {
     }
   }
 
+  /**
+   * Launch the idea's execution (idea #66), through the resolved execution
+   * backend. v1 is TaskBoard-only and therefore an AWAITED, ordered write: the
+   * three card writes run on the idea's mirror chain (so a queued create/update
+   * can never interleave between the model patch and the run), and the caller
+   * gets the outcome instead of a fire-and-forget log line. The response
+   * contract stays backend-neutral so a direct-session backend can answer the
+   * same route later.
+   *
+   * @throws when the plugin is disabled, the mirror is absent or off, the idea
+   *   is unknown, or the task-board refuses the run (the message carries its
+   *   own `body.error`, e.g. `task is already running or missing`).
+   */
+  async launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult> {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    if (this.mirror === undefined || !this.autoMirror) throw new TaskBoardMirrorDisabledError()
+    const captured = this.ledger.idea(ideaId)
+    if (captured === undefined) throw new Error('idea not found')
+    // A replayed request id answers the FIRST outcome without re-posting the
+    // run. This is NOT the ledger action cache: a launch is not a ledger
+    // mutation, and the cache is persisted with the document (idea #66 D1).
+    if (requestId !== undefined) {
+      const replay = this.launchCache.get(requestId)
+      if (replay !== undefined) {
+        if (Date.now() - replay.at <= LAUNCH_DEDUPE_TTL_MS) return replay.result
+        this.launchCache.delete(requestId)
+      }
+    }
+    const taskId = await this.enqueueChain(ideaId, async () => {
+      // Fresh read at execution time, same discipline as runMirror: a queued
+      // launch sees the idea as it is NOW, including a card id a previous op
+      // on this chain just bound.
+      const idea = this.ledger.idea(ideaId) ?? captured
+      const launched = await this.mirror!.launchTask(idea, model)
+      this.ledger.bindTaskBoardId(ideaId, launched)
+      this.ledger.setRunStatus(ideaId, 'running')
+      return launched
+    })
+    const result: IdeasLaunchResult = { ok: true, runId: taskId, taskId, runStatus: 'running' }
+    if (requestId !== undefined) {
+      this.rememberLaunch(requestId, result)
+    }
+    return result
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
@@ -190,10 +270,23 @@ export class IdeasHostService {
     }
     this.ledger.dispose()
     this.listeners.clear()
+    this.launchCache.clear()
   }
 
   private emit(): void {
     for (const listener of [...this.listeners]) listener()
+  }
+
+  /** Record a launch outcome for replay, bounded by TTL and entry count. */
+  private rememberLaunch(requestId: string, result: IdeasLaunchResult): void {
+    const now = Date.now()
+    this.launchCache.set(requestId, { at: now, result })
+    for (const [key, entry] of this.launchCache) {
+      if (now - entry.at > LAUNCH_DEDUPE_TTL_MS) this.launchCache.delete(key)
+    }
+    while (this.launchCache.size > MAX_LAUNCH_CACHE) {
+      this.launchCache.delete(this.launchCache.keys().next().value as string)
+    }
   }
 
   /**
@@ -231,15 +324,39 @@ export class IdeasHostService {
    * flushMirror waits for the whole chain, not just its tail link.
    */
   private enqueueMirror(ideaId: string, kind: MirrorKind, idea: IdeaRecord): void {
+    void this.enqueueChain(ideaId, async () => { await this.runMirror(kind, idea) })
+  }
+
+  /**
+   * Queue one operation on its idea's chain (idea #35): ops for the SAME idea
+   * id run strictly in submission order — a create always completes (and
+   * binds) before a following update even starts — while ops for different
+   * ideas still run concurrently. Mirror ops never reject (`runMirror`); a
+   * launch DOES, and its rejection travels back to the awaiting route. `run`
+   * is tracked from schedule time so flushMirror waits for the whole chain,
+   * not just its tail link.
+   *
+   * The cleanup is attached with `then(cleanup, cleanup)` on purpose: a
+   * `.finally()` copy of a rejected launch promise would itself be an unhandled
+   * rejection.
+   */
+  private enqueueChain<T>(ideaId: string, run: () => Promise<T>): Promise<T> {
     const previous = (this.mirrorChains.get(ideaId) ?? Promise.resolve()).catch(() => undefined)
-    const run = previous.then(async () => await this.runMirror(kind, idea))
-    this.mirrorChains.set(ideaId, run)
-    this.pendingMirrors.push(run)
-    void run.finally(() => {
-      const index = this.pendingMirrors.indexOf(run)
+    const chained = previous.then(run)
+    // `chainTail` never rejects, so both the chain map and the flush list hold
+    // a settled-safe promise while `chained` carries the real outcome to the
+    // awaiting caller. A `.finally()` copy of a rejected launch promise would
+    // itself be an unhandled rejection — hence the two-argument `then`.
+    const chainTail = chained.then(() => undefined, () => undefined)
+    this.mirrorChains.set(ideaId, chainTail)
+    this.pendingMirrors.push(chainTail)
+    const cleanup = (): void => {
+      const index = this.pendingMirrors.indexOf(chainTail)
       if (index >= 0) this.pendingMirrors.splice(index, 1)
-      if (this.mirrorChains.get(ideaId) === run) this.mirrorChains.delete(ideaId)
-    })
+      if (this.mirrorChains.get(ideaId) === chainTail) this.mirrorChains.delete(ideaId)
+    }
+    void chainTail.then(cleanup, cleanup)
+    return chained
   }
 
   private runMirror(kind: MirrorKind, captured: IdeaRecord): Promise<void> {
@@ -317,6 +434,30 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
       // boundary.
       return undefined
   }
+}
+
+/**
+ * The TaskBoard mirror cannot launch because it is not installed in this
+ * process, or because auto-mirror is off: a 409 the board renders as
+ * "TaskBoard integration is off", distinct from a 503 (the plugin is absent or
+ * stopped answering) so the human knows whether to fix a setting or install
+ * something.
+ */
+export class TaskBoardMirrorDisabledError extends Error {
+  constructor() {
+    super('task-board mirror is disabled')
+  }
+}
+
+/**
+ * Map a raw task-board status observation onto the backend-neutral run
+ * lifecycle (idea #66). The three RUNNING/DONE/FAILED values map one-to-one; a
+ * card sitting outside a run (backlog/todo/archived) means "no run in flight",
+ * which CLEARS the stamp so a re-armed card does not keep a stale `running`.
+ */
+function runStatusOf(observed: string): IdeaRunStatus | undefined {
+  if (observed === 'running' || observed === 'done' || observed === 'failed') return observed
+  return undefined
 }
 
 /** The mirrored idea of an action, for the POST-commit lookup. */

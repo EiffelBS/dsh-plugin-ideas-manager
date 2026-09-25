@@ -5,7 +5,7 @@
  * in for the former SSE stream (see `subscribe` for the connection-pool
  * rationale). Mirrors the dsh-task-board host-api discipline.
  */
-import { type IdeasAction, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import { type IdeasAction, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView, type LaunchResponse } from '../protocol.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
 export interface IdeasHostTransport {
     /**
@@ -59,6 +59,13 @@ export interface IdeasHostTransport {
     config?(): Promise<IdeasSettingsView>;
     /** Persist a settings patch (revision-fenced); rejects with 'settings-conflict'. */
     saveConfig?(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
+    /**
+     * Start the idea's execution (idea #66). Optional capability: a transport
+     * without it (an older host, a test fake) makes the board show no Launch
+     * affordance at all. Rejects with the host's own message so the reason a run
+     * was refused stays visible.
+     */
+    launch?(ideaId: string, model?: string): Promise<LaunchResponse>;
 }
 export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     state(): Promise<IdeasListSnapshot>;
@@ -74,6 +81,13 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>;
     config(): Promise<IdeasSettingsView>;
     saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
+    /**
+     * The launch route (idea #66) is a dedicated POST, not an action verb: the
+     * answer is a small `{ok, runId, runStatus}`, never a board snapshot, and it
+     * must not consume the persisted action dedupe cache. `readJson` already
+     * turns the host's `error` field into the rejection message.
+     */
+    launch(ideaId: string, model?: string): Promise<LaunchResponse>;
     private post;
     private request;
     /**

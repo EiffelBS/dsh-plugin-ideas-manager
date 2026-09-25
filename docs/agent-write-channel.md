@@ -21,6 +21,7 @@ an additive bounded read contract without changing the action protocol.
 | GET    | `/api/ideas/idea?id=<id>` | One full target/follow-up record |
 | POST   | `/api/ideas/action` | Apply ONE action, returns the resulting full snapshot (200)   |
 | GET    | `/api/ideas/events` | Revision-only stream + 15 s heartbeat                        |
+| POST   | `/api/ideas/launch` | Start the idea's execution (idea #66) — dedicated route, not a verb |
 
 ## Bounded read views
 
@@ -105,6 +106,42 @@ is the accepted trust boundary. Content-type must be `application/json`
 | `reorder`   | `orderedIds: string[]`                            | Re-derive per-(status, workspace) group ranks from the list order |
 | `import`    | `sourceId`, `ideas: IdeaRecord[]`                 | Bulk import (2 MiB limit, migration path) |
 | `export`    | `workspaceId?`                                    | Return generated `IDEAS.generated.md` / `IDEAS-ARCHIVE.generated.md` |
+
+## Launch route (idea #66) — NOT a verb
+
+`POST /api/ideas/launch` is a **dedicated route, not an `IdeasAction`**: a launch
+is not a ledger mutation, so it must not consume the persisted action dedupe
+cache, and it answers a small object instead of a whole board snapshot.
+
+| Field | Required | Meaning |
+| ----- | -------- | ------- |
+| `ideaId` | yes | The idea whose execution to start (unknown keys reject). |
+| `model`  | no  | `provider/model` target id, pinned on the card. **Omit** the key (or send a blank string, which normalizes to absent) to keep the session default — `null` is rejected. |
+| `requestId` | no | Replay key honoured for 60 s in memory: the same id answers the first outcome without re-posting the run. |
+| `initiator` | no | Free label, accepted for envelope parity. |
+
+Answer `200`: `{ ok: true, runId, taskId, runStatus: 'running' }` — `runId` is the
+backend-neutral run handle (`taskId` on the TaskBoard backend).
+
+What the host does, in order, on the idea's per-idea mirror chain: resolve
+(reuse `ensureTask`, the deterministic `idea-<id>` card) → `update{model}`
+(**model-only** — a content patch is refused once the card has run) → `run`.
+
+| Status | Error | Cause |
+| ------ | ----- | ----- |
+| `400` | `invalid-launch` | Body failed the exact-keys parser |
+| `400` | the task-board's own message (`task is already running or missing`, `archived task is read-only`, `confirmation-required: …`) | Run gate refused |
+| `403` | `forbidden` | Fence |
+| `404` | `not-found` | Unknown idea |
+| `405` / `413` / `415` | `method-not-allowed` / `body-too-large` / `json-required` | Route discipline |
+| `409` | `taskboard-mirror-disabled` | No TaskBoard mirror, or `autoMirror: false` |
+| `409` | `ideas plugin is disabled` | Master switch off |
+| `503` | `taskboard-unavailable` | The task-board plugin is absent or stopped answering |
+
+Read back the outcome through the usual snapshot: `runStatus` (generic run
+lifecycle, host-written) and `taskBoardStatus` (raw card observation) both land
+on the idea, and a `done` card moves the idea to `underReview` on the next poll
+tick.
 
 ## Rank semantics (relative per workspace)
 

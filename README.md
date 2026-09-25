@@ -131,6 +131,41 @@ absent the Ideas manager simply works standalone.
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a
 backlog opinion, not a board state.
 
+### Launching an execution from a card (idea #66)
+
+An open, workspace-bound idea whose TaskBoard card sits in `backlog`, `todo` or
+`failed` shows a green **Launch execution** button. The modal picks the model
+(empty = the session default), and the Host then performs, on the idea's mirror
+chain: card resolution (the deterministic `idea-<id>` card, rebuilt if deleted
+out-of-band) → a **model-only** patch → the `run` action. TaskBoard owns the run:
+it pins the model on a fresh session and queues the card prompt.
+
+- `POST /api/ideas/launch` with `{ requestId?, initiator?, ideaId, model? }`,
+  answering `{ ok, runId, taskId, runStatus: 'running' }`. It is a **dedicated
+  route, not an action verb**: a launch is not a ledger mutation and must not
+  consume the persisted action dedupe cache (a short in-memory window honours a
+  replayed `requestId` instead).
+- The model travels as `provider/model` on the TASK, never inside `run` — the
+  task-board accepts exactly `['kind','taskId']` there. The patch is model-only
+  on purpose: a content patch (title/description/prompt) is refused with
+  `task has already been executed` on a card that already ran.
+- Every refusal is visible, never swallowed: `409 taskboard-mirror-disabled`,
+  `503 taskboard-unavailable`, `404 not-found`, and `400` carrying the
+  task-board's own reason (`task is already running or missing`,
+  `archived task is read-only`, `confirmation-required: …`).
+- Lifecycle: the launch stamps `runStatus: 'running'`, the 30 s poll follows the
+  card and settles it to `done` / `failed` (a `failed` run leaves the idea
+  **open** behind the "Task failed" badge), and a `done` card opens the review
+  gate. Budget up to ~35 s between the session finishing and the idea moving.
+
+**Known divergences, by design.** After a run, any later mirror `update` fails
+(`task has already been executed` — the card content is frozen), so the spec no
+longer replicates to the card; mirrored cards never arm a cron schedule (a
+successful run would return to `todo` and never reach the review gate); and on a
+TaskBoard older than 0.3.x (the `desktop` profile's 0.1.18, which has no
+`/action` at all) the whole feature degrades to **no button**, never to an
+error.
+
 Card weight: the card `description` carries the idea's `summary` (<= 300
 chars, produced by the ideas-analyst; a derived body excerpt otherwise) while
 the full analysis rides the card `prompt` (the run instruction) and the ledger
@@ -175,6 +210,7 @@ markers), JSON envelopes `{ requestId, action, initiator? }`.
 | `GET /api/ideas/state?view=summary` | Bounded summary reads with workspace/id/number/status filters, pagination, selected fields, body-byte caps, and explicit truncation metadata |
 | `GET /api/ideas/state?view=detail` | Bounded field-selectable detail reads; use `GET /api/ideas/idea?id=<id>` for one complete raw record |
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
+| `POST /api/ideas/launch` | Start the idea's execution on its TaskBoard card `{ requestId?, ideaId, model? }` → `{ ok, runId, taskId, runStatus }` (not a ledger mutation: no dedupe-cache consumption) |
 | `GET /api/ideas/events` | SSE `{ revision }` |
 
 Every action is **deduplicated by `requestId`** (fresh id per call), and a
@@ -292,12 +328,14 @@ src/
   protocol.ts         # /api/ideas prefix, types, parseActionEnvelope (exactKeys)
   host-service.ts     # apply + mirror scheduling
   host-ledger.ts      # persisted ledger, dedupe cache, lock, internal bind
-  host-routes.ts      # state (+ list and bounded summary/detail views) / idea?id= / action / events + loopback guard
-  taskboard-bridge.ts # runtime feature-detect + one-way mirror (no hard import)
+  host-routes.ts      # state (+ list and bounded summary/detail views) / idea?id= / action / launch / events + loopback guard
+  taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb (no hard import)
+  run-prompt.ts       # the execution prompt shared by every launch backend (idea #66)
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline
-  core/ideas.ts       # IdeaRecord, statuses, tag validation
+  core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation
   client/             # sidebar entry + kanban + Priorities/Delivered + workspace scoping
+  client/launch.ts    # LaunchBackend resolution + the launch visibility predicate (idea #66)
 tests/                # vitest suites per module
   SKILL.md / README.md
 ```

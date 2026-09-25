@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { createIdea, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord } from './core/ideas.ts'
+import { createIdea, isIdeaRunStatus, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -111,6 +111,15 @@ function normalizeTaskBoardStatus(value: string | undefined): string | undefined
   return trimmed.slice(0, 32)
 }
 
+/**
+ * Normalize a persisted run status (idea #66): the closed union only — an
+ * unknown persisted value is DROPPED rather than stored, so a hand-edited
+ * ledger can never put the board in a state the run poll cannot reason about.
+ */
+function normalizeRunStatus(value: unknown): IdeaRunStatus | undefined {
+  return isIdeaRunStatus(value) ? value : undefined
+}
+
 /** Structural repair of a persisted idea list (mirrors the import repair). */
 function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
   const ideas: IdeaRecord[] = []
@@ -142,6 +151,10 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (taskBoardId !== undefined) idea.taskBoardId = taskBoardId
     const taskBoardStatus = normalizeTaskBoardStatus(typeof row.taskBoardStatus === 'string' ? row.taskBoardStatus : undefined)
     if (taskBoardStatus !== undefined) idea.taskBoardStatus = taskBoardStatus
+    const runStatus = normalizeRunStatus(row.runStatus)
+    if (runStatus !== undefined) idea.runStatus = runStatus
+    const runSessionId = typeof row.runSessionId === 'string' ? normalizeOptionalId(row.runSessionId) : undefined
+    if (runSessionId !== undefined) idea.runSessionId = runSessionId
     if (typeof row.followUpOfId === 'string' && row.followUpOfId.trim() !== '') idea.followUpOfId = row.followUpOfId.trim()
     const tags = normalizeTags(row.tags)
     if (tags !== undefined) idea.tags = tags
@@ -303,6 +316,29 @@ export class IdeasHostLedger {
     // `taskBoardStatus: undefined` is intentional: the JSON persist/clone
     // drops the key entirely, which is how a cleared observation is stored.
     this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, taskBoardStatus: next } : idea)
+    this.commit()
+    return true
+  }
+
+  /**
+   * Host-internal LAUNCH-LIFECYCLE stamp (idea #66): `running` is written by
+   * the launch route the moment the execution is accepted, the settled state by
+   * the run poll. Same system-field discipline as `bindTaskBoardId` (the
+   * protocol gate never accepts `runStatus` from the wire) and the same
+   * no-op-on-unchanged rule, so an idle poll cannot churn the revision.
+   *
+   * `undefined` CLEARS the stamp (a card observed outside a run, e.g. back in
+   * `backlog`): the JSON persist/clone drops the key entirely, exactly like a
+   * cleared `taskBoardStatus`.
+   *
+   * @returns true when the document changed and was committed.
+   */
+  setRunStatus(ideaId: string, status: IdeaRunStatus | undefined): boolean {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const current = this.document.ideas.find(idea => idea.id === ideaId)
+    if (current === undefined) return false
+    if (current.runStatus === status) return false
+    this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, runStatus: status } : idea)
     this.commit()
     return true
   }

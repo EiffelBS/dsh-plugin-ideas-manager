@@ -19,6 +19,7 @@ import {
   type IdeasSnapshot,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
+  type LaunchResponse,
 } from '../protocol.ts'
 import type { IdeaRecord } from '../core/ideas.ts'
 
@@ -88,6 +89,13 @@ export interface IdeasHostTransport {
   config?(): Promise<IdeasSettingsView>
   /** Persist a settings patch (revision-fenced); rejects with 'settings-conflict'. */
   saveConfig?(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>
+  /**
+   * Start the idea's execution (idea #66). Optional capability: a transport
+   * without it (an older host, a test fake) makes the board show no Launch
+   * affordance at all. Rejects with the host's own message so the reason a run
+   * was refused stays visible.
+   */
+  launch?(ideaId: string, model?: string): Promise<LaunchResponse>
 }
 
 export class HttpIdeasHostTransport implements IdeasHostTransport {
@@ -129,6 +137,27 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ patch, ...(expectedRevision === undefined ? {} : { expectedRevision }) }),
+    })
+  }
+
+  /**
+   * The launch route (idea #66) is a dedicated POST, not an action verb: the
+   * answer is a small `{ok, runId, runStatus}`, never a board snapshot, and it
+   * must not consume the persisted action dedupe cache. `readJson` already
+   * turns the host's `error` field into the rejection message.
+   */
+  async launch(ideaId: string, model?: string): Promise<LaunchResponse> {
+    return await this.request<LaunchResponse>(`${IDEAS_API_PREFIX}/launch`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        requestId: uuid(),
+        initiator: 'plugin:ideas-manager:launch',
+        ideaId,
+        // Omit the key for "inherit the session default": null is rejected by
+        // the wire parser and an empty string is not the same request.
+        ...(model === undefined || model === '' ? {} : { model }),
+      }),
     })
   }
 

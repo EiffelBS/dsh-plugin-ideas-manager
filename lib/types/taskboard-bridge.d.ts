@@ -9,10 +9,11 @@
  * Mapping (frozen design decision): idea create -> task create + move to
  * `backlog` (the card is `read-only`); idea update -> task update; idea
  * decline / move-to-archived -> task archive; idea restore -> task restore;
- * idea delete -> no-op (the card outlives the idea — closing the loop to
- * `done` is a manual run, never automated). Every failure is logged and the
- * ideas ledger stays the source of truth: the mirror never rolls back a
- * committed idea mutation.
+ * idea delete -> no-op (the card outlives the idea). Every failure is logged
+ * and the ideas ledger stays the source of truth: the mirror never rolls back
+ * a committed idea mutation. `done` is RUNNER-OWNED, and idea #66 added the
+ * one verb that reaches it: a launch is an explicit human action
+ * (`launchTask`), never a side effect of an idea mutation.
  *
  * Duplicate guard (idea #35 — "update must never mean create"): card ids are
  * DETERMINISTIC (`idea-` + idea.id, see mirrorCardIdFor), a bound idea is
@@ -50,6 +51,17 @@ export type TaskBoardAction = {
 } | {
     kind: 'restore';
     taskId: string;
+}
+/**
+ * Start an execution of the card (idea #66). The task-board accepts EXACTLY
+ * `['kind','taskId']` on this kind — the model can NOT travel with the run
+ * (it is a task field, pinned by the runner through `session.selectModel`),
+ * so {@link TaskBoardMirror.launchTask} patches `model` first and posts the
+ * bare `run` after it.
+ */
+ | {
+    kind: 'run';
+    taskId: string;
 };
 /** Local mirror of the task-board action envelope. */
 export interface TaskBoardActionEnvelope {
@@ -67,6 +79,8 @@ export interface TaskBoardNewTaskInput {
         name: string;
         promptPrefix?: string;
     }[];
+    /** `provider/model` target id; absent = the launched session's own default. */
+    model?: string;
 }
 /** Local mirror of the task update patch — only the fields ideas control. */
 export interface TaskBoardTaskPatch {
@@ -78,6 +92,13 @@ export interface TaskBoardTaskPatch {
         name: string;
         promptPrefix?: string;
     }[] | null;
+    /**
+     * `provider/model` target id. NOT a content field (`title`/`description`/
+     * `prompt` are): a model-only patch stays editable after the first execution
+     * and does not touch `permissionConfirmedAt`, which is what lets a launch
+     * re-pin the model on a card that already ran (idea #66).
+     */
+    model?: string;
 }
 /** Local mirror of a task-board task row — only the fields the poll reads. */
 export interface TaskBoardTaskLite {
@@ -225,28 +246,53 @@ export declare class TaskBoardMirror {
     mirrorArchive(idea: IdeaRecord): Promise<string>;
     /** Idea restore -> task restore (no-op when the idea was never bound). */
     mirrorRestore(idea: IdeaRecord): Promise<void>;
+    /**
+     * Launch the idea's execution on its TaskBoard card (idea #66): the human
+     * trigger turns the board into a starting point of execution, not only a
+     * capture target.
+     *
+     * Three writes, in this exact order and on the caller's serialized chain:
+     *  1. `ensureTask` — reuses the whole duplicate guard, so the card is the
+     *     deterministic `idea-<id>` one and is (re)created when it was deleted
+     *     out-of-band. A launch is never a second card.
+     *  2. `update{model}` — MODEL-ONLY patch, and only when a model was chosen.
+     *     Never `taskPatch()`: that sends title/description/prompt, which the
+     *     task-board rejects with `task has already been executed` on any card
+     *     that already ran. A model-only patch stays legal forever, and the
+     *     `run` action itself cannot carry the model (exact keys).
+     *  3. `run` — the bare envelope; the task-board pins the model on the fresh
+     *     session and queues the shared run prompt.
+     *
+     * Throws `TaskBoardUnavailableError` when the plugin is absent and a plain
+     * Error carrying the task-board's own `body.error` message on a gate refusal
+     * (`task is already running or missing`, `archived task is read-only`,
+     * `confirmation-required: ...`, `task board is disabled`) — the caller
+     * surfaces it instead of swallowing it.
+     *
+     * @returns the launched task id.
+     */
+    launchTask(idea: IdeaRecord, model?: string): Promise<string>;
     /** The task-board plugin is not registered or did not answer. */
     get isUnavailable(): boolean;
     /** One ensureTask decision, always visible in the service log (idea #35). */
     private decision;
     /**
-     * Create the card at `taskId` (the DETERMINISTIC mirrorCardIdFor id — never
-     * a fresh uuid) and move it to backlog. The id is passed in rather than
-     * minted so no code path can accidentally re-introduce a random id.
+     * The executable prompt, shared with the direct-session launch backend
+     * (see src/run-prompt.ts). `model` is intentionally NOT part of the card
+     * content: the card is created with no model, so the run starts on the
+     * session default unless a launch re-pins it through a model-only patch.
      */
     private createCard;
     private taskPatch;
     /**
-     * The executable prompt = the tag prompt lines, one per line; when no tag
-     * carries a prompt line, a mission prompt derived from the card itself.
-     * The fallback is mandatory: Task Board launches a run with
-     * `task.prompt !== '' ? task.prompt : task.title` (the description is never
-     * injected into the session), so an empty prompt would ship the card's bare
-     * TITLE to the launched agent — unexploitable for the common idea whose tags
-     * are all plain names. The body is the captured spec, so it becomes the run
-     * instruction instead.
+     * Post one action envelope and surface the task-board's own refusal.
+     *
+     * Error relay (idea #66): the reply body used to be dropped and only the
+     * status line read, which made every run gate opaque (`400 task is already
+     * running or missing` looked exactly like a malformed request). The body
+     * carries `{error}` and sometimes `{code}`; both are folded into the thrown
+     * message so the launch route can hand a readable reason to the board.
      */
-    private taskPrompt;
     private post;
 }
 /** Thrown when the task-board plugin is absent; the service logs and moves on. */

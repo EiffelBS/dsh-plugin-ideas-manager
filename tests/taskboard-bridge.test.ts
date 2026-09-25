@@ -497,7 +497,7 @@ describe('IdeasHostService mirror integration', () => {
     ledger.bindTaskBoardId('idea-1', 'task-9')
     ledger.bindTaskBoardId('idea-2', 'task-8')
     const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
     // Only the idea whose card reached done crossed the review gate; the one
     // still in backlog stays open.
     expect(service.snapshot().ideas.find(idea => idea.id === 'idea-1')!.status).toBe('underReview')
@@ -514,7 +514,7 @@ describe('IdeasHostService mirror integration', () => {
     ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
     ledger.bindTaskBoardId('idea-1', 'task-9')
     const off = new IdeasHostService({ ledger, mirror, autoMirror: false })
-    await off.pollUnderReviewTransitions()
+    await off.pollRunTransitions()
     expect(off.snapshot().ideas[0]!.status).toBe('open')
     off.dispose()
   })
@@ -527,7 +527,7 @@ describe('IdeasHostService mirror integration', () => {
     ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
     ledger.bindTaskBoardId('idea-1', 'task-9')
     const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
     const idea = service.snapshot().ideas.find(row => row.id === 'idea-1')!
     // A failed run delivered nothing: the idea stays open (the review gate is
     // for finished work) and only the observation is recorded.
@@ -547,18 +547,18 @@ describe('IdeasHostService mirror integration', () => {
     ledger.bindTaskBoardId('idea-1', 'task-9')
     const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
 
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
     const afterFailure = service.snapshot().revision
     expect(service.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
 
     // Idle polls with the same observation: no ledger write, no revision churn.
-    await service.pollUnderReviewTransitions()
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
+    await service.pollRunTransitions()
     expect(service.snapshot().revision).toBe(afterFailure)
 
     // The task is retried and goes back to backlog: the observation follows.
     transport.stateTasks = [{ id: 'task-9', status: 'backlog' }]
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
     expect(service.snapshot().ideas[0]!.taskBoardStatus).toBe('backlog')
     expect(service.snapshot().ideas[0]!.status).toBe('open')
     expect(service.snapshot().revision).toBeGreaterThan(afterFailure)
@@ -573,11 +573,11 @@ describe('IdeasHostService mirror integration', () => {
     ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
     ledger.bindTaskBoardId('idea-1', 'task-9')
     const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
 
     // A transient probe gap (task-board hiccup) must not blink the badge away.
     transport.stateTasks = []
-    await service.pollUnderReviewTransitions()
+    await service.pollRunTransitions()
     expect(service.snapshot().ideas[0]!.taskBoardStatus).toBe('failed')
     service.dispose()
   })

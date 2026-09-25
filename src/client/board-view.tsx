@@ -28,6 +28,7 @@ import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.t
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import type { AiCaptureInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
 import { matchSessionSelection } from './session-queue.ts'
+import { canLaunch, modelTargetIdOf } from './launch.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
@@ -138,14 +139,29 @@ function IconFollowUp() {
   )
 }
 
-/** Rotate-cw: the re-analyze affordance (a fresh analyst run over the card). */
-function IconReanalyze() {
+/** Rotate-cw: the re-analyze affordance (a fresh analyst run over the card). */function IconReanalyze() {
   return (
     <svg {...actionIcon}>
       <polyline points="23 4 23 10 17 10" />
       <polyline points="1 20 1 14 7 14" />
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
       <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  )
+}
+
+/**
+ * Play: the launch affordance of idea #66 (start the idea's execution on its
+ * TaskBoard card). The only icon painted GREEN in the whole action row — it is
+ * the one card action that makes the agent work happen, not just the card
+ * move. `currentColor` everywhere else so a skin/dark-mode change still wins;
+ * the fill is explicit here, with a matching drop shadow for contrast on light
+ * cards.
+ */
+function IconPlay() {
+  return (
+    <svg {...actionIcon} style={{ color: 'var(--dsh-ideas-run, #16a34a)' }} fill="currentColor" stroke="none">
+      <path d="M6 3.6a1 1 0 0 1 1.52-.85l11.2 7.4a1 1 0 0 1 0 1.7l-11.2 7.4A1 1 0 0 1 6 18.4z" />
     </svg>
   )
 }
@@ -932,8 +948,80 @@ function ReanalyzeModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   )
 }
 
-type DragState = { id: string; source: IdeaStatus } | undefined
-/** Drop target of the kanban drag: the column plus the insertion point
+/**
+ * Launch confirm modal (idea #66): the human starts the idea's execution, WITH
+ * the model choice. The run is TaskBoard-owned (the Host patches the card's
+ * `model` then posts `run`; the runner pins the model on a fresh session and
+ * queues the shared run prompt), so the modal's only real choice is WHICH model
+ * — '' keeps the session default, the exact cascade used by the capture and
+ * re-analyze modals.
+ *
+ * A refusal (already running, archived card, task-board absent) is shown HERE
+ * and keeps the modal open: the reason is the whole value of an explicit
+ * launch, so it is never reduced to a silent log line.
+ */
+function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
+  client: IdeasClient
+  idea: ReanalyzeSource
+  /** Display title of the idea's workspace (context line). */
+  workspaceTitle: string
+  /** Start the run; resolves once accepted (the board then closes the modal). */
+  onLaunch: (idea: ReanalyzeSource, model: ModelChoice | undefined) => Promise<void>
+  onClose: () => void
+}) {
+  const picker = useAnalystModelPicker(client.sessionLauncher)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('keydown', onKey, true) }
+  }, [onClose])
+  const start = (): void => {
+    setPending(true)
+    setError(undefined)
+    onLaunch(idea, picker.selectedModel).catch((launchError: unknown) => {
+      setPending(false)
+      setError(launchError instanceof Error ? launchError.message : String(launchError))
+    })
+  }
+  return (
+    <div className={classes.overlay} onClick={onClose}>
+      <div className={classes.modal} onClick={event => { event.stopPropagation() }}>
+        <h3 className={classes.modalTitle}>{t('launch.title')}</h3>
+        <div className={classes.field}>
+          <span className={classes.detailMeta}>
+            {idea.ideaNumber !== undefined ? `#${idea.ideaNumber} — ` : ''}{idea.title}
+          </span>
+        </div>
+        <div className={classes.field}>
+          <div className={classes.fieldHint}>{t('launch.hint', { workspace: workspaceTitle })}</div>
+        </div>
+        {picker.modelChoices.length > 0 && <ModelPickerField picker={picker} disabled={pending} />}
+        {error !== undefined && <div className={classes.error}>{error}</div>}
+        <div className={classes.modalActions}>
+          <button type="button" className={classes.ghostButton} disabled={pending} onClick={onClose}>{t('launch.cancel')}</button>
+          <button
+            type="button"
+            className={classes.primaryButton}
+            disabled={pending}
+            onClick={start}
+            data-dsh-ideas-launch-submit=""
+          >
+            {t('launch.submit')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type DragState = { id: string; source: IdeaStatus } | undefined/** Drop target of the kanban drag: the column plus the insertion point
  *  (beforeId undefined = append at the column end), and the hovered card +
  *  half that drives the accent insertion line while dragging. */
 type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; half?: 'before' | 'after' } | undefined
@@ -1143,6 +1231,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // The open idea a Re-analyze confirm modal is raised for (idea #30 flow):
   // a list row from the card, or the full record from the edit modal.
   const [reanalyzing, setReanalyzing] = useState<ReanalyzeSource | undefined>(undefined)
+  // The open idea a Launch confirm modal is raised for (idea #66): a launch is
+  // an explicit human action, never a side effect of a card mutation.
+  const [launching, setLaunching] = useState<ReanalyzeSource | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   // Lifecycle confirmation (settings option confirmLifecycle): the Deliver /
   // Approve / Decline button armed for an in-place Yes/No confirmation.
@@ -1508,6 +1599,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     })
     setReanalyzing(undefined)
   }
+
+  /**
+   * Idea #66: hand the launch to the Host, which owns the mirrored card
+   * (ensure card -> model-only patch -> run). The picked model becomes the
+   * task-board's `provider/model` target; no pick keeps the session default.
+   * The modal closes on success; a refusal keeps it open with the message.
+   */
+  const launchIdea = (idea: ReanalyzeSource, model: ModelChoice | undefined): Promise<void> =>
+    client.launchIdea(idea.id, modelTargetIdOf(model)).then(() => { setLaunching(undefined) })
 
   return (
     <div
@@ -1910,6 +2010,19 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('card.reanalyze')}
                                 </button>
                               )}
+                              {idea.status === 'open' && canLaunch(idea) && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  title={t('card.launchHint')}
+                                  data-dsh-ideas-launch=""
+                                  onClick={() => { setLaunching(idea) }}
+                                >
+                                  <IconPlay />
+                                  {t('card.launch')}
+                                </button>
+                              )}
                               {idea.status === 'open' && (
                                 <LifecycleAction
                                   label={t('card.deliver')}
@@ -2093,6 +2206,15 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       )}
       {followUp !== undefined && (
         <FollowUpModal client={client} parent={followUp} onClose={() => { setFollowUp(undefined) }} />
+      )}
+      {launching !== undefined && (
+        <LaunchModal
+          client={client}
+          idea={launching}
+          workspaceTitle={workspaceTitle(launching.workspaceId ?? '')}
+          onLaunch={launchIdea}
+          onClose={() => { setLaunching(undefined) }}
+        />
       )}
     </div>
   )
