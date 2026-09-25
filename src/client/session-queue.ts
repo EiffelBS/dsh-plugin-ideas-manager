@@ -13,6 +13,8 @@
  * and the board keeps the plain manual Create for workspace-targeted captures.
  */
 
+import type { IdeaStatus } from '../core/ideas.ts'
+
 /**
  * The captured idea handed to the analysing session. The human's priority
  * opinion fields (value/effort/rationale/rank) are optional: the analyst
@@ -68,10 +70,14 @@ export interface ReanalyzeInput {
   workspaceTitle: string
   /** The stored idea id the analyst MUST update (never create). */
   ideaId: string
-  /** The stable "#N" human reference of the idea (context only). */
+  /** The stable "#N" human reference of the idea (resolved and verified by the analyst). */
   ideaNumber?: number
   title: string
-  body: string
+  /** Compact stored metadata; the analyst still reloads it from the list projection first. */
+  summary?: string
+  status: 'open' | 'underReview' | 'archived' | 'declined'
+  /** Mirrored TaskBoard card id, when one exists. */
+  taskBoardId?: string
   tags: readonly string[]
   /** Current stored priority opinion (the analyst re-decides them). */
   value?: number
@@ -243,30 +249,41 @@ ${opinionFields}`
  * rank-churn rules).
  */
 export function buildReanalysisPrompt(input: ReanalyzeInput, origin: string): string {
-  const tagsHuman = input.tags.length === 0 ? '—' : input.tags.join(', ')
+  const tagsHuman = input.tags.length === 0 ? "—" : input.tags.join(", ")
+  const summary = input.summary ?? "—"
+  const taskBoardLink = input.taskBoardId ?? "—"
   const opinion = [
-    `value: ${input.value === undefined ? 'not set' : String(input.value)} (scale 1..3)`,
-    `effort: ${input.effort === undefined ? 'not set' : String(input.effort)} (scale 1..3)`,
-    `rationale: ${input.rationale ?? 'not set'}`,
+    `value: ${input.value === undefined ? "not set" : String(input.value)} (scale 1..3)`,
+    `effort: ${input.effort === undefined ? "not set" : String(input.effort)} (scale 1..3)`,
+    `rationale: ${input.rationale ?? "not set"}`,
   ].join('\n')
+
   return `You are the ideas analyst of the DSH Ideas board, for the workspace "${input.workspaceTitle}" (workspaceId ${input.workspaceId}). This is a RE-ANALYZE run: a human asked you to re-process an idea that ALREADY exists on the board. Do the work now — no clarifying questions.
 
-Load the skill named "ideas-analyst" from the available_skills catalog and follow it: it specifies the analysis methodology, the priority opinion and rank, the final report, AND the full write-channel contract. The only things the skill does not know are the server origin — it is ${origin} — and the re-analysis overrides below, which take precedence for this run.
+Load the skill named "ideas-analyst" from the available_skills catalog and follow it. It is the single source of the analysis methodology, bounded context-loading workflow, handoff format, escalation contract, final report, and write-channel contract.
 
 === Re-analysis overrides (precedence over the skill for this run) ===
 - Envelope initiator: "plugin:ideas-manager:ai-reanalyze" (NOT ai-capture).
 - NEVER use the create verb. The idea already exists.
-- You MUST issue an update verb with ideaId ${input.ideaId} (your new title, your full markdown analysis body, your summary, your tags) and then a triage verb on the SAME ideaId.
-- Only re-triage the rank when your analysis actually justifies a different position; an unjustified re-rank churns the backlog. The rank history matters: keep ideaNumber, createdAt and the existing rank unless the content justifies moving it.
-- Do NOT re-analyze again or launch anything recursive: this run was explicitly triggered by a human; report and stop.
+- You MUST issue an update verb with ideaId ${input.ideaId} (your new title, full body, your summary, and tags), then triage the SAME ideaId.
+- Keep the existing rank unless the fresh analysis justifies a change.
+- Do NOT re-analyze again or launch anything recursive.
 
-=== The idea as currently stored (#${input.ideaNumber ?? '?'}, ideaId ${input.ideaId}) ===
-Title: ${input.title}
-Body (the stored analysis — you replace it with your fresh one):
-${input.body}
-Tags (current): ${tagsHuman}
+=== Exact target selector ===
+- ideaId: ${input.ideaId}
+- ideaNumber: ${input.ideaNumber === undefined ? "not assigned" : `#${input.ideaNumber}`}
+- workspaceId: ${input.workspaceId}
+- title hint: ${input.title}
+- status hint: ${input.status}
+- summary hint: ${summary}
+- tags hint: ${tagsHuman}
+- TaskBoard link: ${taskBoardLink}
 
-=== The stored priority opinion (re-decide them, and justify the final choice) ===
+Load summary metadata first with GET ${origin}/api/ideas/state?view=list. Resolve this target by the exact ideaId, then verify the supplied ideaNumber (when present), workspaceId, and status before loading anything full. If any identity check fails, follow the skill escalation contract and do not write.
+
+Then fetch ONLY the target with GET ${origin}/api/ideas/idea?id=${encodeURIComponent(input.ideaId)}. Analyze its complete current body. Load full bodies only for directly related follow-ups identified by followUpOfId; never load the full /state snapshot and never load an unrelated body.
+
+=== Stored priority opinion (re-decide it and justify the final choice) ===
 ${opinion}`
 }
 

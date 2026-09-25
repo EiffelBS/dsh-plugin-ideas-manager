@@ -237,7 +237,9 @@ describe('reanalysis launch', () => {
         ideaId: 'idea-42',
         ideaNumber: 7,
         title: 'Stored title',
-        body: 'Stored analysis',
+        summary: 'Stored compact summary',
+        status: 'open',
+        taskBoardId: 'task-42',
         tags: ['a', 'b'],
         value: 2,
         effort: 3,
@@ -254,8 +256,12 @@ describe('reanalysis launch', () => {
     expect(prompt).toContain('your summary')
     expect(prompt).toContain('#7')
     expect(prompt).toContain('Stored title')
-    expect(prompt).toContain('Stored analysis')
-    expect(prompt).toContain('Tags (current): a, b')
+    expect(prompt).not.toContain('Stored analysis')
+    expect(prompt).toContain('summary hint: Stored compact summary')
+    expect(prompt).toContain('tags hint: a, b')
+    expect(prompt).toContain('TaskBoard link: task-42')
+    expect(prompt).toContain('state?view=list')
+    expect(prompt).toContain('idea?id=idea-42')
     expect(prompt).toContain('value: 2')
     expect(prompt).toContain('Load the skill named "ideas-analyst"')
   })
@@ -297,7 +303,7 @@ describe('reanalysis launch', () => {
       workspaceTitle: 'Alpha',
       ideaId: 'idea-42',
       title: 'Stored title',
-      body: 'Stored analysis',
+      status: 'open',
       tags: [],
     })
     return result.then(accepted => {

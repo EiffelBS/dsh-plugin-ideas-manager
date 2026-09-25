@@ -15,6 +15,8 @@ REST surface, validated end-to-end by the Phase 2 spike (see below).
 | Method | Path            | Purpose                                                        |
 | ------ | --------------- | -------------------------------------------------------------- |
 | GET    | `/api/ideas/state`  | Full snapshot `{ revision, ideas: IdeaRecord[] }`, `no-store` |
+| GET    | `/api/ideas/state?view=list` | Summary-first list projection (metadata + body excerpt) |
+| GET    | `/api/ideas/idea?id=<id>` | One full target/follow-up record |
 | POST   | `/api/ideas/action` | Apply ONE action, returns the resulting snapshot (200)        |
 | GET    | `/api/ideas/events` | SSE stream: full snapshot per event + 15 s heartbeat           |
 
@@ -128,7 +130,10 @@ session instead of creating it manually:
    service keeps the plain manual Create.
 3. The launch prompt is MINIMAL: it carries only what the skill cannot know —
    the captured idea, the workspace (title + id), the priority hints, and the
-   server **origin** (dynamic per instance). The analysis methodology AND the
+   server **origin** (dynamic per instance). Re-analysis prompts carry compact
+   stored metadata plus an exact id selector, never the stored body. The analyst
+   then uses `state?view=list` and single-idea reads under the bounded workflow
+   in `docs/idea-64-summary-first-context.md`. The analysis methodology AND the
    full write-channel contract live in the **`ideas-analyst` skill** the Host
    installs at `<dshHome>/skills/ideas-analyst/SKILL.md` (user-dsh root, rank
    400 — every session sees it, whatever the workspace). The session loads it

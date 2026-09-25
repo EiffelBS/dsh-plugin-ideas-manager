@@ -74,7 +74,7 @@ describe('buildAnalysisPrompt', () => {
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('plugin:ideas-manager:ai-capture')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('an array of\n  plain strings is REJECTED with 400 invalid-action')
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('[Text.Encoding]::UTF8.GetBytes')
-    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('GET <origin>/api/ideas/state')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('GET <origin>/api/ideas/state?view=list')
     // Report language follows the requester; never hard-coded.
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain("in the requester's language")
     expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('in French')

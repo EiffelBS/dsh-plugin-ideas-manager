@@ -1474,18 +1474,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     && idea.workspaceId !== undefined
     && catalog.some(entry => entry.workspaceId === idea.workspaceId && entry.knownToApp)
 
-  /** Stamp the audit cycle on the Host first (the prior analysis is preserved
-   *  BEFORE the agent overwrites the card), then launch the fresh analyst
-   *  session with the model picked in the confirm modal (undefined = session
-   *  default). The full body is fetched BEFORE the stamp: the analyst prompt
-   *  carries the whole analysis target (a list row holds only an excerpt);
-   *  a failed fetch or stamp aborts the run; a failed launch leaves the
-   *  stamped card untouched (the human can retry the run). */
+  /** Stamp the audit cycle first so the Host preserves the current body as
+   *  the prior-analysis audit, then launch with summary metadata only. */
   const reanalyzeIdea = (idea: ReanalyzeSource, model: ModelChoice | undefined): void => {
     const launcher = client.sessionLauncher
     if (launcher === undefined || idea.workspaceId === undefined) return
     const run = async (): Promise<void> => {
-      const full = await client.fetchIdea(idea)
       await client.reanalyzeIdea(idea.id)
       const input: ReanalyzeInput = {
         workspaceId: idea.workspaceId!,
@@ -1493,7 +1487,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         ideaId: idea.id,
         ...(idea.ideaNumber !== undefined ? { ideaNumber: idea.ideaNumber } : {}),
         title: idea.title,
-        body: full.body,
+        ...(idea.summary !== undefined ? { summary: idea.summary } : {}),
+        status: idea.status,
+        ...(idea.taskBoardId !== undefined ? { taskBoardId: idea.taskBoardId } : {}),
         tags: (idea.tags ?? []).map(tag => tag.name),
         ...(idea.value === undefined ? {} : { value: idea.value }),
         ...(idea.effort === undefined ? {} : { effort: idea.effort }),

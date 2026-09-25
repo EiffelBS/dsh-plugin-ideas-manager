@@ -92,22 +92,50 @@ skill.
 7. RATIONALE - one or two sentences justifying the VALUE, the EFFORT and the
    RANK together.
 
+## Bounded context loading (idea #64)
+
+The board can contain long analyses. Context loading is summary-first and the
+analyst MUST follow this order:
+
+1. GET <origin>/api/ideas/state?view=list. This is the metadata index. Resolve
+   the target explicitly by idea id when one is supplied, otherwise by the
+   capture workspace plus the draft intent. A target is identified by its id,
+   idea number, title, status, workspace, tags, summary, and TaskBoard link.
+2. Dedupe using summary metadata for open AND archived ideas in the target
+   workspace only. Never compare against another workspace or the generic group.
+3. Fetch the complete body with GET <origin>/api/ideas/idea?id=<target-id>.
+   This target body is mandatory: fully analyze it before writing anything.
+4. From the list rows, select only direct follow-ups where followUpOfId points
+   to the target (and the target's own parent when followUpOfId is present).
+   Fetch each selected full body with the same single-idea endpoint. Do not load
+   the full /state snapshot and do not fetch unrelated bodies.
+5. Follow only file/doc paths explicitly cited by the target or selected
+   follow-ups. Read selectively, record the path, and stop when the evidence
+   needed for the decision is established. Do not crawl the workspace.
+
+Before analysis, write a bounded handoff note containing: target identifiers;
+decisions already supported by evidence; exact evidence paths; and unresolved
+questions. Keep it concise enough to remain useful in the persisted analysis.
+Never paste unrelated bodies into this note.
+
+Escalate explicitly and auditably when the target cannot be resolved, a fetched
+body conflicts with the list metadata, the body is missing, or required evidence
+needs broad/unbounded loading. In the final report, state ESCALATED, the exact
+check that failed, the identifiers/paths inspected, what remains unresolved, and
+the smallest safe next action. Do not guess or write a partial analysis.
+
 ## The write channel
 
-The launch prompt that loaded this skill tells you the exact **server origin**
-(it is the address of the DSH web server hosting the board, e.g.
-http://127.0.0.1:3101 - it varies per instance, so take it from the prompt).
-Everything else about the channel is fixed and documented here. THIS contract
-is authoritative - do not go read plugin sources.
+The launch prompt tells you the exact server origin. The full, backward-
+compatible GET <origin>/api/ideas/state contract remains available for backups
+and tooling, but the analyst MUST use ?view=list plus single-idea reads as
+described above.
 
 Every request must carry:
 
     Origin: <the server origin from the prompt>
     Sec-Fetch-Site: same-origin
     Content-Type: application/json
-
-GET <origin>/api/ideas/state
--> 200 { "revision": <int>, "ideas": [ <IdeaRecord>... ] }
 
 POST <origin>/api/ideas/action
 Envelope, exact keys:
@@ -125,47 +153,33 @@ CREATE:
   IMPORTANT: "tags" is an array of OBJECTS { "name": "..." } - an array of
   plain strings is REJECTED with 400 invalid-action.
 
-UPDATE (only when you merge the capture into an existing duplicate):
+UPDATE (when merging a capture, and always for re-analysis):
   { "kind": "update", "ideaId": "<id>", "patch": {
       "title": "<final title>", "body": "<your analysis>",
       "summary": "<your at-most-300-char abstract>",
       "tags": [ { "name": "..." } ] } }
 
-TRIAGE (priority opinion + rank):
+TRIAGE:
   { "kind": "triage", "ideaId": "<id>", "patch": {
       "value": <1|2|3>, "effort": <1|2|3>, "rank": <position>, "rationale": "<one or two sentences>" } }
-  Omit "rank" from the patch when the idea is not open.
+  Omit rank when the idea is not open.
 
 Procedure:
 
-1. GET the state. Dedupe: compare the INTENT against the open AND archived
-   ideas of THIS workspace ONLY (ideas of other workspaces and of the
-   "no workspace" group are out of scope). On a match: UPDATE that idea with
-   your final title/analysis/summary/tags, then TRIAGE it - never create a
-   duplicate. Otherwise: CREATE, then TRIAGE the created card.
-   If the GET /api/ideas/state response is too large to display in one output,
-   re-run it through a compact projection (only id, workspaceId, status, rank,
-   ideaNumber, title) so you can still deduplicate and rank against the full
-   open backlog.
-2. Each action uses a FRESH requestId (a replayed requestId is deduped - a
-   no-op).
-3. The action 200 response returns the whole board snapshot, not just your
-   card. Read the created/updated card's "id" and its "ideaNumber" from that
-   snapshot, and re-read GET /api/ideas/state afterwards to confirm the stored
-   value/effort/rank/rationale actually landed.
+1. Load summary metadata, resolve/dedupe, then fetch the target and only direct
+   follow-up bodies. Fully analyze the resolved target before any write.
+2. Each action uses a FRESH requestId. Preserve the action contract, full body
+   replacement, analysis audit, persistence, dedupe, and public ledger behavior.
+3. CREATE when no duplicate exists, or UPDATE the resolved duplicate. Then
+   TRIAGE the same card. Use the returned id and ideaNumber and re-read the
+   single target to confirm the stored body, summary, tags, value, effort, rank,
+   and rationale landed.
 
 Rules:
 
-- Never read or modify an idea of another workspace; never touch the
-  "no workspace" group.
-- The channel refuses requests missing the headers above (403), and bodies
-  over 64 KiB.
-- When you use PowerShell against the channel, send each JSON body as UTF-8
-  bytes ([Text.Encoding]::UTF8.GetBytes(...)) so accents survive the round-trip.
-  This is still the contract: it is the only encoding that carries every
-  codepoint (including CJK). The Host also repairs a request body that arrives
-  in the system ANSI codepage, so a stray single-byte accent is no longer lost
-  to mojibake - but do not rely on that repair; send UTF-8 bytes.
+- Never read or modify an idea of another workspace; never touch the generic group.
+- The channel refuses requests missing the headers above (403), and bodies over 64 KiB.
+- With PowerShell, send JSON as UTF-8 bytes ([Text.Encoding]::UTF8.GetBytes(...)).
 
 ## Re-analysis runs (re-analyze action)
 

@@ -119,6 +119,20 @@ describe.runIf(process.env.IDEAS_PERF === '1')('perf-host: state payload + trans
     console.log(`[perf-host] LEAN ?view=list payload: ${(listBytes / 1024).toFixed(1)} KiB raw (gzip reference: ${(listGzipBytes / 1024).toFixed(1)} KiB), ${(100 * listBytes / bytes).toFixed(1)}% of the full snapshot`)
     console.log(`[perf-host] client JSON.parse of the LEAN payload: ${listParseMs.toFixed(2)} ms (median/20)`)
 
+    // Idea #64 launch-prompt bound: the reanalysis target is addressed by
+    // metadata and fetched on demand, so card body size cannot inflate the
+    // initial browser-to-session prompt. Use the same deterministic target as
+    // the large-board context test.
+    const analystTarget = host.idea('perf-idea-112')!
+    const promptMetadataBytes = Buffer.byteLength(JSON.stringify({
+      id: analystTarget.id, ideaNumber: analystTarget.ideaNumber, title: analystTarget.title,
+      status: analystTarget.status, workspaceId: analystTarget.workspaceId,
+      tags: analystTarget.tags ?? [], summary: analystTarget.summary ?? '',
+      taskBoardId: analystTarget.taskBoardId ?? '',
+    }), 'utf8')
+    const legacyTargetBodyBytes = Buffer.byteLength(analystTarget.body, 'utf8')
+    console.log(`[perf-host] analyst target prompt metadata: ${promptMetadataBytes} bytes; omitted target body: ${legacyTargetBodyBytes} bytes`)
+
     // --- transactional triage: reinsert at rank 1 + shift ---------------
     const snapshot0 = host.snapshot()
     const openGroups = new Map<string, string[]>()

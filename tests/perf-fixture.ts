@@ -259,11 +259,24 @@ export function makePerfDataset(seed = 0x5eed): IdeaRecord[] {
     ideas.push(idea)
   }
 
-  // A few follow-up children link to archived parents (lineage badge cost).
-  for (let k = 0; k < 3; k++) {
-    const child = ideas[PERF_OPEN_COUNT - 1 - k]
-    const parent = ideas[PERF_OPEN_COUNT + 12 + k]
-    if (child !== undefined && parent !== undefined) child.followUpOfId = parent.id
+  // Open follow-up children link to archived parents in the same workspace.
+  // Stable body sentinels prove that bounded analyst reads exclude unrelated
+  // bodies while retaining the direct lineage.
+  const usedChildren = new Set<string>()
+  for (const parent of ideas.slice(PERF_OPEN_COUNT + 12, PERF_OPEN_COUNT + 32)) {
+    const child = ideas.slice(0, PERF_OPEN_COUNT).find(candidate =>
+      !usedChildren.has(candidate.id)
+      && candidate.workspaceId !== undefined
+      && candidate.workspaceId === parent.workspaceId)
+    if (child === undefined) continue
+    usedChildren.add(child.id)
+    child.followUpOfId = parent.id
+    child.body = `FOLLOWUP_BODY:${child.id}:PARENT:${parent.id}
+
+${child.body}`
+    parent.body = `TARGET_BODY:${parent.id}:FOLLOWUP:${child.id}
+
+${parent.body}`
   }
   return ideas
 }

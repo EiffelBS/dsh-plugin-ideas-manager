@@ -142,6 +142,7 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (taskBoardId !== undefined) idea.taskBoardId = taskBoardId
     const taskBoardStatus = normalizeTaskBoardStatus(typeof row.taskBoardStatus === 'string' ? row.taskBoardStatus : undefined)
     if (taskBoardStatus !== undefined) idea.taskBoardStatus = taskBoardStatus
+    if (typeof row.followUpOfId === 'string' && row.followUpOfId.trim() !== '') idea.followUpOfId = row.followUpOfId.trim()
     const tags = normalizeTags(row.tags)
     if (tags !== undefined) idea.tags = tags
     if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
