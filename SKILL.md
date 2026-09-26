@@ -140,7 +140,7 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
 - The bound card id persists on the idea as `taskBoardId` (internal field,
   never accepted from the wire). The settings namespace `ideas` exposes
   `enabled`, `announceToAgent` (default false) and `autoMirror` (default true).
-- **Launch (idea #66)**: `POST /api/ideas/launch` `{ ideaId, model? }` starts the
+- **Launch**: `POST /api/ideas/launch` `{ ideaId, model? }` starts the
   idea's execution (a dedicated route, not a verb). The **host** picks the
   backend: the mirrored card when the task-board plugin is present (minting the
   `idea-<id>` card when the idea has none yet), otherwise a fresh direct chat

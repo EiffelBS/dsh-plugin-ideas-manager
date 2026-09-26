@@ -363,7 +363,7 @@ function ModelPickerField({ picker, disabled }: {
 /** Shared capture/edit modal. The lifecycle actions of the card are mirrored
  *  here per status (deliver / archive / decline / review approved / follow-up /
  *  restore), so the author can move an idea without leaving the editor. */
-function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onReanalyze }: {
+function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onReanalyze, onLaunch }: {
   client: IdeasClient
   initial?: IdeaRecord
   /** Board scope preselected for a new capture ('' when the board shows all;
@@ -374,6 +374,13 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   onFollowUp?: (idea: IdeaRecord) => void
   /** Idea #30 flow: launch an analyst re-run on this open idea. */
   onReanalyze?: (idea: IdeaRecord) => void
+  /**
+   * Launch this idea's execution (defined only when a launch can actually
+   * start). The editor is reachable from every tab, so this is the only way to
+   * launch from the Priorities or Delivered views, where the card layout that
+   * carries the button is not on screen.
+   */
+  onLaunch?: (idea: IdeaRecord) => void
 }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
@@ -556,7 +563,14 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   return (
     <div className={classes.overlay} onClick={onClose}>
       <form className={classes.modal} onClick={event => { event.stopPropagation() }} onSubmit={submit}>
-        <h3 className={classes.modalTitle}>{initial === undefined ? t('board.new') : t('edit.title')}</h3>
+        <h3 className={classes.modalTitle}>
+          {/* The card number travels in the title: the editor is reachable
+              from the Priorities and Delivered tabs, where the board layout
+              does not necessarily show it. */}
+          {initial === undefined || initial.ideaNumber === undefined
+            ? t('board.new')
+            : t('edit.title', { number: `#${initial.ideaNumber}` })}
+        </h3>
         <div className={classes.field}>
           <label className={classes.fieldLabel} htmlFor="dsh-ideas-title">{t('new.title')}</label>
           <input
@@ -698,6 +712,19 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
                   >
                     <IconReanalyze />
                     {t('card.reanalyze')}
+                  </button>
+                )}
+                {onLaunch !== undefined && (
+                  <button
+                    type="button"
+                    className={classes.actionButton}
+                    disabled={client.pending}
+                    title={t('card.launchHint')}
+                    data-dsh-ideas-launch-edit=""
+                    onClick={() => { onLaunch(initial); onClose() }}
+                  >
+                    <IconPlay />
+                    {t('card.launch')}
                   </button>
                 )}
                 <button
@@ -2235,6 +2262,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onClose={() => { setEditing(undefined) }}
           onFollowUp={(idea) => { setFollowUp(idea) }}
           onReanalyze={canReanalyze(editing) ? (idea) => { setReanalyzing(idea) } : undefined}
+          onLaunch={editing.status === 'open' && canLaunch(editing) ? (idea) => { setLaunching(idea) } : undefined}
         />
       )}
       {reanalyzing !== undefined && (

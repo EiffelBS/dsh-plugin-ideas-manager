@@ -1,15 +1,15 @@
 # dsh-plugin-ideas-manager
 
 **The Ideas manager** brings an idea backlog straight into the DSH Web GUI. It's
-a generic, self-contained backlog: an AI agent captures ideas, each one
-becomes a card on a kanban, gets scored and ranked, and flows through a
-lifecycle until it's delivered or declined. It also bridges to the
+a generic, self-contained backlog: an AI agent captures ideas, each one becomes a
+card on a kanban, gets scored and ranked, flows through a lifecycle, and can be
+**run as a real execution** with one click. It also bridges to the
 [TaskBoard plugin](#taskboard-integration)
 ([`@linxin666/dsh-client-ui-task-board`](https://www.npmjs.com/package/@linxin666/dsh-client-ui-task-board),
 by linxin666 — third-party, not affiliated) when present.
 
-A Host-authoritative `/api/ideas` ledger keeps everything consistent and lets
-an agent write cards directly over HTTP — no UI needed. Fully usable without
+A Host-authoritative `/api/ideas` ledger keeps everything consistent and lets an
+agent write cards directly over HTTP — no UI needed. Fully usable without
 TaskBoard: **zero hard dependency** on it.
 
 ![Ideas manager board](./assets/ideas-manager.png)
@@ -23,22 +23,18 @@ TaskBoard: **zero hard dependency** on it.
 - **Capture** an idea with the *New idea* button or the **quick-add** row at the
   top of the Open column — a Title is the only required field.
 - Optional description (markdown), **tags**, workspace and a **Suggested rank**.
-- The **AI capture** button opens a fresh session that analyzes the draft,
+- The **AI capture** button opens a session that analyzes the draft,
   creates/merges the idea in the backlog, and reports the retained ranking.
 
 ### A 4-column kanban
 Open · Under review · Archived · Declined.
 - **Drag & drop** moves cards between columns and reorders them; the columns
-  auto-scroll when you drag toward an edge (vertically and horizontally when
-  Archived/Declined are off-screen on a narrow window).
-- **Search** and a **conjunctive tag filter** narrow the whole board — all
-  three tabs (Overview columns, Priorities ranking, Delivered log) share
-  both filters. Cards render a short **body excerpt** (idea #34): the full
-  analysis is fetched on demand when the edit modal, follow-up composer or
-  re-analyze opens, and the first active search loads a deep index once so
-  whole-body matches keep working.
-- Single click on a card title or description opens the **edit modal** (raw
-  text or rendered markdown of the full body).
+  auto-scroll when you drag toward an edge.
+- **Search** and a **conjunctive tag filter** narrow the whole board — all three
+  tabs (Overview columns, Priorities ranking, Delivered log) share both filters.
+- Click a card title or its description to open the **editor** (raw text or
+  rendered markdown). It edits the whole body, fetched on demand, and is titled
+  with the card number it is editing.
 - Every card shows its stable **`#N` number**, **workspace chip**, **tags**,
   **value/effort badges** and update date.
 
@@ -46,68 +42,74 @@ Open · Under review · Archived · Declined.
 - Each idea carries **Value** and **Effort** (low / medium / high), shown as
   color-coded badges.
 - The **Suggested rank** is the position in the *open backlog of its workspace*;
-  entering one re-ranks the backlog transactionally (existing rows shift).
-- A dedicated **Priorities** tab ranks the open ideas per workspace, with
-  ↑/↓ buttons and drag & drop to re-rank.
+  entering one re-ranks that backlog (existing rows shift).
+- A dedicated **Priorities** tab ranks the open ideas per workspace, with ↑/↓
+  buttons and drag & drop to re-rank.
 
 ### The lifecycle
 - **Deliver** ✓ archives the idea with a green *Delivered {date}* stamp.
-- **Under review** is the *review* gate: finished work lands there, and each
-  card offers **Approve** (deliver), **Follow-up needed** (creates a linked
-  open child plus justification, archives the parent) and **Decline**.
-- A **Task failed** badge marks an open card whose linked TaskBoard task
-  failed: the idea deliberately **stays in the backlog** (a failed run
-  delivered nothing, so the review gate does not apply) - the human retries
-  the task or adjusts the idea. The badge follows the last status observed by
-  the under-review poll (30 s) and clears itself when the task is retried.
-- **Delivered** tab shows the exit log (delivered vs. manually archived).
+- **Under review** is the review gate: finished work lands there, and each card
+  offers **Approve** (deliver), **Follow-up needed** (creates a linked open child
+  plus a justification, archives the parent) and **Decline**.
+- A **Task failed** badge marks an idea whose execution failed. It deliberately
+  **stays in the backlog** — a failed run delivered nothing, so there is nothing
+  to review — and you retry or adjust the idea. The badge follows the last status
+  observed and clears itself when the task is retried.
+- The **Delivered** tab shows the exit log (delivered vs. manually archived).
 - Restore, archive and delete are one click away on each card.
+
+### Run an idea
+An open idea that has a **workspace** and no run in flight offers a
+**Launch execution** button — on the card, and in the editor. The editor matters:
+it is the surface you reach from the Priorities and Delivered tabs, so you never
+have to hunt the card back in the Overview to start a run.
+
+1. Click **Launch execution**, pick a model (or keep the session default) and
+   confirm. DSH tells you which of the two ways it will run before you commit.
+2. **With the TaskBoard plugin installed**, the run goes through that idea's
+   board card. **Without it**, DSH opens a brand-new chat session in the idea's
+   workspace instead. Either way you get a real execution, and the board needs no
+   extra plugin for the feature to work.
+3. The run happens in the **background**: closing the tab, or restarting the web
+   instance, does not lose it and DSH keeps watching it for you.
+4. While it runs, the card shows a blue **Running** pill and an
+   **Open session** link — one click lands you in the execution, which is the
+   only way to watch a session DSH started on your behalf.
+5. When it finishes, the idea moves to **Under review** for your verdict. If it
+   failed, it stays in the backlog behind the **Task failed** badge.
+
+A run takes a while, and the board reflects the result within roughly half a
+minute of the session finishing.
+
+> A direct session inherits your normal DSH permissions. TaskBoard's own run
+> options (such as a confirmation prompt) are not applied to it.
 
 ### Workspaces
 - A header selector scopes the board to one workspace (or *all* / *none*).
 - New ideas default to the **current session's workspace** when not scoped.
-- The New/Edit modal carries a workspace field so a capture lands in the right
+- The New/Edit modal carries a workspace field, so a capture lands in the right
   place and an idea can be moved to another workspace.
 
 ---
 
 ## Settings
 
-The plugin contributes an **Ideas board** section to the DSH Settings modal.
-Options are read and written through the plugin's own fenced
-`GET/POST /api/ideas/config` route — the DSH settings RPC domain does not serve
-third-party namespaces — and the backing store follows the host generation,
-detected at runtime:
-
-- **Host <= 0.1.5**: a registered `ideas` settings namespace (schemastery
-  schema, `applies: 'live'`, revision-fenced writes persisted in the profile's
-  settings document) — the historical behaviour, unchanged.
-- **Host >= 0.1.7**: the SettingsForms refactor removed `ctx.settings.register`,
-  so the plugin keeps its options in its own versioned document,
-  `<DSH_HOME>/ideas-manager-settings.json`, behind the same incrementing
-  revision fence (an unreadable document is quarantined beside itself — renamed,
-  never deleted — and the defaults take over).
-
-Both hosts answer the identical wire contract (a complete sanitized value plus
-its revision; a stale write is refused with `409 settings-conflict`), so the
-section behaves the same everywhere. Every option ships with an explicit title
-and a description stating what it changes, its range and its default:
+The plugin contributes an **Ideas board** section to the DSH Settings modal:
 
 - **Visible tag-filter lines** (`tagRows`, 1–5, default 3): how many rows of
-  tags the board shows under the tabs before the zone scrolls; the sticky
-  header (label + search + clear-filter) always stays visible. Applied
-  immediately, stored per DSH profile.
-- **Interface language** (`language`, default `auto`): the panel's OWN
-  language, independent of the DSH shell setting. `auto` follows the shell
-  (a Chinese shell now shows a Chinese panel, English an English one), and
-  `en` / `fr` / `zh` pin the panel to one dictionary. Applied immediately —
-  switching the row re-renders the whole panel, and the board root carries
-  the matching `lang` attribute for assistive tech and CJK font stacks.
-  Dictionaries: English (default fallback), French, Simplified Chinese —
-  kept in strict key parity (the build fails on a missing key).
+  tags the board shows under the tabs before the zone scrolls. The sticky header
+  (label + search + clear) always stays visible. Applied immediately, stored per
+  DSH profile.
+- **Interface language** (`language`, default `auto`): the panel's **own**
+  language, independent of the DSH shell setting. `auto` follows the shell, and
+  `en` / `fr` / `zh` pin the panel to one dictionary. Applied immediately.
+  Dictionaries: English (default fallback), French, Simplified Chinese.
 
-Deployments without a settings service keep the spelled defaults (the section
-says so) — the board never depends on the settings surface.
+Deployments without a settings service keep the defaults; the board never depends
+on the settings surface. Options are stored per DSH profile and never leave your
+machine.
+
+---
 
 ## TaskBoard integration
 
@@ -115,166 +117,32 @@ When the TaskBoard plugin
 ([`@linxin666/dsh-client-ui-task-board`](https://www.npmjs.com/package/@linxin666/dsh-client-ui-task-board),
 repo: [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web)) is
 present, the Ideas manager mirrors its ledger onto TaskBoard's `backlog` so
-both tools stay in sync — **one-way** (Ideas → TaskBoard).
-The mirror is detected at runtime (`GET /api/task-board/state`); if TaskBoard is
-absent the Ideas manager simply works standalone.
+both tools stay in sync — **one-way** (Ideas → TaskBoard). If TaskBoard is
+absent, the Ideas manager simply works standalone.
 
 | Ideas action | TaskBoard mirror |
 |---|---|
-| Create idea | New read-only card in `backlog` (bound to the idea id) |
+| Create idea | New read-only card in `backlog` (bound to the idea) |
 | Update idea | Card updated |
 | Decline / drag to Archived | Card archived |
 | Restore | Card restored |
 | Delete | No-op (closing to `done` stays manual) |
-| **Task-Board card reaches `done`** | Idea auto-moves to **Under review** (the review gate) |
+| Launch execution | The card runs it |
+| **The run reaches `done`** | Idea auto-moves to **Under review** (the review gate) |
 
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a
-backlog opinion, not a board state.
-
-### Launching an execution from a card (idea #66)
-
-An open, workspace-bound idea shows a green **Launch execution** button when a
-launch can actually start. The modal picks the model (empty = the session
-default) and the Host picks the **execution backend**:
-
-| Condition | Backend | What runs |
-| --- | --- | --- |
-| the task-board plugin is present and the mirror is on | **card** | on the idea's mirror chain: card resolution (the deterministic `idea-<id>` card, minted if the idea has none yet, rebuilt if deleted out-of-band) → a **model-only** patch → the `run` action. TaskBoard owns the run: it pins the model on a fresh session and queues the card prompt. |
-| no task-board plugin, or the mirror is off — or the board turns out to be **absent at click time** | **direct session** | the Host creates a fresh chat session in the idea's workspace through the `typertGateway`, names it after the idea, pins the picked model and queues the very same prompt. |
-
-- `POST /api/ideas/launch` with `{ requestId?, initiator?, ideaId, model? }`,
-  answering `{ ok, runId, runStatus: 'running' }` plus `taskId` **only** for the
-  card backend — `runId` is the card id or the session id. It is a **dedicated
-  route, not an action verb**: a launch is not a ledger mutation and must not
-  consume the persisted action dedupe cache (a short in-memory window honours a
-  replayed `requestId` instead).
-- The model travels as `provider/model`, never inside `run` — the task-board
-  accepts exactly `['kind','taskId']` there. The card patch is model-only on
-  purpose: a content patch (title/description/prompt) is refused with
-  `task has already been executed` on a card that already ran.
-- Every refusal is visible, never swallowed: `409 taskboard-mirror-disabled`,
-  `503 taskboard-unavailable`, `404 not-found`, and `400` carrying the chosen
-  backend's own reason (`task is already running or missing`,
-  `archived task is read-only`, `confirmation-required: …`,
-  `session create failed: workspace not found: …`).
-- Lifecycle: the launch stamps `runStatus: 'running'` and records `runSessionId`,
-  the 30 s poll settles it to `done` / `failed` (a `failed` run leaves the idea
-  **open** behind the "Task failed" badge), and a `done` run opens the review
-  gate — for **both** backends, so the review gate does not depend on the
-  task-board plugin. Budget up to ~35 s between the session finishing and the
-  idea moving.
-- Both backends run in the **Host**, not the browser: a direct run keeps going,
-  and keeps being observed, after the tab is closed, and it survives a Host
-  restart mid-run (the poll re-attaches from the persisted
-  `running` + `runSessionId` pair).
-- A card is **not** required for the button: on a Host with no task-board
-  nothing is ever mirrored, and the direct-session backend runs the idea
-  without one. A card that *does* exist still constrains it — a `running` or
-  `done` card is the run of record, so no second, invisible session is started
-  next to it. The modal says which of the two will happen before the click.
-
-**Watching a run.** A launch in flight is visible on the card: a blue
-**Running** pill (a pulsing dot, the board's only motion, disabled under
-`prefers-reduced-motion`) with an **Open session** link next to it whenever the
-idea carries a `runSessionId`. That link is the answer to "where is my run": it
-calls the shell's `sessions.open(id)`, so one click lands in the execution — the
-indispensable case being the direct-session backend, whose session is never
-opened in front of the human. Both degrade silently: no sessions service means
-no link (the pill stays), and a settled run keeps neither a pulse nor a link.
-The pill is deliberately not a column: a running idea stays in the backlog (a
-failed run delivered nothing), so "running" is an attribute of a row, not a
-place.
-
-**Known divergences, by design.** After a run, any later mirror `update` fails
-(`task has already been executed` — the card content is frozen), so the spec no
-longer replicates to the card; mirrored cards never arm a cron schedule (a
-successful run would return to `todo` and never reach the review gate); on a
-TaskBoard older than 0.3.x (the `desktop` profile's 0.1.18, which has no
-`/action` at all) a card launch degrades to the direct session when the Host
-serves a gateway, and to **no button** when it serves none; a direct session
-has no permission field to bind, so it inherits the DSH default for a fresh
-session (the card backend instead binds the card's permission and can answer
-`confirmation-required: …`); and a direct run that ends in an error settles
-`done` — the card backend's history scan distinguishes the two, this backend
-deliberately does not.
-
-Card weight: the card `description` carries the idea's `summary` (<= 300
-chars, produced by the ideas-analyst; a derived body excerpt otherwise) while
-the full analysis rides the card `prompt` (the run instruction) and the ledger
-— the body is never stored twice in the snapshot.
-
-### Duplicate guard (exactly one card per idea)
-
-Card ids are **deterministic** (`idea-` + the idea id), so re-running any
-mirror path re-touches the same card instead of minting a twin. A bound idea's
-card is only rebuilt when a *non-empty* task-board snapshot proves it was
-deleted out-of-band — every `ensureTask` decision (idea id, binding, snapshot
-size, branch) is logged, and an empty or unreadable snapshot keeps the binding
-and attempts the patch, never a create. Mirror operations are serialized per
-idea id, so a create always completes (and binds) before a following update
-runs — "update" can never silently mean "create".
-
-Two scripts close the loop:
-
-- `node scripts/reconcile-taskboard-mirror.mjs [--url …] [--apply]` — detects
-  orphan duplicates (unbound card whose exact title matches a bound idea) and
-  archives them, always keeping the bound card; dry-run by default.
-- `node scripts/validate-mirror-cycle.mjs [--base …]` — live acceptance run against a
-  test instance: create → re-analyze → analyst rewrite → decline must end with
-  exactly one card.
-
-> **Note for agent-driven workflows:** the capture → triage → lifecycle
-> protocol and the full wire contract are documented in
-> [`SKILL.md`](SKILL.md), so an agent can author cards directly over the HTTP
-> API without the UI.
-
----
-
-## Host API (agents)
-
-The Host exposes a REST API so scripts and agents can read the board and write
-ideas. Prefix `/api/ideas`, same-origin fence (loopback socket + browser
-markers), JSON envelopes `{ requestId, action, initiator? }`.
-
-| Route | Purpose |
-|---|---|
-| `GET /api/ideas/state` | Frozen full snapshot `{ schemaVersion: 1, revision, ideas[] }` |
-| `GET /api/ideas/state?view=summary` | Bounded summary reads with workspace/id/number/status filters, pagination, selected fields, body-byte caps, and explicit truncation metadata |
-| `GET /api/ideas/state?view=detail` | Bounded field-selectable detail reads; use `GET /api/ideas/idea?id=<id>` for one complete raw record |
-| `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
-| `POST /api/ideas/launch` | Start the idea's execution `{ requestId?, ideaId, model? }` → `{ ok, runId, taskId?, runStatus }` (not a ledger mutation: no dedupe-cache consumption) |
-| `GET /api/ideas/events` | SSE `{ revision }` |
-
-Every action is **deduplicated by `requestId`** (fresh id per call), and a
-mutating action returns the whole board so the caller can confirm the result.
-The bounded read envelope keeps `revision` at the top level and adds `meta`
-with `matched`, `returned`, `rowTruncated`, `nextOffset`, `bodyTruncated`, and
-`omittedFields`; at most 200 rows and 512 KiB are returned. The `./client`
-entry exports `HttpIdeasHostTransport` and `IdeasClient`; call `read(query)` or
-`readIdeas(query)` for the same bounded envelope without mutating board state.
-Full contract (verb table, read-query fields, mirror mapping, PowerShell
-gotchas) lives in [`SKILL.md`](SKILL.md).
+backlog opinion, not a board state. After a run, the card's content is frozen, so
+later edits to the idea no longer replicate to it.
 
 ---
 
 ## Host compatibility
 
 - **Requires Host >= 0.1.5** (see `dsh.engines.dsh` in `package.json`).
-- **Settings section works on host 0.1.5 and 0.1.7+**: the settings service
-  contract is detected at runtime (`settings.register` present = legacy `ideas`
-  namespace, exactly as before; absent after the 0.1.7 SettingsForms refactor =
-  plugin-owned `<DSH_HOME>/ideas-manager-settings.json`), so 0.1.7 boots with
-  no `settings namespace registration failed` line and 0.1.5 keeps the exact
-  0.3.3 behaviour.
-- On **Host >= 0.1.7** the client retains the agent scope before prompting:
-  `sessions.scope(id)` became a pure read there (a just-created session is no
-  longer visible through it until its scope is retained), so the AI capture /
-  re-analyze launcher first calls `retainAgentScope(id)` — which materializes
-  the scope — takes the context from the reference's `binding.ctx`, prompts,
-  and always releases the retention (success, prompt rejection or missing
-  session face).
-- On **Host <= 0.1.5** the method does not exist and the launcher keeps the
-  exact previous call sequence (`scope(id)` materializes the scope on demand).
+- The settings section, the board and both execution backends work on current
+  hosts; older combinations degrade rather than break (for example, a very old
+  TaskBoard without a run action simply means runs are started as sessions, or
+  no Launch button is offered at all when neither route is available).
 
 ---
 
@@ -289,7 +157,7 @@ dsh plugin --profile web add dsh-plugin-ideas-manager
 Pinned to a version:
 
 ```sh
-dsh plugin --profile web add dsh-plugin-ideas-manager@0.3.4
+dsh plugin --profile web add dsh-plugin-ideas-manager@0.7.0
 ```
 
 From a local checkout (no registry needed):
@@ -301,13 +169,13 @@ dsh plugin --profile web add link:/path/to/dsh-plugin-ideas-manager
 From a git URL (fallback, pinned to a released tag):
 
 ```sh
-dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.3.4
+dsh plugin --profile web add github:EiffelBS/dsh-plugin-ideas-manager#v0.7.0
 ```
 
 `dsh plugin` runs `pnpm add` in the profile directory, then reconciles
 `dsh.profile.bundles`: because this package declares a `dsh.bundle`, it is
-auto-appended as a profile layer. Restart the web instance (or open a fresh
-page session) for the bundle change to take effect.
+auto-appended as a profile layer. Restart the web instance (or open a fresh page
+session) for the bundle change to take effect.
 
 Verify installation:
 
@@ -315,8 +183,7 @@ Verify installation:
 dsh web --profile web --no-open   # then look for the Ideas entry in the sidebar
 ```
 
-To pick up a newer revision after a release (versions follow the package's
-`version` field; releases are tagged, e.g. `v0.3.4`):
+To pick up a newer revision after a release:
 
 ```sh
 dsh plugin --profile web add dsh-plugin-ideas-manager@latest
@@ -330,56 +197,50 @@ Uninstall / disable:
 dsh plugin --profile web remove dsh-plugin-ideas-manager
 ```
 
-> **Maintainers:** bump `version` in `package.json` on each meaningful push so
-> an installed profile's version stays observable (e.g. via `dsh plugin ls` or
-> `pnpm list` in the profile directory).
+---
+
+## For agents and integrators
+
+The board is one HTTP surface away. Scripts and agents can read the state and
+write ideas without any UI:
+
+| Route | Purpose |
+|---|---|
+| `GET /api/ideas/state` | Full snapshot of the board |
+| `GET /api/ideas/state?view=summary` | Bounded reads: filters, pagination, selected fields, body-byte caps |
+| `GET /api/ideas/idea?id=<id>` | One complete idea |
+| `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
+| `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` |
+| `GET /api/ideas/events` | Server-sent change notifications |
+
+Actions are **deduplicated by `requestId`** (fresh id per call). The routes sit
+behind a same-origin fence (loopback socket or browser).
+
+- [`SKILL.md`](SKILL.md) — the full wire contract: verb table, read-query
+  fields, mirror mapping, PowerShell gotchas.
+- [`docs/agent-write-channel.md`](docs/agent-write-channel.md) — the write
+  channel in depth, including the launch route.
+- [`docs/architecture.md`](docs/architecture.md) — how the plugin is built
+  (ledger, mirror, execution backends, performance work).
 
 ---
 
-## Build, test & install (dev)
+## Development
 
-```powershell
+```sh
 pnpm run typecheck   # tsc --noEmit
-pnpm test            # vitest (protocol gate, ledger persistence, export golden, mirror, markdown parser)
-pnpm run build       # tsc -p tsconfig.build.json (types -> lib/types) && tsdown (lib/index.js + lib/client.js)
-
-# isolated test profile (never the production profile of a live instance)
-dsh --profile ideas-test --from-default-profile web --dump-config
-dsh plugin --profile ideas-test add link:C:/path/to/dsh-plugin-ideas-manager
-dsh --profile ideas-test --port 3099                # omitting --no-open opens the browser with the token URL
+pnpm test            # vitest
+pnpm run build       # types -> lib/types, bundles -> lib/index.js + lib/client.js
 ```
 
 The browser half is served at `/plugins/<id>/client.js` (re-resolved per
-request); the host half registers the `/api/ideas` routes at boot.
+request); the host half registers the `/api/ideas` routes at boot. Data lives in
+`~/.dsh/ideas/ledger-v2.json`.
 
-## Architecture
-
-```
-src/
-  index.ts            # apply + mountOnce + Config + guidance section
-  protocol.ts         # /api/ideas prefix, types, parseActionEnvelope (exactKeys)
-  host-service.ts     # apply + mirror scheduling
-  host-ledger.ts      # persisted ledger, dedupe cache, lock, internal bind
-  host-routes.ts      # state (+ list and bounded summary/detail views) / idea?id= / action / launch / events + loopback guard
-  taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb (no hard import)
-  run-prompt.ts       # the execution prompt shared by every launch backend (idea #66)
-  session-runner.ts   # direct-session backend: Host RPCs + the roster the settle reads
-  session-opener.ts   # the "Open session" jump from a running card (idea #66)
-  export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
-  http.ts / loopback.ts / mount-once.ts   # shared discipline
-  core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation
-  client/             # sidebar entry + kanban + Priorities/Delivered + workspace scoping
-  client/launch.ts    # LaunchBackend resolution + the launch visibility predicate (idea #66)
-tests/                # vitest suites per module
-  SKILL.md / README.md
-```
-
-Persistence lives in `~/.dsh/ideas/ledger-v2.json` (atomic tmp+rename writes,
-corruption quarantine, single-writer lock, restart-safe request-id dedupe).
-
-High-card-load evaluation (before/after numbers, deferred-vs-priority
-decision): see `docs/perf-evaluation.md`; live profiler:
-`scripts/perf-live.mjs` (test instance only).
+> **Maintainers:** this README describes what an installed user sees — keep it
+> user-facing (no internal issue numbers, no design archaeology) and update it
+> with the user-visible changes on every release. Implementation detail belongs
+> in `docs/`.
 
 ## License
 
