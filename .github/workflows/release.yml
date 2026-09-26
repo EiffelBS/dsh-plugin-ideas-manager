@@ -1,8 +1,11 @@
 name: release
 
-# One release gesture: bump `version` in package.json, commit, then
-#   git tag vX.Y.Z && git push origin vX.Y.Z
-# The tag publishes to npm (with provenance) and creates the GitHub Release.
+# One release gesture:
+#   1. write the user-facing entry in CHANGELOG.md under the new version heading
+#   2. bump `version` in package.json, commit
+#   3. git tag vX.Y.Z && git push origin vX.Y.Z
+# The tag publishes to npm (with provenance), and the GitHub Release body is the
+# matching CHANGELOG section — curated notes for users, not the commit log.
 #
 # One-time setup (npmjs.com): package Settings -> Trusted Publisher ->
 # GitHub Actions (user EiffelBS, repo dsh-plugin-ideas-manager,
@@ -11,6 +14,12 @@ name: release
 on:
   push:
     tags: ['v*']
+
+# Releases must never overlap: a second tag landing mid-publish would race the
+# registry and the Release body.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -21,6 +30,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The tag IS the release: the version, the changelog section and the
+          # "is it on main" check all read the checked-out history.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
         with:
@@ -34,10 +47,24 @@ jobs:
           cache: pnpm
 
       - name: Tag matches package.json version
+        env:
+          TAG: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           PKG="v$(node -p "require('./package.json').version")"
-          if [ "$PKG" != "${{ github.ref_name }}" ]; then
-            echo "tag ${{ github.ref_name }} != package version $PKG"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "tag $TAG != package version $PKG"
+            exit 1
+          fi
+
+      - name: Tag is a release commit on main
+        env:
+          TAG: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$TAG" "origin/$DEFAULT_BRANCH"; then
+            echo "::error::$TAG is not on $DEFAULT_BRANCH; release only what main carries"
             exit 1
           fi
 
@@ -55,13 +82,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build the release notes from the changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Exit 3 means "no section for this tag". Fall back to generated
+          # notes rather than failing: a missing changelog entry must never
+          # block a release, it only has to be loud in the log.
+          if node scripts/changelog-notes.mjs "$TAG" > release-notes.md; then
+            {
+              cat release-notes.md
+              echo
+              echo "npm: https://www.npmjs.com/package/dsh-plugin-ideas-manager/v/$TAG"
+              echo "Changelog: https://github.com/EiffelBS/dsh-plugin-ideas-manager/blob/v$TAG/CHANGELOG.md"
+            } > release-notes.final.md
+          else
+            echo "::warning::CHANGELOG.md has no section for $TAG; publishing generated notes"
+            rm -f release-notes.md release-notes.final.md
+          fi
+
       - name: Create GitHub Release (idempotent)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists; skipping"
             exit 0
           fi
-          gh release create "$TAG" --title "$TAG" --generate-notes
+          if [ -s release-notes.final.md ]; then
+            # Curated notes first, then the generated footer (compare link).
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file release-notes.final.md \
+              --generate-notes
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi

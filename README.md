@@ -222,6 +222,7 @@ behind a same-origin fence (loopback socket or browser).
   channel in depth, including the launch route.
 - [`docs/architecture.md`](docs/architecture.md) — how the plugin is built
   (ledger, mirror, execution backends, performance work).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release.
 
 ---
 
@@ -240,7 +241,9 @@ request); the host half registers the `/api/ideas` routes at boot. Data lives in
 > **Maintainers:** this README describes what an installed user sees — keep it
 > user-facing (no internal issue numbers, no design archaeology) and update it
 > with the user-visible changes on every release. Implementation detail belongs
-> in `docs/`.
+> in `docs/`. The release gesture is: write the `CHANGELOG.md` entry, bump
+> `version`, tag — the GitHub Release body is that changelog section, so the two
+> always tell the same story.
 
 ## License
 
