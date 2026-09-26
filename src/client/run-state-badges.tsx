@@ -27,17 +27,28 @@
  */
 
 import type { IdeaListRow } from '../protocol.ts'
+import type { IdeasClient } from './ideas-client.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 
-/** Compact ISO-agnostic day/month stamp, shared with the Overview card. */
-function shortDate(epoch: number): string {
+/** Compact day/month stamp, the canonical one (the Overview card's updated
+ *  date and the Delivered stamp both read it). Exported rather than repeated:
+ *  board-view imports it back from here. */
+export function shortDate(epoch: number): string {
   return new Date(epoch).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 export interface RunStateBadgesProps {
   /** The row to describe (a list row is enough: every field used is on it). */
   idea: IdeaListRow
+  /**
+   * The board client, for the "Open session" link only: the button renders for
+   * a direct run (`runStatus === 'running'` + a session id) AND only when the
+   * shell serves a sessions service, so a host without one degrades to the tag
+   * alone. Taking the client (not a handler) keeps that feature detection in
+   * one place instead of three identical lambdas.
+   */
+  client: IdeasClient
   /**
    * Resolve the parent of a follow-up child into its ledger number. The row
    * carries `followUpOfId` but never the parent's number, so the caller owns
@@ -46,18 +57,29 @@ export interface RunStateBadgesProps {
    */
   parentNumber?: (ideaId: string) => number | undefined
   /**
-   * Open, in DSH, the session that runs this idea. The button renders only for
-   * a direct run (`runStatus === 'running'` + a session id) and only when the
-   * shell serves a sessions service, so a host without one degrades to the tag
-   * alone.
-   */
-  onOpenSession?: (sessionId: string) => void
-  /**
    * Render the "Delivered {date}" stamp. On by default (the Overview card
-   * header); the Delivered tab passes false because its exit stamp already
-   * carries the same fact as the row's leading date.
+   * header); pass false where the date is already shown elsewhere, or where a
+   * stale stamp would lie: the Delivered tab prints it as the row's exit
+   * stamp, and an OPEN row (a restored idea, in Priorities) is not an exit at
+   * all — restore only clears `archivedAt`, so its delivery date survives.
    */
   showDelivered?: boolean
+}
+
+/**
+ * Whether {@link RunStateBadges} would render anything for this row, ignoring
+ * the optional session link (which is a companion of the running tag, never a
+ * tag of its own). Exported so a caller that renders its meta line
+ * CONDITIONALLY - the Delivered journal does - cannot silently swallow a tag
+ * added to the component later: one predicate, kept next to the conditions it
+ * mirrors.
+ */
+export function hasRunStateTags(idea: IdeaListRow, parentNumber?: (ideaId: string) => number | undefined): boolean {
+  if (idea.followUpOfId !== undefined && parentNumber !== undefined) return true
+  if (idea.status === 'underReview') return true
+  if (idea.status === 'open' && idea.taskBoardStatus === 'failed') return true
+  if (idea.runStatus === 'running' || idea.taskBoardStatus === 'running') return true
+  return idea.deliveredAt !== undefined
 }
 
 /**
@@ -65,8 +87,11 @@ export interface RunStateBadgesProps {
  * empty fragment) for an idea that is simply idle: the callers drop it in
  * unconditionally.
  */
-export function RunStateBadges({ idea, parentNumber, onOpenSession, showDelivered = true }: RunStateBadgesProps) {
+export function RunStateBadges({ idea, client, parentNumber, showDelivered = true }: RunStateBadgesProps) {
   const sessionId = idea.runSessionId
+  // Feature-detected once, here: a host with no sessions service renders the
+  // running tag alone and no link.
+  const opener = client.sessionOpener
   return (
     <>
       {idea.followUpOfId !== undefined && parentNumber !== undefined && (
@@ -107,7 +132,7 @@ export function RunStateBadges({ idea, parentNumber, onOpenSession, showDelivere
           {t('card.taskRunning')}
         </span>
       )}
-      {idea.runStatus === 'running' && sessionId !== undefined && sessionId !== '' && onOpenSession !== undefined && (
+      {idea.runStatus === 'running' && sessionId !== undefined && sessionId !== '' && opener !== undefined && (
         <button
           type="button"
           className={classes.openSession}
@@ -115,7 +140,7 @@ export function RunStateBadges({ idea, parentNumber, onOpenSession, showDelivere
           data-dsh-ideas-open-session=""
           onClick={event => {
             event.stopPropagation()
-            onOpenSession(sessionId)
+            opener.open(sessionId)
           }}
         >
           {t('card.openSession')}

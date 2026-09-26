@@ -111,7 +111,10 @@ The plugin contributes an **Ideas board** section to the DSH Settings modal:
   Overview's Open column in the ranking you set by hand. `activity` floats the
   ideas whose run is in flight to the top, then the failed ones, keeping your
   ranking inside each group. It is a **view only** — it never stores anything,
-  so drag & drop and the move arrows still write the ranking you chose.
+  so drag & drop and the move arrows still write the ranking you chose. While
+  the column is in `activity` order its drag grip is off (the position you see
+  is not the rank you would be writing); the card buttons still move an idea to
+  another column, and switching back to `rank` brings the grip back.
 
 Deployments without a settings service keep the defaults; the board never depends
 on the settings surface. Options are stored per DSH profile and never leave your

@@ -22,7 +22,7 @@ import type { IdeaListRow } from '../protocol.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { ScoreBadge } from './score-badge.tsx'
-import { RunStateBadges } from './run-state-badges.tsx'
+import { RunStateBadges, hasRunStateTags } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { tagHue } from './tags.ts'
@@ -65,18 +65,6 @@ function isoDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-/**
- * Whether the row would render ANY meta pill, run-state tags included (idea
- * #71). Without this the conditional meta row would swallow the run state of
- * a bare archived idea. The tags that can appear here are the same ones the
- * Overview card header draws for this record: the follow-up lineage chip, the
- * failed task (open ideas only, so never on this tab) and a run in flight.
- */
-function hasRunState(idea: IdeaListRow, parentNumber: ((ideaId: string) => number | undefined) | undefined): boolean {
-  if (idea.followUpOfId !== undefined && parentNumber !== undefined) return true
-  return idea.runStatus === 'running' || idea.taskBoardStatus === 'running'
-}
-
 export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber }: DeliveredViewProps) {
   const rows = mostRecentFirst(archivedIdeas)
   return (
@@ -117,7 +105,7 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                       <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                     </div>
                     {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined
-                      || hasRunState(idea, parentNumber)) && (
+                      || hasRunStateTags(idea, parentNumber)) && (
                       <div className={classes.cardMeta}>
                         {workspaceId !== undefined && (
                           <span className={classes.workspaceChip}>{workspaceTitle(workspaceId)}</span>
@@ -140,10 +128,8 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                             date, hence showDelivered=false. */}
                         <RunStateBadges
                           idea={idea}
+                          client={client}
                           parentNumber={parentNumber}
-                          onOpenSession={client.sessionOpener !== undefined
-                            ? sessionId => { client.sessionOpener?.open(sessionId) }
-                            : undefined}
                           showDelivered={false}
                         />
                         {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}

@@ -32,7 +32,7 @@ import { canLaunch, modelTargetIdOf } from './launch.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
-import { RunStateBadges } from './run-state-badges.tsx'
+import { RunStateBadges, shortDate } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
@@ -62,10 +62,6 @@ function matchesFilter(idea: IdeaListRow, filter: string, deepBody: string | und
   // and excerpt keep the search useful before/without the index.
   const haystacks = [idea.title, idea.summary ?? '', deepBody ?? idea.bodyExcerpt, ...(idea.tags ?? []).map(tag => tag.name)]
   return haystacks.some(text => text.toLowerCase().includes(needle))
-}
-
-function shortDate(epoch: number): string {
-  return new Date(epoch).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 /* --- tiny action icons (feather-style strokes, currentColor) --- */
@@ -1510,6 +1506,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : grouped ? orderByWorkspaceGroups(rows, workspaceTitle) : orderIdeas(rows)
   }
 
+  /**
+   * Whether the Open column is laid out in the order it is stored in (idea
+   * #71). False in attention order, and that is not cosmetic: the drop anchor
+   * comes from the DISPLAY order (dropNextId / the half-split line) while
+   * rebuildOrder resolves it in RANK space, so in a reordered column a drop
+   * can land on the rank it already held — a wire call whose only visible
+   * effect is nothing. The Open column therefore stops accepting a drag while
+   * it is a view: its cards keep every action button (archive, decline,
+   * restore…), and switching the option back to Rank brings the grip back.
+   * The three closed columns are always in rank order, so their drags are
+   * untouched.
+   */
+  const openColumnRanked = cfg.openOrdering !== 'activity'
+
   const toggleTag = (name: string): void => {
     setTagFilter(current => current.includes(name)
       ? current.filter(entry => entry !== name)
@@ -1883,6 +1893,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                     : columnIdeas.map((idea, index) => {
                       const confirm = confirmId === idea.id
                       const workspaceId = idea.workspaceId
+                      // A grip on an OPEN card in attention order explains
+                      // itself instead of being silently inert (see
+                      // openColumnRanked); every other grip carries the plain
+                      // drag hint.
+                      const dragLabel = status === 'open' && !openColumnRanked
+                        ? t('card.dragLocked')
+                        : t('card.drag')
                       // Half-split insertion line, like the Priorities rows:
                       // hovering the upper half drops before the card, the
                       // lower half after it (before the next card).
@@ -1949,16 +1966,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   so a row can never disagree with a card. */}
                               <RunStateBadges
                                 idea={idea}
+                                client={client}
                                 parentNumber={parentNumberOf}
-                                onOpenSession={client.sessionOpener !== undefined
-                                  ? sessionId => { client.sessionOpener?.open(sessionId) }
-                                  : undefined}
                               />
                               <div
                                 className={classes.cardGrip}
-                                draggable={!client.pending}
-                                title={t('card.drag')}
-                                aria-label={t('card.drag')}
+                                draggable={!client.pending && (status !== 'open' || openColumnRanked)}
+                                title={dragLabel}
+                                aria-label={dragLabel}
                                 onDragStart={(event) => {
                                   // Carry the idea id on the drag payload
                                   // (task-board family contract) so the drop

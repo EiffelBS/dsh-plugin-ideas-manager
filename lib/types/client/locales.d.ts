@@ -54,6 +54,7 @@ export declare const fr: {
     'settings.openOrderingDesc': string;
     'settings.openOrderingRank': string;
     'settings.openOrderingActivity': string;
+    'card.dragLocked': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -236,6 +237,7 @@ export declare const en: {
     'settings.openOrderingDesc': string;
     'settings.openOrderingRank': string;
     'settings.openOrderingActivity': string;
+    'card.dragLocked': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -424,6 +426,7 @@ export declare const zh: {
     'settings.openOrderingDesc': string;
     'settings.openOrderingRank': string;
     'settings.openOrderingActivity': string;
+    'card.dragLocked': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;

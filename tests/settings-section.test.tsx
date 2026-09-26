@@ -295,6 +295,9 @@ describe('IdeasSettingsSection page', () => {
       'settings.languageEn', 'settings.languageFr', 'settings.languageZh',
       'settings.columnMinWidth', 'settings.columnMinWidthDesc',
       'settings.columnMaxWidth', 'settings.columnMaxWidthDesc',
+      'settings.openOrdering', 'settings.openOrderingDesc',
+      'settings.openOrderingRank', 'settings.openOrderingActivity',
+      'card.dragLocked',
       'card.confirmLifecycle',
     ] as const) {
       expect(typeof fr[key]).toBe('string')

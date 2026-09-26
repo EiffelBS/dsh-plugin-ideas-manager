@@ -26,9 +26,22 @@
  * saying so.
  */
 import type { IdeaListRow } from '../protocol.ts';
+import type { IdeasClient } from './ideas-client.ts';
+/** Compact day/month stamp, the canonical one (the Overview card's updated
+ *  date and the Delivered stamp both read it). Exported rather than repeated:
+ *  board-view imports it back from here. */
+export declare function shortDate(epoch: number): string;
 export interface RunStateBadgesProps {
     /** The row to describe (a list row is enough: every field used is on it). */
     idea: IdeaListRow;
+    /**
+     * The board client, for the "Open session" link only: the button renders for
+     * a direct run (`runStatus === 'running'` + a session id) AND only when the
+     * shell serves a sessions service, so a host without one degrades to the tag
+     * alone. Taking the client (not a handler) keeps that feature detection in
+     * one place instead of three identical lambdas.
+     */
+    client: IdeasClient;
     /**
      * Resolve the parent of a follow-up child into its ledger number. The row
      * carries `followUpOfId` but never the parent's number, so the caller owns
@@ -37,22 +50,26 @@ export interface RunStateBadgesProps {
      */
     parentNumber?: (ideaId: string) => number | undefined;
     /**
-     * Open, in DSH, the session that runs this idea. The button renders only for
-     * a direct run (`runStatus === 'running'` + a session id) and only when the
-     * shell serves a sessions service, so a host without one degrades to the tag
-     * alone.
-     */
-    onOpenSession?: (sessionId: string) => void;
-    /**
      * Render the "Delivered {date}" stamp. On by default (the Overview card
-     * header); the Delivered tab passes false because its exit stamp already
-     * carries the same fact as the row's leading date.
+     * header); pass false where the date is already shown elsewhere, or where a
+     * stale stamp would lie: the Delivered tab prints it as the row's exit
+     * stamp, and an OPEN row (a restored idea, in Priorities) is not an exit at
+     * all — restore only clears `archivedAt`, so its delivery date survives.
      */
     showDelivered?: boolean;
 }
+/**
+ * Whether {@link RunStateBadges} would render anything for this row, ignoring
+ * the optional session link (which is a companion of the running tag, never a
+ * tag of its own). Exported so a caller that renders its meta line
+ * CONDITIONALLY - the Delivered journal does - cannot silently swallow a tag
+ * added to the component later: one predicate, kept next to the conditions it
+ * mirrors.
+ */
+export declare function hasRunStateTags(idea: IdeaListRow, parentNumber?: (ideaId: string) => number | undefined): boolean;
 /**
  * The shared state pills of one idea, in header order. Renders nothing (an
  * empty fragment) for an idea that is simply idle: the callers drop it in
  * unconditionally.
  */
-export declare function RunStateBadges({ idea, parentNumber, onOpenSession, showDelivered }: RunStateBadgesProps): import("react").JSX.Element;
+export declare function RunStateBadges({ idea, client, parentNumber, showDelivered }: RunStateBadgesProps): import("react").JSX.Element;

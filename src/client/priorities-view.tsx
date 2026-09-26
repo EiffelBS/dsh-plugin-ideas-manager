@@ -280,13 +280,16 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                               the card header, but a ranked row is exactly where a
                               reader decides what to pick next - a "Running" row
                               that stays invisible here is duplicated work. Same
-                              component, so the two views cannot disagree. */}
+                              component, so the two views cannot disagree.
+                              showDelivered=false: a row here is OPEN, and a
+                              restored idea still carries the delivery date it was
+                              given before leaving the journal - an exit stamp on
+                              an actionable row would read as "this one is done". */}
                           <RunStateBadges
                             idea={idea}
+                            client={client}
                             parentNumber={parentNumber}
-                            onOpenSession={client.sessionOpener !== undefined
-                              ? sessionId => { client.sessionOpener?.open(sessionId) }
-                              : undefined}
+                            showDelivered={false}
                           />
                           {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                           {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}

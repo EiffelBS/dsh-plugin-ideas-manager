@@ -18,6 +18,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { IdeasBoard } from '../src/client/board-view.tsx'
 import { IdeasClient } from '../src/client/ideas-client.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
+import { classes } from '../src/client/style.ts'
+import { t } from '../src/client/locales.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   IDEAS_SETTINGS_DEFAULTS,
@@ -42,8 +44,14 @@ function fixture(): IdeasListSnapshot {
       { ...base, id: 'failed', ideaNumber: 2, title: 'Failed idea', status: 'open', rank: 2, bodyExcerpt: 'b', taskBoardId: 'task-1', taskBoardStatus: 'failed' },
       { ...base, id: 'running', ideaNumber: 3, title: 'Running idea', status: 'open', rank: 3, bodyExcerpt: 'c', taskBoardId: 'task-2', taskBoardStatus: 'running' },
       { ...base, id: 'child', ideaNumber: 4, title: 'Follow-up idea', status: 'open', rank: 4, bodyExcerpt: 'd', followUpOfId: 'failed' },
-      { ...base, id: 'archived-run', ideaNumber: 5, title: 'Archived while running', status: 'archived', rank: 1, bodyExcerpt: 'e', archivedAt: 50, runStatus: 'running' },
+      // Deliberately BARE: no workspace, no tags, no value/effort, no
+      // deliveredAt. Its meta line exists only because of the run state, so
+      // deleting hasRunStateTags would break this row.
+      { createdAt: 1, updatedAt: 100, id: 'archived-run', ideaNumber: 5, title: 'Archived while running', status: 'archived', rank: 1, bodyExcerpt: 'e', archivedAt: 50, runStatus: 'running' },
       { ...base, id: 'gate', ideaNumber: 6, title: 'Under review idea', status: 'underReview', rank: 1, bodyExcerpt: 'f' },
+      // Delivered, then restored: the ledger clears archivedAt but keeps
+      // deliveredAt, so an OPEN row can still carry a delivery date.
+      { ...base, id: 'restored', ideaNumber: 7, title: 'Restored idea', status: 'open', rank: 5, bodyExcerpt: 'g', deliveredAt: 70 },
     ],
   }
 }
@@ -176,7 +184,8 @@ describe('run-state tags on the Priorities rows', () => {
   it('never moves a row: the ranked order is the stored rank', async () => {
     await renderBoard()
     await openTab(1)
-    expect(idsIn('[data-dsh-ideas-priorities]')).toEqual(['plain', 'failed', 'running', 'child'])
+    expect(idsIn('[data-dsh-ideas-priorities]'))
+      .toEqual(['plain', 'failed', 'running', 'child', 'restored'])
   })
 })
 
@@ -185,11 +194,14 @@ describe('run-state tags on the Delivered rows', () => {
     await renderBoard()
     await openTab(2)
     const titles = deliveredTitles()
-    expect(titles).toHaveLength(1)
-    expect(titles[0]).toContain('Archived while running')
-    // A bare archived row (workspace-less fixture row, no tags/badges) still
-    // has to render its meta line for the tag to exist at all.
-    const tag = host.querySelector('[data-dsh-ideas-delivered] [data-dsh-ideas-task-running]')
+    expect(titles).toEqual(expect.arrayContaining([expect.stringContaining('Archived while running')]))
+    // The fixture row is deliberately bare (no workspace, no tags, no
+    // value/effort), so its meta line exists ONLY because of the run state:
+    // deleting the hasRunStateTags guard would drop this tag entirely.
+    const row = Array.from(host.querySelectorAll('[data-dsh-ideas-delivered] li'))
+      .find(node => (node.textContent ?? '').includes('Archived while running'))
+    expect(row?.querySelector(`.${classes.workspaceChip}`), 'fixture row is not bare').toBeNull()
+    const tag = row?.querySelector('[data-dsh-ideas-task-running]')
     expect(tag).not.toBeNull()
     expect(tag?.textContent).toBe('Running')
   })
@@ -206,16 +218,16 @@ describe('attention-first ordering of the Open column (setting openOrdering)', (
     const transport = new StaticTransport(fixture())
     await renderBoard(transport)
     expect(transport.configView).toBeUndefined()
-    // Overview: the Open column reads rank 1..4, the running idea stays third.
-    expect(columnIds(0)).toEqual(['plain', 'failed', 'running', 'child'])
+    // Overview: the Open column reads rank 1..5, the running idea stays third.
+    expect(columnIds(0)).toEqual(['plain', 'failed', 'running', 'child', 'restored'])
   })
 
   it('brings the in-flight work to the top of the Open column when opted in', async () => {
     const transport = new StaticTransport(fixture())
     transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
     await renderBoard(transport)
-    // running first, then the failed one, then the two idle rows by rank.
-    expect(columnIds(0)).toEqual(['running', 'failed', 'plain', 'child'])
+    // running first, then the failed one, then the three idle rows by rank.
+    expect(columnIds(0)).toEqual(['running', 'failed', 'plain', 'child', 'restored'])
   })
 
   it('leaves the closed columns on their own ordering', async () => {
@@ -224,5 +236,48 @@ describe('attention-first ordering of the Open column (setting openOrdering)', (
     await renderBoard(transport)
     const reviewColumn = host.querySelectorAll('[data-dsh-column-scroll]')[1]!
     expect(reviewColumn.textContent).toContain('Under review idea')
+  })
+
+  it('takes the OPEN column out of drag & drop in activity order (the anchor would lie)', async () => {
+    // The drop anchor is read from the DISPLAY order (the half-split line and
+    // dropNextId) while rebuildOrder resolves it in RANK space. In a reordered
+    // column the two disagree and a drop can rewrite the rank the card already
+    // had - a wire call whose only visible effect is nothing. The grip is
+    // therefore inert (with a tooltip that says why) while the column is a
+    // view, and the card's own action buttons still move the idea.
+    const transport = new StaticTransport(fixture())
+    transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
+    await renderBoard(transport)
+    const openGrip = host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')
+    expect(openGrip?.getAttribute('draggable')).toBe('false')
+    expect(openGrip?.getAttribute('title')).toBe(t('card.dragLocked'))
+    // The archive action on the same card is untouched, so a lifecycle move
+    // never depended on the grip.
+    expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-actions')).not.toBeNull()
+  })
+
+  it('leaves the drag enabled everywhere else: rank order, and the closed columns', async () => {
+    await renderBoard()
+    expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')?.getAttribute('draggable')).toBe('true')
+
+    const transport = new StaticTransport(fixture())
+    transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
+    await renderBoard(transport)
+    // Under review / Archived / Declined are always in rank order.
+    expect(host.querySelector('[data-dsh-idea-id="gate"] .dsh-ideas-card-grip')?.getAttribute('draggable')).toBe('true')
+  })
+})
+
+describe('the exit stamp never lies on an actionable row', () => {
+  it('a restored idea (open, still carrying deliveredAt) shows NO Delivered stamp in Priorities', async () => {
+    // The restore verb clears archivedAt but keeps deliveredAt, so an OPEN
+    // ranked row can still carry a delivery date. Printing it there would read
+    // as "this one is done" on the list that decides what to pick next.
+    await renderBoard()
+    await openTab(1)
+    const row = host.querySelector('[data-dsh-idea-id="restored"]')
+    expect(row, 'restored idea missing from the ranking').not.toBeNull()
+    expect(row?.querySelector('.dsh-ideas-delivered-badge')).toBeNull()
+    expect(row?.querySelector('[data-dsh-ideas-task-running]')).toBeNull()
   })
 })
