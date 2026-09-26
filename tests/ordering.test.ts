@@ -2,20 +2,26 @@
  * Ordering helper tests: rank sorting, the status-major / workspace-group
  * drag rebuild, the one-step open-backlog move and the Priorities grouping —
  * all under the "rank by workspace" model (ranks are relative inside each
- * (status, workspace) group; the workspace-less ideas form the generic group).
+ * (status, workspace) group; the workspace-less ideas form the generic group) —
+ * plus the open column's attention ordering (idea #71), whose contract is that
+ * it is a VIEW: the default rank order is unchanged and no rank is ever
+ * written from a run state.
  */
 
 import { describe, expect, it } from 'vitest'
-import { createIdea, type IdeaRecord, type IdeaStatus } from '../src/core/ideas.ts'
+import { createIdea, type IdeaRecord, type IdeaRunStatus, type IdeaStatus } from '../src/core/ideas.ts'
 import {
+  activityBlockOf,
   archivedIdeasOf,
   compareWorkspaceGroups,
   groupOpenByWorkspace,
   matchesWorkspaceScope,
   moveIdeaInOpenBacklog,
   NO_WORKSPACE_FILTER,
+  orderByActivity,
   orderByWorkspaceGroups,
   orderIdeas,
+  orderOpenColumn,
   rebuildOrder,
 } from '../src/client/ordering.ts'
 
@@ -27,6 +33,15 @@ function ideaW(id: string, status: IdeaStatus, workspaceId?: string, rank?: numb
   return {
     ...idea(id, status, rank),
     ...(workspaceId === undefined ? {} : { workspaceId }),
+  }
+}
+
+/** Open idea carrying a run state (idea #66 / #71 fixtures). */
+function run(id: string, rank: number, runStatus?: IdeaRunStatus, taskBoardStatus?: string): IdeaRecord {
+  return {
+    ...idea(id, 'open', rank),
+    ...(runStatus === undefined ? {} : { runStatus }),
+    ...(taskBoardStatus === undefined ? {} : { taskBoardStatus }),
   }
 }
 
@@ -277,5 +292,144 @@ describe('archivedIdeasOf', () => {
       idea('d', 'declined'),
     ]
     expect(archivedIdeasOf(rows, NO_WORKSPACE_FILTER).map(row => row.id)).toEqual(['b', 'c'])
+  })
+})
+
+/* --- attention ordering of the open backlog (idea #71) --- */
+
+describe('activityBlockOf', () => {
+  it('reads the run state from runStatus OR the raw card observation', () => {
+    // A card started from the task board itself is only folded into runStatus
+    // by the next poll, so both fields must count as "in flight".
+    expect(activityBlockOf({ runStatus: 'running' })).toBe(0)
+    expect(activityBlockOf({ taskBoardStatus: 'running' })).toBe(0)
+    expect(activityBlockOf({ runStatus: 'failed' })).toBe(1)
+    expect(activityBlockOf({ taskBoardStatus: 'failed' })).toBe(1)
+  })
+
+  it('treats a finished run and any other state as ordinary (the review gate owns done)', () => {
+    expect(activityBlockOf({})).toBe(2)
+    expect(activityBlockOf({ runStatus: 'done' })).toBe(2)
+    // A card observed outside a run (backlog/todo) clears the running stamp.
+    expect(activityBlockOf({ taskBoardStatus: 'backlog', runStatus: 'done' })).toBe(2)
+  })
+
+  it('puts a running idea in the running block even if the card says failed', () => {
+    // The stronger "needs attention" signal wins, so the two never disagree
+    // with the Running badge drawn on the same row.
+    expect(activityBlockOf({ runStatus: 'running', taskBoardStatus: 'failed' })).toBe(0)
+  })
+})
+
+describe('orderByActivity', () => {
+  const rows = (): IdeaRecord[] => [
+    run('idle-1', 1),
+    run('failed-card', 2, undefined, 'failed'),
+    run('running-card', 3, undefined, 'running'),
+    run('idle-2', 4),
+    run('running-direct', 5, 'running'),
+    run('done-card', 6, undefined, 'done'),
+    run('failed-direct', 7, 'failed'),
+  ]
+
+  it('puts the running block first, then the failed one, then the rest', () => {
+    expect(orderByActivity(rows()).map(row => row.id)).toEqual([
+      'running-card', 'running-direct',
+      'failed-card', 'failed-direct',
+      'idle-1', 'idle-2', 'done-card',
+    ])
+  })
+
+  it('keeps the human rank INSIDE every block (the ranking is never lost)', () => {
+    // Same rows with the ranks shuffled: the block order holds, the inside
+    // order follows the rank, not the input order.
+    const shuffled = [
+      run('running-late', 9, 'running'),
+      run('running-early', 2, 'running'),
+      run('idle-late', 8),
+      run('idle-early', 1),
+    ]
+    expect(orderByActivity(shuffled).map(row => row.id)).toEqual([
+      'running-early', 'running-late', 'idle-early', 'idle-late',
+    ])
+  })
+
+  it('is deterministic across calls (the 2.5 s poll must not reshuffle the column)', () => {
+    const input = rows()
+    expect(orderByActivity(input).map(row => row.id)).toEqual(orderByActivity(input).map(row => row.id))
+  })
+
+  it('leaves the input array untouched (a view, not an in-place sort)', () => {
+    const input = rows()
+    const before = input.map(row => row.id)
+    orderByActivity(input)
+    expect(input.map(row => row.id)).toEqual(before)
+  })
+
+  it('is the identity on a list with no run at all', () => {
+    const idle = [run('a', 2), run('b', 1), run('c', 3)]
+    expect(orderByActivity(idle).map(row => row.id)).toEqual(orderIdeas(idle).map(row => row.id))
+  })
+})
+
+describe('orderOpenColumn', () => {
+  const titles = new Map<string, string>([['w1', 'Zeta'], ['w2', 'Alpha']])
+  const title = (id: string): string => titles.get(id) ?? id
+
+  it('NON-REGRESSION: the default rank ordering is byte-identical to the pre-#71 order', () => {
+    const rows = [
+      { ...ideaW('a', 'open', 'w1', 2), runStatus: 'running' as const },
+      ideaW('b', 'open', 'w1', 1),
+      ideaW('x', 'open', 'w2', 2),
+      ideaW('y', 'open', 'w2', 1),
+      ideaW('g', 'open', undefined, 1),
+    ]
+    // Ungrouped: the plain rank sort, whatever the run states are.
+    expect(orderOpenColumn(rows, false, title, 'rank')).toEqual(orderIdeas(rows))
+    // Grouped: the pre-existing workspace-group layout, untouched.
+    expect(orderOpenColumn(rows, true, title, 'rank')).toEqual(orderByWorkspaceGroups(rows, title))
+  })
+
+  it('brings the in-flight work to the top of an ungrouped column', () => {
+    const rows = [
+      ideaW('a', 'open', 'w1', 1),
+      { ...ideaW('b', 'open', 'w1', 2), runStatus: 'running' as const },
+      ideaW('x', 'open', 'w1', 3),
+    ]
+    expect(orderOpenColumn(rows, false, title, 'activity').map(row => row.id)).toEqual(['b', 'a', 'x'])
+  })
+
+  it('keeps the workspace groups contiguous and sorts INSIDE each one (never across)', () => {
+    const rows = [
+      // Zeta/w1 holds a running idea at a LOW rank, Alpha/w2 an idle one first.
+      { ...ideaW('w1-running', 'open', 'w1', 5), runStatus: 'running' as const },
+      ideaW('w1-idle', 'open', 'w1', 1),
+      { ...ideaW('w2-running', 'open', 'w2', 6), runStatus: 'running' as const },
+      ideaW('w2-idle', 'open', 'w2', 2),
+    ]
+    // Alpha (w2) first by title, Zeta (w1) second, the generic group last -
+    // and inside each group the running idea leads. A running idea of w1 must
+    // NOT jump above the w2 header.
+    expect(orderOpenColumn(rows, true, title, 'activity').map(row => row.id)).toEqual([
+      'w2-running', 'w2-idle', 'w1-running', 'w1-idle',
+    ])
+  })
+
+  it('leaves the CLOSED columns out of the attention order (the review gate owns them)', () => {
+    // orderOpenColumn is only called for the Open column; locked here by
+    // showing that a closed idea's run state never reaches it.
+    const archived = { ...idea('done', 'archived', 1), runStatus: 'done' as const }
+    expect(orderOpenColumn([archived], false, title, 'activity').map(row => row.id)).toEqual(['done'])
+  })
+
+  it('never feeds the persisted order: the reorder wire stays rank-based whatever the run states', () => {
+    // The risk this option must not create: a run in flight silently
+    // rewriting the human ranking through the 2.5 s poll. rebuildOrder reads
+    // ranks only, so the wire order of a board with a running idea is the same
+    // as without one.
+    const idle = [idea('a', 'open', 1), idea('b', 'open', 2), idea('c', 'open', 3)]
+    const busy = [idle[0]!, { ...idle[1]!, runStatus: 'running' as const }, idle[2]!]
+    expect(rebuildOrder(busy, 'c', 'open', 'a')).toEqual(rebuildOrder(idle, 'c', 'open', 'a'))
+    expect(moveIdeaInOpenBacklog(busy, 'c', 'up')).toEqual(moveIdeaInOpenBacklog(idle, 'c', 'up'))
   })
 })

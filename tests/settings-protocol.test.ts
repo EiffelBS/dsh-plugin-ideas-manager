@@ -147,3 +147,25 @@ describe('parseSettingsBody (extended option set)', () => {
     expect(parseSettingsBody({ patch: {}, expectedRevision: 2 })).toEqual({ patch: {}, expectedRevision: 2 })
   })
 })
+
+describe('openOrdering (idea #71)', () => {
+  it('defaults to the human rank, so an existing profile is untouched', () => {
+    expect(IDEAS_SETTINGS_DEFAULTS.openOrdering).toBe('rank')
+    // A section written before the option existed has no openOrdering key at
+    // all: the read guard must land on the rank order, not on a surprise.
+    expect(sanitizeSettings({ tagRows: 2 }).openOrdering).toBe('rank')
+  })
+
+  it('keeps the two legal members and falls back on anything else (read AND write)', () => {
+    expect(sanitizeSettings({ openOrdering: 'activity' }).openOrdering).toBe('activity')
+    expect(sanitizeSettings({ openOrdering: 'rank' }).openOrdering).toBe('rank')
+    expect(sanitizeSettings({ openOrdering: 'attention' }).openOrdering).toBe('rank')
+    expect(parseSettingsBody({ patch: { openOrdering: 'activity' } })?.patch.openOrdering).toBe('activity')
+    expect(parseSettingsBody({ patch: { openOrdering: 'attention' } })?.patch.openOrdering).toBe('rank')
+  })
+
+  it('is part of the patchable set (an unknown field still rejects)', () => {
+    expect(parseSettingsBody({ patch: { openOrdering: 'rank' } })).toBeDefined()
+    expect(parseSettingsBody({ patch: { openOrderingMode: 'activity' } })).toBeUndefined()
+  })
+})

@@ -57,6 +57,7 @@ export declare const IdeasSettingsSchema: z<Schemastery.ObjectS<{
     hideDeclinedColumn: z<boolean, boolean>;
     cardDensity: z<string, string>;
     language: z<string, string>;
+    openOrdering: z<string, string>;
 }>, Schemastery.ObjectT<{
     tagRows: z<number, number>;
     defaultTab: z<string, string>;
@@ -67,6 +68,7 @@ export declare const IdeasSettingsSchema: z<Schemastery.ObjectS<{
     hideDeclinedColumn: z<boolean, boolean>;
     cardDensity: z<string, string>;
     language: z<string, string>;
+    openOrdering: z<string, string>;
 }>>;
 /**
  * Refusal raised by the plugin-owned store when the caller's revision fence is

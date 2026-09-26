@@ -74,7 +74,10 @@ have to hunt the card back in the Overview to start a run.
    instance, does not lose it and DSH keeps watching it for you.
 4. While it runs, the card shows a blue **Running** pill and an
    **Open session** link — one click lands you in the execution, which is the
-   only way to watch a session DSH started on your behalf.
+   only way to watch a session DSH started on your behalf. The same pills now
+   ride the **Priorities** and **Delivered** rows too, so the "is this one
+   already being worked on?" answer is available on the list you actually
+   read, without opening the card.
 5. When it finishes, the idea moves to **Under review** for your verdict. If it
    failed, it stays in the backlog behind the **Task failed** badge.
 
@@ -104,6 +107,11 @@ The plugin contributes an **Ideas board** section to the DSH Settings modal:
   language, independent of the DSH shell setting. `auto` follows the shell, and
   `en` / `fr` / `zh` pin the panel to one dictionary. Applied immediately.
   Dictionaries: English (default fallback), French, Simplified Chinese.
+- **Open column order** (`openOrdering`, default `rank`): `rank` shows the
+  Overview's Open column in the ranking you set by hand. `activity` floats the
+  ideas whose run is in flight to the top, then the failed ones, keeping your
+  ranking inside each group. It is a **view only** — it never stores anything,
+  so drag & drop and the move arrows still write the ranking you chose.
 
 Deployments without a settings service keep the defaults; the board never depends
 on the settings surface. Options are stored per DSH profile and never leave your

@@ -756,6 +756,19 @@ export const IDEAS_DENSITIES = ['comfortable', 'compact'] as const
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number]
 
 /**
+ * Orderings of the OPEN backlog offered by the settings row (idea #71):
+ *  - `rank` (the default): the human ranking, exactly as the reorder verb
+ *    wrote it — the reference order, unchanged;
+ *  - `activity`: in-flight work first (running block, then failed block),
+ *    each block still rank-sorted, so a run in flight is visible without
+ *    scrolling. A VIEW ONLY: it is never persisted, so the 2.5 s client poll
+ *    can never rewrite the human ranking behind the reader's back.
+ */
+export const IDEAS_OPEN_ORDERINGS = ['rank', 'activity'] as const
+/** One open-backlog ordering mode. */
+export type IdeasOpenOrdering = (typeof IDEAS_OPEN_ORDERINGS)[number]
+
+/**
  * Interface languages of the panel: `auto` follows the DSH shell language
  * (the shipped default), the others pin the panel to one dictionary
  * independently of the shell. DSH serves en + zh today, so `auto` gives an
@@ -789,6 +802,8 @@ export interface IdeasSettingsValue {
   cardDensity: IdeasDensity
   /** Panel interface language: `auto` follows the DSH shell, else pinned. */
   language: IdeasLanguage
+  /** Order of the Open column / ranked backlog: human rank or attention first. */
+  openOrdering: IdeasOpenOrdering
   /** Minimum width (px) a kanban column can be dragged to (idea #53). */
   columnMinWidth: number
   /** Maximum width (px) a kanban column can be dragged to (idea #53). */
@@ -836,6 +851,7 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   hideDeclinedColumn: false,
   cardDensity: 'comfortable',
   language: 'auto',
+  openOrdering: 'rank',
   columnMinWidth: COLUMN_MIN_WIDTH_DEFAULT,
   columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
 }
@@ -904,6 +920,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     hideDeclinedColumn: booleanOr(row.hideDeclinedColumn, IDEAS_SETTINGS_DEFAULTS.hideDeclinedColumn),
     cardDensity: oneOf(row.cardDensity, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity),
     language: oneOf(row.language, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language),
+    openOrdering: oneOf(row.openOrdering, IDEAS_OPEN_ORDERINGS, IDEAS_SETTINGS_DEFAULTS.openOrdering),
     columnMinWidth: clampColumnMinWidth(row.columnMinWidth),
     columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
   }
@@ -913,7 +930,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
 const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
-  'language', 'columnMinWidth', 'columnMaxWidth',
+  'language', 'openOrdering', 'columnMinWidth', 'columnMaxWidth',
 ] as const
 
 /**
@@ -947,6 +964,8 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
       patch.defaultTab = oneOf(field, IDEAS_TABS, IDEAS_SETTINGS_DEFAULTS.defaultTab)
     } else if (key === 'language') {
       patch.language = oneOf(field, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language)
+    } else if (key === 'openOrdering') {
+      patch.openOrdering = oneOf(field, IDEAS_OPEN_ORDERINGS, IDEAS_SETTINGS_DEFAULTS.openOrdering)
     } else if (key === 'columnMinWidth') {
       if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
       patch.columnMinWidth = clampColumnMinWidth(field)

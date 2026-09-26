@@ -50,6 +50,10 @@ export declare const fr: {
     'settings.cardDensityDesc': string;
     'settings.densityComfortable': string;
     'settings.densityCompact': string;
+    'settings.openOrdering': string;
+    'settings.openOrderingDesc': string;
+    'settings.openOrderingRank': string;
+    'settings.openOrderingActivity': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -228,6 +232,10 @@ export declare const en: {
     'settings.cardDensityDesc': string;
     'settings.densityComfortable': string;
     'settings.densityCompact': string;
+    'settings.openOrdering': string;
+    'settings.openOrderingDesc': string;
+    'settings.openOrderingRank': string;
+    'settings.openOrderingActivity': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -412,6 +420,10 @@ export declare const zh: {
     'settings.cardDensityDesc': string;
     'settings.densityComfortable': string;
     'settings.densityCompact': string;
+    'settings.openOrdering': string;
+    'settings.openOrderingDesc': string;
+    'settings.openOrderingRank': string;
+    'settings.openOrderingActivity': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;

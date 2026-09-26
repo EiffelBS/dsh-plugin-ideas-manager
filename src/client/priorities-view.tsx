@@ -1,11 +1,18 @@
 /**
  * Priorities view: the suggested ranking of the open backlog — the current
  * best ordering of the open ideas. Each open idea is one ranked row (rank,
- * title, workspace chip, value/effort, description preview, rationale) with
- * move-up/move-down actions and drag & drop reordering of the open column.
- * During a drag an accent line shows the insertion point: before the hovered
- * row (upper half) or after it (lower half); dropping on the list surface
- * below the rows appends at the end of the dragged idea's workspace group.
+ * title, workspace chip, run-state tags, value/effort, description preview,
+ * rationale) with move-up/move-down actions and drag & drop reordering of the
+ * open column. During a drag an accent line shows the insertion point: before
+ * the hovered row (upper half) or after it (lower half); dropping on the list
+ * surface below the rows appends at the end of the dragged idea's workspace
+ * group.
+ *
+ * The run-state tags (idea #71) are the shared RunStateBadges of the Overview
+ * card header: an idea in flight or in failure says so on its row, which is
+ * where the "what do I pick next" decision is actually made. They are
+ * last-observation facts written by the host poll, never by an idea verb, and
+ * they never move a row — the ranking below stays the human order.
  *
  * Ranking is PER WORKSPACE ("rank by workspace"): every workspace group (the
  * workspace-less ideas are one generic group) carries its own relative ranks.
@@ -32,6 +39,7 @@ import {
   type OpenRankGroup,
 } from './ordering.ts'
 import { ScoreBadge } from './score-badge.tsx'
+import { RunStateBadges } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
@@ -57,6 +65,13 @@ export interface PrioritiesProps {
    *  sections (the generic group last) and restrict drops to one group.
    *  False (single-workspace scope) keeps the plain unheaded list. */
   grouped: boolean
+  /**
+   * Resolve the parent of a follow-up child into its ledger number (idea #71).
+   * The row carries `followUpOfId` but never the parent's number, so the board
+   * owns the id -> idea map and passes the resolver down; the run-state chips
+   * are skipped when it is absent.
+   */
+  parentNumber?: (ideaId: string) => number | undefined
 }
 
 /** Drop indicator: which row is hovered and whether the drop inserts before
@@ -79,7 +94,7 @@ function groupTitle(group: OpenRankGroup<IdeaListRow>, workspaceTitle: (workspac
 }
 
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped }: PrioritiesProps) {
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber }: PrioritiesProps) {
   // Workspace groups in display order; inside every group ideas are ranked
   // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
   // render a pure function of the props.
@@ -261,6 +276,18 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                               {tag.name}
                             </span>
                           ))}
+                          {/* Run-state tags (idea #71): the Overview shows them in
+                              the card header, but a ranked row is exactly where a
+                              reader decides what to pick next - a "Running" row
+                              that stays invisible here is duplicated work. Same
+                              component, so the two views cannot disagree. */}
+                          <RunStateBadges
+                            idea={idea}
+                            parentNumber={parentNumber}
+                            onOpenSession={client.sessionOpener !== undefined
+                              ? sessionId => { client.sessionOpener?.open(sessionId) }
+                              : undefined}
+                          />
                           {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                           {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                         </div>

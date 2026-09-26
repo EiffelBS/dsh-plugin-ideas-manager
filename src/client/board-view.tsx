@@ -22,7 +22,7 @@ import { renderMarkdown } from './markdown.ts'
 import { IdeaPreview } from './idea-preview.tsx'
 import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
-import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, rebuildOrder, archivedIdeasOf } from './ordering.ts'
+import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, orderOpenColumn, rebuildOrder, archivedIdeasOf } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
@@ -32,6 +32,7 @@ import { canLaunch, modelTargetIdOf } from './launch.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
+import { RunStateBadges } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
@@ -1450,6 +1451,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }, [filter, client, revision])
   // id -> idea, to resolve a child's followUpOfId into the parent number.
   const ideaById = new Map(ideas.map(idea => [idea.id, idea]))
+  // The same resolver handed to the Priorities and Delivered rows (idea #71):
+  // they carry followUpOfId but never the parent's number, and one map built
+  // here beats every view building its own.
+  const parentNumberOf = (ideaId: string): number | undefined => ideaById.get(ideaId)?.ideaNumber
   // Idea #36: the chip set follows the workspace scope — the plain ledger
   // union mixes in labels that belong to other workspaces and drown the ones
   // usable here; a scoped board only offers labels it can actually filter
@@ -1492,9 +1497,17 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     // title, the generic group last), each group rank-sorted — the board side
     // of the "rank by workspace" presentation. A single-workspace scope has
     // one group, so the plain rank sort is identical.
-    return workspaceFilter === ''
-      ? orderByWorkspaceGroups(rows, workspaceTitle)
-      : orderIdeas(rows)
+    //
+    // The openOrdering option (idea #71) re-lays the OPEN column into
+    // attention blocks — in flight first, then failed — each block still
+    // rank-sorted, and always INSIDE a workspace group. It applies to the Open
+    // column only (a closed idea is not "in flight" in any useful sense, the
+    // review gate owns the under-review column), and it is a view: no rank is
+    // written, so the 2.5 s poll can never overwrite the human ranking.
+    const grouped = workspaceFilter === ''
+    return status === 'open'
+      ? orderOpenColumn(rows, grouped, workspaceTitle, cfg.openOrdering)
+      : grouped ? orderByWorkspaceGroups(rows, workspaceTitle) : orderIdeas(rows)
   }
 
   const toggleTag = (name: string): void => {
@@ -1931,72 +1944,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               >
                                 <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                               </div>
-                              {idea.followUpOfId !== undefined && (
-                                <span
-                                  className={classes.followUpBadge}
-                                  title={t('card.followUpOfHint')}
-                                >
-                                  {t('card.followUpOf', { number: ideaById.get(idea.followUpOfId)?.ideaNumber ?? '—' })}
-                                </span>
-                              )}
-                              {idea.status === 'underReview' && (
-                                <span className={classes.reviewBadge} title={t('card.underReviewHint')}>
-                                  {t('board.status.underReview')}
-                                </span>
-                              )}
-                              {/* Failed mirrored task (follow-up work): the
-                                  poll records the last observed status; the
-                                  idea deliberately STAYS open (a failed run
-                                  delivered nothing) - the badge only makes the
-                                  situation visible. */}
-                              {idea.status === 'open' && idea.taskBoardStatus === 'failed' && (
-                                <span
-                                  className={classes.taskFailedBadge}
-                                  title={t('card.taskFailedHint')}
-                                  data-dsh-ideas-task-failed=""
-                                >
-                                  {t('card.taskFailed')}
-                                </span>
-                              )}
-                              {/* A launch in flight (idea #66), whichever backend
-                                  runs it: the badge is what keeps the card from
-                                  looking ordinary the second after the button was
-                                  clicked, and the link is the way back into the
-                                  execution — a direct run lives in a session the
-                                  human never saw open. The card status counts too:
-                                  someone can start the mirrored card from the
-                                  task-board itself, and the next poll folds that
-                                  into runStatus anyway. */}
-                              {(idea.runStatus === 'running' || idea.taskBoardStatus === 'running') && (
-                                <span
-                                  className={classes.taskRunningBadge}
-                                  title={t('card.taskRunningHint')}
-                                  data-dsh-ideas-task-running=""
-                                >
-                                  <span className={classes.taskRunningDot} aria-hidden="true" />
-                                  {t('card.taskRunning')}
-                                </span>
-                              )}
-                              {idea.runStatus === 'running' && idea.runSessionId !== undefined && idea.runSessionId !== ''
-                                && client.sessionOpener !== undefined && (
-                                  <button
-                                    type="button"
-                                    className={classes.openSession}
-                                    title={t('card.openSessionHint')}
-                                    data-dsh-ideas-open-session=""
-                                    onClick={event => {
-                                      event.stopPropagation()
-                                      client.sessionOpener?.open(idea.runSessionId as string)
-                                    }}
-                                  >
-                                    {t('card.openSession')}
-                                  </button>
-                                )}
-                              {idea.deliveredAt !== undefined && (
-                                <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
-                                  {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
-                                </span>
-                              )}
+                              {/* Shared with the Priorities and Delivered rows
+                                  (idea #71): one place owns the run-state tags,
+                                  so a row can never disagree with a card. */}
+                              <RunStateBadges
+                                idea={idea}
+                                parentNumber={parentNumberOf}
+                                onOpenSession={client.sessionOpener !== undefined
+                                  ? sessionId => { client.sessionOpener?.open(sessionId) }
+                                  : undefined}
+                              />
                               <div
                                 className={classes.cardGrip}
                                 draggable={!client.pending}
@@ -2240,6 +2197,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               activeTags={tagFilter}
               mdMode={mdMode}
               grouped={workspaceFilter === ''}
+              parentNumber={parentNumberOf}
             />
           )
           : (
@@ -2251,6 +2209,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               onToggleTag={toggleTag}
               activeTags={tagFilter}
               mdMode={mdMode}
+              parentNumber={parentNumberOf}
             />
           )}
 

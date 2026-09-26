@@ -320,14 +320,15 @@ describe('IdeasSettingsSection page', () => {
       t('settings.columnMinWidth'),
       t('settings.columnMaxWidth'),
       t('settings.defaultTab'),
+      t('settings.openOrdering'),
       t('settings.rememberScope'),
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
-    // Three number rows (tagRows + the two column-width bounds), three selects
-    // (density + language + open tab), four toggle switches.
+    // Three number rows (tagRows + the two column-width bounds), four selects
+    // (density + language + open tab + open column order), four toggle switches.
     expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(3)
-    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(3)
+    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(4)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
     expect(checks.map(box => box.checked)).toEqual([true, false, false, false])
     for (const toggle of checks) {

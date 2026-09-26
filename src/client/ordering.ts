@@ -10,10 +10,17 @@
  * rebuild below emits a status-major, group-minor, rank-ordered id list, the
  * shape the host reorder consumes (it re-derives per-group ranks from the
  * appearance order, so each group's order in the wire list is what counts).
+ *
+ * The one departure from rank order is the open column's optional attention
+ * ordering (idea #71): orderByActivity / orderOpenColumn put the in-flight
+ * work first WITHOUT touching a rank. It is a view, never a persisted order —
+ * every 2.5 s client poll re-derives it from the same snapshot, so it cannot
+ * rewrite the human ranking behind the reader's back.
  * Pure and unit-testable in isolation.
  */
 
-import { IDEA_COLUMNS, rankGroupKey, type RankableIdea, type IdeaStatus } from '../core/ideas.ts'
+import { IDEA_COLUMNS, rankGroupKey, type RankableIdea, type IdeaRunStatus, type IdeaStatus } from '../core/ideas.ts'
+import type { IdeasOpenOrdering } from '../protocol.ts'
 
 /**
  * Sentinel workspace-filter value: the generic ideas (no workspace assigned).
@@ -223,6 +230,84 @@ export function orderByWorkspaceGroups<T extends RankableIdea>(
   return groupOpenByWorkspace(rows)
     .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
     .flatMap(group => group.ideas)
+}
+
+/** The two run fields the attention ordering reads. Both are host-written
+ *  system fields (last observation, never an idea verb) and both are optional
+ *  on a list row, so the comparator stays a pure function of the row. */
+export interface ActivityRankable {
+  /** Backend-neutral state of the last launched run (idea #66). */
+  runStatus?: IdeaRunStatus
+  /** Last raw observation of the linked TaskBoard card. */
+  taskBoardStatus?: string
+}
+
+/**
+ * Attention block of one idea: 0 = a run in flight, 1 = a run that failed,
+ * 2 = everything else (idle, or already done — a finished run is not
+ * "attention", the review gate is).
+ *
+ * The rules mirror the run-state badges exactly, so the sort and the tags can
+ * never point at different rows: the running block is `runStatus` OR the raw
+ * card observation (a card started from the task board itself is only folded
+ * into runStatus by the next poll), and the failed block likewise.
+ */
+export function activityBlockOf(idea: ActivityRankable): 0 | 1 | 2 {
+  if (idea.runStatus === 'running' || idea.taskBoardStatus === 'running') return 0
+  if (idea.runStatus === 'failed' || idea.taskBoardStatus === 'failed') return 1
+  return 2
+}
+
+/**
+ * Attention-first ordering (idea #71, settings option `openOrdering =
+ * activity`): the running block first, then the failed block, then the rest —
+ * every block still rank-sorted by {@link orderIdeas}, so the human ranking is
+ * never lost inside a block and the result is deterministic from one poll to
+ * the next (a comparator that broke rank ties arbitrarily would reshuffle the
+ * column on every 2.5 s refresh).
+ *
+ * A VIEW: nothing here is persisted, so the client poll can never rewrite the
+ * rank the reorder verb wrote.
+ */
+export function orderByActivity<T extends RankableIdea & ActivityRankable>(rows: readonly T[]): T[] {
+  const blocks: T[][] = [[], [], []]
+  for (const idea of rows) blocks[activityBlockOf(idea)]!.push(idea)
+  return blocks.flatMap(block => orderIdeas(block))
+}
+
+/**
+ * The presentation order of the Overview **Open column**, combining the two
+ * orthogonal decisions:
+ *
+ *  - grouping: `grouped` lays the column out per workspace group (the board on
+ *    "all workspaces"); ungrouped is one flat list;
+ *  - ordering: `rank` is the human ranking (the default), `activity` puts the
+ *    in-flight work first.
+ *
+ * The activity sort is applied INSIDE each group, never across groups: a
+ * running idea of workspace B must not land under workspace A's header, and
+ * the drag & drop of a grouped column stays group-local by construction.
+ *
+ * The Priorities ranking deliberately does NOT go through here. It is a pure
+ * rank list whose rows print their position and whose arrows/drag write one
+ * rank step, so an attention order would make the printed number contradict
+ * the stored rank the reader is editing. Priorities carries the run-state
+ * badges instead, which answer the same question without moving anything.
+ *
+ * Pure, so the whole decision is unit-testable without a component.
+ */
+export function orderOpenColumn<T extends RankableIdea & ActivityRankable>(
+  rows: readonly T[],
+  grouped: boolean,
+  workspaceTitle: (workspaceId: string) => string,
+  ordering: IdeasOpenOrdering,
+): T[] {
+  const within = (group: readonly T[]): T[] =>
+    ordering === 'activity' ? orderByActivity(group) : orderIdeas(group)
+  if (!grouped) return within(rows)
+  return groupOpenByWorkspace(rows)
+    .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
+    .flatMap(group => within(group.ideas))
 }
 
 /**

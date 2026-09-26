@@ -30,6 +30,7 @@ import {
   COLUMN_MIN_WIDTH_RANGE,
   IDEAS_DENSITIES,
   IDEAS_LANGUAGES,
+  IDEAS_OPEN_ORDERINGS,
   IDEAS_TABS,
   sanitizeSettings,
   TAG_ROWS_MAX,
@@ -215,6 +216,10 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
     fr: t('settings.languageFr'),
     zh: t('settings.languageZh'),
   }
+  const openOrderingLabels: Record<(typeof IDEAS_OPEN_ORDERINGS)[number], string> = {
+    rank: t('settings.openOrderingRank'),
+    activity: t('settings.openOrderingActivity'),
+  }
 
   return (
     <section className={classes.settingsSection} data-dsh-ideas-settings="">
@@ -357,6 +362,23 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
                 >
                   {IDEAS_TABS.map(tab => (
                     <option key={tab} value={tab}>{tabLabels[tab]}</option>
+                  ))}
+                </select>
+              )}
+            />
+            <SettingsRow
+              title={t('settings.openOrdering')}
+              desc={t('settings.openOrderingDesc')}
+              control={(
+                <select
+                  className={classes.settingsSelect}
+                  value={value.openOrdering}
+                  disabled={disabled}
+                  aria-label={t('settings.openOrdering')}
+                  onChange={event => { save({ openOrdering: event.target.value as typeof value.openOrdering }) }}
+                >
+                  {IDEAS_OPEN_ORDERINGS.map(ordering => (
+                    <option key={ordering} value={ordering}>{openOrderingLabels[ordering]}</option>
                   ))}
                 </select>
               )}

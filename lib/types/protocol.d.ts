@@ -263,6 +263,18 @@ export declare const IDEAS_DENSITIES: readonly ["comfortable", "compact"];
 /** One card-density mode. */
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number];
 /**
+ * Orderings of the OPEN backlog offered by the settings row (idea #71):
+ *  - `rank` (the default): the human ranking, exactly as the reorder verb
+ *    wrote it — the reference order, unchanged;
+ *  - `activity`: in-flight work first (running block, then failed block),
+ *    each block still rank-sorted, so a run in flight is visible without
+ *    scrolling. A VIEW ONLY: it is never persisted, so the 2.5 s client poll
+ *    can never rewrite the human ranking behind the reader's back.
+ */
+export declare const IDEAS_OPEN_ORDERINGS: readonly ["rank", "activity"];
+/** One open-backlog ordering mode. */
+export type IdeasOpenOrdering = (typeof IDEAS_OPEN_ORDERINGS)[number];
+/**
  * Interface languages of the panel: `auto` follows the DSH shell language
  * (the shipped default), the others pin the panel to one dictionary
  * independently of the shell. DSH serves en + zh today, so `auto` gives an
@@ -294,6 +306,8 @@ export interface IdeasSettingsValue {
     cardDensity: IdeasDensity;
     /** Panel interface language: `auto` follows the DSH shell, else pinned. */
     language: IdeasLanguage;
+    /** Order of the Open column / ranked backlog: human rank or attention first. */
+    openOrdering: IdeasOpenOrdering;
     /** Minimum width (px) a kanban column can be dragged to (idea #53). */
     columnMinWidth: number;
     /** Maximum width (px) a kanban column can be dragged to (idea #53). */

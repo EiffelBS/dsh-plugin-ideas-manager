@@ -9,6 +9,11 @@
  * preview (MD/raw like the kanban and Priorities), and the edit/restore
  * actions. Restoring an idea brings it back to the open backlog (the deliver
  * verb is the only way in, restore the only way out).
+ *
+ * The run-state tags (idea #71) are the shared RunStateBadges of the Overview
+ * card header: a run started while the idea was already under review or
+ * archived stays followed by the host poll until the stamp clears, so the
+ * journal must not hide a row whose execution is still in flight.
  */
 
 import { type CSSProperties } from 'react'
@@ -17,6 +22,7 @@ import type { IdeaListRow } from '../protocol.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { ScoreBadge } from './score-badge.tsx'
+import { RunStateBadges } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { tagHue } from './tags.ts'
@@ -35,6 +41,11 @@ export interface DeliveredViewProps {
   activeTags: readonly string[]
   /** Render descriptions as markdown (raw text otherwise), like the kanban. */
   mdMode: boolean
+  /**
+   * Resolve the parent of a follow-up child into its ledger number (idea #71).
+   * The board owns the id -> idea map and passes the resolver down.
+   */
+  parentNumber?: (ideaId: string) => number | undefined
 }
 
 /** Most recent exit first (deliveredAt for delivered, archivedAt otherwise). */
@@ -54,7 +65,19 @@ function isoDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode }: DeliveredViewProps) {
+/**
+ * Whether the row would render ANY meta pill, run-state tags included (idea
+ * #71). Without this the conditional meta row would swallow the run state of
+ * a bare archived idea. The tags that can appear here are the same ones the
+ * Overview card header draws for this record: the follow-up lineage chip, the
+ * failed task (open ideas only, so never on this tab) and a run in flight.
+ */
+function hasRunState(idea: IdeaListRow, parentNumber: ((ideaId: string) => number | undefined) | undefined): boolean {
+  if (idea.followUpOfId !== undefined && parentNumber !== undefined) return true
+  return idea.runStatus === 'running' || idea.taskBoardStatus === 'running'
+}
+
+export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber }: DeliveredViewProps) {
   const rows = mostRecentFirst(archivedIdeas)
   return (
     <div className={classes.priorities} data-dsh-ideas-delivered="">
@@ -93,7 +116,8 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                     >
                       <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                     </div>
-                    {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined) && (
+                    {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined
+                      || hasRunState(idea, parentNumber)) && (
                       <div className={classes.cardMeta}>
                         {workspaceId !== undefined && (
                           <span className={classes.workspaceChip}>{workspaceTitle(workspaceId)}</span>
@@ -108,6 +132,20 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                             {tag.name}
                           </span>
                         ))}
+                        {/* Run-state tags (idea #71), same component as the
+                            Overview card header: an idea archived while a run
+                            was still in flight keeps that run followed by the
+                            host poll, so the journal must say so. The exit
+                            stamp on the left already carries the delivery
+                            date, hence showDelivered=false. */}
+                        <RunStateBadges
+                          idea={idea}
+                          parentNumber={parentNumber}
+                          onOpenSession={client.sessionOpener !== undefined
+                            ? sessionId => { client.sessionOpener?.open(sessionId) }
+                            : undefined}
+                          showDelivered={false}
+                        />
                         {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                         {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                       </div>

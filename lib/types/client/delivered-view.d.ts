@@ -9,6 +9,11 @@
  * preview (MD/raw like the kanban and Priorities), and the edit/restore
  * actions. Restoring an idea brings it back to the open backlog (the deliver
  * verb is the only way in, restore the only way out).
+ *
+ * The run-state tags (idea #71) are the shared RunStateBadges of the Overview
+ * card header: a run started while the idea was already under review or
+ * archived stays followed by the host poll until the stamp clears, so the
+ * journal must not hide a row whose execution is still in flight.
  */
 import type { IdeasClient } from './ideas-client.ts';
 import type { IdeaListRow } from '../protocol.ts';
@@ -26,5 +31,10 @@ export interface DeliveredViewProps {
     activeTags: readonly string[];
     /** Render descriptions as markdown (raw text otherwise), like the kanban. */
     mdMode: boolean;
+    /**
+     * Resolve the parent of a follow-up child into its ledger number (idea #71).
+     * The board owns the id -> idea map and passes the resolver down.
+     */
+    parentNumber?: (ideaId: string) => number | undefined;
 }
-export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode }: DeliveredViewProps): import("react").JSX.Element;
+export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber }: DeliveredViewProps): import("react").JSX.Element;
