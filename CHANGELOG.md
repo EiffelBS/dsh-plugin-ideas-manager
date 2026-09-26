@@ -6,6 +6,14 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.2 - 2026-09-26
+
+### Fixed
+
+- The npm and changelog links at the bottom of a release note pointed at a
+  doubled version prefix, so they did not open. (The v0.7.1 release page still
+  shows the wrong links: it was published before the fix.)
+
 ## 0.7.1 - 2026-09-26
 
 ### Added
