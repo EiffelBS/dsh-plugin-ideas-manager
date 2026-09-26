@@ -296,7 +296,9 @@ describe('IdeasSettingsSection page', () => {
       'settings.columnMinWidth', 'settings.columnMinWidthDesc',
       'settings.columnMaxWidth', 'settings.columnMaxWidthDesc',
       'settings.openOrdering', 'settings.openOrderingDesc',
-      'settings.openOrderingRank', 'settings.openOrderingActivity',
+      'settings.openOrderingCreatedAt', 'settings.openOrderingCreatedAtDesc',
+      'settings.openOrderingRank',
+      'settings.runningFirst', 'settings.runningFirstDesc',
       'card.dragLocked',
       'card.confirmLifecycle',
     ] as const) {
@@ -324,16 +326,19 @@ describe('IdeasSettingsSection page', () => {
       t('settings.columnMaxWidth'),
       t('settings.defaultTab'),
       t('settings.openOrdering'),
+      t('settings.runningFirst'),
       t('settings.rememberScope'),
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
     // Three number rows (tagRows + the two column-width bounds), four selects
-    // (density + language + open tab + open column order), four toggle switches.
+    // (density + language + open tab + open column order), five toggle switches.
     expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(3)
     expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(4)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
-    expect(checks.map(box => box.checked)).toEqual([true, false, false, false])
+    // renderMarkdown (on by default), then runningFirst (on by default), then
+    // the three shipped-off toggles.
+    expect(checks.map(box => box.checked)).toEqual([true, true, false, false, false])
     for (const toggle of checks) {
       const heading = toggle.parentElement
       expect(heading?.classList.contains(classes.settingsRowHeading)).toBe(true)
@@ -347,13 +352,13 @@ describe('IdeasSettingsSection page', () => {
     const client = makeClient(transport)
     await render(client)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
-    // rememberScope (second switch) is off by default; toggle it ON.
+    // rememberScope (third switch) is off by default; toggle it ON.
     await act(async () => {
-      checks[1]!.click()
+      checks[2]!.click()
       await new Promise(resolve => { setTimeout(resolve, 0) })
     })
     expect(transport.saved).toEqual([{ rememberWorkspaceScope: true }])
-    expect((Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[])[1]!.checked).toBe(true)
+    expect((Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[])[2]!.checked).toBe(true)
   })
 
   it('saves the card density select on change', async () => {

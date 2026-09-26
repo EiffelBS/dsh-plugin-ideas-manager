@@ -52,8 +52,11 @@ export declare const fr: {
     'settings.densityCompact': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
+    'settings.openOrderingCreatedAt': string;
+    'settings.openOrderingCreatedAtDesc': string;
     'settings.openOrderingRank': string;
-    'settings.openOrderingActivity': string;
+    'settings.runningFirst': string;
+    'settings.runningFirstDesc': string;
     'card.dragLocked': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
@@ -235,8 +238,11 @@ export declare const en: {
     'settings.densityCompact': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
+    'settings.openOrderingCreatedAt': string;
+    'settings.openOrderingCreatedAtDesc': string;
     'settings.openOrderingRank': string;
-    'settings.openOrderingActivity': string;
+    'settings.runningFirst': string;
+    'settings.runningFirstDesc': string;
     'card.dragLocked': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
@@ -424,8 +430,11 @@ export declare const zh: {
     'settings.densityCompact': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
+    'settings.openOrderingCreatedAt': string;
+    'settings.openOrderingCreatedAtDesc': string;
     'settings.openOrderingRank': string;
-    'settings.openOrderingActivity': string;
+    'settings.runningFirst': string;
+    'settings.runningFirstDesc': string;
     'card.dragLocked': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;

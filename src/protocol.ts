@@ -757,14 +757,17 @@ export type IdeasDensity = (typeof IDEAS_DENSITIES)[number]
 
 /**
  * Orderings of the OPEN backlog offered by the settings row (idea #71):
- *  - `rank` (the default): the human ranking, exactly as the reorder verb
- *    wrote it — the reference order, unchanged;
- *  - `activity`: in-flight work first (running block, then failed block),
- *    each block still rank-sorted, so a run in flight is visible without
- *    scrolling. A VIEW ONLY: it is never persisted, so the 2.5 s client poll
- *    can never rewrite the human ranking behind the reader's back.
+ *  - `createdAt` (the default): oldest idea first. A backlog reads as a diary,
+ *    so the default is the order the ideas actually arrived in;
+ *  - `createdAtDesc`: newest idea first;
+ *  - `rank`: the human ranking, exactly as the reorder verb wrote it.
+ *
+ * All three are VIEW ONLY: none of them is persisted, so the 2.5 s client poll
+ * can never rewrite the ranking behind the reader's back. The independent
+ * `runningFirst` toggle (ON by default) floats the in-flight work above
+ * whichever of the three is selected.
  */
-export const IDEAS_OPEN_ORDERINGS = ['rank', 'activity'] as const
+export const IDEAS_OPEN_ORDERINGS = ['createdAt', 'createdAtDesc', 'rank'] as const
 /** One open-backlog ordering mode. */
 export type IdeasOpenOrdering = (typeof IDEAS_OPEN_ORDERINGS)[number]
 
@@ -802,8 +805,15 @@ export interface IdeasSettingsValue {
   cardDensity: IdeasDensity
   /** Panel interface language: `auto` follows the DSH shell, else pinned. */
   language: IdeasLanguage
-  /** Order of the Open column / ranked backlog: human rank or attention first. */
+  /** Order of the Open column: creation date (asc/desc) or the human rank. */
   openOrdering: IdeasOpenOrdering
+  /**
+   * Float the ideas whose run is in flight above the selected order (idea
+   * #71). Independent of `openOrdering`: with it ON the running block is laid
+   * out first and every other idea keeps the selected order below it, so it
+   * composes with a date order exactly as it does with the rank.
+   */
+  runningFirst: boolean
   /** Minimum width (px) a kanban column can be dragged to (idea #53). */
   columnMinWidth: number
   /** Maximum width (px) a kanban column can be dragged to (idea #53). */
@@ -851,7 +861,8 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   hideDeclinedColumn: false,
   cardDensity: 'comfortable',
   language: 'auto',
-  openOrdering: 'rank',
+  openOrdering: 'createdAt',
+  runningFirst: true,
   columnMinWidth: COLUMN_MIN_WIDTH_DEFAULT,
   columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
 }
@@ -921,6 +932,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     cardDensity: oneOf(row.cardDensity, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity),
     language: oneOf(row.language, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language),
     openOrdering: oneOf(row.openOrdering, IDEAS_OPEN_ORDERINGS, IDEAS_SETTINGS_DEFAULTS.openOrdering),
+    runningFirst: booleanOr(row.runningFirst, IDEAS_SETTINGS_DEFAULTS.runningFirst),
     columnMinWidth: clampColumnMinWidth(row.columnMinWidth),
     columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
   }
@@ -930,7 +942,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
 const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
-  'language', 'openOrdering', 'columnMinWidth', 'columnMaxWidth',
+  'language', 'openOrdering', 'runningFirst', 'columnMinWidth', 'columnMaxWidth',
 ] as const
 
 /**
@@ -966,6 +978,8 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
       patch.language = oneOf(field, IDEAS_LANGUAGES, IDEAS_SETTINGS_DEFAULTS.language)
     } else if (key === 'openOrdering') {
       patch.openOrdering = oneOf(field, IDEAS_OPEN_ORDERINGS, IDEAS_SETTINGS_DEFAULTS.openOrdering)
+    } else if (key === 'runningFirst') {
+      patch.runningFirst = booleanOr(field, IDEAS_SETTINGS_DEFAULTS.runningFirst)
     } else if (key === 'columnMinWidth') {
       if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
       patch.columnMinWidth = clampColumnMinWidth(field)

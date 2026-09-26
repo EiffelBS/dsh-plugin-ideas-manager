@@ -3,26 +3,26 @@
  * drag rebuild, the one-step open-backlog move and the Priorities grouping —
  * all under the "rank by workspace" model (ranks are relative inside each
  * (status, workspace) group; the workspace-less ideas form the generic group) —
- * plus the open column's attention ordering (idea #71), whose contract is that
- * it is a VIEW: the default rank order is unchanged and no rank is ever
- * written from a run state.
+ * plus the open column's display order (idea #71), whose contract is that it
+ * is a VIEW: the human rank order is unchanged, and no rank is ever written
+ * from a creation date or a run state.
  */
 
 import { describe, expect, it } from 'vitest'
 import { createIdea, type IdeaRecord, type IdeaRunStatus, type IdeaStatus } from '../src/core/ideas.ts'
 import {
-  activityBlockOf,
   archivedIdeasOf,
   compareWorkspaceGroups,
   groupOpenByWorkspace,
   matchesWorkspaceScope,
   moveIdeaInOpenBacklog,
   NO_WORKSPACE_FILTER,
-  orderByActivity,
+  orderByCreatedAt,
   orderByWorkspaceGroups,
   orderIdeas,
   orderOpenColumn,
   rebuildOrder,
+  runningBlockOf,
 } from '../src/client/ordering.ts'
 
 function idea(id: string, status: IdeaStatus, rank?: number): IdeaRecord {
@@ -43,6 +43,11 @@ function run(id: string, rank: number, runStatus?: IdeaRunStatus, taskBoardStatu
     ...(runStatus === undefined ? {} : { runStatus }),
     ...(taskBoardStatus === undefined ? {} : { taskBoardStatus }),
   }
+}
+
+/** Open idea of a workspace group, stamped with a creation instant (idea #71). */
+function datedW(id: string, workspaceId: string | undefined, rank: number, createdAt: number): IdeaRecord {
+  return { ...ideaW(id, 'open', workspaceId, rank), createdAt }
 }
 
 describe('orderIdeas', () => {
@@ -295,80 +300,55 @@ describe('archivedIdeasOf', () => {
   })
 })
 
-/* --- attention ordering of the open backlog (idea #71) --- */
+/* --- open column display order (idea #71) --- */
 
-describe('activityBlockOf', () => {
+describe('runningBlockOf', () => {
   it('reads the run state from runStatus OR the raw card observation', () => {
     // A card started from the task board itself is only folded into runStatus
     // by the next poll, so both fields must count as "in flight".
-    expect(activityBlockOf({ runStatus: 'running' })).toBe(0)
-    expect(activityBlockOf({ taskBoardStatus: 'running' })).toBe(0)
-    expect(activityBlockOf({ runStatus: 'failed' })).toBe(1)
-    expect(activityBlockOf({ taskBoardStatus: 'failed' })).toBe(1)
+    expect(runningBlockOf({ runStatus: 'running' })).toBe(0)
+    expect(runningBlockOf({ taskBoardStatus: 'running' })).toBe(0)
+    // Only the running state is floated: a failed run keeps its badge but
+    // stays where the selected order puts it.
+    expect(runningBlockOf({ runStatus: 'failed' })).toBe(1)
+    expect(runningBlockOf({ taskBoardStatus: 'failed' })).toBe(1)
   })
 
   it('treats a finished run and any other state as ordinary (the review gate owns done)', () => {
-    expect(activityBlockOf({})).toBe(2)
-    expect(activityBlockOf({ runStatus: 'done' })).toBe(2)
+    expect(runningBlockOf({})).toBe(1)
+    expect(runningBlockOf({ runStatus: 'done' })).toBe(1)
     // A card observed outside a run (backlog/todo) clears the running stamp.
-    expect(activityBlockOf({ taskBoardStatus: 'backlog', runStatus: 'done' })).toBe(2)
+    expect(runningBlockOf({ taskBoardStatus: 'backlog', runStatus: 'done' })).toBe(1)
   })
 
   it('puts a running idea in the running block even if the card says failed', () => {
-    // The stronger "needs attention" signal wins, so the two never disagree
-    // with the Running badge drawn on the same row.
-    expect(activityBlockOf({ runStatus: 'running', taskBoardStatus: 'failed' })).toBe(0)
+    // The stronger "in flight" signal wins, so the block never disagrees with
+    // the Running badge drawn on the same row.
+    expect(runningBlockOf({ runStatus: 'running', taskBoardStatus: 'failed' })).toBe(0)
   })
 })
 
-describe('orderByActivity', () => {
-  const rows = (): IdeaRecord[] => [
-    run('idle-1', 1),
-    run('failed-card', 2, undefined, 'failed'),
-    run('running-card', 3, undefined, 'running'),
-    run('idle-2', 4),
-    run('running-direct', 5, 'running'),
-    run('done-card', 6, undefined, 'done'),
-    run('failed-direct', 7, 'failed'),
-  ]
-
-  it('puts the running block first, then the failed one, then the rest', () => {
-    expect(orderByActivity(rows()).map(row => row.id)).toEqual([
-      'running-card', 'running-direct',
-      'failed-card', 'failed-direct',
-      'idle-1', 'idle-2', 'done-card',
-    ])
+describe('orderByCreatedAt', () => {
+  const dated = (id: string, createdAt: number, rank?: number): IdeaRecord =>
+    ({ ...idea(id, 'open', rank), createdAt })
+  it('sorts oldest first, and newest first when desc', () => {
+    const rows = [dated('new', 300, 3), dated('old', 100, 1), dated('mid', 200, 2)]
+    expect(orderByCreatedAt(rows, false).map(row => row.id)).toEqual(['old', 'mid', 'new'])
+    expect(orderByCreatedAt(rows, true).map(row => row.id)).toEqual(['new', 'mid', 'old'])
   })
 
-  it('keeps the human rank INSIDE every block (the ranking is never lost)', () => {
-    // Same rows with the ranks shuffled: the block order holds, the inside
-    // order follows the rank, not the input order.
-    const shuffled = [
-      run('running-late', 9, 'running'),
-      run('running-early', 2, 'running'),
-      run('idle-late', 8),
-      run('idle-early', 1),
-    ]
-    expect(orderByActivity(shuffled).map(row => row.id)).toEqual([
-      'running-early', 'running-late', 'idle-early', 'idle-late',
-    ])
-  })
-
-  it('is deterministic across calls (the 2.5 s poll must not reshuffle the column)', () => {
-    const input = rows()
-    expect(orderByActivity(input).map(row => row.id)).toEqual(orderByActivity(input).map(row => row.id))
+  it('breaks a createdAt tie by rank, so the column never reshuffles between polls', () => {
+    // An import can stamp a whole batch with the same instant; the rank
+    // tiebreak keeps the 2.5 s refresh from reordering the column.
+    const rows = [dated('b', 100, 2), dated('a', 100, 1)]
+    expect(orderByCreatedAt(rows, false).map(row => row.id)).toEqual(['a', 'b'])
+    expect(orderByCreatedAt([...rows].reverse(), false).map(row => row.id)).toEqual(['a', 'b'])
   })
 
   it('leaves the input array untouched (a view, not an in-place sort)', () => {
-    const input = rows()
-    const before = input.map(row => row.id)
-    orderByActivity(input)
-    expect(input.map(row => row.id)).toEqual(before)
-  })
-
-  it('is the identity on a list with no run at all', () => {
-    const idle = [run('a', 2), run('b', 1), run('c', 3)]
-    expect(orderByActivity(idle).map(row => row.id)).toEqual(orderIdeas(idle).map(row => row.id))
+    const rows = [dated('b', 200, 1), dated('a', 100, 2)]
+    orderByCreatedAt(rows, false)
+    expect(rows.map(row => row.id)).toEqual(['b', 'a'])
   })
 })
 
@@ -376,7 +356,7 @@ describe('orderOpenColumn', () => {
   const titles = new Map<string, string>([['w1', 'Zeta'], ['w2', 'Alpha']])
   const title = (id: string): string => titles.get(id) ?? id
 
-  it('NON-REGRESSION: the default rank ordering is byte-identical to the pre-#71 order', () => {
+  it('NON-REGRESSION: with the rank order and the float off it is byte-identical to the pre-#71 order', () => {
     const rows = [
       { ...ideaW('a', 'open', 'w1', 2), runStatus: 'running' as const },
       ideaW('b', 'open', 'w1', 1),
@@ -385,45 +365,69 @@ describe('orderOpenColumn', () => {
       ideaW('g', 'open', undefined, 1),
     ]
     // Ungrouped: the plain rank sort, whatever the run states are.
-    expect(orderOpenColumn(rows, false, title, 'rank')).toEqual(orderIdeas(rows))
+    expect(orderOpenColumn(rows, false, title, 'rank', false)).toEqual(orderIdeas(rows))
     // Grouped: the pre-existing workspace-group layout, untouched.
-    expect(orderOpenColumn(rows, true, title, 'rank')).toEqual(orderByWorkspaceGroups(rows, title))
+    expect(orderOpenColumn(rows, true, title, 'rank', false)).toEqual(orderByWorkspaceGroups(rows, title))
   })
 
-  it('brings the in-flight work to the top of an ungrouped column', () => {
+  it('the shipped default (createdAt ascending, float ON) is a pure date order while nothing runs', () => {
+    // With the float on but no run in flight the block is empty, so the
+    // selected order is the whole order.
     const rows = [
-      ideaW('a', 'open', 'w1', 1),
-      { ...ideaW('b', 'open', 'w1', 2), runStatus: 'running' as const },
-      ideaW('x', 'open', 'w1', 3),
+      datedW('new', 'w1', 1, 300),
+      datedW('old', 'w1', 2, 100),
+      datedW('mid', 'w1', 3, 200),
     ]
-    expect(orderOpenColumn(rows, false, title, 'activity').map(row => row.id)).toEqual(['b', 'a', 'x'])
+    expect(orderOpenColumn(rows, false, title, 'createdAt', true).map(row => row.id))
+      .toEqual(['old', 'mid', 'new'])
+  })
+
+  it('floats the running block above a date order without changing the rest of it', () => {
+    const rows = [
+      datedW('a', 'w1', 1, 100),
+      datedW('b', 'w1', 2, 300),
+      { ...datedW('c', 'w1', 3, 200), runStatus: 'running' as const },
+    ]
+    // Running first, then the two idle ideas oldest-first.
+    expect(orderOpenColumn(rows, false, title, 'createdAt', true).map(row => row.id))
+      .toEqual(['c', 'a', 'b'])
+  })
+
+  it('turning the float OFF gives the selected order alone (no block at all)', () => {
+    const rows = [
+      datedW('a', 'w1', 1, 100),
+      datedW('b', 'w1', 2, 300),
+      { ...datedW('c', 'w1', 3, 200), runStatus: 'running' as const },
+    ]
+    expect(orderOpenColumn(rows, false, title, 'createdAt', false).map(row => row.id))
+      .toEqual(['a', 'c', 'b'])
   })
 
   it('keeps the workspace groups contiguous and sorts INSIDE each one (never across)', () => {
     const rows = [
-      // Zeta/w1 holds a running idea at a LOW rank, Alpha/w2 an idle one first.
-      { ...ideaW('w1-running', 'open', 'w1', 5), runStatus: 'running' as const },
-      ideaW('w1-idle', 'open', 'w1', 1),
-      { ...ideaW('w2-running', 'open', 'w2', 6), runStatus: 'running' as const },
-      ideaW('w2-idle', 'open', 'w2', 2),
+      // Zeta/w1 holds a running idea created LAST, Alpha/w2 an idle one first.
+      { ...datedW('w1-running', 'w1', 5, 900), runStatus: 'running' as const },
+      datedW('w1-idle', 'w1', 1, 100),
+      { ...datedW('w2-running', 'w2', 6, 800), runStatus: 'running' as const },
+      datedW('w2-idle', 'w2', 2, 200),
     ]
     // Alpha (w2) first by title, Zeta (w1) second, the generic group last -
     // and inside each group the running idea leads. A running idea of w1 must
     // NOT jump above the w2 header.
-    expect(orderOpenColumn(rows, true, title, 'activity').map(row => row.id)).toEqual([
+    expect(orderOpenColumn(rows, true, title, 'createdAt', true).map(row => row.id)).toEqual([
       'w2-running', 'w2-idle', 'w1-running', 'w1-idle',
     ])
   })
 
-  it('leaves the CLOSED columns out of the attention order (the review gate owns them)', () => {
+  it('leaves the CLOSED columns out of the display order (the review gate owns them)', () => {
     // orderOpenColumn is only called for the Open column; locked here by
     // showing that a closed idea's run state never reaches it.
     const archived = { ...idea('done', 'archived', 1), runStatus: 'done' as const }
-    expect(orderOpenColumn([archived], false, title, 'activity').map(row => row.id)).toEqual(['done'])
+    expect(orderOpenColumn([archived], false, title, 'createdAt', true).map(row => row.id)).toEqual(['done'])
   })
 
-  it('never feeds the persisted order: the reorder wire stays rank-based whatever the run states', () => {
-    // The risk this option must not create: a run in flight silently
+  it('never feeds the persisted order: the reorder wire stays rank-based whatever the view shows', () => {
+    // The risk these options must not create: a display order silently
     // rewriting the human ranking through the 2.5 s poll. rebuildOrder reads
     // ranks only, so the wire order of a board with a running idea is the same
     // as without one.

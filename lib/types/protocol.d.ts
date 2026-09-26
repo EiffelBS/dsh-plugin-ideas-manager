@@ -264,14 +264,17 @@ export declare const IDEAS_DENSITIES: readonly ["comfortable", "compact"];
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number];
 /**
  * Orderings of the OPEN backlog offered by the settings row (idea #71):
- *  - `rank` (the default): the human ranking, exactly as the reorder verb
- *    wrote it — the reference order, unchanged;
- *  - `activity`: in-flight work first (running block, then failed block),
- *    each block still rank-sorted, so a run in flight is visible without
- *    scrolling. A VIEW ONLY: it is never persisted, so the 2.5 s client poll
- *    can never rewrite the human ranking behind the reader's back.
+ *  - `createdAt` (the default): oldest idea first. A backlog reads as a diary,
+ *    so the default is the order the ideas actually arrived in;
+ *  - `createdAtDesc`: newest idea first;
+ *  - `rank`: the human ranking, exactly as the reorder verb wrote it.
+ *
+ * All three are VIEW ONLY: none of them is persisted, so the 2.5 s client poll
+ * can never rewrite the ranking behind the reader's back. The independent
+ * `runningFirst` toggle (ON by default) floats the in-flight work above
+ * whichever of the three is selected.
  */
-export declare const IDEAS_OPEN_ORDERINGS: readonly ["rank", "activity"];
+export declare const IDEAS_OPEN_ORDERINGS: readonly ["createdAt", "createdAtDesc", "rank"];
 /** One open-backlog ordering mode. */
 export type IdeasOpenOrdering = (typeof IDEAS_OPEN_ORDERINGS)[number];
 /**
@@ -306,8 +309,15 @@ export interface IdeasSettingsValue {
     cardDensity: IdeasDensity;
     /** Panel interface language: `auto` follows the DSH shell, else pinned. */
     language: IdeasLanguage;
-    /** Order of the Open column / ranked backlog: human rank or attention first. */
+    /** Order of the Open column: creation date (asc/desc) or the human rank. */
     openOrdering: IdeasOpenOrdering;
+    /**
+     * Float the ideas whose run is in flight above the selected order (idea
+     * #71). Independent of `openOrdering`: with it ON the running block is laid
+     * out first and every other idea keeps the selected order below it, so it
+     * composes with a date order exactly as it does with the rank.
+     */
+    runningFirst: boolean;
     /** Minimum width (px) a kanban column can be dragged to (idea #53). */
     columnMinWidth: number;
     /** Maximum width (px) a kanban column can be dragged to (idea #53). */

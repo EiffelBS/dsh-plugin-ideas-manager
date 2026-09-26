@@ -11,11 +11,12 @@
  * shape the host reorder consumes (it re-derives per-group ranks from the
  * appearance order, so each group's order in the wire list is what counts).
  *
- * The one departure from rank order is the open column's optional attention
- * ordering (idea #71): orderByActivity / orderOpenColumn put the in-flight
- * work first WITHOUT touching a rank. It is a view, never a persisted order —
- * every 2.5 s client poll re-derives it from the same snapshot, so it cannot
- * rewrite the human ranking behind the reader's back.
+ * The one departure from the human ranking is the open column's optional
+ * display order (idea #71): orderOpenColumn can lay the column out by creation
+ * date instead of rank, and can float the in-flight work above whichever order
+ * is selected. Both are views, never a persisted order — every 2.5 s client poll
+ * re-derives them from the same snapshot, so they cannot rewrite the human
+ * ranking behind the reader's back.
  * Pure and unit-testable in isolation.
  */
 
@@ -232,7 +233,7 @@ export function orderByWorkspaceGroups<T extends RankableIdea>(
     .flatMap(group => group.ideas)
 }
 
-/** The two run fields the attention ordering reads. Both are host-written
+/** The two run fields the running-first block reads. Both are host-written
  *  system fields (last observation, never an idea verb) and both are optional
  *  on a list row, so the comparator stays a pure function of the row. */
 export interface ActivityRankable {
@@ -243,48 +244,64 @@ export interface ActivityRankable {
 }
 
 /**
- * Attention block of one idea: 0 = a run in flight, 1 = a run that failed,
- * 2 = everything else (idle, or already done — a finished run is not
- * "attention", the review gate is).
+ * Running block of one idea: 0 = a run in flight, 1 = everything else (idle,
+ * done, or failed).
  *
- * The rules mirror the run-state badges exactly, so the sort and the tags can
- * never point at different rows: the running block is `runStatus` OR the raw
- * card observation (a card started from the task board itself is only folded
- * into runStatus by the next poll), and the failed block likewise.
+ * Only the RUNNING state is floated, deliberately: a failed run keeps its tag
+ * but its row stays where the selected order puts it, because a date-ordered
+ * backlog that jumped every failure to the top would stop reading as a diary.
+ * The rule mirrors the running badge exactly, so the sort and the tag can never
+ * point at different rows: the block is `runStatus` OR the raw card observation
+ * (a card started from the task board itself is only folded into runStatus by
+ * the next poll).
  */
-export function activityBlockOf(idea: ActivityRankable): 0 | 1 | 2 {
-  if (idea.runStatus === 'running' || idea.taskBoardStatus === 'running') return 0
-  if (idea.runStatus === 'failed' || idea.taskBoardStatus === 'failed') return 1
-  return 2
+export function runningBlockOf(idea: ActivityRankable): 0 | 1 {
+  return idea.runStatus === 'running' || idea.taskBoardStatus === 'running' ? 0 : 1
+}
+
+/** Creation instant of a row, used by the date orderings. */
+function createdAtKey<T extends { createdAt: number }>(idea: T): number {
+  return idea.createdAt
 }
 
 /**
- * Attention-first ordering (idea #71, settings option `openOrdering =
- * activity`): the running block first, then the failed block, then the rest —
- * every block still rank-sorted by {@link orderIdeas}, so the human ranking is
- * never lost inside a block and the result is deterministic from one poll to
- * the next (a comparator that broke rank ties arbitrarily would reshuffle the
- * column on every 2.5 s refresh).
- *
- * A VIEW: nothing here is persisted, so the client poll can never rewrite the
- * rank the reorder verb wrote.
+ * Creation-date ordering of one block (idea #71). `desc` flips it to newest
+ * first. Ties — an import can stamp a whole batch with the same instant — fall
+ * back to the human rank and then to the input order, so the column is
+ * deterministic from one poll to the next instead of reshuffling on every 2.5 s
+ * refresh.
  */
-export function orderByActivity<T extends RankableIdea & ActivityRankable>(rows: readonly T[]): T[] {
-  const blocks: T[][] = [[], [], []]
-  for (const idea of rows) blocks[activityBlockOf(idea)]!.push(idea)
-  return blocks.flatMap(block => orderIdeas(block))
+export function orderByCreatedAt<T extends RankableIdea & { createdAt: number }>(
+  rows: readonly T[],
+  desc: boolean,
+): T[] {
+  const direction = desc ? -1 : 1
+  return [...rows].sort((a, b) =>
+    (createdAtKey(a) - createdAtKey(b)) * direction || orderKey(a) - orderKey(b))
+}
+
+/** The comparator behind each `openOrdering` member, as a pure function. */
+function sortByOrdering<T extends RankableIdea & { createdAt: number }>(
+  rows: readonly T[],
+  ordering: IdeasOpenOrdering,
+): T[] {
+  if (ordering === 'rank') return orderIdeas(rows)
+  return orderByCreatedAt(rows, ordering === 'createdAtDesc')
 }
 
 /**
- * The presentation order of the Overview **Open column**, combining the two
- * orthogonal decisions:
+ * The presentation order of the Overview **Open column**, combining the three
+ * orthogonal decisions (idea #71):
  *
  *  - grouping: `grouped` lays the column out per workspace group (the board on
  *    "all workspaces"); ungrouped is one flat list;
- *  - ordering: `rank` is the human ranking (the default), `activity` puts the
- *    in-flight work first.
+ *  - ordering: `createdAt` (the default, oldest first), `createdAtDesc`, or
+ *    `rank` — the human ranking the reorder verb wrote;
+ *  - `runningFirst`: with it on, the ideas whose run is in flight are laid out
+ *    first and every other idea keeps the selected order below them, so the
+ *    float composes with a date order exactly as it does with the rank.
  *
- * The activity sort is applied INSIDE each group, never across groups: a
+ * The selected order is applied INSIDE each group, never across groups: a
  * running idea of workspace B must not land under workspace A's header, and
  * the drag & drop of a grouped column stays group-local by construction.
  *
@@ -296,14 +313,24 @@ export function orderByActivity<T extends RankableIdea & ActivityRankable>(rows:
  *
  * Pure, so the whole decision is unit-testable without a component.
  */
-export function orderOpenColumn<T extends RankableIdea & ActivityRankable>(
+export function orderOpenColumn<T extends RankableIdea & ActivityRankable & { createdAt: number }>(
   rows: readonly T[],
   grouped: boolean,
   workspaceTitle: (workspaceId: string) => string,
   ordering: IdeasOpenOrdering,
+  runningFirst: boolean,
 ): T[] {
-  const within = (group: readonly T[]): T[] =>
-    ordering === 'activity' ? orderByActivity(group) : orderIdeas(group)
+  const within = (group: readonly T[]): T[] => {
+    const sorted = sortByOrdering(group, ordering)
+    if (!runningFirst) return sorted
+    const running: T[] = []
+    const rest: T[] = []
+    for (const idea of sorted) {
+      if (runningBlockOf(idea) === 0) running.push(idea)
+      else rest.push(idea)
+    }
+    return [...running, ...rest]
+  }
   if (!grouped) return within(rows)
   return groupOpenByWorkspace(rows)
     .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))

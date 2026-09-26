@@ -107,14 +107,21 @@ The plugin contributes an **Ideas board** section to the DSH Settings modal:
   language, independent of the DSH shell setting. `auto` follows the shell, and
   `en` / `fr` / `zh` pin the panel to one dictionary. Applied immediately.
   Dictionaries: English (default fallback), French, Simplified Chinese.
-- **Open column order** (`openOrdering`, default `rank`): `rank` shows the
-  Overview's Open column in the ranking you set by hand. `activity` floats the
-  ideas whose run is in flight to the top, then the failed ones, keeping your
-  ranking inside each group. It is a **view only** — it never stores anything,
-  so drag & drop and the move arrows still write the ranking you chose. While
-  the column is in `activity` order its drag grip is off (the position you see
-  is not the rank you would be writing); the card buttons still move an idea to
-  another column, and switching back to `rank` brings the grip back.
+- **Open column order** (`openOrdering`, default `createdAt`): how the Overview's
+  Open column is laid out. `createdAt` shows the oldest idea first, `createdAtDesc`
+  the newest first, and `rank` the ranking you set by hand.
+- **Show running ideas at the top** (`runningFirst`, on by default): floats the
+  ideas whose run is in flight above whichever of the three orders is selected,
+  without changing that order. A failed run keeps its red tag but stays where the
+  selected order puts it.
+
+Both are a **view only** — neither stores anything, so the 2.5 s poll can never
+overwrite the ranking you chose, and the move arrows in the Priorities tab still
+write the rank you edit there. While either one reorders the Open column, its drag
+grip is off (the position you see is not the rank you would be writing); the card
+buttons still move an idea to another column, and choosing `rank` with the float
+off brings the grip back. The **Priorities** tab always stays on the stored rank —
+it prints a position number and its arrows write one rank step.
 
 Deployments without a settings service keep the defaults; the board never depends
 on the settings surface. Options are stored per DSH profile and never leave your

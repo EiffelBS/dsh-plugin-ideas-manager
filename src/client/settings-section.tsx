@@ -217,8 +217,9 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
     zh: t('settings.languageZh'),
   }
   const openOrderingLabels: Record<(typeof IDEAS_OPEN_ORDERINGS)[number], string> = {
+    createdAt: t('settings.openOrderingCreatedAt'),
+    createdAtDesc: t('settings.openOrderingCreatedAtDesc'),
     rank: t('settings.openOrderingRank'),
-    activity: t('settings.openOrderingActivity'),
   }
 
   return (
@@ -381,6 +382,21 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
                     <option key={ordering} value={ordering}>{openOrderingLabels[ordering]}</option>
                   ))}
                 </select>
+              )}
+            />
+            <SettingsRow
+              title={t('settings.runningFirst')}
+              desc={t('settings.runningFirstDesc')}
+              controlOnTitle
+              control={(
+                <input
+                  className={classes.settingsToggle}
+                  type="checkbox"
+                  checked={value.runningFirst}
+                  disabled={disabled}
+                  aria-label={t('settings.runningFirst')}
+                  onChange={event => { save({ runningFirst: event.target.checked }) }}
+                />
               )}
             />
             <SettingsRow

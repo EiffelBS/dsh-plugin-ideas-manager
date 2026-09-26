@@ -34,16 +34,22 @@ import {
 
 const base = { createdAt: 1, updatedAt: 100, workspaceId: 'ws1' }
 
-/** One open idea per run state, one follow-up child, one archived run. */
+/**
+ * One open idea per run state, one follow-up child, one archived run.
+ *
+ * The `createdAt` stamps run in a DIFFERENT order from the ranks on purpose
+ * (`plain` is rank 1 but the newest, `failed` is rank 2 but the oldest): a
+ * fixture where both agree cannot tell a date order from a rank order.
+ */
 function fixture(): IdeasListSnapshot {
   return {
     schemaVersion: IDEAS_SCHEMA_VERSION,
     revision: 1,
     ideas: [
-      { ...base, id: 'plain', ideaNumber: 1, title: 'Plain idea', status: 'open', rank: 1, bodyExcerpt: 'a' },
-      { ...base, id: 'failed', ideaNumber: 2, title: 'Failed idea', status: 'open', rank: 2, bodyExcerpt: 'b', taskBoardId: 'task-1', taskBoardStatus: 'failed' },
-      { ...base, id: 'running', ideaNumber: 3, title: 'Running idea', status: 'open', rank: 3, bodyExcerpt: 'c', taskBoardId: 'task-2', taskBoardStatus: 'running' },
-      { ...base, id: 'child', ideaNumber: 4, title: 'Follow-up idea', status: 'open', rank: 4, bodyExcerpt: 'd', followUpOfId: 'failed' },
+      { ...base, createdAt: 500, id: 'plain', ideaNumber: 1, title: 'Plain idea', status: 'open', rank: 1, bodyExcerpt: 'a' },
+      { ...base, createdAt: 100, id: 'failed', ideaNumber: 2, title: 'Failed idea', status: 'open', rank: 2, bodyExcerpt: 'b', taskBoardId: 'task-1', taskBoardStatus: 'failed' },
+      { ...base, createdAt: 400, id: 'running', ideaNumber: 3, title: 'Running idea', status: 'open', rank: 3, bodyExcerpt: 'c', taskBoardId: 'task-2', taskBoardStatus: 'running' },
+      { ...base, createdAt: 200, id: 'child', ideaNumber: 4, title: 'Follow-up idea', status: 'open', rank: 4, bodyExcerpt: 'd', followUpOfId: 'failed' },
       // Deliberately BARE: no workspace, no tags, no value/effort, no
       // deliveredAt. Its meta line exists only because of the run state, so
       // deleting hasRunStateTags would break this row.
@@ -51,13 +57,13 @@ function fixture(): IdeasListSnapshot {
       { ...base, id: 'gate', ideaNumber: 6, title: 'Under review idea', status: 'underReview', rank: 1, bodyExcerpt: 'f' },
       // Delivered, then restored: the ledger clears archivedAt but keeps
       // deliveredAt, so an OPEN row can still carry a delivery date.
-      { ...base, id: 'restored', ideaNumber: 7, title: 'Restored idea', status: 'open', rank: 5, bodyExcerpt: 'g', deliveredAt: 70 },
+      { ...base, createdAt: 300, id: 'restored', ideaNumber: 7, title: 'Restored idea', status: 'open', rank: 5, bodyExcerpt: 'g', deliveredAt: 70 },
     ],
   }
 }
 
-/** Static list transport, plus an optional config surface (off by default,
- *  so the board keeps the spelled defaults — rank ordering included). */
+/** Static list transport, plus an optional config surface (a fresh view keeps
+ *  the shipped defaults; `configView` overrides it to pin one setting). */
 class StaticTransport implements IdeasHostTransport {
   configView: IdeasSettingsView | undefined
 
@@ -213,56 +219,82 @@ describe('run-state tags on the Delivered rows', () => {
   })
 })
 
-describe('attention-first ordering of the Open column (setting openOrdering)', () => {
-  it('NON-REGRESSION: the default option keeps the stored rank, in the Overview column', async () => {
+describe('Open column display order (openOrdering + runningFirst)', () => {
+  /** Pin one setting, keep the shipped value of every other one. */
+  const withSettings = (patch: IdeasSettingsPatch): StaticTransport => {
     const transport = new StaticTransport(fixture())
-    await renderBoard(transport)
-    expect(transport.configView).toBeUndefined()
-    // Overview: the Open column reads rank 1..5, the running idea stays third.
-    expect(columnIds(0)).toEqual(['plain', 'failed', 'running', 'child', 'restored'])
+    transport.configView = {
+      available: true,
+      value: { ...IDEAS_SETTINGS_DEFAULTS, ...patch },
+      revision: 1,
+    }
+    return transport
+  }
+
+  it('DEFAULT: creation date ascending, with the running idea floated on top', async () => {
+    // createdAt asc is failed(100), child(200), restored(300), running(400),
+    // plain(500) - a different order from the ranks on purpose. The running
+    // idea leads, the rest keep the date order below it.
+    await renderBoard(withSettings({}))
+    expect(columnIds(0)).toEqual(['running', 'failed', 'child', 'restored', 'plain'])
   })
 
-  it('brings the in-flight work to the top of the Open column when opted in', async () => {
-    const transport = new StaticTransport(fixture())
-    transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
-    await renderBoard(transport)
-    // running first, then the failed one, then the three idle rows by rank.
-    expect(columnIds(0)).toEqual(['running', 'failed', 'plain', 'child', 'restored'])
+  it('the running float composes with a date order instead of replacing it', async () => {
+    await renderBoard(withSettings({ openOrdering: 'createdAtDesc' }))
+    // Newest first below the float: plain(500), restored(300), child(200),
+    // failed(100) - the running idea (400) is out of its date slot, on top.
+    expect(columnIds(0)).toEqual(['running', 'plain', 'restored', 'child', 'failed'])
+  })
+
+  it('turning the float OFF gives the selected order alone', async () => {
+    await renderBoard(withSettings({ runningFirst: false }))
+    // No block at all: the running idea goes back to its date slot (400).
+    expect(columnIds(0)).toEqual(['failed', 'child', 'restored', 'running', 'plain'])
+  })
+
+  it('the rank order is available too, and floats the running idea as well', async () => {
+    await renderBoard(withSettings({ openOrdering: 'rank' }))
+    // plain(1), failed(2), running(3), child(4), restored(5) - the float only
+    // promotes the running one.
+    expect(columnIds(0)).toEqual(['running', 'plain', 'failed', 'child', 'restored'])
+  })
+
+  it('NEVER touches the Priorities ranking, whatever the column order', async () => {
+    // The ranked list prints a position and its arrows write one rank step,
+    // so it stays on the stored rank: the column settings are Overview-only.
+    await renderBoard(withSettings({ openOrdering: 'createdAtDesc' }))
+    await openTab(1)
+    expect(idsIn('[data-dsh-ideas-priorities]'))
+      .toEqual(['plain', 'failed', 'running', 'child', 'restored'])
   })
 
   it('leaves the closed columns on their own ordering', async () => {
-    const transport = new StaticTransport(fixture())
-    transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
-    await renderBoard(transport)
+    await renderBoard(withSettings({ openOrdering: 'createdAtDesc' }))
     const reviewColumn = host.querySelectorAll('[data-dsh-column-scroll]')[1]!
     expect(reviewColumn.textContent).toContain('Under review idea')
   })
 
-  it('takes the OPEN column out of drag & drop in activity order (the anchor would lie)', async () => {
+  it('takes the OPEN column out of drag & drop whenever the view reorders it', async () => {
     // The drop anchor is read from the DISPLAY order (the half-split line and
     // dropNextId) while rebuildOrder resolves it in RANK space. In a reordered
     // column the two disagree and a drop can rewrite the rank the card already
     // had - a wire call whose only visible effect is nothing. The grip is
     // therefore inert (with a tooltip that says why) while the column is a
     // view, and the card's own action buttons still move the idea.
-    const transport = new StaticTransport(fixture())
-    transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
-    await renderBoard(transport)
-    const openGrip = host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')
-    expect(openGrip?.getAttribute('draggable')).toBe('false')
-    expect(openGrip?.getAttribute('title')).toBe(t('card.dragLocked'))
-    // The archive action on the same card is untouched, so a lifecycle move
-    // never depended on the grip.
-    expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-actions')).not.toBeNull()
+    for (const patch of [{ runningFirst: true }, { openOrdering: 'createdAt' as const }]) {
+      await renderBoard(withSettings(patch))
+      const openGrip = host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')
+      expect(openGrip?.getAttribute('draggable'), JSON.stringify(patch)).toBe('false')
+      expect(openGrip?.getAttribute('title')).toBe(t('card.dragLocked'))
+      // The archive action on the same card is untouched, so a lifecycle move
+      // never depended on the grip.
+      expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-actions')).not.toBeNull()
+    }
   })
 
-  it('leaves the drag enabled everywhere else: rank order, and the closed columns', async () => {
-    await renderBoard()
+  it('leaves the drag enabled everywhere else: rank order with the float off, and the closed columns', async () => {
+    await renderBoard(withSettings({ openOrdering: 'rank', runningFirst: false }))
     expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')?.getAttribute('draggable')).toBe('true')
-
-    const transport = new StaticTransport(fixture())
-    transport.configView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS, openOrdering: 'activity' }, revision: 1 }
-    await renderBoard(transport)
     // Under review / Archived / Declined are always in rank order.
     expect(host.querySelector('[data-dsh-idea-id="gate"] .dsh-ideas-card-grip')?.getAttribute('draggable')).toBe('true')
   })

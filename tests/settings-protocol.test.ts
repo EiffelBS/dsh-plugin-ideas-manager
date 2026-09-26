@@ -148,24 +148,37 @@ describe('parseSettingsBody (extended option set)', () => {
   })
 })
 
-describe('openOrdering (idea #71)', () => {
-  it('defaults to the human rank, so an existing profile is untouched', () => {
-    expect(IDEAS_SETTINGS_DEFAULTS.openOrdering).toBe('rank')
-    // A section written before the option existed has no openOrdering key at
-    // all: the read guard must land on the rank order, not on a surprise.
-    expect(sanitizeSettings({ tagRows: 2 }).openOrdering).toBe('rank')
+describe('openOrdering + runningFirst (idea #71)', () => {
+  it('defaults to oldest-first, with the running float ON', () => {
+    expect(IDEAS_SETTINGS_DEFAULTS.openOrdering).toBe('createdAt')
+    expect(IDEAS_SETTINGS_DEFAULTS.runningFirst).toBe(true)
+    // A section written before the options existed has neither key at all: the
+    // read guard must land on the shipped defaults, not on a surprise.
+    const legacy = sanitizeSettings({ tagRows: 2 })
+    expect(legacy.openOrdering).toBe('createdAt')
+    expect(legacy.runningFirst).toBe(true)
   })
 
-  it('keeps the two legal members and falls back on anything else (read AND write)', () => {
-    expect(sanitizeSettings({ openOrdering: 'activity' }).openOrdering).toBe('activity')
+  it('keeps the three legal members and falls back on anything else (read AND write)', () => {
+    expect(sanitizeSettings({ openOrdering: 'createdAt' }).openOrdering).toBe('createdAt')
+    expect(sanitizeSettings({ openOrdering: 'createdAtDesc' }).openOrdering).toBe('createdAtDesc')
     expect(sanitizeSettings({ openOrdering: 'rank' }).openOrdering).toBe('rank')
-    expect(sanitizeSettings({ openOrdering: 'attention' }).openOrdering).toBe('rank')
-    expect(parseSettingsBody({ patch: { openOrdering: 'activity' } })?.patch.openOrdering).toBe('activity')
-    expect(parseSettingsBody({ patch: { openOrdering: 'attention' } })?.patch.openOrdering).toBe('rank')
+    expect(sanitizeSettings({ openOrdering: 'activity' }).openOrdering).toBe('createdAt')
+    expect(parseSettingsBody({ patch: { openOrdering: 'createdAtDesc' } })?.patch.openOrdering).toBe('createdAtDesc')
+    expect(parseSettingsBody({ patch: { openOrdering: 'activity' } })?.patch.openOrdering).toBe('createdAt')
   })
 
-  it('is part of the patchable set (an unknown field still rejects)', () => {
+  it('takes the running float as a boolean and defaults it ON', () => {
+    expect(sanitizeSettings({ runningFirst: false }).runningFirst).toBe(false)
+    expect(sanitizeSettings({ runningFirst: 'yes' }).runningFirst).toBe(true)
+    expect(parseSettingsBody({ patch: { runningFirst: false } })?.patch.runningFirst).toBe(false)
+    expect(parseSettingsBody({ patch: { runningFirst: 'no' } })?.patch.runningFirst).toBe(true)
+  })
+
+  it('are both part of the patchable set (an unknown field still rejects)', () => {
     expect(parseSettingsBody({ patch: { openOrdering: 'rank' } })).toBeDefined()
-    expect(parseSettingsBody({ patch: { openOrderingMode: 'activity' } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { runningFirst: true } })).toBeDefined()
+    expect(parseSettingsBody({ patch: { openOrderingMode: 'createdAt' } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { floatRunning: true } })).toBeUndefined()
   })
 })

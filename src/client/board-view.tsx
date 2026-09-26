@@ -1490,35 +1490,36 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const byStatus = (status: IdeaStatus): IdeaListRow[] => {
     const rows = visible.filter(idea => idea.status === status)
     // "All workspaces": lay the column out per workspace group (named by
-    // title, the generic group last), each group rank-sorted — the board side
-    // of the "rank by workspace" presentation. A single-workspace scope has
-    // one group, so the plain rank sort is identical.
+    // title, the generic group last), each group in the column order — the
+    // board side of the "rank by workspace" presentation. A single-workspace
+    // scope has one group, so the plain sort is identical.
     //
-    // The openOrdering option (idea #71) re-lays the OPEN column into
-    // attention blocks — in flight first, then failed — each block still
-    // rank-sorted, and always INSIDE a workspace group. It applies to the Open
-    // column only (a closed idea is not "in flight" in any useful sense, the
-    // review gate owns the under-review column), and it is a view: no rank is
-    // written, so the 2.5 s poll can never overwrite the human ranking.
+    // The openOrdering / runningFirst options (idea #71) decide how the OPEN
+    // column is laid out inside each group: creation date (asc/desc, the
+    // default) or the human rank, with the in-flight work optionally floated
+    // above whichever is selected. It applies to the Open column only (a closed
+    // idea is not "in flight" in any useful sense, the review gate owns the
+    // under-review column), and it is a view: no rank is written, so the 2.5 s
+    // poll can never overwrite the human ranking.
     const grouped = workspaceFilter === ''
     return status === 'open'
-      ? orderOpenColumn(rows, grouped, workspaceTitle, cfg.openOrdering)
+      ? orderOpenColumn(rows, grouped, workspaceTitle, cfg.openOrdering, cfg.runningFirst)
       : grouped ? orderByWorkspaceGroups(rows, workspaceTitle) : orderIdeas(rows)
   }
 
   /**
    * Whether the Open column is laid out in the order it is stored in (idea
-   * #71). False in attention order, and that is not cosmetic: the drop anchor
-   * comes from the DISPLAY order (dropNextId / the half-split line) while
-   * rebuildOrder resolves it in RANK space, so in a reordered column a drop
-   * can land on the rank it already held — a wire call whose only visible
-   * effect is nothing. The Open column therefore stops accepting a drag while
-   * it is a view: its cards keep every action button (archive, decline,
-   * restore…), and switching the option back to Rank brings the grip back.
-   * The three closed columns are always in rank order, so their drags are
-   * untouched.
+   * #71). False as soon as a view reorders it — a date order or the running
+   * block — and that is not cosmetic: the drop anchor comes from the DISPLAY
+   * order (dropNextId / the half-split line) while rebuildOrder resolves it in
+   * RANK space, so in a reordered column a drop can land on the rank it
+   * already held, a wire call whose only visible effect is nothing. The Open
+   * column therefore stops accepting a drag while it is a view: its cards keep
+   * every action button (archive, decline, restore…), and selecting the rank
+   * order with the running float off brings the grip back. The three closed
+   * columns are always in rank order, so their drags are untouched.
    */
-  const openColumnRanked = cfg.openOrdering !== 'activity'
+  const openColumnRanked = cfg.openOrdering === 'rank' && !cfg.runningFirst
 
   const toggleTag = (name: string): void => {
     setTagFilter(current => current.includes(name)
