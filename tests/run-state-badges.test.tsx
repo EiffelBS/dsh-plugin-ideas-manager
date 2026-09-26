@@ -51,8 +51,8 @@ function fixture(): IdeasListSnapshot {
       { ...base, createdAt: 400, id: 'running', ideaNumber: 3, title: 'Running idea', status: 'open', rank: 3, bodyExcerpt: 'c', taskBoardId: 'task-2', taskBoardStatus: 'running' },
       { ...base, createdAt: 200, id: 'child', ideaNumber: 4, title: 'Follow-up idea', status: 'open', rank: 4, bodyExcerpt: 'd', followUpOfId: 'failed' },
       // Deliberately BARE: no workspace, no tags, no value/effort, no
-      // deliveredAt. Its meta line exists only because of the run state, so
-      // deleting hasRunStateTags would break this row.
+      // deliveredAt. Its meta line does not exist at all, so the run state must
+      // render from the state slot alone.
       { createdAt: 1, updatedAt: 100, id: 'archived-run', ideaNumber: 5, title: 'Archived while running', status: 'archived', rank: 1, bodyExcerpt: 'e', archivedAt: 50, runStatus: 'running' },
       { ...base, id: 'gate', ideaNumber: 6, title: 'Under review idea', status: 'underReview', rank: 1, bodyExcerpt: 'f' },
       // Delivered, then restored: the ledger clears archivedAt but keeps
@@ -193,6 +193,35 @@ describe('run-state tags on the Priorities rows', () => {
     expect(idsIn('[data-dsh-ideas-priorities]'))
       .toEqual(['plain', 'failed', 'running', 'child', 'restored'])
   })
+
+  it('PLACEMENT: the state tags sit in the row top-right, never in the meta line', async () => {
+    // A live acceptance run reported the "Running" tag as MISSING from a
+    // Priorities row that was showing it: it sat in the meta line between the
+    // topic tags and the value/effort badges, where a quiet pill reads as one
+    // more topic label. The Overview card header is the reference placement -
+    // the title is `flex: 1 1 0`, so the badges land in its top-right corner -
+    // and the rows now match it.
+    await renderBoard()
+    await openTab(1)
+    const slots = [
+      ['running', '[data-dsh-ideas-task-running]'],
+      ['failed', '[data-dsh-ideas-task-failed]'],
+      ['child', `.${classes.followUpBadge}`],
+    ] as const
+    for (const [id, marker] of slots) {
+      const row = host.querySelector(`[data-dsh-idea-id="${id}"]`)
+      const tag = row?.querySelector(marker)
+      expect(tag, `tag missing on ${id}`).not.toBeNull()
+      // Its own slot, sibling of the grow area, not inside the meta line.
+      expect(tag?.closest(`.${classes.rowState}`), `not in the state slot on ${id}`).not.toBeNull()
+      expect(tag?.closest(`.${classes.cardMeta}`), `still inside the meta line on ${id}`).toBeNull()
+    }
+    // The meta line keeps the workspace chip and the scores - and no state tag.
+    const meta = host.querySelector(`[data-dsh-idea-id="failed"] .${classes.cardMeta}`)
+    expect(meta?.textContent).toBe('ws1')
+    expect(meta?.querySelector(`.${classes.taskRunningBadge}`)).toBeNull()
+    expect(meta?.querySelector(`.${classes.taskFailedBadge}`)).toBeNull()
+  })
 })
 
 describe('run-state tags on the Delivered rows', () => {
@@ -202,14 +231,25 @@ describe('run-state tags on the Delivered rows', () => {
     const titles = deliveredTitles()
     expect(titles).toEqual(expect.arrayContaining([expect.stringContaining('Archived while running')]))
     // The fixture row is deliberately bare (no workspace, no tags, no
-    // value/effort), so its meta line exists ONLY because of the run state:
-    // deleting the hasRunStateTags guard would drop this tag entirely.
+    // value/effort): the tag shows with no meta line in the row at all, which
+    // is the whole point of giving the state tags their own slot.
     const row = Array.from(host.querySelectorAll('[data-dsh-ideas-delivered] li'))
       .find(node => (node.textContent ?? '').includes('Archived while running'))
     expect(row?.querySelector(`.${classes.workspaceChip}`), 'fixture row is not bare').toBeNull()
+    expect(row?.querySelector(`.${classes.cardMeta}`), 'bare row has no meta line').toBeNull()
     const tag = row?.querySelector('[data-dsh-ideas-task-running]')
     expect(tag).not.toBeNull()
     expect(tag?.textContent).toBe('Running')
+  })
+
+  it('PLACEMENT: same top-right slot as the Priorities rows', async () => {
+    await renderBoard()
+    await openTab(2)
+    const row = Array.from(host.querySelectorAll('[data-dsh-ideas-delivered] li'))
+      .find(node => (node.textContent ?? '').includes('Archived while running'))
+    const tag = row?.querySelector('[data-dsh-ideas-task-running]')
+    expect(tag?.closest(`.${classes.rowState}`)).not.toBeNull()
+    expect(tag?.closest(`.${classes.cardMeta}`)).toBeNull()
   })
 
   it('does not duplicate the delivery date (the exit stamp already carries it)', async () => {

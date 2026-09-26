@@ -1543,6 +1543,24 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   flex: none;
 }
 
+/* Run-state tags on the list rows (idea #71): their own slot in the row's
+   top-right corner, mirroring the Overview card header, and deliberately NOT
+   part of the meta line. In the meta line they sat between the topic tags and
+   the value/effort badges, where a quiet blue pill reads as one more topic
+   label and the eye scans straight past it — a live acceptance run reported
+   the "Running" tag as missing from a row that was showing it. The row is
+   align-items: flex-start, so this item lands on the title line; the
+   auto margin pushes it flush against the row actions. */
+.dsh-ideas-row-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: none;
+  margin-left: auto;
+}
+
 .dsh-ideas-priorities-move {
   min-width: 24px;
   padding: 2px 0;
@@ -1905,6 +1923,7 @@ export const classes = {
   prioritiesRationaleLabel: 'dsh-ideas-priorities-rationale-label',
   prioritiesRationaleText: 'dsh-ideas-priorities-rationale-text',
   prioritiesActions: 'dsh-ideas-priorities-actions',
+  rowState: 'dsh-ideas-row-state',
   prioritiesMove: 'dsh-ideas-priorities-move',
   deliveredStamp: 'dsh-ideas-delivered-stamp',
   deliveredBadge: 'dsh-ideas-delivered-badge',

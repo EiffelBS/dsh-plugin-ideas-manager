@@ -276,21 +276,6 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                               {tag.name}
                             </span>
                           ))}
-                          {/* Run-state tags (idea #71): the Overview shows them in
-                              the card header, but a ranked row is exactly where a
-                              reader decides what to pick next - a "Running" row
-                              that stays invisible here is duplicated work. Same
-                              component, so the two views cannot disagree.
-                              showDelivered=false: a row here is OPEN, and a
-                              restored idea still carries the delivery date it was
-                              given before leaving the journal - an exit stamp on
-                              an actionable row would read as "this one is done". */}
-                          <RunStateBadges
-                            idea={idea}
-                            client={client}
-                            parentNumber={parentNumber}
-                            showDelivered={false}
-                          />
                           {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                           {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                         </div>
@@ -301,6 +286,26 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                             <span className={classes.prioritiesRationaleText}>{idea.rationale}</span>
                           </div>
                         )}
+                      </div>
+                      {/* Run-state tags (idea #71): the Overview shows them in the
+                          card header, but a ranked row is exactly where a reader
+                          decides what to pick next - a "Running" row that stays
+                          invisible here is duplicated work. Same component, so the
+                          two views can never disagree, and the same placement: the
+                          row's top-right corner, NOT the meta line, where a pill
+                          between the topic tags and the value/effort badges reads
+                          as one more topic label. showDelivered=false: a row here
+                          is OPEN, and a restored idea still carries the delivery
+                          date it was given before leaving the journal - an exit
+                          stamp on an actionable row would read as "this one is
+                          done". */}
+                      <div className={classes.rowState}>
+                        <RunStateBadges
+                          idea={idea}
+                          client={client}
+                          parentNumber={parentNumber}
+                          showDelivered={false}
+                        />
                       </div>
                       <div className={classes.prioritiesActions}>
                         <button

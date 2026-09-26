@@ -22,7 +22,7 @@ import type { IdeaListRow } from '../protocol.ts'
 import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { ScoreBadge } from './score-badge.tsx'
-import { RunStateBadges, hasRunStateTags } from './run-state-badges.tsx'
+import { RunStateBadges } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { tagHue } from './tags.ts'
@@ -104,8 +104,7 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                     >
                       <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                     </div>
-                    {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined
-                      || hasRunStateTags(idea, parentNumber)) && (
+                    {(workspaceId !== undefined || idea.tags !== undefined || idea.value !== undefined || idea.effort !== undefined) && (
                       <div className={classes.cardMeta}>
                         {workspaceId !== undefined && (
                           <span className={classes.workspaceChip}>{workspaceTitle(workspaceId)}</span>
@@ -120,23 +119,27 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                             {tag.name}
                           </span>
                         ))}
-                        {/* Run-state tags (idea #71), same component as the
-                            Overview card header: an idea archived while a run
-                            was still in flight keeps that run followed by the
-                            host poll, so the journal must say so. The exit
-                            stamp on the left already carries the delivery
-                            date, hence showDelivered=false. */}
-                        <RunStateBadges
-                          idea={idea}
-                          client={client}
-                          parentNumber={parentNumber}
-                          showDelivered={false}
-                        />
                         {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
                         {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                       </div>
                     )}
                     <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
+                  </div>
+                  {/* Run-state tags (idea #71), same component and same
+                      top-right placement as the Overview card header: an idea
+                      archived while a run was still in flight keeps that run
+                      followed by the host poll, so the journal must say so. The
+                      row is rendered unconditionally here — the tags no longer
+                      share the meta line, so a bare archived row needs no meta
+                      to exist at all. The exit stamp on the left already carries
+                      the delivery date, hence showDelivered=false. */}
+                  <div className={classes.rowState}>
+                    <RunStateBadges
+                      idea={idea}
+                      client={client}
+                      parentNumber={parentNumber}
+                      showDelivered={false}
+                    />
                   </div>
                   <div className={classes.prioritiesActions}>
                     <button

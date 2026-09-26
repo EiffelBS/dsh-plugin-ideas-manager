@@ -67,25 +67,9 @@ export interface RunStateBadgesProps {
 }
 
 /**
- * Whether {@link RunStateBadges} would render anything for this row, ignoring
- * the optional session link (which is a companion of the running tag, never a
- * tag of its own). Exported so a caller that renders its meta line
- * CONDITIONALLY - the Delivered journal does - cannot silently swallow a tag
- * added to the component later: one predicate, kept next to the conditions it
- * mirrors.
- */
-export function hasRunStateTags(idea: IdeaListRow, parentNumber?: (ideaId: string) => number | undefined): boolean {
-  if (idea.followUpOfId !== undefined && parentNumber !== undefined) return true
-  if (idea.status === 'underReview') return true
-  if (idea.status === 'open' && idea.taskBoardStatus === 'failed') return true
-  if (idea.runStatus === 'running' || idea.taskBoardStatus === 'running') return true
-  return idea.deliveredAt !== undefined
-}
-
-/**
  * The shared state pills of one idea, in header order. Renders nothing (an
  * empty fragment) for an idea that is simply idle: the callers drop it in
- * unconditionally.
+ * unconditionally, each in the top-right corner of its card or row.
  */
 export function RunStateBadges({ idea, client, parentNumber, showDelivered = true }: RunStateBadgesProps) {
   const sessionId = idea.runSessionId

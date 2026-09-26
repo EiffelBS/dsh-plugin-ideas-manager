@@ -75,9 +75,10 @@ have to hunt the card back in the Overview to start a run.
 4. While it runs, the card shows a blue **Running** pill and an
    **Open session** link — one click lands you in the execution, which is the
    only way to watch a session DSH started on your behalf. The same pills now
-   ride the **Priorities** and **Delivered** rows too, so the "is this one
-   already being worked on?" answer is available on the list you actually
-   read, without opening the card.
+   ride the **Priorities** and **Delivered** rows too, in the row's top-right
+   corner exactly like on the card, so the "is this one already being worked
+   on?" answer is available on the list you actually read, without opening the
+   card.
 5. When it finishes, the idea moves to **Under review** for your verdict. If it
    failed, it stays in the backlog behind the **Task failed** badge.
 
