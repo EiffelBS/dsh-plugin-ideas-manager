@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { extractSection, readChangelog } from '../scripts/changelog-notes.mjs'
+import { extractSection, footerLinks, readChangelog } from '../scripts/changelog-notes.mjs'
 
 const SAMPLE = `# Changelog
 
@@ -69,5 +69,22 @@ describe('changelog notes', () => {
       expect(section, `no changelog section for ${tag}`).toBeDefined()
       expect(section?.length ?? 0).toBeGreaterThan(40)
     }
+  })
+
+  it('composes the footer links with exactly one v', () => {
+    // The first live run shipped `/v/v0.7.1` and `blob/vv0.7.1`: npm wants the
+    // bare version, the blob URL wants the tag as-is.
+    const [npm, changelog] = footerLinks('v0.7.1')
+    expect(npm).toBe('npm: https://www.npmjs.com/package/dsh-plugin-ideas-manager/v/0.7.1')
+    expect(changelog).toBe('Changelog: https://github.com/EiffelBS/dsh-plugin-ideas-manager/blob/v0.7.1/CHANGELOG.md')
+    for (const link of [npm, changelog]) {
+      expect(link).not.toContain('vv')
+      expect(link).not.toContain('/v/v')
+    }
+  })
+
+  it('follows the repository it is given, so a fork links to itself', () => {
+    const [, changelog] = footerLinks('v0.7.1', 'someone/their-fork')
+    expect(changelog).toContain('github.com/someone/their-fork/blob/v0.7.1/')
   })
 })

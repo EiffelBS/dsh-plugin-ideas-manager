@@ -85,21 +85,18 @@ jobs:
       - name: Build the release notes from the changelog
         env:
           TAG: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Exit 3 means "no section for this tag". Fall back to generated
           # notes rather than failing: a missing changelog entry must never
-          # block a release, it only has to be loud in the log.
-          if node scripts/changelog-notes.mjs "$TAG" > release-notes.md; then
-            {
-              cat release-notes.md
-              echo
-              echo "npm: https://www.npmjs.com/package/dsh-plugin-ideas-manager/v/$TAG"
-              echo "Changelog: https://github.com/EiffelBS/dsh-plugin-ideas-manager/blob/v$TAG/CHANGELOG.md"
-            } > release-notes.final.md
+          # block a release, it only has to be loud in the log. The script also
+          # appends the npm and changelog links, so those never drift here.
+          if node scripts/changelog-notes.mjs "$TAG" "$REPOSITORY" > release-notes.md; then
+            echo "release notes built from CHANGELOG.md for $TAG"
           else
             echo "::warning::CHANGELOG.md has no section for $TAG; publishing generated notes"
-            rm -f release-notes.md release-notes.final.md
+            rm -f release-notes.md
           fi
 
       - name: Create GitHub Release (idempotent)
@@ -112,11 +109,11 @@ jobs:
             echo "release $TAG already exists; skipping"
             exit 0
           fi
-          if [ -s release-notes.final.md ]; then
+          if [ -s release-notes.md ]; then
             # Curated notes first, then the generated footer (compare link).
             gh release create "$TAG" \
               --title "$TAG" \
-              --notes-file release-notes.final.md \
+              --notes-file release-notes.md \
               --generate-notes
           else
             gh release create "$TAG" --title "$TAG" --generate-notes

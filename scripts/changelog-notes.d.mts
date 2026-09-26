@@ -11,3 +11,6 @@ export declare function extractSection(markdown: string, tag: string): string | 
 
 /** Read the `CHANGELOG.md` of a repository root (defaults to this one). */
 export declare function readChangelog(root?: string): string
+
+/** The npm and changelog links appended under a release's notes. */
+export declare function footerLinks(tag: string, repository?: string): string[]
