@@ -6,6 +6,48 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.3 - 2026-09-26
+
+### Added
+
+- **The list rows now show the run state.** The Priorities ranking and the
+  Delivered log carry the same pills as the Overview cards — **Running**,
+  **Task failed**, *follow-up of #N*, and **Open session** — in the row's
+  top-right corner. The "is this one already being worked on?" answer is
+  available on the list you actually read, without opening the card.
+- **The Open column can be ordered by creation date.** The new **Open column
+  order** setting offers *Creation date (oldest first)*, *Creation date (newest
+  first)* and *Rank*.
+- **A separate switch floats the running work to the top.** **Show running ideas
+  at the top** (on by default) lifts the ideas whose run is in flight above
+  whichever of the three orders you picked, without changing that order.
+
+### Changed
+
+- **The Overview's Open column now reads oldest-first by default**, so a backlog
+  scans like the diary it is. Pick *Rank* to get your hand-set ranking back; the
+  setting applies to that one column, and the Priorities tab always stays on the
+  rank it prints.
+- Only the **running** work is floated. A failed run keeps its red **Task
+  failed** pill but stays where the selected order puts it — a date-ordered
+  backlog that jumped every failure to the top would stop reading as a diary.
+- Neither setting stores anything: the board refreshes every 2.5 s, and it can
+  never overwrite the ranking you set.
+- While the Open column displays something other than the stored rank, its drag
+  grip is off and says why. The card buttons still move an idea to another
+  column, and choosing *Rank* with the running float off brings the grip back.
+
+### Fixed
+
+- A restored idea no longer shows a stale **Delivered {date}** pill in the
+  Priorities list. Restoring clears the archive stamp but keeps the delivery
+  date, so the row was announcing "this one is done" on an idea you were about
+  to pick up.
+- Dropping a card into a reordered Open column no longer writes back the ranking
+  it already had. The anchor you saw came from the displayed order while the
+  write resolves in rank order, so the drag did nothing visible while still
+  calling the host.
+
 ## 0.7.2 - 2026-09-26
 
 ### Fixed
