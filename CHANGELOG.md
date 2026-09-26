@@ -6,6 +6,23 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.1 - 2026-09-26
+
+### Added
+
+- **The editor can start a run**, next to the button already on the card. The
+  editor is the surface you reach from the Priorities and Delivered tabs, so an
+  idea opened there no longer sends you back to the Overview to find its card.
+- The editor is **titled with the card number** it is editing, so a dialog
+  opened from a list never loses track of which idea it is about.
+- **Release notes.** Each release now ships a curated, user-facing changelog
+  section, and the GitHub Release body shows it.
+
+### Changed
+
+- The README now describes the plugin for the people who install it, with the
+  implementation detail moved to `docs/`.
+
 ## 0.7.0 - 2026-09-26
 
 ### Added
