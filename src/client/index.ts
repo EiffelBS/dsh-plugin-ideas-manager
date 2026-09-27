@@ -1,9 +1,10 @@
 /**
  * Ideas client plugin: wires the framework-free ideas client to the real
- * client runtime and mounts the two DOM surfaces — the sidebar entry row and
- * the board view in the center column.
+ * client runtime and registers the board as a native shell panel (a sidebar
+ * row in `sidebar.panellist` and a page in the keyed `main` slot), plus the
+ * Settings-modal section.
  *
- * Failure policy: DOM mounting problems are logged, never thrown — the web
+ * Failure policy: registration problems are logged, never thrown — the web
  * shell fails the whole boot when a plugin apply throws, and an external
  * plugin must not take the GUI down.
  */
@@ -11,8 +12,8 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { IdeasClient } from './ideas-client.ts'
 import { HttpIdeasHostTransport } from './host-api.ts'
-import { mountBoard } from './board-mount.tsx'
-import { mountSidebarEntry } from './sidebar-entry.ts'
+import { registerIdeasPanel } from './panel-registration.tsx'
+import { resolvePanelNavigator } from './panel-navigation.ts'
 import { ensureIdeasStyle } from './style.ts'
 import { registerIdeasSettingsSection } from './settings-section.tsx'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
@@ -43,9 +44,9 @@ export { IdeasClient } from './ideas-client.ts'
 export type { IdeaClientPatch } from './ideas-client.ts'
 
 // A duplicated client injection (module factory executed twice in one page
-// lifetime) would otherwise mount a second sidebar entry and board view.
+// lifetime) would otherwise register a second sidebar row and board page.
 // First application wins; later calls become no-ops until the fiber unloads
-// (hot-reload), when the claim is released so a rebuilt bundle can mount.
+// (hot-reload), when the claim is released so a rebuilt bundle can register.
 let claimed = false
 const releaseClaim = (): void => { claimed = false }
 
@@ -69,18 +70,21 @@ export function apply(ctx: ClientContext): void {
     // "sessions" face as the launcher, so a deployment without it renders no
     // link instead of a broken one.
     client.sessionOpener = resolveSessionOpener(sessionsServiceOf(ctx as unknown as Record<string, unknown>))
+    // Panel navigation is read DEFENSIVELY, not declared in `inject`: cordis
+    // refuses an undeclared property, and declaring a service a deployment may
+    // not have would keep this whole plugin from booting.
+    client.panelNavigator = resolvePanelNavigator(ctx)
     client.start()
     const disposers: Array<() => void> = []
-    // The two mounting surfaces FIRST: whatever happens to the settings glue
-    // below must never cost the sidebar entry or the board (live regression:
-    // an undeclared ctx.slots getter threw inside this try before the mounts
+    // The panel registration FIRST: whatever happens to the settings glue
+    // below must never cost the sidebar row or the board (live regression: an
+    // undeclared ctx.slots getter threw inside this try before the mounts
     // ran and the Ideas entry vanished).
     try {
-      disposers.push(mountSidebarEntry(client))
-      disposers.push(mountBoard(client))
+      disposers.push(registerIdeasPanel(ctx, client))
     } catch (error) {
-      // DOM failures degrade the board, never the GUI.
-      console.error('[dsh-plugin-ideas-manager] mount failed:', error)
+      // Registration failures degrade the board, never the GUI.
+      console.error('[dsh-plugin-ideas-manager] panel registration failed:', error)
     }
     // Settings glue LAST and isolated: push tagRows onto the document on every
     // config change (the CSS default of 3 covers the gap before the first
@@ -95,5 +99,5 @@ export function apply(ctx: ClientContext): void {
       for (const dispose of disposers.splice(0)) dispose()
       client.dispose()
     }
-  }, 'ideas: sidebar entry and board view')
+  }, 'ideas: panel registration and settings section')
 }

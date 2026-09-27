@@ -1,11 +1,12 @@
 /**
  * Framework-free client controller for the ideas board: holds the open flag
  * and the latest Host snapshot, refreshes through the transport, and notifies
- * subscribers (the sidebar row and the React board). No React, no cordis —
- * the DOM mounts at the edges only.
+ * subscribers (the board React tree). No React, no cordis — the shell panel
+ * registration at the edge owns the DOM.
  */
 import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts';
 import { type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import { type PanelNavigator } from './panel-navigation.ts';
 import type { IdeasHostTransport } from './host-api.ts';
 import type { SessionLauncher } from './session-queue.ts';
 import type { ActiveWorkspaceSource } from './session-context.ts';
@@ -52,6 +53,13 @@ export declare class IdeasClient {
      * (no sessions service) simply renders no link.
      */
     sessionOpener: SessionOpener | undefined;
+    /**
+     * Shell panel navigation, resolved from `ctx.layout` by the panel
+     * registration. Undefined on a shell with no layout service: the board then
+     * keeps the local open/close behavior and simply has no entry row to drive
+     * it. This is also the face a launch refusal redirects through.
+     */
+    panelNavigator: PanelNavigator | undefined;
     private readonly listeners;
     private unsubscribeEvents;
     private workspaces;
@@ -71,8 +79,25 @@ export declare class IdeasClient {
     /** Current DSH registry rows (id + label); empty when the service is absent. */
     get workspaceOptions(): readonly WorkspaceViewLite[];
     subscribe(listener: () => void): () => void;
+    /**
+     * Ask the shell to show the board panel. The row click is owned by the shell
+     * (it selects the panel itself), so this is only the programmatic path;
+     * without a navigator the flag flips locally, which keeps the board usable
+     * on a shell that has no layout service.
+     */
     toggleBoard(): void;
+    /** Return to the conversation ("Back to chat" on the board header). */
     closeBoard(): void;
+    /**
+     * The shell mounted our panel: the board is now visible, so the background
+     * poll may run and the state is refreshed immediately (the poll alone would
+     * leave an empty board for up to one tick).
+     */
+    panelShown(): void;
+    /** The shell unmounted our panel: a closed board holds no traffic. */
+    panelHidden(): void;
+    /** Single writer of the open flag, so every path refreshes identically. */
+    private setBoardOpen;
     /** Initial load + short-poll refresh while the board is open. */
     start(): void;
     dispose(): void;

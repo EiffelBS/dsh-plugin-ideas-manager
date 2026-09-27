@@ -6,6 +6,25 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Fixed
+
+- **The Ideas row is a real panel row now.** It sits with Plugins, Task Board
+  and Skill Center, in their row box, font and highlight, and it behaves like
+  them: clicking another panel closes the board instead of leaving it stuck open
+  behind the new one. Clicking Ideas again, or *Back to chat*, still closes it.
+  Previously the row was a button this plugin injected itself and hid the
+  conversation with a stylesheet, which is why only Ideas behaved like a toggle.
+- **A launch refused by the card's permission gate now tells you what to do.**
+  The board showed the Host's own English sentence and stopped there. It now
+  names the card, explains that the permission is above the session default, and
+  offers **Open the TaskBoard** — which switches to the board panel with the
+  filter already set on the idea title, so the card is the one waiting in front
+  of you. **Copy the title** is there for the case where the board does not
+  answer. The permission itself is still yours to confirm, in the board: the
+  plugin never confirms it for you.
+
 ## 0.7.3 - 2026-09-26
 
 ### Added

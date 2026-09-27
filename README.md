@@ -19,7 +19,8 @@ TaskBoard: **zero hard dependency** on it.
 ## What it does for you
 
 ### Capture ideas, anywhere
-- A **sidebar entry** (New Session → **Ideas**) opens the panel.
+- A **panel row** beside Task Board and Plugins (under New Session) opens the
+  board, and switching to another panel closes it like every other one.
 - **Capture** an idea with the *New idea* button or the **quick-add** row at the
   top of the Open column — a Title is the only required field.
 - Optional description (markdown), **tags**, workspace and a **Suggested rank**.

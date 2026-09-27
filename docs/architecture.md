@@ -21,7 +21,7 @@ src/
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline
   core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation
-  client/             # sidebar entry + kanban + Priorities/Delivered + scoping
+  client/             # shell panel registration + kanban + Priorities/Delivered + scoping
 scripts/              # mirror reconciliation, mirror cycle check, live perf profiler
 ```
 
@@ -103,6 +103,27 @@ Two scripts close the loop:
 
 ## Client notes
 
+- The board is a **native shell panel**: one row in `sidebar.panellist` and one
+  page in the layout's keyed `main` slot, both registered through
+  `ctx.slots.inject` (`client/panel-registration.tsx`). The shell therefore owns
+  the row box, the label, the font, the active highlight, the collapsed rail and
+  the panel switch. It replaces an earlier raw `<button>` injection with its own
+  visibility flag and its own ideas/taskboard/ssh eviction broadcasts, which is
+  why Ideas used to behave like a toggle and did not look like the shipped rows.
+  Mount/unmount is what opens and closes the board (`boardOpen`), which gates the
+  background poll.
+- Panel navigation is resolved from `ctx.layout` **defensively**, never declared
+  in `inject`: cordis refuses an undeclared property, and declaring a service a
+  deployment may not have would keep the whole plugin from booting.
+- A launch refused by the TaskBoard **permission gate** is the one refusal with a
+  destination: the card's effective permission sits above the session default, and
+  only a human may confirm that binding. The modal names the card and offers
+  `client/taskboard-focus.ts`, which selects the board panel through the layout
+  and writes the idea title into the board's own filter. The write is DOM
+  surgery on purpose — the board publishes no service, the `main` slot carries no
+  selection payload and there is no deeplink — so it is scoped, bounded and
+  silent on failure. The plugin never confirms a permission itself: `run` is the
+  only launch verb it posts.
 - The browser subscribes by **short-polling** (2.5 s) while the board is open
   and the page is visible, not by holding SSE connections: three tabs times SSE
   exhausted the browser's per-origin connection budget and stalled the Host.

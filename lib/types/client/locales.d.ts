@@ -162,6 +162,10 @@ export declare const fr: {
     'launch.sessionHint': string;
     'launch.submit': string;
     'launch.cancel': string;
+    'launch.permissionHint': string;
+    'launch.openTaskBoard': string;
+    'launch.copyTitle': string;
+    'launch.titleCopied': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -357,6 +361,10 @@ export declare const en: {
     'launch.sessionHint': string;
     'launch.submit': string;
     'launch.cancel': string;
+    'launch.permissionHint': string;
+    'launch.openTaskBoard': string;
+    'launch.copyTitle': string;
+    'launch.titleCopied': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -540,6 +548,10 @@ export declare const zh: {
     'launch.sessionHint': string;
     'launch.submit': string;
     'launch.cancel': string;
+    'launch.permissionHint': string;
+    'launch.openTaskBoard': string;
+    'launch.copyTitle': string;
+    'launch.titleCopied': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;

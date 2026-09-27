@@ -28,7 +28,8 @@ import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.t
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import type { AiCaptureInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
 import { matchSessionSelection } from './session-queue.ts'
-import { canLaunch, modelTargetIdOf } from './launch.ts'
+import { canLaunch, classifyLaunchRefusal, modelTargetIdOf } from './launch.ts'
+import { openTaskBoardFiltered } from './taskboard-focus.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
@@ -983,6 +984,13 @@ function ReanalyzeModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
  * A refusal (already running, archived card, task-board absent) is shown HERE
  * and keeps the modal open: the reason is the whole value of an explicit
  * launch, so it is never reduced to a silent log line.
+ *
+ * ONE refusal is special. A card whose effective permission sits above the
+ * session default is refused until a human confirms that binding in the
+ * TaskBoard, and no agent can confirm it (the board deliberately ships no such
+ * affordance for one). So the modal does not relay the Host's English sentence
+ * bare: it names the card, offers the redirect to the board panel with the
+ * filter already set on the idea title, and keeps the raw text for diagnosis.
  */
 function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   client: IdeasClient
@@ -996,6 +1004,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   const picker = useAnalystModelPicker(client.sessionLauncher)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
+  const [copied, setCopied] = useState(false)
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
@@ -1013,6 +1022,10 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
       setPending(false)
       setError(launchError instanceof Error ? launchError.message : String(launchError))
     })
+  }
+  const refusal = error === undefined ? undefined : classifyLaunchRefusal(error)
+  const copyTitle = (): void => {
+    void copyIdeaTitle(idea.title).then(ok => { setCopied(ok) })
   }
   return (
     <div className={classes.overlay} onClick={onClose}>
@@ -1035,7 +1048,32 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
           </div>
         )}
         {picker.modelChoices.length > 0 && <ModelPickerField picker={picker} disabled={pending} />}
-        {error !== undefined && <div className={classes.error}>{error}</div>}
+        {refusal?.kind === 'plain' && <div className={classes.error}>{refusal.message}</div>}
+        {refusal?.kind === 'permission' && (
+          <div className={classes.launchGate} data-dsh-ideas-launch-gate="">
+            <div className={classes.fieldHint}>{t('launch.permissionHint')}</div>
+            <div className={classes.detailMeta}><code>{idea.title}</code></div>
+            <div className={classes.launchGateActions}>
+              <button
+                type="button"
+                className={classes.primaryButton}
+                data-dsh-ideas-open-taskboard=""
+                onClick={() => { openTaskBoardFiltered(client.panelNavigator, idea.title) }}
+              >
+                {t('launch.openTaskBoard')}
+              </button>
+              <button
+                type="button"
+                className={classes.ghostButton}
+                data-dsh-ideas-copy-title=""
+                onClick={copyTitle}
+              >
+                {copied ? t('launch.titleCopied') : t('launch.copyTitle')}
+              </button>
+            </div>
+            <div className={classes.detailMeta} title={refusal.message}>{refusal.message}</div>
+          </div>
+        )}
         <div className={classes.modalActions}>
           <button type="button" className={classes.ghostButton} disabled={pending} onClick={onClose}>{t('launch.cancel')}</button>
           <button
@@ -1051,6 +1089,21 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
       </div>
     </div>
   )
+}
+
+/**
+ * Put the idea title on the clipboard, so the card stays findable in the board
+ * filter even when the automatic write is refused. A clipboard the browser
+ * refuses (insecure context, denied permission) is reported, never thrown: the
+ * title is already on screen for a manual copy.
+ */
+async function copyIdeaTitle(title: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(title)
+    return true
+  } catch {
+    return false
+  }
 }
 
 type DragState = { id: string; source: IdeaStatus } | undefined/** Drop target of the kanban drag: the column plus the insertion point

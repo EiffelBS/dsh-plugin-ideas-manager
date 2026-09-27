@@ -108,3 +108,29 @@ export declare class HostLaunchBackend implements LaunchBackend {
 export declare function launchBackends(transport: IdeasHostTransport): LaunchBackend[];
 /** The first backend able to run this idea, or undefined (no button). */
 export declare function resolveLaunchBackend(idea: LaunchTarget, transport: IdeasHostTransport): Promise<LaunchBackend | undefined>;
+/**
+ * A refused launch, split by what the board can do about it.
+ *
+ * `permission` is the one refusal with a known destination: the human has to
+ * confirm the mirrored card's permission in the TaskBoard, so the board offers
+ * the redirect and the title to search for. Everything else is shown verbatim,
+ * because only the Host knows what it refused.
+ */
+export type LaunchRefusal = {
+    kind: 'permission';
+    message: string;
+} | {
+    kind: 'plain';
+    message: string;
+};
+/**
+ * Classify a launch refusal message.
+ *
+ * Substring matching on the marker, not equality: the Host prefixes the
+ * exception with the action and the status (`task-board run -> 400:
+ * confirmation-required: ...`), and a future board version may reword the tail
+ * without changing the marker.
+ * @param message - the message the failed launch threw with.
+ * @returns the refusal kind, keeping the original message in both arms.
+ */
+export declare function classifyLaunchRefusal(message: string): LaunchRefusal;

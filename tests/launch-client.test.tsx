@@ -259,6 +259,9 @@ describe('board launch affordance', () => {
 
     expect(host.querySelector('[data-dsh-ideas-launch-submit]')).not.toBeNull()
     expect(host.textContent).toContain('task is already running or missing')
+    // A refusal with no known destination stays the Host's own sentence: only
+    // the Host knows what it refused.
+    expect(host.querySelector('[data-dsh-ideas-launch-gate]')).toBeNull()
   })
 
   it('preselects the current session model and posts it as provider/model', async () => {
@@ -285,6 +288,52 @@ describe('board launch affordance', () => {
     const submit = host.querySelector('[data-dsh-ideas-launch-submit]') as HTMLElement
     await act(async () => { click(submit) })
     expect(transport.launches).toEqual([{ ideaId: 'launchable', model: 'deepseek/deepseek-reasoner' }])
+  })
+})
+
+describe('launch permission gate (the one refusal with a destination)', () => {
+  const GATE = 'task-board run -> 400: confirmation-required: the effective permission is above the session default (read-only); confirm the card\'s permission binding first'
+
+  async function refuseAtTheGate(): Promise<Array<string | null>> {
+    const transport = new FakeTransport()
+    transport.failure = GATE
+    await renderBoard(transport)
+    const selected: Array<string | null> = []
+    client.panelNavigator = { select: (id) => { selected.push(id) } }
+    rerender()
+    click(launchButtonIn('launchable') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+    const submit = host.querySelector('[data-dsh-ideas-launch-submit]') as HTMLElement
+    await act(async () => { click(submit); await Promise.resolve() })
+    return selected
+  }
+
+  it('replaces the bare Host sentence with the card, the reason and the way out', async () => {
+    await refuseAtTheGate()
+    const gate = host.querySelector('[data-dsh-ideas-launch-gate]')
+    expect(gate).not.toBeNull()
+    // The title is the text the board's own filter matches on, so it is what
+    // the human has to be able to read and copy.
+    expect(gate?.textContent).toContain('Launchable')
+    // The raw sentence stays, for diagnosis, but no longer alone.
+    expect(gate?.textContent).toContain('confirmation-required')
+    expect(host.querySelector('[data-dsh-ideas-copy-title]')).not.toBeNull()
+  })
+
+  it('redirects to the task-board panel, filtered on the idea title', async () => {
+    const selected = await refuseAtTheGate()
+    const board = document.createElement('div')
+    board.setAttribute('data-dsh-taskboard-view', '')
+    const input = document.createElement('input')
+    input.type = 'search'
+    board.appendChild(input)
+    document.body.appendChild(board)
+
+    const open = host.querySelector('[data-dsh-ideas-open-taskboard]') as HTMLElement
+    act(() => { open.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(selected).toEqual(['task-board'])
+    expect(input.value).toBe('Launchable')
+    board.remove()
   })
 })
 

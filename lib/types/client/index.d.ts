@@ -1,9 +1,10 @@
 /**
  * Ideas client plugin: wires the framework-free ideas client to the real
- * client runtime and mounts the two DOM surfaces — the sidebar entry row and
- * the board view in the center column.
+ * client runtime and registers the board as a native shell panel (a sidebar
+ * row in `sidebar.panellist` and a page in the keyed `main` slot), plus the
+ * Settings-modal section.
  *
- * Failure policy: DOM mounting problems are logged, never thrown — the web
+ * Failure policy: registration problems are logged, never thrown — the web
  * shell fails the whole boot when a plugin apply throws, and an external
  * plugin must not take the GUI down.
  */

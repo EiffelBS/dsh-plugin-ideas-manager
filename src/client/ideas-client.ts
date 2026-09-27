@@ -1,8 +1,8 @@
 /**
  * Framework-free client controller for the ideas board: holds the open flag
  * and the latest Host snapshot, refreshes through the transport, and notifies
- * subscribers (the sidebar row and the React board). No React, no cordis —
- * the DOM mounts at the edges only.
+ * subscribers (the board React tree). No React, no cordis — the shell panel
+ * registration at the edge owns the DOM.
  */
 
 import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts'
@@ -17,6 +17,7 @@ import {
   type IdeasSettingsView,
 } from '../protocol.ts'
 import { setLanguageOverride } from './locales.ts'
+import { IDEAS_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
@@ -68,6 +69,13 @@ export class IdeasClient {
    * (no sessions service) simply renders no link.
    */
   sessionOpener: SessionOpener | undefined
+  /**
+   * Shell panel navigation, resolved from `ctx.layout` by the panel
+   * registration. Undefined on a shell with no layout service: the board then
+   * keeps the local open/close behavior and simply has no entry row to drive
+   * it. This is also the face a launch refusal redirects through.
+   */
+  panelNavigator: PanelNavigator | undefined
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
   private workspaces: WorkspaceViewLite[] = []
@@ -116,19 +124,50 @@ export class IdeasClient {
     return () => { this.listeners.delete(listener) }
   }
 
+  /**
+   * Ask the shell to show the board panel. The row click is owned by the shell
+   * (it selects the panel itself), so this is only the programmatic path;
+   * without a navigator the flag flips locally, which keeps the board usable
+   * on a shell that has no layout service.
+   */
   toggleBoard(): void {
-    const wasOpen = this.boardOpen
-    this.boardOpen = !this.boardOpen
-    // Opening the board loads a fresh snapshot immediately even though the
-    // background poll only runs while the board is open (see host-api
-    // subscribe: no SSE slots are held — the pool must stay available).
-    if (!wasOpen && this.boardOpen) void this.refresh()
-    this.emit()
+    const navigator = this.panelNavigator
+    if (navigator === undefined) {
+      this.setBoardOpen(!this.boardOpen)
+      return
+    }
+    navigator.select(this.boardOpen ? null : IDEAS_PANEL_ID)
   }
 
+  /** Return to the conversation ("Back to chat" on the board header). */
   closeBoard(): void {
-    if (!this.boardOpen) return
-    this.boardOpen = false
+    const navigator = this.panelNavigator
+    if (navigator === undefined) {
+      this.setBoardOpen(false)
+      return
+    }
+    navigator.select(null)
+  }
+
+  /**
+   * The shell mounted our panel: the board is now visible, so the background
+   * poll may run and the state is refreshed immediately (the poll alone would
+   * leave an empty board for up to one tick).
+   */
+  panelShown(): void {
+    this.setBoardOpen(true)
+  }
+
+  /** The shell unmounted our panel: a closed board holds no traffic. */
+  panelHidden(): void {
+    this.setBoardOpen(false)
+  }
+
+  /** Single writer of the open flag, so every path refreshes identically. */
+  private setBoardOpen(open: boolean): void {
+    if (this.boardOpen === open) return
+    this.boardOpen = open
+    if (open) void this.refresh()
     this.emit()
   }
 

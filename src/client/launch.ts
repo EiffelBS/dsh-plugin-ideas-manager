@@ -144,3 +144,38 @@ export async function resolveLaunchBackend(idea: LaunchTarget, transport: IdeasH
   }
   return undefined
 }
+
+/**
+ * The TaskBoard's permission-gate marker. A card whose effective permission is
+ * above the session default is refused until a HUMAN confirms the binding in
+ * the board UI, and the Host relays that sentence verbatim — an English,
+ * agent-shaped message with no next step for the reader.
+ */
+const CONFIRMATION_REQUIRED = 'confirmation-required'
+
+/**
+ * A refused launch, split by what the board can do about it.
+ *
+ * `permission` is the one refusal with a known destination: the human has to
+ * confirm the mirrored card's permission in the TaskBoard, so the board offers
+ * the redirect and the title to search for. Everything else is shown verbatim,
+ * because only the Host knows what it refused.
+ */
+export type LaunchRefusal =
+  | { kind: 'permission'; message: string }
+  | { kind: 'plain'; message: string }
+
+/**
+ * Classify a launch refusal message.
+ *
+ * Substring matching on the marker, not equality: the Host prefixes the
+ * exception with the action and the status (`task-board run -> 400:
+ * confirmation-required: ...`), and a future board version may reword the tail
+ * without changing the marker.
+ * @param message - the message the failed launch threw with.
+ * @returns the refusal kind, keeping the original message in both arms.
+ */
+export function classifyLaunchRefusal(message: string): LaunchRefusal {
+  if (message.includes(CONFIRMATION_REQUIRED)) return { kind: 'permission', message }
+  return { kind: 'plain', message }
+}

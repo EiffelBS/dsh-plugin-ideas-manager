@@ -10,13 +10,7 @@
 const STYLE_TAG_ID = 'dsh-plugin-ideas-manager/style'
 
 /** The whole stylesheet (exported for the health test: balance + parse checks). */
-export const CSS_TEXT = `/* --- center-column takeover (global rules, attribute-scoped) --- */
-
-[data-pane='conversation'],
-[class*='centerCol'] {
-  position: relative;
-}
-
+export const CSS_TEXT = `/* --- theme fallback palette --- */
 /*
  * Theme fallback palette. The shell always provides the --dsw-alias-* tokens,
  * but a skin-center skin may only redefine a subset — and a background-enabled
@@ -58,13 +52,18 @@ body[data-ds-dark-theme] {
   --dsh-ideas-run: #34d399;
 }
 
-/* The board container rides inside the conversation grid item as an extra
-   trailing child; hidden unless the ideas panel is active. */
+/* --- board panel container (the shell mounts it in the keyed main slot) --- */
+
+/* The layout hands a main-slot occupant the whole center column, so the panel
+   only fills it and carries the surface. */
 [data-dsh-ideas-view] {
-  position: absolute;
-  inset: 0;
-  display: none;
-  z-index: 60;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
   /* The skin token on top (a background-enabled skin defines every
      --dsw-alias-bg-* token as semi-transparent rgba, so the var() fallback
      never fires), the fixed fallback base underneath. The base stays
@@ -74,100 +73,6 @@ body[data-ds-dark-theme] {
   background:
     linear-gradient(var(--dsw-alias-bg-base, transparent), var(--dsw-alias-bg-base, transparent)),
     color-mix(in srgb, var(--dsh-ideas-fb-bg) 50%, transparent);
-}
-
-/* The center column is single-occupant; the :not() guards keep the ideas and
-   task-board panels from fighting over visibility. The ssh attribute is
-   guarded too: the upstream ssh panel only guards against the task-board, so
-   a transient ideas+ssh co-presence must resolve in ssh's favour (its rule
-   wins) instead of blanking the column. */
-html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-dsh-ideas-view] {
-  display: block;
-}
-
-/* While the ideas board is active, the conversation content underneath stays
-   mounted but hidden. The !important is required: the dsh shell wraps the
-   conversation view in a node with an inline \`display: contents\`, and inline
-   styles beat a plain stylesheet rule. */
-html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [data-pane='conversation'] > :not([data-dsh-ideas-view]),
-html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-active]) [class*='centerCol'] > :not([data-dsh-ideas-view]) {
-  display: none !important;
-}
-
-/* --- sidebar entry row --- */
-
-.dsh-ideas-entry {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
-  cursor: pointer;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.dsh-ideas-entry:hover {
-  background: var(--dsw-alias-interactive-bg-hover, var(--dsh-ideas-fb-layer1));
-  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
-}
-
-.dsh-ideas-entry[data-active] {
-  background: var(--dsw-alias-interactive-bg-active, var(--dsh-ideas-fb-layer2));
-  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
-  font-weight: 600;
-}
-
-.dsh-ideas-entry-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  flex: none;
-}
-
-.dsh-ideas-entry-icon svg {
-  display: block;
-  width: 18px;
-  height: 18px;
-}
-
-.dsh-ideas-entry-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Collapsed rail: icon-only, centered, matching the shell's 56px rail. */
-[data-dsh-frame][data-sidebar-collapsed] .dsh-ideas-entry,
-[data-sidebar-collapsed] .dsh-ideas-entry {
-  justify-content: center;
-  padding: 0;
-  width: 36px;
-  height: 36px;
-  margin: 0 auto 12px;
-  border-radius: 50%;
-}
-
-[data-dsh-frame][data-sidebar-collapsed] .dsh-ideas-entry-label,
-[data-sidebar-collapsed] .dsh-ideas-entry-label {
-  display: none;
-}
-
-/* --- board frame --- */
-
-.dsh-ideas-board-view {
-  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
-  font-family: var(--dsw-font-family);
-  /* Native form controls (level combobox popups, scrollbars) follow the
-     board theme instead of the OS scheme. */
-  color-scheme: light dark;
 }
 
 .dsh-ideas-board {
@@ -389,6 +294,34 @@ html[data-dsh-ideas-active]:not([data-dsh-taskboard-active]):not([data-dsh-ssh-a
   background: var(--dsw-alias-danger-bg, color-mix(in srgb, var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger)) 12%, transparent));
   color: var(--dsw-alias-danger-fg, var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger)));
   font-size: 12px;
+}
+
+/* Launch refused by the TaskBoard permission gate: a warning box, not an
+   error box, because the launch is still valid the moment a human confirms
+   the card. The raw Host sentence rides at the bottom, muted and truncated
+   by its container, for diagnosis only. */
+.dsh-ideas-launch-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-warn-bg, color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent)) 12%, transparent));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 12px;
+}
+
+.dsh-ideas-launch-gate code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-ideas-launch-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* --- columns --- */
@@ -1820,11 +1753,8 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
 }
 `
 
-/** Class map consumed by the sidebar core and the board JSX. */
+/** Class map consumed by the panel registration and the board JSX. */
 export const classes = {
-  entry: 'dsh-ideas-entry',
-  entryIcon: 'dsh-ideas-entry-icon',
-  entryLabel: 'dsh-ideas-entry-label',
   boardView: 'dsh-ideas-board-view',
   board: 'dsh-ideas-board',
   boardHeader: 'dsh-ideas-board-header',
@@ -1840,6 +1770,8 @@ export const classes = {
   ghostButton: 'dsh-ideas-ghost-button',
   settingsGear: 'dsh-ideas-settings-gear',
   error: 'dsh-ideas-error',
+  launchGate: 'dsh-ideas-launch-gate',
+  launchGateActions: 'dsh-ideas-launch-gate-actions',
   columns: 'dsh-ideas-columns',
   column: 'dsh-ideas-column',
   columnHeader: 'dsh-ideas-column-header',
