@@ -6,7 +6,7 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
-## Unreleased
+## 0.7.4 - 2026-09-27
 
 ### Fixed
 
