@@ -1,17 +1,24 @@
 /**
  * Shell panel navigation — the one cross-plugin call the layout exposes.
  *
- * `ctx.layout.selectPanel(panelId)` is the sanctioned way for a plugin to bring
- * a global center panel to the front (the shell's own sidebar rows use it, and
- * so does the TaskBoard shortcut). It THROWS when the main key is not
- * registered, so every call here is wrapped: a deployment that serves no such
- * panel must degrade to "the button did nothing", never to a dead click or a
- * plugin-wide exception.
+ * `ctx.get("layout").selectPanel(panelId)` is the sanctioned way for a plugin
+ * to bring a global center panel to the front: the shell's own sidebar rows use
+ * it, and so do the TaskBoard, Skill Explorer and SSH shortcuts. It THROWS when
+ * the main key is not registered, so every call here is wrapped — a deployment
+ * that serves no such panel must degrade to "the button did nothing", never to
+ * a dead click or a plugin-wide exception.
  *
- * The face is resolved DEFENSIVELY instead of being declared in `inject`:
- * cordis refuses a property read that was not declared, and declaring a
- * service the deployment may not have would keep the WHOLE plugin from
- * booting (board, settings section and exports) over a panel that is optional.
+ * Two things this file exists to get right, both learned the hard way:
+ *
+ * 1. The layout is a cordis SERVICE, reached through `ctx.get("layout")`, not
+ *    through a `ctx.layout` property: cordis refuses an undeclared property
+ *    read, and a service we never declared in `inject` is not a property at
+ *    all. Reading the property therefore throws, and a resolver that trusted it
+ *    produced a navigator that silently did nothing.
+ * 2. The face is resolved DEFENSIVELY rather than declared in `inject`:
+ *    declaring a service the deployment may not have would keep the WHOLE
+ *    plugin from booting (board, settings section and exports) over a panel
+ *    that is only ever a convenience.
  */
 
 /** The panel id shared by the Ideas sidebar row and its main-slot occupant. */
@@ -30,17 +37,16 @@ export interface PanelNavigator {
   select(panelId: string | null): void
 }
 
-/** The structural slice of `ctx.layout` this plugin uses. */
+/** The structural slice of the layout service this plugin uses. */
 interface LayoutFace {
-  selectPanel(panelId: string | null): void
+  selectPanel?(panelId: string | null): void
 }
 
 /**
- * Read `ctx.layout` off a client context without depending on its types (the
- * package is shell-provided, not a dependency of this plugin) and without
- * letting an undeclared property throw out of `apply`.
+ * Build a navigator over the layout service, or undefined when this
+ * deployment has none.
  * @param ctx - the client root context.
- * @returns the layout face, or undefined when the shell has no layout service.
+ * @returns the navigator, or undefined when no layout service is reachable.
  */
 export function resolvePanelNavigator(ctx: unknown): PanelNavigator | undefined {
   const layout = readLayoutFace(ctx)
@@ -48,7 +54,9 @@ export function resolvePanelNavigator(ctx: unknown): PanelNavigator | undefined 
   return {
     select(panelId: string | null): void {
       try {
-        layout.selectPanel(panelId)
+        // Optional call: through a cordis service proxy the method may be
+        // absent, and a bare call would throw inside the click handler.
+        layout.selectPanel?.(panelId)
       } catch (error) {
         console.warn('[dsh-plugin-ideas-manager] panel selection refused:', error)
       }
@@ -58,15 +66,21 @@ export function resolvePanelNavigator(ctx: unknown): PanelNavigator | undefined 
 
 /** The layout face behind a context, or undefined. Never throws. */
 function readLayoutFace(ctx: unknown): LayoutFace | undefined {
+  if (ctx === null || (typeof ctx !== 'object' && typeof ctx !== 'function')) return undefined
+  const host = ctx as { get?: unknown; layout?: unknown }
   let candidate: unknown
   try {
-    candidate = (ctx as Record<string, unknown>).layout
+    // The service accessor first — that is how every shipped panel reaches it.
+    // A context whose `layout` really is a property (a test double, an older
+    // shell) still works through the second read.
+    candidate = typeof host.get === 'function'
+      ? (host.get as (name: string) => unknown).call(ctx, 'layout')
+      : host.layout
   } catch {
-    // cordis throws on an undeclared property read; that IS the "no layout" answer.
+    // An undeclared property read, or a service accessor that refuses the name.
     return undefined
   }
+  // A cordis service proxy is an object; a resolved service is an object too.
   if (typeof candidate !== 'object' || candidate === null) return undefined
-  const selectPanel = (candidate as { selectPanel?: unknown }).selectPanel
-  if (typeof selectPanel !== 'function') return undefined
   return candidate as LayoutFace
 }

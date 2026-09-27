@@ -1,17 +1,24 @@
 /**
  * Shell panel navigation — the one cross-plugin call the layout exposes.
  *
- * `ctx.layout.selectPanel(panelId)` is the sanctioned way for a plugin to bring
- * a global center panel to the front (the shell's own sidebar rows use it, and
- * so does the TaskBoard shortcut). It THROWS when the main key is not
- * registered, so every call here is wrapped: a deployment that serves no such
- * panel must degrade to "the button did nothing", never to a dead click or a
- * plugin-wide exception.
+ * `ctx.get("layout").selectPanel(panelId)` is the sanctioned way for a plugin
+ * to bring a global center panel to the front: the shell's own sidebar rows use
+ * it, and so do the TaskBoard, Skill Explorer and SSH shortcuts. It THROWS when
+ * the main key is not registered, so every call here is wrapped — a deployment
+ * that serves no such panel must degrade to "the button did nothing", never to
+ * a dead click or a plugin-wide exception.
  *
- * The face is resolved DEFENSIVELY instead of being declared in `inject`:
- * cordis refuses a property read that was not declared, and declaring a
- * service the deployment may not have would keep the WHOLE plugin from
- * booting (board, settings section and exports) over a panel that is optional.
+ * Two things this file exists to get right, both learned the hard way:
+ *
+ * 1. The layout is a cordis SERVICE, reached through `ctx.get("layout")`, not
+ *    through a `ctx.layout` property: cordis refuses an undeclared property
+ *    read, and a service we never declared in `inject` is not a property at
+ *    all. Reading the property therefore throws, and a resolver that trusted it
+ *    produced a navigator that silently did nothing.
+ * 2. The face is resolved DEFENSIVELY rather than declared in `inject`:
+ *    declaring a service the deployment may not have would keep the WHOLE
+ *    plugin from booting (board, settings section and exports) over a panel
+ *    that is only ever a convenience.
  */
 /** The panel id shared by the Ideas sidebar row and its main-slot occupant. */
 export declare const IDEAS_PANEL_ID = "ideas";
@@ -27,10 +34,9 @@ export interface PanelNavigator {
     select(panelId: string | null): void;
 }
 /**
- * Read `ctx.layout` off a client context without depending on its types (the
- * package is shell-provided, not a dependency of this plugin) and without
- * letting an undeclared property throw out of `apply`.
+ * Build a navigator over the layout service, or undefined when this
+ * deployment has none.
  * @param ctx - the client root context.
- * @returns the layout face, or undefined when the shell has no layout service.
+ * @returns the navigator, or undefined when no layout service is reachable.
  */
 export declare function resolvePanelNavigator(ctx: unknown): PanelNavigator | undefined;

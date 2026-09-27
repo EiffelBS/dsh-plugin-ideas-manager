@@ -21,28 +21,60 @@ describe('panel ids', () => {
 })
 
 describe('resolvePanelNavigator', () => {
-  it('wraps a layout face and passes the selection through', () => {
+  it('reaches the layout the way every shipped panel does: ctx.get("layout")', () => {
+    // The live bug: the layout is a cordis SERVICE. A `ctx.layout` property read
+    // throws, so a resolver built on it returned undefined and every redirect
+    // button silently did nothing. The task-board, skill-explorer and ssh
+    // shortcuts all go through the service accessor.
     const selectPanel = vi.fn()
-    const navigator = resolvePanelNavigator({ layout: { selectPanel } })
-    expect(navigator).toBeDefined()
+    const get = vi.fn((name: string) => (name === 'layout' ? { selectPanel } : undefined))
+    const navigator = resolvePanelNavigator({ get })
+    expect(get).toHaveBeenCalledWith('layout')
     navigator?.select(IDEAS_PANEL_ID)
     navigator?.select(null)
     expect(selectPanel.mock.calls).toEqual([['ideas'], [null]])
   })
 
-  it('is undefined when the property read throws (cordis undeclared access)', () => {
+  it('prefers the service accessor over a property that would throw', () => {
+    const selectPanel = vi.fn()
+    const ctx = { get: () => ({ selectPanel }) }
+    Object.defineProperty(ctx, 'layout', {
+      get() { throw new Error('cannot get property without inject') },
+    })
+    resolvePanelNavigator(ctx)?.select(IDEAS_PANEL_ID)
+    expect(selectPanel).toHaveBeenCalledWith('ideas')
+  })
+
+  it('still accepts a context whose layout really is a property', () => {
+    const selectPanel = vi.fn()
+    resolvePanelNavigator({ layout: { selectPanel } })?.select(IDEAS_PANEL_ID)
+    expect(selectPanel).toHaveBeenCalledWith('ideas')
+  })
+
+  it('is undefined when the layout read throws (cordis undeclared access)', () => {
     const ctx = {}
     Object.defineProperty(ctx, 'layout', {
       get() { throw new Error('cannot get property without inject') },
     })
     expect(resolvePanelNavigator(ctx)).toBeUndefined()
+    expect(resolvePanelNavigator({ get: () => { throw new Error('no such service') } })).toBeUndefined()
   })
 
-  it('is undefined when layout is absent or is not a layout', () => {
+  it('is undefined when no layout is reachable at all', () => {
     expect(resolvePanelNavigator({})).toBeUndefined()
     expect(resolvePanelNavigator({ layout: undefined })).toBeUndefined()
-    expect(resolvePanelNavigator({ layout: {} })).toBeUndefined()
     expect(resolvePanelNavigator({ layout: 'nope' })).toBeUndefined()
+    expect(resolvePanelNavigator({ get: () => undefined })).toBeUndefined()
+    expect(resolvePanelNavigator(null)).toBeUndefined()
+    expect(resolvePanelNavigator('nope')).toBeUndefined()
+  })
+
+  it('tolerates a face that cannot select, instead of throwing in the click', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // A cordis service proxy does not always expose the method as a property.
+    expect(() => { resolvePanelNavigator({ layout: {} })?.select('task-board') }).not.toThrow()
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
   })
 
   it('swallows a refusal instead of letting it escape into the click', () => {
