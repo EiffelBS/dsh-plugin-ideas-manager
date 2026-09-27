@@ -55,8 +55,12 @@ export declare function IdeasPanel({ client }: {
 }): import("react").JSX.Element;
 /**
  * Register the board's sidebar row and center-column page.
+ *
+ * A shell that declares neither seat leaves Ideas simply absent, which is the
+ * documented degradation — but silence is a bad diagnostic, so an unclaimed
+ * seat is logged once rather than leaving the board to "just not be there".
  * @param ctx - client root context (services: slots).
  * @param client - the ideas client the panel renders.
- * @returns a disposer releasing both registrations.
+ * @returns a disposer releasing both registrations and the watchdog.
  */
 export declare function registerIdeasPanel(ctx: ClientContext, client: IdeasClient): () => void;
