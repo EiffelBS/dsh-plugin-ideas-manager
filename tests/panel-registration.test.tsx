@@ -122,6 +122,42 @@ describe('registerIdeasPanel', () => {
   })
 })
 
+describe('panel seat watchdog', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('says so once when the shell never declares a seat', () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const slots = slotsDouble()
+    const client = new IdeasClient(new FakeTransport(), undefined)
+    registerIdeasPanel({ slots: slots.service } as never, client)
+    vi.advanceTimersByTime(11_000)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0]?.[0]).toContain('sidebar.panellist')
+    warn.mockRestore()
+  })
+
+  it('stays quiet in a healthy shell, and after disposal', () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const slots = slotsDouble()
+    const client = new IdeasClient(new FakeTransport(), undefined)
+    const dispose = registerIdeasPanel({ slots: slots.service } as never, client)
+    slots.seats.get('sidebar.panellist')?.()
+    slots.seats.get('main')?.()
+    vi.advanceTimersByTime(11_000)
+    expect(warn).not.toHaveBeenCalled()
+
+    // A disposed plugin must not log for a seat it no longer waits for.
+    vi.useRealTimers()
+    vi.useFakeTimers()
+    dispose()
+    vi.advanceTimersByTime(11_000)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+})
+
 describe('IdeasPanelIcon', () => {
   it('draws only the glyph, at the size the shell asks for', () => {
     host.innerHTML = ''

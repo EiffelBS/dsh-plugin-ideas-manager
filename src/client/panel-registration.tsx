@@ -33,6 +33,13 @@ import { t } from './locales.ts'
 const PANEL_ORDER = 30
 
 /**
+ * How long to wait before calling a shell that never declared the seats
+ * abnormal. Seat declaration is immediate in a healthy shell, so a longer
+ * silence means the board will simply not appear.
+ */
+const SEAT_WAIT_MS = 10_000
+
+/**
  * The sidebar row glyph the shell asks for, at its own size and active state.
  * The shell owns the button, the label, the tooltip and the rail geometry;
  * this component draws only the glyph, like every other panel row.
@@ -90,33 +97,54 @@ export function IdeasPanel({ client }: { client: IdeasClient }) {
 
 /**
  * Register the board's sidebar row and center-column page.
+ *
+ * A shell that declares neither seat leaves Ideas simply absent, which is the
+ * documented degradation — but silence is a bad diagnostic, so an unclaimed
+ * seat is logged once rather than leaving the board to "just not be there".
  * @param ctx - client root context (services: slots).
  * @param client - the ideas client the panel renders.
- * @returns a disposer releasing both registrations.
+ * @returns a disposer releasing both registrations and the watchdog.
  */
 export function registerIdeasPanel(ctx: ClientContext, client: IdeasClient): () => void {
   const slots = (ctx as unknown as Record<string, unknown>).slots as {
     inject(key: string, callback: () => () => void): () => void
     register(options: Record<string, unknown>, component: unknown): () => void
   }
-  const disposers: Array<() => void> = []
+  let declared = 0
+  /** Claim one seat, counting the ones the shell actually declares. */
+  const seat = (key: string, contribute: () => () => void): (() => void) =>
+    slots.inject(key, () => {
+      declared += 1
+      return contribute()
+    })
 
-  disposers.push(slots.inject('sidebar.panellist', () => slots.register({
-    name: 'sidebar.panellist',
-    id: IDEAS_PANEL_ID,
-    order: PANEL_ORDER,
-    // The shell resolves this through its own label lookup on every locale
-    // change, so the thunk is read at call time, never captured.
-    label: () => t('entry.label'),
-  }, IdeasPanelIcon)))
+  const disposers = [
+    seat('sidebar.panellist', () => slots.register({
+      name: 'sidebar.panellist',
+      id: IDEAS_PANEL_ID,
+      order: PANEL_ORDER,
+      // The shell resolves this through its own label lookup on every locale
+      // change, so the thunk is read at call time, never captured.
+      label: () => t('entry.label'),
+    }, IdeasPanelIcon)),
+    seat('main', () => slots.register({
+      name: 'main',
+      key: IDEAS_PANEL_ID,
+      inject: () => ({ client }),
+    }, IdeasPanel)),
+  ]
 
-  disposers.push(slots.inject('main', () => slots.register({
-    name: 'main',
-    key: IDEAS_PANEL_ID,
-    inject: () => ({ client }),
-  }, IdeasPanel)))
+  const watchdog = setTimeout(() => {
+    if (declared === 0) {
+      console.warn(
+        '[dsh-plugin-ideas-manager] no shell panel seat was declared ' +
+        '(sidebar.panellist / main): the Ideas board will not appear.',
+      )
+    }
+  }, SEAT_WAIT_MS)
 
   return () => {
-    for (const dispose of disposers.splice(0)) dispose()
+    clearTimeout(watchdog)
+    for (const dispose of disposers) dispose()
   }
 }
