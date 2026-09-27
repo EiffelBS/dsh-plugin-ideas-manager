@@ -92,6 +92,65 @@ describe('buildAnalysisPrompt', () => {
     expect(prompt).toContain('effort: not set (you decide)')
     expect(prompt).toContain('suggested rank: not set (you decide)')
   })
+
+  it('the skill bounds the sub-agent fan-out to 3 read-only delegates, solo when absent', () => {
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Sub-agent fan-out')
+    // Numeric thresholds, never "if you see the point".
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/at most\s+3\s+sub-agents/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('2-3 KiB at most')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('exactly ONE question')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('a closed file scope')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Never delegate on a vague trigger')
+    // The two triggers are the explicit ones, including the assumed tension
+    // with the bounded context discipline of ideas #64/#65.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/at least 2 DISTINCT subsystems/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('narrow exception')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/scope\s+stays CLOSED/)
+    // A return is material to synthesize, never text to paste, and the single
+    // writer is the principal analyst alone.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Never paste a sub-agent return verbatim')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('You are the only writer on the channel')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/A sub-agent NEVER emits create,\s+update or triage/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('NEVER launches an analyst, a re-analysis, or another')
+    // Degraded mode: the Host registers the tool only while its provider is
+    // loaded, so a missing tool is the normal case, not a failure.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('the Host ships one, named subagent by default')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Degraded mode is the expected mode')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/run solo and say so in one\s+clause of the final report/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('Never invent, stub or simulate a sub-agent')
+  })
+
+  it('the skill forbids a multi-CREATE run and defers independent ideas to the body', () => {
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## One run, one card (anti-multi-CREATE)')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('A run ends in AT MOST ONE card')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('A capture run emits exactly ONE create verb')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/Never\s+a second create with a fresh requestId in the same run/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/A re-analysis run emits NO create verb at all/)
+    // The permitted verb pairs all target the SAME id: they are not duplicates.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/create then triage, or update then triage, is not duplication/)
+    // follow-up stays the failed-run verdict, never a subject splitter.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('underReview parent and archives that parent')
+    // Independent ideas land in the one optional section, after Risks, capped.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Deferred ideas')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/The\s+section is optional: omit it entirely/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/it comes AFTER\s+Risks/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/keep it under ~2 KiB/)
+    // A re-analysis replaces the body, so the previous entries must survive it.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/keep\s+them, re-checked against today's evidence/)
+    // Deliverable 2 stays coherent with it: five mandatory headings, order kept.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('The five headings above are mandatory and keep that order')
+    for (const heading of ['## Context', '## Value', '## Effort', '## First steps', '## Risks']) {
+      expect(IDEAS_ANALYST_SKILL_CONTENT).toContain(heading)
+    }
+  })
+
+  it('ships the skill without a single backtick, so the SKILL.md install stays buildable', () => {
+    // A backtick in a TS template literal needs an escape, and the escape
+    // would then land as a literal backtick in the installed SKILL.md: guard
+    // the markdown, not just the build.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('`')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).not.toContain('\\`')
+  })
 })
 
 describe('resolveSessionLauncher', () => {

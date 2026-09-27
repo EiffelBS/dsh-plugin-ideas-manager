@@ -14,7 +14,7 @@
  * or the plugin code.
  *
  * Markdown-compat constraint: the file is authored inside a TS template
- * literal, so backticks are structurally impossible here — the two code
+ * literal, so backticks are structurally impossible here — the code
  * examples below use 4-space indentation instead of ``` fences. Keep it that
  * way; a stray backtick breaks the build (TS1005).
  */
@@ -58,6 +58,9 @@ skill.
 
    Write it in the language of the human's draft and ground it in this
    project. Maximum ~32 KiB.
+   The five headings above are mandatory and keep that order. ONE more heading
+   is allowed - the optional "Deferred ideas" section of the one-run-one-card
+   rule below - and only when the analysis surfaced independent ideas.
    Before keeping a code/file/line reference from the human's draft, re-check
    it in the project (read the source or grep) rather than copying it
    verbatim - stale references creep into drafts and your analysis should
@@ -130,6 +133,62 @@ needs broad/unbounded loading. In the final report, state ESCALATED, the exact
 check that failed, the identifiers/paths inspected, what remains unresolved, and
 the smallest safe next action. Do not guess or write a partial analysis.
 
+## Sub-agent fan-out (bounded, still one card)
+
+A broad subject is normally an either/or: one shallow card, or N sibling
+cards. Take the depth instead. If your tool catalog offers a delegation tool
+(the Host ships one, named subagent by default, and a deployment may rename
+or restrict it), you may split the ANALYSIS of that single card across at most
+3 sub-agents, start them together in one message, and reassemble what comes
+back into the SAME body. Fan-out buys depth; it never buys another card.
+
+Delegate ONLY when one of these two thresholds is met:
+
+1. The draft cites at least 2 DISTINCT subsystems of this project, and the
+   bounded discipline above cannot read both in the same pass.
+2. Checking one reference taken from the draft requires reading files outside
+   the paths the draft already cites. This is a deliberate, narrow exception
+   to the cited-paths-only rule of the bounded section: the delegated scope
+   stays CLOSED, as the brief below requires, so it is never the unbounded
+   loading that section asks you to escalate.
+
+Never delegate on a vague trigger such as "this is a big subject", "this
+looks complex" or "sub-agents would help": a fuzzy trigger is exactly how an
+uncontrolled fan-out starts.
+
+Each sub-agent receives a written brief and nothing else:
+
+- exactly ONE question, answerable by reading files - never a question about
+  opinion, priority, feasibility or wording;
+- a closed file scope (an explicit path list, or one path prefix), so it
+  cannot crawl the workspace;
+- a return of 2-3 KiB at most, containing the answer, the paths it actually
+  inspected as evidence, and the questions it could not settle;
+- a stop rule: on a contradiction it cannot resolve, it reports it instead
+  of picking a side.
+
+Then you, the principal analyst, alone:
+
+- Never paste a sub-agent return verbatim. Synthesize it into the section it
+  concerns, and note the inspected path next to the claim it supports - a
+  claim without a path is a claim nobody verified.
+- Treat the returns as working material, not as body text. The body budget
+  stays ~32 KiB; three 3 KiB returns do not become three quoted appendices.
+- You are the only writer on the channel. A sub-agent NEVER emits create,
+  update or triage, and never opens the write channel itself: distributed
+  writing is precisely what would break the one-run-one-card guarantee below.
+- A sub-agent NEVER launches an analyst, a re-analysis, or another
+  sub-agent. The existing no-recursion rule holds all the way down.
+- If a sub-agent fails, returns nothing usable, or contradicts what you read
+  yourself, continue solo and report the disagreement. Do not average it and
+  do not retry the same brief more than once.
+
+Degraded mode is the expected mode, not a failure. When the tool catalog
+exposes no delegation tool - the Host registers one only while its provider
+is loaded, and a tool restriction can remove it - run solo and say so in one
+clause of the final report (for example: no delegation tool, analysis run
+solo). Never invent, stub or simulate a sub-agent to satisfy this section.
+
 ## The write channel
 
 The launch prompt tells you the exact server origin. The full, backward-
@@ -190,6 +249,38 @@ Rules:
 - "runStatus" and "runSessionId" are HOST-WRITTEN system fields: they describe a
   launched execution (idea #66) and the wire gate rejects them in a patch or an
   import. Never send them, and never set them to make a card look launched.
+
+## One run, one card (anti-multi-CREATE)
+
+A run ends in AT MOST ONE card. A sibling card is a duplicate, not a deeper
+analysis, and a fresh requestId is what makes a second create succeed - so
+the count is your responsibility, not the channel's:
+
+- A capture run emits exactly ONE create verb, for the analyzed idea. Never
+  a second create with a fresh requestId in the same run.
+- A re-analysis run emits NO create verb at all; it updates the named id.
+- create then triage, or update then triage, is not duplication: both verbs
+  target the SAME idea id. Keep it that way.
+- The follow-up verb stays reserved for a failed run reviewed by a human: it
+  requires an underReview parent and archives that parent. It is never the
+  way to split a broad subject across cards.
+
+Genuinely INDEPENDENT ideas you notice while analyzing do not become cards
+in this run. Record them inside the body, in the one OPTIONAL section the
+structure above allows beyond the five mandatory headings:
+
+    ## Deferred ideas
+
+    - <short title> - <one sentence: what it is> - <the one check that would
+      scope it>
+
+Write the heading in English like the five others (Context, Value, Effort,
+First steps, Risks) and the entries in the language of the human's draft. The
+section is optional: omit it entirely when the analysis surfaced no
+independent idea, and keep it under ~2 KiB. When present it comes AFTER
+Risks, and it never replaces or shortens any of the five. On a re-analysis
+the target body you already had to read carries the previous entries: keep
+them, re-checked against today's evidence, rather than dropping them.
 
 ## Re-analysis runs (re-analyze action)
 

@@ -269,6 +269,22 @@ Splitting the analyst prompt into a minimal prompt + an installed skill:
 - **No backticks inside the skill**: the SKILL.md is authored inside a TypeScript
   template literal, so any backtick in its body breaks the build (TS1005). Keep
   code examples on 4-space-indented lines and never use backtick fence/emphasis.
+- **Bounded fan-out, one run = one card** (idea #79): two rules live in the skill
+  as text, because they are methodology and need no protocol change. The
+  fan-out section lets the analyst split the analysis of ONE card across at most
+  3 read-only sub-agents, only on a numeric threshold (the draft cites >= 2
+  distinct subsystems, or a cited reference forces reads outside the cited
+  paths — a narrow, declared exception to the #64/#65 bounded discipline). The
+  principal analyst stays the only writer on the channel, synthesizes every
+  return instead of pasting it, and runs solo with a mention in the report when
+  the tool catalog exposes no delegation tool (the Host registers one only
+  while its provider is loaded). The anti-multi-CREATE section caps a run at one
+  card: a second create with a fresh requestId is a duplicate, and independent
+  ideas discovered along the way go to the one optional `## Deferred ideas`
+  section of the body (after Risks, ~2 KiB cap) instead of sibling cards.
+  `followUp` stays the failed-run verdict — it requires an `underReview` parent
+  and archives it. Recommendation (B) — sub-agents proposed to the execution
+  run, read by `runPromptOf` — is deliberately out of scope.
 
 Workspace-less captures always keep the plain manual Create.
 
