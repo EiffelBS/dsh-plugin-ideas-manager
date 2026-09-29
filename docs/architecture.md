@@ -100,6 +100,18 @@ Two scripts close the loop:
 - `scripts/validate-mirror-cycle.mjs [--base …]` — live acceptance run against a
   test instance: create → re-analyze → analyst rewrite → decline must end with
   exactly one card.
+- `scripts/reassign-workspace.mjs --from <uuid> --to <uuid> [--apply] [--archived]`
+  — re-homes every idea and task card between two workspaces. Renaming a
+  workspace never rewrites the bindings: `workspaceId` is the stable workspace
+  UUID (`~/.dsh/storages/workspace.json` keys, the `title` field is only the
+  display name), so a rename leaves the records pointing at the same id. The
+  script posts the ordinary `update` verbs over the frozen wire (`workspaceId`
+  is a legal `IdeaUpdatePatch` and `TaskUpdatePatch` field) instead of editing
+  the ledger files, which a live single-writer Host would overwrite. Archived
+  cards are read-only for every verb, so `--archived` runs the
+  restore → update → archive round-trip (`restore` clears `archivedAt` alone).
+  Note that editing an idea whose card binding is missing self-heals the mirror
+  by CREATING its card, whatever the idea status.
 
 ## Client notes
 
