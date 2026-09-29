@@ -77,7 +77,8 @@ information is lost, so they cannot be auto-repaired):
 | #53  | `d1e2f3a4-b5c6-7890-defa-bc1234567890` | open | body, summary, rationale    |
 | #54  | `6aedc6f8-a3cb-43c2-b8fc-f38c873f4870` | open | title, body, summary, rationale |
 
-To detect corruption in any ledger, run:
+To detect corruption in any ledger, run the local `scripts/scan-mojibake.mjs`
+scanner (maintenance tooling, kept out of the repository):
 
 ```
 node scripts/scan-mojibake.mjs <ledger.json>

@@ -11,3 +11,12 @@ tc*.txt
 r[0-9]*.txt
 test-*.txt
 
+# Local maintenance tooling (ledger scans, mirror acceptance runs, batch
+# workspace moves). It targets one developer's ~/.dsh ledgers, has no use for
+# the people installing this plugin, and is therefore not shipped.
+# Exception: changelog-notes.mjs builds the GitHub Release body in
+# .github/workflows/release.yml, so it stays in the repository.
+scripts/*
+!scripts/changelog-notes.mjs
+!scripts/changelog-notes.d.mts
+

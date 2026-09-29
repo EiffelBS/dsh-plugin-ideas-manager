@@ -92,26 +92,21 @@ silently mean "create".
 The card `description` carries the idea's `summary` (<= 300 chars) while the full
 analysis rides the card `prompt` and the ledger — the body is never stored twice.
 
-Two scripts close the loop:
+Two consequences of this contract are worth knowing without any tooling:
 
-- `scripts/reconcile-taskboard-mirror.mjs [--url …] [--apply]` — detects orphan
-  duplicates (unbound card whose exact title matches a bound idea) and archives
-  them, keeping the bound card; dry-run by default.
-- `scripts/validate-mirror-cycle.mjs [--base …]` — live acceptance run against a
-  test instance: create → re-analyze → analyst rewrite → decline must end with
-  exactly one card.
-- `scripts/reassign-workspace.mjs --from <uuid> --to <uuid> [--apply] [--archived]`
-  — re-homes every idea and task card between two workspaces. Renaming a
-  workspace never rewrites the bindings: `workspaceId` is the stable workspace
-  UUID (`~/.dsh/storages/workspace.json` keys, the `title` field is only the
-  display name), so a rename leaves the records pointing at the same id. The
-  script posts the ordinary `update` verbs over the frozen wire (`workspaceId`
-  is a legal `IdeaUpdatePatch` and `TaskUpdatePatch` field) instead of editing
-  the ledger files, which a live single-writer Host would overwrite. Archived
-  cards are read-only for every verb, so `--archived` runs the
-  restore → update → archive round-trip (`restore` clears `archivedAt` alone).
-  Note that editing an idea whose card binding is missing self-heals the mirror
-  by CREATING its card, whatever the idea status.
+- `workspaceId` is the **stable workspace UUID** (a key of
+  `~/.dsh/storages/workspace.json`); `title` is only the display name. Renaming a
+  workspace therefore rewrites nothing, and creating a second workspace under the
+  same name gives every record a new id. Re-homing records between two
+  workspaces is a batch of the ordinary `update` verbs — `workspaceId` is a legal
+  field of both `IdeaUpdatePatch` and `TaskUpdatePatch` — never an edit of the
+  ledger files, which a live single-writer Host overwrites. Archived cards are
+  read-only for **every** verb, so such a batch needs the
+  `restore` → `update` → `archive` round-trip (`restore` clears `archivedAt`
+  alone: status, tags, executions and schedule survive).
+- Editing an idea whose card binding is missing self-heals the mirror by
+  **creating** its card, whatever the idea status. A bulk edit of many ideas
+  therefore also mints cards for closed ideas, in `backlog`.
 
 ## Client notes
 

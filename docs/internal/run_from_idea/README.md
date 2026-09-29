@@ -443,5 +443,6 @@ the direct path pins nothing, can carry `reasoningEffort`, and guards with
 - `docs/idea-64-summary-first-context.md` — bounded reads the launch flow should
   follow.
 - `scripts/reconcile-taskboard-mirror.mjs` / `scripts/validate-mirror-cycle.mjs`
-  — existing mirror acceptance tooling to extend with the run cycle.
+  — existing mirror acceptance tooling to extend with the run cycle. Local
+  maintenance scripts, deliberately kept out of the repository.
 - `tests/taskboard-bridge.test.ts` — the fake-transport harness used throughout.
