@@ -6,6 +6,25 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.5 - 2026-09-30
+
+### Fixed
+
+- **The Ideas board works in the DSH Desktop app again.** In the official
+  Desktop app every ideas request answered `403` and the board showed
+  *Host operation failed: forbidden* — the panel was unusable, while the same
+  install worked in an ordinary browser tab. The desktop shell talks to the
+  Host on your behalf and rewrites the request on the way, which made the
+  panel's own calls look like a stray local script to the fence. The fence now
+  also accepts the shell's own sign-in credential as proof of an application
+  running on this machine, so the board, the search, the settings and the
+  launches all answer again. Nothing is loosened for anything else: a plain
+  `curl`, a request from another machine, and a request naming another site
+  are still refused with `403`, exactly as before.
+- Installing this version replaces the whole plugin, so a hand-patched copy of
+  the plugin in a profile is superseded by this release rather than kept
+  alongside it.
+
 ## 0.7.4 - 2026-09-27
 
 ### Fixed

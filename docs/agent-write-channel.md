@@ -67,6 +67,14 @@ Origin: http://127.0.0.1:<port>
 Sec-Fetch-Site: same-origin
 ```
 
+The third accepted marker is the Host's browser-auth cookie (`dsh-auth-*` in
+the `Cookie` header). The official DSH Desktop shell serves the Web GUI from
+`dsh-app://app/` and forwards the page's Host requests itself, deleting `origin`
+and `sec-fetch-site` on the way, then attaching that cookie; without it the
+whole `/api/ideas*` family answered `403` inside the desktop app. The
+credential is the shell's proof of an application on this machine — a
+marker-less request that does not carry it stays refused.
+
 This is the sibling-plugin discipline (task-board / ssh family): a tripwire
 against stray local tooling, **not** an authority check — any local process can
 forge these headers. The agent is the same user on the same machine, so this
