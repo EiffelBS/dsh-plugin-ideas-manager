@@ -6,6 +6,12 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.6 - 2026-10-01
+
+### Fixed
+
+- **The header gear and the "Open the TaskBoard" button work in the Desktop app.** In the Desktop app, Settings lives in the account menu instead of behind a standalone button, and the TaskBoard switch relied on a window call that shell does not always answer. The gear now opens Settings through whichever entry your window offers and still lands on the Ideas section. The TaskBoard button now switches to the board the same way clicking its sidebar entry does, then filters on the idea title as before. The browser version behaves exactly as before.
+
 ## 0.7.5 - 2026-09-30
 
 ### Fixed
