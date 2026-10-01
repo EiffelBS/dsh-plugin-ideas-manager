@@ -93,8 +93,42 @@ describe('openTaskBoardFiltered', () => {
     expect(selected).toEqual(['task-board'])
   })
 
-  it('does nothing at all without a layout service', () => {
+  it('does nothing at all without a layout service or a sidebar row', () => {
     expect(openTaskBoardFiltered(undefined, 'Idea #51')).toBe(false)
+  })
+
+  it('clicks the sidebar row instead of the layout face when the row is mounted', () => {
+    const input = mountBoardPanel()
+    const { face, selected } = navigator()
+    const row = document.createElement('button')
+    row.type = 'button'
+    let clicked = 0
+    row.addEventListener('click', () => { clicked += 1 })
+    const glyph = document.createElement('svg')
+    glyph.setAttribute('data-dsh-panel-entry', 'task-board')
+    row.appendChild(glyph)
+    document.body.appendChild(row)
+
+    expect(openTaskBoardFiltered(face, 'Idea #51 - Karaoke')).toBe(true)
+    // The row is the shell's own selectPanel. A face that would refuse the id
+    // must not be the path that runs.
+    expect(clicked).toBe(1)
+    expect(selected).toEqual([])
+    expect(input.value).toBe('Idea #51 - Karaoke')
+  })
+
+  it('opens the board from the sidebar row when no layout service is reachable', () => {
+    const row = document.createElement('button')
+    row.type = 'button'
+    let clicked = 0
+    row.addEventListener('click', () => { clicked += 1 })
+    const glyph = document.createElement('span')
+    glyph.setAttribute('data-dsh-panel-entry', 'task-board')
+    row.appendChild(glyph)
+    document.body.appendChild(row)
+
+    expect(openTaskBoardFiltered(undefined, 'Idea #51')).toBe(true)
+    expect(clicked).toBe(1)
   })
 
   it('trims an empty filter into a plain panel switch', () => {

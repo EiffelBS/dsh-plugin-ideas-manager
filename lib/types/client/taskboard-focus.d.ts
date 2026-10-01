@@ -5,9 +5,17 @@
  * `main` slot is keyed and carries no selection payload, the board publishes no
  * client service, and there is no deeplink. What it does have is a filter field
  * ("Filter tasks...") that matches TITLE, description, tags and freeze — never
- * the task id. So the redirect is: select the board panel through the shell
- * layout (a sanctioned cross-plugin call), then write the idea TITLE into that
- * filter, which is the text the card is actually filed under.
+ * the task id. So the redirect is: bring the board panel to the front, then
+ * write the idea TITLE into that filter, which is the text the card is actually
+ * filed under.
+ *
+ * The panel is selected the way the sidebar row itself does it. The row's glyph
+ * carries `data-dsh-panel-entry="task-board"` (the only DOM the board owns
+ * inside the shell-owned button), and clicking that button calls the shell's
+ * live `selectPanel`. That click is preferred over this plugin's layout face:
+ * on the Desktop shell the face can be missing or refuse the id, while the
+ * sidebar row the human would click is still there. The layout face remains
+ * the fallback for a shell whose row has not mounted yet.
  *
  * Writing the input is deliberate DOM surgery rather than a contract call,
  * because no contract exists. It is therefore defensive end to end: the native
@@ -34,8 +42,8 @@ export interface FocusOptions {
  * @param navigator - the shell panel face; undefined means "no layout service".
  * @param filter - text to type into the board's filter field.
  * @param options - retry budget (tests shrink it).
- * @returns true when the panel selection was issued, false when there is no
- *   navigator (nothing to do, and nothing failed either).
+ * @returns true when a panel selection was issued (sidebar row or layout face),
+ *   false when neither is available (nothing to do, and nothing failed either).
  */
 export declare function openTaskBoardFiltered(navigator: PanelNavigator | undefined, filter: string, options?: FocusOptions): boolean;
 /**

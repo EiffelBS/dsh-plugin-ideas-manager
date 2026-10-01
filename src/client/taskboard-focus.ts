@@ -5,9 +5,17 @@
  * `main` slot is keyed and carries no selection payload, the board publishes no
  * client service, and there is no deeplink. What it does have is a filter field
  * ("Filter tasks...") that matches TITLE, description, tags and freeze — never
- * the task id. So the redirect is: select the board panel through the shell
- * layout (a sanctioned cross-plugin call), then write the idea TITLE into that
- * filter, which is the text the card is actually filed under.
+ * the task id. So the redirect is: bring the board panel to the front, then
+ * write the idea TITLE into that filter, which is the text the card is actually
+ * filed under.
+ *
+ * The panel is selected the way the sidebar row itself does it. The row's glyph
+ * carries `data-dsh-panel-entry="task-board"` (the only DOM the board owns
+ * inside the shell-owned button), and clicking that button calls the shell's
+ * live `selectPanel`. That click is preferred over this plugin's layout face:
+ * on the Desktop shell the face can be missing or refuse the id, while the
+ * sidebar row the human would click is still there. The layout face remains
+ * the fallback for a shell whose row has not mounted yet.
  *
  * Writing the input is deliberate DOM surgery rather than a contract call,
  * because no contract exists. It is therefore defensive end to end: the native
@@ -48,8 +56,8 @@ let pendingRetry: ReturnType<typeof setTimeout> | undefined
  * @param navigator - the shell panel face; undefined means "no layout service".
  * @param filter - text to type into the board's filter field.
  * @param options - retry budget (tests shrink it).
- * @returns true when the panel selection was issued, false when there is no
- *   navigator (nothing to do, and nothing failed either).
+ * @returns true when a panel selection was issued (sidebar row or layout face),
+ *   false when neither is available (nothing to do, and nothing failed either).
  */
 export function openTaskBoardFiltered(
   navigator: PanelNavigator | undefined,
@@ -60,8 +68,7 @@ export function openTaskBoardFiltered(
     clearTimeout(pendingRetry)
     pendingRetry = undefined
   }
-  if (navigator === undefined) return false
-  navigator.select(TASK_BOARD_PANEL_ID)
+  if (!selectTaskBoardPanel(navigator)) return false
   const needle = filter.trim()
   // An already-mounted board answers on the first try; anything else is the
   // panel-selection case, which needs the retry below.
@@ -94,6 +101,37 @@ export function applyBoardFilter(text: string): boolean {
   // field, which the next re-render would then wipe.
   input.dispatchEvent(new Event('input', { bubbles: true }))
   return true
+}
+
+/**
+ * Bring the TaskBoard panel to the front.
+ *
+ * The sidebar row wins when it is mounted: that button is the shell's own
+ * `selectPanel` call, so a deployment whose layout face this plugin cannot
+ * reach still navigates. The face is the fallback for a row that has not
+ * mounted yet.
+ * @returns true when a selection was issued.
+ */
+function selectTaskBoardPanel(navigator: PanelNavigator | undefined): boolean {
+  const row = taskBoardSidebarButton()
+  if (row !== undefined) {
+    row.click()
+    return true
+  }
+  if (navigator === undefined) return false
+  navigator.select(TASK_BOARD_PANEL_ID)
+  return true
+}
+
+/**
+ * The shell button that owns the TaskBoard glyph, or undefined when the
+ * sidebar row is not mounted.
+ */
+function taskBoardSidebarButton(): HTMLButtonElement | undefined {
+  const glyph = document.querySelector(`[data-dsh-panel-entry="${TASK_BOARD_PANEL_ID}"]`)
+  if (glyph === null) return undefined
+  const button = glyph.closest('button')
+  return button instanceof HTMLButtonElement ? button : undefined
 }
 
 /** The filter field of the mounted board, scoped to its own panel. */

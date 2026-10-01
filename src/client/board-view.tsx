@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Drag
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
 import type { IdeaListRow } from '../protocol.ts'
-import { t, interfaceLanguage, SETTINGS_NAV_LABELS, type IdeasKey } from './locales.ts'
+import { t, interfaceLanguage, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
 import { IdeaPreview } from './idea-preview.tsx'
@@ -30,6 +30,7 @@ import type { AiCaptureInput, ModelChoice, ReanalyzeInput, SessionLauncher } fro
 import { matchSessionSelection } from './session-queue.ts'
 import { canLaunch, classifyLaunchRefusal, modelTargetIdOf } from './launch.ts'
 import { openTaskBoardFiltered } from './taskboard-focus.ts'
+import { openIdeasSettingsSection } from './settings-navigation.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
@@ -1214,86 +1215,6 @@ function LifecycleAction({ confirming, pending, title, icon, label, onRun, onCan
       </button>
     </>
   )
-}
-
-/* --- DSH Settings modal navigation (the header gear) ---
- *
- * The shell keeps its active settings section as private React state and
- * exposes no open-section API, so the gear drives the DOM instead. Two hooks,
- * both verified against the host dist build:
- *  - the trigger button is the only shell button carrying BOTH
- *    aria-haspopup="dialog" AND an aria-label from the host locale dict
- *    ("Settings" / "设置"); hashed CSS-module classes are not a stable hook;
- *  - once the dialog renders, our nav row is the button inside it whose
- *    textContent equals OUR OWN localized label (t('settings.nav')) — stable
- *    across locales because both sides come from this plugin's i18n dict.
- * Opening via the trigger lands on rows[0] (first section in order), so the
- * nav-row click is what selects Ideas even when the dialog was just opened.
- */
-
-/**
- * Find our "Ideas board" settings nav row inside an open dialog, or undefined.
- *
- * 0.4.0 fix: the host resolves our `label()` thunk when it BUILDS the dialog,
- * so after the interface language is pinned the rendered row can carry the
- * boot language while the panel renders in the pinned one. Matching every
- * label of every dictionary (SETTINGS_NAV_LABELS) is what makes the gear land
- * on the section in every language; matching only the current label silently
- * opened the modal without selecting Ideas (reported during acceptance testing: English
- * only). The current label still wins when two rows ever collide.
- */
-function findIdeasSettingsNavRow(): HTMLButtonElement | undefined {
-  const current = t('settings.nav')
-  const labels = [current, ...SETTINGS_NAV_LABELS]
-  for (const dialog of Array.from(document.querySelectorAll('[role="dialog"]'))) {
-    if (!dialog.isConnected) continue
-    for (const button of Array.from(dialog.querySelectorAll('nav button'))) {
-      const text = (button.textContent ?? '').trim()
-      if (labels.includes(text)) return button as HTMLButtonElement
-    }
-  }
-  return undefined
-}
-
-/** Find the host settings trigger button, or undefined when its label moved. */
-function findHostSettingsTrigger(): HTMLButtonElement | undefined {
-  for (const button of Array.from(document.querySelectorAll('button[aria-haspopup="dialog"]'))) {
-    const label = button.getAttribute('aria-label') ?? ''
-    if (label === 'Settings' || label === '设置') return button as HTMLButtonElement
-  }
-  return undefined
-}
-
-/**
- * Open the DSH Settings modal on this plugin's section: click our nav row
- * when a dialog is already open, otherwise click the host trigger and poll
- * (rAF, ~800 ms deadline) for the dialog to render before selecting. When
- * neither hook matches (a host build moved the trigger label), log and leave
- * the GUI untouched — graceful degradation, never a throw.
- */
-function openIdeasSettingsSection(): void {
-  const navRow = findIdeasSettingsNavRow()
-  if (navRow !== undefined) {
-    navRow.click()
-    return
-  }
-  const trigger = findHostSettingsTrigger()
-  if (trigger === undefined) {
-    console.warn('[dsh-plugin-ideas-manager] settings trigger not found: the host build may have moved its label ("Settings"/"设置")')
-    return
-  }
-  trigger.click()
-  const deadline = performance.now() + 800
-  const selectSection = (): void => {
-    const row = findIdeasSettingsNavRow()
-    if (row !== undefined) {
-      row.click()
-      return
-    }
-    if (performance.now() < deadline) requestAnimationFrame(selectSection)
-    else console.warn('[dsh-plugin-ideas-manager] settings dialog did not render in time: section select skipped')
-  }
-  requestAnimationFrame(selectSection)
 }
 
 /** Board component; subscribes to the client snapshot. */
