@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createIdea } from '../src/core/ideas.ts'
 import { IdeasHostLedger } from '../src/host-ledger.ts'
 
@@ -120,6 +120,40 @@ describe('IdeasHostLedger persistence', () => {
     ledger.dispose()
     const quarantined = readdirSync(dirHere).filter(name => name.includes('corrupt'))
     expect(quarantined.length).toBeGreaterThan(0)
+  })
+
+  it('reports a first boot as a new ledger, never as a corrupt one', () => {
+    const dirHere = freshDir()
+    // The calls are collected into locals because `mockRestore()` also clears
+    // the recorded calls, and the assertions below run after the restore.
+    const seen: string[] = []
+    const error = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { seen.push(args.join(' ')) })
+    const info = vi.spyOn(console, 'info').mockImplementation((...args: unknown[]) => { seen.push(args.join(' ')) })
+    try {
+      const ledger = new IdeasHostLedger({ dir: dirHere })
+      expect(ledger.snapshot().ideas).toHaveLength(0)
+      ledger.dispose()
+    } finally {
+      error.mockRestore()
+      info.mockRestore()
+    }
+    // The alarming case must stay rare: a fresh install creates its ledger.
+    expect(error).not.toHaveBeenCalled()
+    expect(seen.join('\n')).toContain('created an empty one at')
+  })
+
+  it('still logs a quarantined document as an error when one existed', () => {
+    const dirHere = freshDir()
+    writeFileSync(join(dirHere, 'ledger-v2.json'), '{ not json !!!', 'utf8')
+    const errors: string[] = []
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args.join(' ')) })
+    try {
+      const ledger = new IdeasHostLedger({ dir: dirHere })
+      ledger.dispose()
+    } finally {
+      spy.mockRestore()
+    }
+    expect(errors.join('\n')).toContain('unreadable ideas ledger quarantined')
   })
 
   it('repairs malformed persisted rows on load', () => {

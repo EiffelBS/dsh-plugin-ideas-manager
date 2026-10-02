@@ -793,7 +793,16 @@ export class IdeasHostLedger {
     }
   }
 
-  /** Quarantine an unreadable document and start from an empty ledger. */
+  /**
+   * Start from an empty ledger after a failed load.
+   *
+   * Two very different situations share this path and MUST NOT read the same in
+   * the log: a document that existed and could not be parsed (something is wrong
+   * and the file is set aside), and no document at all (the normal first boot of
+   * a fresh install, where `readFileSync` throws ENOENT). Reporting the second as
+   * "corrupt ledger quarantined" trains the reader to ignore the first, so the
+   * genuinely alarming case arrives on a log full of harmless ones.
+   */
   private recoverCorrupt(existed: boolean, error: unknown): LedgerDocument {
     if (existed) {
       const quarantineName = `${this.file}.corrupt-${this.now()}-${process.pid}-${randomUUID()}`
@@ -814,7 +823,12 @@ export class IdeasHostLedger {
     } catch {
       // A write failure must not hide the startup error below.
     }
-    console.error(`[dsh-plugin-ideas-manager] corrupt ideas ledger was quarantined: ${error instanceof Error ? error.message : String(error)}`)
+    const reason = error instanceof Error ? error.message : String(error)
+    if (existed) {
+      console.error(`[dsh-plugin-ideas-manager] unreadable ideas ledger quarantined, starting empty: ${reason}`)
+    } else {
+      console.info(`[dsh-plugin-ideas-manager] no ideas ledger yet, created an empty one at ${this.file}`)
+    }
     return document
   }
 
