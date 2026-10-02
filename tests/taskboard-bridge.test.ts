@@ -21,6 +21,7 @@ import {
   HttpTaskBoardTransport,
   TaskBoardMirror,
   deriveSummary,
+  mirrorPermissionFor,
   type TaskBoardActionEnvelope,
   type TaskBoardTransport,
 } from '../src/taskboard-bridge.ts'
@@ -45,12 +46,19 @@ class FakeTransport implements TaskBoardTransport {
   getStateCalls = 0
   posts: TaskBoardActionEnvelope[] = []
   /** Optional task rows served by getState (the under-review poll's input). */
-  stateTasks: Array<{ id: string; status: string }> | undefined
+  stateTasks: Array<{ id: string; status: string; permission?: string }> | undefined
+  /** Optional board view served by getState (its session default permission). */
+  stateBoardDefaultPermission: string | undefined
   async getState() {
     this.getStateCalls += 1
+    const board = this.stateBoardDefaultPermission === undefined
+      ? undefined
+      : { sessionDefaultPermission: this.stateBoardDefaultPermission }
     return {
       status: this.stateStatus,
-      ...(this.stateTasks === undefined ? {} : { body: { schemaVersion: 3, revision: 1, tasks: this.stateTasks } }),
+      ...(this.stateTasks === undefined && board === undefined
+        ? {}
+        : { body: { schemaVersion: 3, revision: 1, ...board === undefined ? {} : { board }, tasks: this.stateTasks ?? [] } }),
     }
   }
   async postAction(envelope: TaskBoardActionEnvelope) {
@@ -99,7 +107,7 @@ describe('TaskBoardMirror availability', () => {
 })
 
 describe('TaskBoardMirror mappings', () => {
-  it('mirrorCreate posts create (read-only, backlog) then move to backlog', async () => {
+  it('mirrorCreate posts create then move to backlog, read-only when the board reports no default', async () => {
     const transport = new FakeTransport()
     const mirror = new TaskBoardMirror({ transport })
     const taskId = await mirror.mirrorCreate(idea())
@@ -204,6 +212,87 @@ describe('TaskBoardMirror mappings', () => {
     transport.actionStatus = 400
     const mirror = new TaskBoardMirror({ transport })
     await expect(mirror.mirrorCreate(idea())).rejects.toThrow(/task-board create -> 400/)
+  })
+})
+
+describe('mirrored card permission follows the deployment default', () => {
+  it('clamps to workspace-write and falls back to read-only', () => {
+    expect(mirrorPermissionFor('read-only')).toBe('read-only')
+    expect(mirrorPermissionFor('workspace-write')).toBe('workspace-write')
+    // Never a whole-machine pass, whatever the deployment default says.
+    expect(mirrorPermissionFor('danger-full-access')).toBe('workspace-write')
+    // Nothing usable reported (older board, absent field, junk value).
+    expect(mirrorPermissionFor(undefined)).toBe('read-only')
+    expect(mirrorPermissionFor('workspace-write-everything')).toBe('read-only')
+    expect(mirrorPermissionFor(42)).toBe('read-only')
+  })
+
+  it('stamps the board default reported by the snapshot', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'workspace-write'
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorCreate(idea())
+    const input = (transport.posts[0]!.action as { input: { permission: string } }).input
+    expect(input.permission).toBe('workspace-write')
+  })
+
+  it('never stamps danger-full-access, even when that IS the deployment default', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'danger-full-access'
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorCreate(idea())
+    const input = (transport.posts[0]!.action as { input: { permission: string } }).input
+    expect(input.permission).toBe('workspace-write')
+  })
+
+  it('a card recreated under the deterministic id carries the current default too', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'workspace-write'
+    transport.stateTasks = [{ id: 'other-card', status: 'backlog' }]
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorUpdate(idea({ taskBoardId: 'ghost-card' }))
+    const input = (transport.posts[0]!.action as { input: { permission: string } }).input
+    expect(input.permission).toBe('workspace-write')
+  })
+
+  it('raises a card minted under an older read-only default, then runs it', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'workspace-write'
+    transport.stateTasks = [{ id: 'idea-idea-1', status: 'backlog', permission: 'read-only' }]
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.launchTask(idea({ taskBoardId: 'idea-idea-1' }))
+    expect(transport.posts.map(post => post.action)).toEqual([
+      { kind: 'update', taskId: 'idea-idea-1', patch: { permission: 'workspace-write' } },
+      { kind: 'run', taskId: 'idea-idea-1' },
+    ])
+  })
+
+  it('leaves an already-aligned card untouched (no permission write at all)', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'workspace-write'
+    transport.stateTasks = [{ id: 'idea-idea-1', status: 'backlog', permission: 'workspace-write' }]
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.launchTask(idea({ taskBoardId: 'idea-idea-1' }))
+    expect(transport.posts.map(post => post.action)).toEqual([{ kind: 'run', taskId: 'idea-idea-1' }])
+  })
+
+  it('never lowers a card the human deliberately raised', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'workspace-write'
+    transport.stateTasks = [{ id: 'idea-idea-1', status: 'backlog', permission: 'danger-full-access' }]
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.launchTask(idea({ taskBoardId: 'idea-idea-1' }))
+    expect(transport.posts.map(post => post.action)).toEqual([{ kind: 'run', taskId: 'idea-idea-1' }])
+  })
+
+  it('never writes a permission it could not read', async () => {
+    const transport = new FakeTransport()
+    transport.stateBoardDefaultPermission = 'workspace-write'
+    // The snapshot lists the card but not its permission.
+    transport.stateTasks = [{ id: 'idea-idea-1', status: 'backlog' }]
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.launchTask(idea({ taskBoardId: 'idea-idea-1' }))
+    expect(transport.posts.map(post => post.action)).toEqual([{ kind: 'run', taskId: 'idea-idea-1' }])
   })
 })
 

@@ -73,6 +73,8 @@ export class IdeasHostService {
   private readonly mirror: TaskBoardMirror | undefined
   private readonly autoMirror: boolean
   private sessions: SessionRunner | undefined
+  /** Direct-launch permission reader (settings-backed); see setRunPermission. */
+  private runPermission: (() => string | undefined) | undefined
   private readonly pendingMirrors: Promise<void>[] = []
   /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
   private readonly mirrorChains = new Map<string, Promise<void>>()
@@ -189,6 +191,17 @@ export class IdeasHostService {
     if (this.disposed) return
     this.sessions = sessions
     this.startUnderReviewPoll()
+  }
+
+  /**
+   * Read the direct-launch permission at LAUNCH time from the settings port
+   * (late-bound on purpose: the port can appear after the plugin applied, and a
+   * deployment without a settings service yields undefined, which leaves the
+   * fresh session at the Host's own default). Only the direct backend consumes
+   * it — a card carries the task-board's deployment default instead.
+   */
+  setRunPermission(read: () => string | undefined): void {
+    this.runPermission = read
   }
 
   /**
@@ -336,7 +349,7 @@ export class IdeasHostService {
    * re-attaches (see {@link pollSessionRuns}).
    */
   private async launchInSession(idea: IdeaRecord, model?: string): Promise<{ runId: string }> {
-    const sessionId = await this.sessions!.launchIdea(idea, model)
+    const sessionId = await this.sessions!.launchIdea(idea, model, this.runPermission?.())
     this.ledger.setRunStatus(idea.id, 'running')
     this.ledger.setRunSession(idea.id, sessionId)
     this.sessionRuns.set(sessionId, idea.id)

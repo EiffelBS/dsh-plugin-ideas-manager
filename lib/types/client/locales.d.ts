@@ -50,6 +50,8 @@ export declare const fr: {
     'settings.cardDensityDesc': string;
     'settings.densityComfortable': string;
     'settings.densityCompact': string;
+    'settings.directRunPermission': string;
+    'settings.directRunPermissionDesc': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
     'settings.openOrderingCreatedAt': string;
@@ -240,6 +242,8 @@ export declare const en: {
     'settings.cardDensityDesc': string;
     'settings.densityComfortable': string;
     'settings.densityCompact': string;
+    'settings.directRunPermission': string;
+    'settings.directRunPermissionDesc': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
     'settings.openOrderingCreatedAt': string;
@@ -436,6 +440,8 @@ export declare const zh: {
     'settings.cardDensityDesc': string;
     'settings.densityComfortable': string;
     'settings.densityCompact': string;
+    'settings.directRunPermission': string;
+    'settings.directRunPermissionDesc': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
     'settings.openOrderingCreatedAt': string;

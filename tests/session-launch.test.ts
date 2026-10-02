@@ -166,6 +166,47 @@ describe('SessionRunner.launchIdea', () => {
     await expect(new SessionRunner(gateway).launchIdea(idea()))
       .rejects.toThrow('session create failed: the host returned no session id')
   })
+
+  it('dispatches /permission BEFORE the prompt, so the first turn carries the sandbox', async () => {
+    const gateway = new FakeGateway()
+    const dispatched: Array<[string, string]> = []
+    const runner = new SessionRunner(gateway, async (sessionId, line) => { dispatched.push([sessionId, line]) })
+
+    await runner.launchIdea(idea(), 'deepseek/deepseek-chat', 'workspace-write')
+
+    expect(dispatched).toEqual([['session-1', '/permission workspace-write']])
+    // rename -> permission -> selectModel -> prompt: the run never starts fenced.
+    expect(gateway.methods).toEqual(['create', 'rename', 'selectModel', 'prompt'])
+  })
+
+  it('leaves the session alone when no permission was asked for, or none can be dispatched', async () => {
+    const gateway = new FakeGateway()
+    const dispatched: string[] = []
+    const runner = new SessionRunner(gateway, async (_sessionId, line) => { dispatched.push(line) })
+
+    await runner.launchIdea(idea())
+    await runner.launchIdea(idea(), undefined, '   ')
+    expect(dispatched).toHaveLength(0)
+
+    // No dispatcher face at all: the Host default stands, nothing throws.
+    const noDispatcher = new FakeGateway()
+    await expect(new SessionRunner(noDispatcher).launchIdea(idea(), undefined, 'workspace-write'))
+      .resolves.toBe('session-1')
+    expect(noDispatcher.methods).toEqual(['create', 'rename', 'prompt'])
+  })
+
+  it('fails the launch loudly when the elevation is refused (never a fenced run)', async () => {
+    const gateway = new FakeGateway()
+    const runner = new SessionRunner(gateway, async () => { throw new Error('unknown permission preset') })
+
+    const error = await runner.launchIdea(idea(), undefined, 'workspace-write').catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(SessionLaunchError)
+    expect((error as SessionLaunchError).message).toBe('session permission failed: unknown permission preset')
+    expect((error as SessionLaunchError).sessionId).toBe('session-1')
+    // The prompt was never queued: the run does not run fenced.
+    expect(gateway.methods).toEqual(['create', 'rename'])
+  })
 })
 
 describe('SessionRunner.listRunning', () => {

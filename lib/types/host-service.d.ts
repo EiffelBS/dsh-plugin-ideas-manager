@@ -56,6 +56,8 @@ export declare class IdeasHostService {
     private readonly mirror;
     private readonly autoMirror;
     private sessions;
+    /** Direct-launch permission reader (settings-backed); see setRunPermission. */
+    private runPermission;
     private readonly pendingMirrors;
     /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
     private readonly mirrorChains;
@@ -111,6 +113,14 @@ export declare class IdeasHostService {
      * was waiting for this. Safe to call with the same runner twice.
      */
     attachSessions(sessions: SessionRunner): void;
+    /**
+     * Read the direct-launch permission at LAUNCH time from the settings port
+     * (late-bound on purpose: the port can appear after the plugin applied, and a
+     * deployment without a settings service yields undefined, which leaves the
+     * fresh session at the Host's own default). Only the direct backend consumes
+     * it — a card carries the task-board's deployment default instead.
+     */
+    setRunPermission(read: () => string | undefined): void;
     /**
      * One poll pass (exposed for tests): each backend settles from its own
      * single read, and a backend that is absent simply does nothing.

@@ -15,9 +15,15 @@
  *  - the model is pinned per launch exactly like the card backend pins it on
  *    the task, and a REJECTED model fails the launch loudly rather than
  *    silently falling back (the human chose it explicitly in the modal);
- *  - the new session inherits the Host's default permission — unlike a card,
- *    there is no permission field to bind and no `confirmation-required` gate
- *    here, so the effective permission is whatever DSH gives a fresh session;
+ *  - the new session inherits the Host's default permission unless the caller
+ *    pins one (`directRunPermission`, default `workspace-write`): the run
+ *    prompt asks for implementation, so a fenced session would answer with a
+ *    plan and settle `done` having written nothing. There is no permission
+ *    field on `session/create` — the level is applied by dispatching the
+ *    Host's own `/permission` command into the fresh session, exactly what the
+ *    task-board's runner does on a card, and it is applied BEFORE the prompt is
+ *    queued so the very first turn already carries the sandbox. A failed
+ *    elevation fails the launch loudly rather than running fenced;
  *  - settling is read off the roster (`session/list` -> per-session `running`
  *    bit): a session that stops running settles `done`, one that disappears
  *    settles `failed`. A run that ends in an error therefore settles `done`
@@ -39,6 +45,13 @@ export interface HostSessionGateway {
         signal?: AbortSignal;
     }): Promise<unknown>;
 }
+/**
+ * Runs one command line in a live session — here, the Host's `/permission`
+ * preset command. Duck-typed and optional: a Host that serves no command
+ * service (or a dispatcher that refuses) simply leaves the session at the
+ * Host's own default.
+ */
+export type HostCommandDispatcher = (sessionId: string, line: string) => Promise<unknown>;
 /** Raised when the Host answers but the session could not be started. */
 export declare class SessionLaunchError extends Error {
     /** The session the run was already accepted into, when known. */
@@ -49,7 +62,8 @@ export declare class SessionLaunchError extends Error {
 }
 export declare class SessionRunner {
     private readonly gateway;
-    constructor(gateway: HostSessionGateway);
+    private readonly dispatch?;
+    constructor(gateway: HostSessionGateway, dispatch?: HostCommandDispatcher | undefined);
     private invoke;
     /**
      * Start the idea's execution in a FRESH session of its workspace: create,
@@ -59,7 +73,7 @@ export declare class SessionRunner {
      * @throws {SessionLaunchError} when the Host refuses any step. The message
      *   is the Host's own, so the modal shows what actually refused.
      */
-    launchIdea(idea: IdeaRecord, model?: string): Promise<string>;
+    launchIdea(idea: IdeaRecord, model?: string, permission?: string): Promise<string>;
     /**
      * The session roster as `sessionId -> running`. One RPC per settle tick,
      * shared by every tracked run, exactly like the card backend reads the card

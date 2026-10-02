@@ -15,9 +15,15 @@
  *  - the model is pinned per launch exactly like the card backend pins it on
  *    the task, and a REJECTED model fails the launch loudly rather than
  *    silently falling back (the human chose it explicitly in the modal);
- *  - the new session inherits the Host's default permission — unlike a card,
- *    there is no permission field to bind and no `confirmation-required` gate
- *    here, so the effective permission is whatever DSH gives a fresh session;
+ *  - the new session inherits the Host's default permission unless the caller
+ *    pins one (`directRunPermission`, default `workspace-write`): the run
+ *    prompt asks for implementation, so a fenced session would answer with a
+ *    plan and settle `done` having written nothing. There is no permission
+ *    field on `session/create` — the level is applied by dispatching the
+ *    Host's own `/permission` command into the fresh session, exactly what the
+ *    task-board's runner does on a card, and it is applied BEFORE the prompt is
+ *    queued so the very first turn already carries the sandbox. A failed
+ *    elevation fails the launch loudly rather than running fenced;
  *  - settling is read off the roster (`session/list` -> per-session `running`
  *    bit): a session that stops running settles `done`, one that disappears
  *    settles `failed`. A run that ends in an error therefore settles `done`
@@ -42,6 +48,14 @@ export interface HostSessionGateway {
     signal?: AbortSignal
   }): Promise<unknown>
 }
+
+/**
+ * Runs one command line in a live session — here, the Host's `/permission`
+ * preset command. Duck-typed and optional: a Host that serves no command
+ * service (or a dispatcher that refuses) simply leaves the session at the
+ * Host's own default.
+ */
+export type HostCommandDispatcher = (sessionId: string, line: string) => Promise<unknown>
 
 /** Raised when the Host answers but the session could not be started. */
 export class SessionLaunchError extends Error {
@@ -84,7 +98,10 @@ interface SessionRosterItem {
 }
 
 export class SessionRunner {
-  constructor(private readonly gateway: HostSessionGateway) {}
+  constructor(
+    private readonly gateway: HostSessionGateway,
+    private readonly dispatch?: HostCommandDispatcher,
+  ) {}
 
   private invoke<T>(namespace: string, method: string, request: unknown): Promise<T> {
     return this.gateway.invoke({
@@ -102,7 +119,7 @@ export class SessionRunner {
    * @throws {SessionLaunchError} when the Host refuses any step. The message
    *   is the Host's own, so the modal shows what actually refused.
    */
-  async launchIdea(idea: IdeaRecord, model?: string): Promise<string> {
+  async launchIdea(idea: IdeaRecord, model?: string, permission?: string): Promise<string> {
     const workspaceId = idea.workspaceId
     if (workspaceId === undefined || workspaceId === '') {
       throw new SessionLaunchError('idea has no workspace to run in', undefined)
@@ -120,6 +137,18 @@ export class SessionRunner {
     }
     try {
       await this.invoke('session', 'rename', { sessionId, title: idea.title })
+      // The permission goes FIRST: the prompt asks for implementation, so the
+      // session must already carry its sandbox before the first turn starts.
+      // There is no `permission` field on `session/create`, hence the Host's own
+      // `/permission` command. Failing loudly beats running fenced.
+      const level = permission?.trim()
+      if (level !== undefined && level !== '' && this.dispatch !== undefined) {
+        try {
+          await this.dispatch(sessionId, `/permission ${level}`)
+        } catch (error) {
+          throw new SessionLaunchError(`session permission failed: ${sessionErrorOf(error)}`, sessionId)
+        }
+      }
       const target = model?.trim()
       if (target !== undefined && target !== '') {
         const slash = target.indexOf('/')
@@ -138,6 +167,8 @@ export class SessionRunner {
         content: [{ type: 'text', text: runPromptOf(idea) }],
       })
     } catch (error) {
+      // A step that already named itself (the elevation) keeps its own reason.
+      if (error instanceof SessionLaunchError) throw error
       throw new SessionLaunchError(`session run failed: ${sessionErrorOf(error)}`, sessionId)
     }
     return sessionId

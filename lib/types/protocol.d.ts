@@ -289,6 +289,22 @@ export declare const IDEAS_LANGUAGES: readonly ["auto", "en", "fr", "zh"];
 export type IdeasLanguage = (typeof IDEAS_LANGUAGES)[number];
 /** Bound of the remembered workspace scope (aligned on the envelope ids). */
 export declare const WORKSPACE_SCOPE_MAX_LENGTH = 256;
+/**
+ * The permission a DIRECT launch — an idea with no runnable card, run in a
+ * fresh session — starts that session at.
+ *
+ * Why a setting and not a constant: the card backend has no choice to make
+ * (the mirrored card carries the task-board's own deployment default, see
+ * taskboard-bridge.ts), but a fresh session is created by this plugin and
+ * inherits whatever the Host hands a new session. The run prompt says
+ * "You are implementing the idea below... Work in the current workspace
+ * directory", so the default is `workspace-write`: a read-only direct run
+ * would answer with a plan and settle `done` having written nothing. A
+ * deployment that wants the fence back sets `read-only` here.
+ */
+export declare const IDEAS_RUN_PERMISSIONS: readonly ["read-only", "workspace-write", "danger-full-access"];
+/** One direct-launch permission choice. */
+export type IdeasRunPermission = (typeof IDEAS_RUN_PERMISSIONS)[number];
 /** Resolved display-settings value served by the config routes. */
 export interface IdeasSettingsValue {
     /** Visible tag-filter rows on the board (clamped to 1..5). */
@@ -322,6 +338,8 @@ export interface IdeasSettingsValue {
     columnMinWidth: number;
     /** Maximum width (px) a kanban column can be dragged to (idea #53). */
     columnMaxWidth: number;
+    /** Permission a direct (card-less) launch starts its fresh session at. */
+    directRunPermission: IdeasRunPermission;
 }
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
 export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;

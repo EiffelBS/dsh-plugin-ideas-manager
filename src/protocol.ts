@@ -785,6 +785,23 @@ export type IdeasLanguage = (typeof IDEAS_LANGUAGES)[number]
 /** Bound of the remembered workspace scope (aligned on the envelope ids). */
 export const WORKSPACE_SCOPE_MAX_LENGTH = 256
 
+/**
+ * The permission a DIRECT launch — an idea with no runnable card, run in a
+ * fresh session — starts that session at.
+ *
+ * Why a setting and not a constant: the card backend has no choice to make
+ * (the mirrored card carries the task-board's own deployment default, see
+ * taskboard-bridge.ts), but a fresh session is created by this plugin and
+ * inherits whatever the Host hands a new session. The run prompt says
+ * "You are implementing the idea below... Work in the current workspace
+ * directory", so the default is `workspace-write`: a read-only direct run
+ * would answer with a plan and settle `done` having written nothing. A
+ * deployment that wants the fence back sets `read-only` here.
+ */
+export const IDEAS_RUN_PERMISSIONS = ['read-only', 'workspace-write', 'danger-full-access'] as const
+/** One direct-launch permission choice. */
+export type IdeasRunPermission = (typeof IDEAS_RUN_PERMISSIONS)[number]
+
 /** Resolved display-settings value served by the config routes. */
 export interface IdeasSettingsValue {
   /** Visible tag-filter rows on the board (clamped to 1..5). */
@@ -818,6 +835,8 @@ export interface IdeasSettingsValue {
   columnMinWidth: number
   /** Maximum width (px) a kanban column can be dragged to (idea #53). */
   columnMaxWidth: number
+  /** Permission a direct (card-less) launch starts its fresh session at. */
+  directRunPermission: IdeasRunPermission
 }
 
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
@@ -865,6 +884,7 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   runningFirst: true,
   columnMinWidth: COLUMN_MIN_WIDTH_DEFAULT,
   columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
+  directRunPermission: 'workspace-write',
 }
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
@@ -935,6 +955,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     runningFirst: booleanOr(row.runningFirst, IDEAS_SETTINGS_DEFAULTS.runningFirst),
     columnMinWidth: clampColumnMinWidth(row.columnMinWidth),
     columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
+    directRunPermission: oneOf(row.directRunPermission, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission),
   }
 }
 
@@ -943,6 +964,7 @@ const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
   'language', 'openOrdering', 'runningFirst', 'columnMinWidth', 'columnMaxWidth',
+  'directRunPermission',
 ] as const
 
 /**
@@ -986,6 +1008,8 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
     } else if (key === 'columnMaxWidth') {
       if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
       patch.columnMaxWidth = clampColumnMaxWidth(field)
+    } else if (key === 'directRunPermission') {
+      patch.directRunPermission = oneOf(field, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission)
     } else {
       patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
     }

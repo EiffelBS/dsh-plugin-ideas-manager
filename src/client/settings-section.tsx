@@ -31,6 +31,7 @@ import {
   IDEAS_DENSITIES,
   IDEAS_LANGUAGES,
   IDEAS_OPEN_ORDERINGS,
+  IDEAS_RUN_PERMISSIONS,
   IDEAS_TABS,
   sanitizeSettings,
   TAG_ROWS_MAX,
@@ -221,6 +222,13 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
     createdAtDesc: t('settings.openOrderingCreatedAtDesc'),
     rank: t('settings.openOrderingRank'),
   }
+  // The preset ids are the vocabulary the Host itself prints in /permission, so
+  // they stay verbatim in every language rather than being translated away.
+  const runPermissionLabels: Record<(typeof IDEAS_RUN_PERMISSIONS)[number], string> = {
+    'read-only': 'read-only',
+    'workspace-write': 'workspace-write',
+    'danger-full-access': 'danger-full-access',
+  }
 
   return (
     <section className={classes.settingsSection} data-dsh-ideas-settings="">
@@ -305,6 +313,23 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
                 >
                   {IDEAS_LANGUAGES.map(language => (
                     <option key={language} value={language}>{languageLabels[language]}</option>
+                  ))}
+                </select>
+              )}
+            />
+            <SettingsRow
+              title={t('settings.directRunPermission')}
+              desc={t('settings.directRunPermissionDesc')}
+              control={(
+                <select
+                  className={classes.settingsSelect}
+                  value={value.directRunPermission}
+                  disabled={disabled}
+                  aria-label={t('settings.directRunPermission')}
+                  onChange={event => { save({ directRunPermission: event.target.value as typeof value.directRunPermission }) }}
+                >
+                  {IDEAS_RUN_PERMISSIONS.map(permission => (
+                    <option key={permission} value={permission}>{runPermissionLabels[permission]}</option>
                   ))}
                 </select>
               )}

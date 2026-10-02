@@ -116,6 +116,13 @@ The plugin contributes an **Ideas board** section to the DSH Settings modal:
   ideas whose run is in flight above whichever of the three orders is selected,
   without changing that order. A failed run keeps its red tag but stays where the
   selected order puts it.
+- **Direct-launch permission** (`directRunPermission`, default
+  `workspace-write`): the level granted to the fresh session when you launch an
+  idea that has **no TaskBoard card**. The run brief asks for implementation, so a
+  read-only session would only answer with a plan and settle the run having
+  written nothing. Card-backed ideas are not affected — a mirrored card carries
+  the TaskBoard's own deployment permission (never above it), so launching one
+  never asks for a confirmation.
 
 Both are a **view only** — neither stores anything, so the 2.5 s poll can never
 overwrite the ranking you chose, and the move arrows in the Priorities tab still
@@ -142,12 +149,12 @@ absent, the Ideas manager simply works standalone.
 
 | Ideas action | TaskBoard mirror |
 |---|---|
-| Create idea | New read-only card in `backlog` (bound to the idea) |
+| Create idea | New card in `backlog`, at the deployment's own permission (never above it) |
 | Update idea | Card updated |
 | Decline / drag to Archived | Card archived |
 | Restore | Card restored |
 | Delete | No-op (closing to `done` stays manual) |
-| Launch execution | The card runs it |
+| Launch execution | The card runs it — raised to the deployment permission first if it predates it |
 | **The run reaches `done`** | Idea auto-moves to **Under review** (the review gate) |
 
 Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it's a

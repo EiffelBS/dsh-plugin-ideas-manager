@@ -182,3 +182,23 @@ describe('openOrdering + runningFirst (idea #71)', () => {
     expect(parseSettingsBody({ patch: { floatRunning: true } })).toBeUndefined()
   })
 })
+
+describe('directRunPermission', () => {
+  it('defaults to workspace-write: a card-less launch runs the implementation brief', () => {
+    expect(sanitizeSettings({}).directRunPermission).toBe('workspace-write')
+    expect(sanitizeSettings({ tagRows: 2 }).directRunPermission).toBe('workspace-write')
+  })
+
+  it('keeps the three presets and falls back on anything else (read AND write)', () => {
+    expect(sanitizeSettings({ directRunPermission: 'read-only' }).directRunPermission).toBe('read-only')
+    expect(sanitizeSettings({ directRunPermission: 'danger-full-access' }).directRunPermission).toBe('danger-full-access')
+    expect(sanitizeSettings({ directRunPermission: 'root' }).directRunPermission).toBe('workspace-write')
+    expect(parseSettingsBody({ patch: { directRunPermission: 'read-only' } })?.patch.directRunPermission).toBe('read-only')
+    expect(parseSettingsBody({ patch: { directRunPermission: 'root' } })?.patch.directRunPermission).toBe('workspace-write')
+  })
+
+  it('is patchable (an unknown field still rejects)', () => {
+    expect(parseSettingsBody({ patch: { directRunPermission: 'workspace-write' } })).toBeDefined()
+    expect(parseSettingsBody({ patch: { runPermission: 'workspace-write' } })).toBeUndefined()
+  })
+})

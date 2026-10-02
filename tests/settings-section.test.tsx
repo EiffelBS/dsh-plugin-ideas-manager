@@ -321,6 +321,7 @@ describe('IdeasSettingsSection page', () => {
       t('settings.tagRows'),
       t('settings.cardDensity'),
       t('settings.language'),
+      t('settings.directRunPermission'),
       t('settings.renderMarkdown'),
       t('settings.columnMinWidth'),
       t('settings.columnMaxWidth'),
@@ -331,10 +332,11 @@ describe('IdeasSettingsSection page', () => {
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
-    // Three number rows (tagRows + the two column-width bounds), four selects
-    // (density + language + open tab + open column order), five toggle switches.
+    // Three number rows (tagRows + the two column-width bounds), five selects
+    // (density + language + direct-launch permission + open tab + open column
+    // order), five toggle switches.
     expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(3)
-    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(4)
+    expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(5)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
     // renderMarkdown (on by default), then runningFirst (on by default), then
     // the three shipped-off toggles.

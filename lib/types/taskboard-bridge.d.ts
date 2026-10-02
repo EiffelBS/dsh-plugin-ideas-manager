@@ -7,7 +7,10 @@
  * process and degrades to silent no-ops when it is not.
  *
  * Mapping (frozen design decision): idea create -> task create + move to
- * `backlog` (the card is `read-only`); idea update -> task update; idea
+ * `backlog` (the card carries the DEPLOYMENT's own session default, clamped to
+ * `workspace-write` — see mirrorPermissionFor, never a hard-coded level, so a
+ * mirrored card never outranks the default and never trips the task-board's
+ * confirmation gate); idea update -> task update; idea
  * decline / move-to-archived -> task archive; idea restore -> task restore;
  * idea delete -> no-op (the card outlives the idea). Every failure is logged
  * and the ideas ledger stays the source of truth: the mirror never rolls back
@@ -30,8 +33,30 @@
  */
 import { type IdeaRecord } from './core/ideas.ts';
 export declare const TASK_BOARD_API_PREFIX = "/api/task-board";
-/** Read-only permission stamped on every mirrored card. */
-declare const MIRROR_TASK_PERMISSION: "read-only";
+/** The permission presets a card accepts, in authority order. */
+export declare const TASK_PERMISSIONS: readonly ["read-only", "workspace-write", "danger-full-access"];
+/** One task-board permission preset id. */
+export type TaskPermission = (typeof TASK_PERMISSIONS)[number];
+/**
+ * The permission a mirrored card is stamped with: the board's own
+ * `sessionDefaultPermission` clamped to {@link MIRROR_PERMISSION_CEILING}, or
+ * `read-only` when the board reports nothing usable.
+ *
+ * Two rules, one function:
+ *
+ *  - **Never above the deployment default.** The task-board refuses to run a
+ *    card whose permission outranks the session default until a human confirms
+ *    the binding (`confirmation-required`). A mirrored card stamped above that
+ *    default turns every launch into a trip to the board — confirm, come back,
+ *    resume. Following the default instead makes the gate structurally silent
+ *    on every install: whatever the deployment is configured with is what idea
+ *    cards get, with no second lever to keep in sync and no hard-coded
+ *    constant to contradict the deployment.
+ *  - **Never above `workspace-write`,** whatever the default says: an idea
+ *    card is a workspace-scoped implementation brief, never a whole-machine
+ *    pass. `danger-full-access` stays a deliberate, human-granted elevation.
+ */
+export declare function mirrorPermissionFor(boardDefault: unknown): TaskPermission;
 /** Local mirror of the task-board action union (never imported from the package). */
 export type TaskBoardAction = {
     kind: 'create';
@@ -74,7 +99,7 @@ export interface TaskBoardNewTaskInput {
     description: string;
     prompt: string;
     workspaceId?: string;
-    permission?: typeof MIRROR_TASK_PERMISSION;
+    permission?: TaskPermission;
     tags?: {
         name: string;
         promptPrefix?: string;
@@ -92,6 +117,13 @@ export interface TaskBoardTaskPatch {
         name: string;
         promptPrefix?: string;
     }[] | null;
+    /**
+     * The card's execution permission. NOT a content field either, so the same
+     * reasoning as `model` applies: a permission-only patch stays legal on a
+     * card that already ran, which is what lets a launch align a card minted
+     * under an older deployment default.
+     */
+    permission?: TaskPermission;
     /**
      * `provider/model` target id. NOT a content field (`title`/`description`/
      * `prompt` are): a model-only patch stays editable after the first execution
@@ -195,6 +227,10 @@ export declare class TaskBoardMirror {
     private readonly now;
     private available;
     private lastProbeAt;
+    /** Board default read from the last snapshot; unset until one lands. */
+    private boardDefaultPermission;
+    /** Task rows of the last snapshot, read by the launch-time alignment. */
+    private snapshotTasks;
     constructor(options: TaskBoardMirrorOptions);
     /**
      * Feature-detect the task-board plugin. Positive probes are cached; a
@@ -235,9 +271,9 @@ export declare class TaskBoardMirror {
      */
     fetchTaskStatuses(): Promise<Map<string, string> | undefined>;
     /**
-     * Idea create -> task create (read-only, backlog) + move to backlog.
-     * Routed through ensureTask so a create re-executed after a lost bind
-     * adopts the card already on the board instead of duplicating it.
+     * Idea create -> task create (at the deployment's own permission, backlog) +
+     * move to backlog. Routed through ensureTask so a create re-executed after a
+     * lost bind adopts the card already on the board instead of duplicating it.
      */
     mirrorCreate(idea: IdeaRecord): Promise<string>;
     /** Idea update -> task update; self-heals an unbound idea by creating it first. */
@@ -251,15 +287,20 @@ export declare class TaskBoardMirror {
      * trigger turns the board into a starting point of execution, not only a
      * capture target.
      *
-     * Three writes, in this exact order and on the caller's serialized chain:
+     * Two writes, in this exact order and on the caller's serialized chain:
      *  1. `ensureTask` — reuses the whole duplicate guard, so the card is the
      *     deterministic `idea-<id>` one and is (re)created when it was deleted
      *     out-of-band. A launch is never a second card.
-     *  2. `update{model}` — MODEL-ONLY patch, and only when a model was chosen.
-     *     Never `taskPatch()`: that sends title/description/prompt, which the
-     *     task-board rejects with `task has already been executed` on any card
-     *     that already ran. A model-only patch stays legal forever, and the
-     *     `run` action itself cannot carry the model (exact keys).
+     *  2. `update{model?, permission?}` — a NON-CONTENT patch, and only when
+     *     something actually has to change. Never `taskPatch()`: that sends
+     *     title/description/prompt, which the task-board rejects with `task has
+     *     already been executed` on any card that already ran. The permission is
+     *     raised to the deployment default when the card was minted under an
+     *     older, lower one (the cards 0.7.x created as `read-only`); a card the
+     *     human deliberately raised is left alone, and an unreadable one is
+     *     never written to. Nothing is raised above the deployment default, so
+     *     the task-board's confirmation gate stays silent and the run starts on
+     *     the first click.
      *  3. `run` — the bare envelope; the task-board pins the model on the fresh
      *     session and queues the shared run prompt.
      *
@@ -274,6 +315,23 @@ export declare class TaskBoardMirror {
     launchTask(idea: IdeaRecord, model?: string): Promise<string>;
     /** The task-board plugin is not registered or did not answer. */
     get isUnavailable(): boolean;
+    /**
+     * Keep the two facts a create/launch needs out of the last snapshot: the
+     * board's own session default (the level a mirrored card must never outrank)
+     * and the per-card permission (to align a card minted under an older
+     * default). Best-effort — a partial or unexpected body simply leaves the
+     * fields unset, and every reader degrades to the conservative fallback.
+     */
+    private rememberSnapshot;
+    /** The permission a card created right now would carry. */
+    private mirrorPermission;
+    /**
+     * A card's own permission as of the snapshot just read, or undefined when
+     * the card is absent from it or carries something unrecognised. Callers must
+     * treat undefined as "do not touch" — an unreadable card is never a reason
+     * to write to it.
+     */
+    private cardPermissionOf;
     /** One ensureTask decision, always visible in the service log (idea #35). */
     private decision;
     /**
@@ -281,6 +339,9 @@ export declare class TaskBoardMirror {
      * (see src/run-prompt.ts). `model` is intentionally NOT part of the card
      * content: the card is created with no model, so the run starts on the
      * session default unless a launch re-pins it through a model-only patch.
+     * `permission` IS stamped, at the deployment default clamped to
+     * `workspace-write` (see {@link mirrorPermissionFor}) — never a constant, so
+     * the card can run at whatever the deployment is configured with.
      */
     private createCard;
     private taskPatch;
@@ -299,4 +360,3 @@ export declare class TaskBoardMirror {
 export declare class TaskBoardUnavailableError extends Error {
     constructor();
 }
-export {};

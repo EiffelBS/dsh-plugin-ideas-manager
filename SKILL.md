@@ -119,8 +119,14 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
 - Feature-detect: the Host probes its own `GET /api/task-board/state` over
   loopback. Present → mirror active; absent → board fully autonomous.
 - One-way, best-effort, never rolls back an idea:
-  - idea `create` → task `create` (permission `read-only`) **+ `move backlog`**
+  - idea `create` → task `create` (permission = the board's own session
+    default, clamped to `workspace-write`; `read-only` when the board reports
+    none) **+ `move backlog`**
   - idea `update` → task `update` (title/description/prompt/tags/workspaceId)
+  - launch → the card's permission is raised to that same level when it sits
+    below it, then `run`; both are non-content patches, legal on a card that
+    already ran, and never above the board's default (so the TaskBoard's
+    `confirmation-required` gate never fires)
   - idea `decline` / drag to archived / `deliver` → task `archive`
   - idea `followUp` → the child idea mirrors as a fresh task (the parent card
     is already done); the parent itself mirrors nothing

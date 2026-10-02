@@ -119,9 +119,15 @@ Throws (→ `400` with `body.error`) when:
 | effective permission above session default without `permissionConfirmedAt` | `confirmation-required: …` |
 | board disabled | `task board is disabled` (thrown by `service.apply` before the ledger) |
 
-Our mirror creates every card with `permission: 'read-only'`, and
-`DEFAULT_SESSION_PERMISSION = 'read-only'`, so **the confirmation gate never
-trips for mirrored cards**.
+Our mirror stamps each card with the board's OWN `sessionDefaultPermission`
+(read from `board.sessionDefaultPermission` in the snapshot), clamped to
+`workspace-write` and falling back to `read-only` when the board reports
+nothing. So the confirmation gate never trips for mirrored cards whatever the
+deployment default is — a card stamped above it would be refused until a human
+confirmed the binding. A launch also raises a card still sitting BELOW that
+level (the `read-only` cards 0.7.x created) with a permission-only patch:
+non-content, so it stays legal on a card that already ran, and never re-arms
+the gate because it never goes above the default.
 
 ### 2.6 Settle semantics (`settleExecution`)
 
@@ -289,7 +295,7 @@ same discipline as the rest of the bridge.
 | P9 | Scheduling (cron) on the card | `done` never sticks (returns to `todo`) → never Under Review | mirrored cards never set `schedule` |
 | P10 | Profile `desktop` (0.1.18) | no routes at all | feature gated on `availableNow()` |
 | P11 | Model id containing `/` | only the first `/` splits → wrong provider | ids come from `modelCatalog()`, which qualifies them |
-| P12 | Session default permission > card permission | `confirmation-required` | mirrored cards are `read-only`; if the session default is raised, we must POST `confirm-permission` first |
+| P12 | Session default permission > card permission | `confirmation-required` | RESOLVED by design: a mirrored card now carries the board's own default (clamped to `workspace-write`), so it is never above it; a launch raises an older `read-only` card to that level instead |
 
 ---
 
@@ -435,7 +441,8 @@ the direct path pins nothing, can carry `reasoningEffort`, and guards with
   `ideas-manager, taskboard-mirror, execution`. Body links back to this file.
   Created through the write channel (`POST /api/ideas/action`, revision 630);
   the mirror already bound card **`idea-7f4cff77-6b1c-4a20-bc16-17465dff22f5`**
-  in **`backlog`** with `permission: read-only` and no `model` — i.e. the card is
+  in **`backlog`** with the board's own permission (then `read-only`) and no
+  `model` — i.e. the card is
   sitting in exactly the state the button's precondition requires, which makes
   #66 its own end-to-end test fixture.
 - `docs/agent-write-channel.md` — the write fence and verb table this plan

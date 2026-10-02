@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from 'schemastery'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IdeasHostService } from './host-service.ts'
-import { SessionRunner, type HostSessionGateway } from './session-runner.ts'
+import { SessionRunner, type HostCommandDispatcher, type HostSessionGateway } from './session-runner.ts'
 import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
 import { makeIdeasRoutes, type IdeasConfigPort } from './host-routes.ts'
@@ -117,7 +117,34 @@ function applyImpl(ctx: Context, config?: Config): void {
   ctx.inject(['typertGateway'], (gatewayCtx) => {
     const gateway = (gatewayCtx as unknown as { typertGateway?: unknown }).typertGateway
     if (typeof gateway !== 'object' || gateway === null || typeof (gateway as HostSessionGateway).invoke !== 'function') return
-    host.attachSessions(new SessionRunner(gateway as HostSessionGateway))
+    host.attachSessions(new SessionRunner(gateway as HostSessionGateway, (sessionId, line) => {
+      // Forwarded through a mutable cell rather than captured directly: the
+      // command service below may arrive after this runner was built.
+      if (directDispatch === undefined) throw new Error('the host serves no command service')
+      return directDispatch(sessionId, line)
+    }))
+  })
+
+  // The direct-launch elevation rides on the Host's OWN command service — the
+  // same two faces the task-board's runner drives. `session/create` carries no
+  // permission field, so the level is dispatched INTO the fresh session as
+  // `/permission <level>` (SessionRunner applies it before queuing the prompt).
+  // Requested reactively and duck-typed: no hard import, and a Host that serves
+  // neither service simply leaves direct sessions at its own default.
+  let directDispatch: HostCommandDispatcher | undefined
+  ctx.inject(['agents', 'commands'], (cmdCtx) => {
+    const agents = (cmdCtx as unknown as { agents?: unknown }).agents
+    const commands = (cmdCtx as unknown as { commands?: unknown }).commands
+    const agentFace = agents as { get?: (sessionId: string) => unknown } | undefined
+    const commandFace = commands as { execute?: (agent: unknown, line: string, args?: unknown[]) => Promise<{ result?: unknown } | undefined> } | undefined
+    const agentGet = agentFace?.get
+    const commandExecute = commandFace?.execute
+    if (typeof agentGet !== 'function' || typeof commandExecute !== 'function') return
+    directDispatch = async (sessionId, line) => {
+      const agent = agentGet.call(agentFace, sessionId)
+      if (agent === undefined) throw new Error('execution session is not available')
+      return (await commandExecute.call(commandFace, agent, line, []))?.result
+    }
   })
 
   ctx.effect(() => {
@@ -156,6 +183,17 @@ function applyImpl(ctx: Context, config?: Config): void {
     const settings = (sctx as unknown as { settings?: unknown }).settings
     configPort = createIdeasConfigPort(settings)
     return () => { configPort = undefined }
+  })
+
+  // The direct-launch permission, read at launch time (the port can appear
+  // after this line and never does on a Host without a settings service, where
+  // undefined leaves the fresh session at the Host's own default).
+  host.setRunPermission(() => {
+    try {
+      return configPort?.read().value.directRunPermission
+    } catch {
+      return undefined
+    }
   })
 
   // P0: the announcement reads the composition entry only. The settings
