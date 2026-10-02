@@ -10,8 +10,9 @@ decisions, invariants and the sharp edges that are easy to break.
 src/
   index.ts            # apply + mountOnce + Config + guidance section
   protocol.ts         # /api/ideas prefix, types, parseActionEnvelope (exactKeys)
+  agent-tools.ts      # the six ideas_* tools + the feature-detected registry
   host-service.ts     # apply + mirror scheduling + run dispatch + run poll
-  host-ledger.ts      # persisted ledger, dedupe cache, lock, internal bind
+  host-ledger.ts      # persisted ledger, dedupe cache, lock, activity log, internal bind
   host-routes.ts      # state (+ list / summary / detail), idea?id=, action, launch, events
   host-settings.ts    # the fenced /api/ideas/config route (settings dual-path)
   taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb
@@ -21,8 +22,9 @@ src/
   session-opener.ts   # the "Open session" jump from a running card
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline
-  core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation
+  core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation, activity log
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
+  client/activity-timeline.tsx  # the editor's read-only activity timeline
 scripts/              # mirror reconciliation, mirror cycle check, live perf profiler
 ```
 
@@ -104,6 +106,102 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   session of its own and reads `executions[].sessionId` off the task-board snapshot
   the poll already fetched (`TaskBoardMirror.cardSessionOf`, zero extra requests).
   When the board exposes no such pointer the note stays empty and the UI says so.
+
+## Per-idea activity log (idea #92)
+
+`IdeaRecord.events[]` is a bounded append-only log: `{ at, verb, actor,
+summary }`, the last **50** entries, appended by `IdeasHostLedger.apply` in the
+same commit as the state change it describes (one `recorded[]` buffer, flushed
+after the verb switch, so a mutation and its log line can never disagree).
+
+Decisions worth keeping in mind before touching it:
+
+- **`IDEAS_SCHEMA_VERSION` is 1 and stays 1.** The wire is frozen, so the
+  "migration" is additive and lazy: `parseHostIdeas` reads `row.events` through
+  `normalizeIdeaEvents`, a document written before the field simply has none,
+  and the first append creates it. Nothing is back-filled — inventing history
+  for an idea is worse than admitting there was none.
+- **`isIdeaEvent` is strict on its four keys and tolerant of unknown ones.** It
+  runs on persisted logs, where an entry a later version wrote with an extra
+  field is still history; `normalizeIdeaEvents` rebuilds it from the four keys
+  and drops whatever travelled with it. A truncated entry is still refused.
+- **Actors are derived, never asserted as a verb field.** `applyRequest`
+  resolves the actor once from the envelope `initiator` (`agent:<initiator>`, or
+  `human` when the browser sends none) or from the explicit `run` override the
+  Host's own transitions use (`recordEvent`, the launch settle). The initiator is
+  deliberately **not** part of the request-id dedupe fingerprint: replaying a
+  request id must record nothing.
+- **Silence is a decision, not an oversight.** `delete`, `import` and `reorder`
+  record nothing (the row is gone; imported rows carry their own log; a drag
+  would spend the bounded log on display noise). `update` records the *field
+  names* it touched (`describePatch`) and never a value — the log must not
+  become a second copy of the body it was meant to replace.
+- **The envelope parser used to drop `initiator`.** It validated the field and
+  then rebuilt the envelope without it, so `host-routes.ts` read
+  `parsed.initiator` as always-undefined. The activity log made that visible;
+  `parseActionEnvelope` now wraps `parseActionOnly` and carries the envelope
+  fields through verbatim. Any future change to that function must keep the
+  initiator, or every agent write starts reading as "a human did this".
+
+### Where the log shows up
+
+- **Editor timeline** (`client/activity-timeline.tsx`): oldest first, a scroll
+  cap in CSS only (the host bound is the real one), and **nothing at all** when
+  the log is empty — an absence is not a box.
+- **`IdeaListRow` omits `events`** and `toListRow` drops it, so a 140-card poll
+  never carries 50 entries per row. The editor reads the full record it already
+  fetches for the deferred body. `events` is selectable on
+  `GET /api/ideas/state?view=detail` (`fields=events`) for bounded reads.
+- **Re-analysis** (`buildReanalysisPrompt`): the board refetches the full record
+  before building the prompt and passes `activity`; an absent or failed read
+  renders "nothing recorded yet", never a silent omission.
+- **Export**: the markdown export **does** carry it, as a bounded `**Activity**`
+  block per idea, after the metadata and before the body. Decision: those
+  documents are the plugin's only portable artefact and "why was this declined?"
+  is exactly what a last-state record cannot answer. `import` round-trips the
+  log through the JSON path independently, and `importedIdea` repairs rather
+  than trusts what arrives.
+
+## Agent tools (idea #92)
+
+`src/agent-tools.ts` exposes `ideas_list`, `ideas_get`, `ideas_capture`,
+`ideas_triage`, `ideas_launch` and `ideas_review` to the Host's **optional**
+agent-tool registry.
+
+- **The registry is feature-detected, never declared.** `inject` in `index.ts`
+  stays `['webServer', 'systemPrompt']`; the tools are followed through a scoped
+  `ctx.inject(['tools'], …)` (with a direct `ctx.get('tools')` resolution as the
+  fallback). `ctx.get` **throws** for a service nobody provides — the same trap
+  the settings dual-path documents — so `resolveToolRegistry` catches and
+  answers `undefined`. A missing registry is a downgrade, never a boot failure:
+  the board, its routes and the announcement section are untouched.
+- **No `@deepseek-ai/dsh-tools` dependency.** The definitions are plain
+  structural objects (`parameters` written directly as the compiled object-rooted
+  JSON Schema, `output: { schema: {}, render }`, the standard unconstrained-JSON
+  form). The registry consumes only `{name, description, parameters, output,
+  execute}` and validates only `output.schema` and `timeoutMs`; adding the
+  package would make a Host without it a load-time failure for no behavioural
+  gain. Arguments are therefore validated defensively inside `execute`, which
+  answers `ok:false` + `code` rather than throwing.
+- **One path, not two.** A tool never re-implements a verb: it builds the same
+  envelope the HTTP route accepts and hands it to `parseActionEnvelope` (or
+  `parseLaunchBody`) *before* calling `IdeasHostService`. A tool call and an
+  HTTP call therefore cannot drift, and an invalid action is refused identically.
+  Reads go through `buildIdeasReadSnapshot`, the same bounded projection the
+  `?view=` routes serve.
+- **No HTTP loopback.** Every call is a direct in-process method on the Host
+  service; nothing leaves the machine and nothing depends on the web server.
+- **System fields stay host-written.** `runStatus`, `runSessionId` and
+  `taskBoardId` are refused by the wire gate; `carriesSystemField` re-checks the
+  action the tools are about to submit so the invariant survives a future
+  relaxation of that gate. The tools never *build* one either.
+- **Everything a tool writes is attributed**: the envelope initiator is
+  `plugin:ideas-manager:agent-tool`, so it reads back as
+  `agent:plugin:ideas-manager:agent-tool` in the activity log, exactly like the
+  analyst sessions.
+- Registration is owned by the fiber that created it: the disposers ride the
+  scoped-injection cleanup, so a replaced registry is re-registered rather than
+  short-circuited by a stale disposer, and a disabled board registers nothing.
 
 ## Card mirror
 

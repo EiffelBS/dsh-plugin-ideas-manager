@@ -36,6 +36,7 @@ import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
 import { RunStateBadges, shortDate } from './run-state-badges.tsx'
 import { DeliveryNote } from './delivery-note.tsx'
+import { ActivityTimeline } from './activity-timeline.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
@@ -696,6 +697,14 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
             onChange={event => { setRationale(event.target.value) }}
           />
         </div>
+        {initial !== undefined && (
+          // The idea's activity log (idea #92), under the fields and above the
+          // verdict buttons: the editor is where a reviewer asks "when was this
+          // declined and why", and the timeline answers it without opening a
+          // session. Read-only, bounded host-side, and absent for an idea that
+          // has recorded nothing yet.
+          <ActivityTimeline idea={initial} />
+        )}
         {initial !== undefined && (
           // The delivery note of the last finished run (idea #91), directly
           // above the verdict buttons: the editor is where the review gate is
@@ -1619,6 +1628,17 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     if (launcher === undefined || idea.workspaceId === undefined) return
     const run = async (): Promise<void> => {
       await client.reanalyzeIdea(idea.id)
+      // The idea's own history (idea #92), so the re-analysis reads the real
+      // past instead of guessing it. A list row carries no `events` field (the
+      // list projection drops them on purpose), so the full record is fetched
+      // first — the same deferred read the editor uses. A failed fetch is not
+      // fatal: the analysis still runs, and the prompt says the log is empty.
+      const activity = await client.fetchIdea(idea as IdeaListRow)
+        .then(full => full.events)
+        .catch((error: unknown) => {
+          console.error('[dsh-plugin-ideas-manager] activity log load failed:', error)
+          return undefined
+        })
       const input: ReanalyzeInput = {
         workspaceId: idea.workspaceId!,
         workspaceTitle: workspaceTitle(idea.workspaceId!),
@@ -1632,6 +1652,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         ...(idea.value === undefined ? {} : { value: idea.value }),
         ...(idea.effort === undefined ? {} : { effort: idea.effort }),
         ...(idea.rationale === undefined ? {} : { rationale: idea.rationale }),
+        ...(activity === undefined ? {} : { activity }),
         ...(model === undefined ? {} : { model }),
       }
       void launcher.launchReanalyze(input).catch((launchError: unknown) => {

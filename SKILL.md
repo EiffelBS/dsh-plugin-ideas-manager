@@ -52,7 +52,40 @@ mentions ideas / backlog / idees / notes:
    archive; a card reaching `done` moves its idea to under review
    automatically (the review gate) — the review verdict stays human-owned.
 
-## Workspace adoption (replacing a hand-maintained file convention)
+## `ideas_*` agent tools (preferred over hand-building the envelope)
+
+When the deployment serves an agent-tool registry, six `ideas_*` tools drive the
+same ledger, the same routes and the same launch path as the board. Prefer them
+over hand-writing `/api/ideas` envelopes: they take the arguments in plain
+language, they refuse the same malformed calls, and every write they make shows
+up in the idea's activity log under `agent:plugin:ideas-manager:agent-tool`.
+
+| tool | reads/writes | notes |
+|---|---|---|
+| `ideas_list` | read | One bounded page of metadata rows (`workspaceId`, `status`, `tag`, `query`, `limit`, `offset`). Never a description — call `ideas_get` for that. |
+| `ideas_get` | read | One idea in full: description, priority opinion, activity log, follow-up rows. |
+| `ideas_capture` | write | Title + markdown body; optional `summary`, `workspaceId`, `tags` (names only), `value`, `effort`, `rationale`, `rank`. |
+| `ideas_triage` | write | Record `value` / `effort` / `rationale` / `rank` on an open idea in one transaction; answers with the resulting group ordering. |
+| `ideas_launch` | write | Start the execution (mirrored card or fresh session, resolved by the Host). |
+| `ideas_review` | write | Settle the review gate: `approve` (deliver), `followUp` (linked child + archived parent), `decline` (+ `decision`). |
+
+Discipline the tools keep, and so must you:
+
+- A tool call and an HTTP call cannot drift: both go through the same wire gate.
+- `runStatus`, `runSessionId` and `taskBoardId` are host-written. No tool writes
+  them and no verb accepts them.
+- The tools refuse with `ok: false` plus a `code`; they never half-write.
+- If the tools are absent the board still works over HTTP — that is a
+  capability downgrade, not an error.
+
+## Per-idea activity log
+
+Every idea keeps a bounded append-only `events[]` (the last 50 entries) of
+what happened to it: a verb, a timestamp, the actor (`human`,
+`agent:<initiator>` or `run`) and a one-line summary. Read it before writing:
+it is the only record of *why* an idea was declined, delivered or
+archived-and-restored. It rides along with every `import`/`export` and is
+printed in the markdown export as an `**Activity**` block.
 
 For a workspace whose AGENTS.md still points at hand-maintained idea files:
 
@@ -112,7 +145,8 @@ Errors: `forbidden` (403), `json-required` (415), `invalid-action` (400),
 (≤200), `body` (≤32 KiB), `summary` (≤300, compact abstract — the TaskBoard
 card description; blank/`null` clears), `status`, optional `rank/value/effort/
 rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoardId`/
-`deliveredAt`/`decision`, `ideaNumber` (stable capture `#N`), timestamps.
+`deliveredAt`/`decision`, `ideaNumber` (stable capture `#N`), timestamps, and
+`events` (≤50 activity entries).
 
 ## TaskBoard mirror (P2)
 
@@ -176,7 +210,8 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
 
 ```
 src/protocol.ts          wire gate (exactKeys, envelope)
-src/host-ledger.ts       persistence, dedupe cache, lock, internal taskBoardId bind
+src/agent-tools.ts       the ideas_* agent tools (feature-detected registry)
+src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind
 src/host-service.ts      apply + mirror scheduling
 src/host-routes.ts       /api/ideas/* fence + SSE
 src/taskboard-bridge.ts  feature-detect + one-way mirror + the `run` verb (no hard import)
@@ -184,5 +219,5 @@ src/run-prompt.ts        execution prompt shared by every launch backend
 src/session-runner.ts    direct-session backend (Host RPCs + roster for the settle)
 src/session-opener.ts    "Open session" jump from a card whose run is in flight
 src/export-markdown.ts   unidirectional ledger -> markdown
-src/core/ideas.ts        domain model + tag validation
+src/core/ideas.ts        domain model, tag validation, activity log
 ```

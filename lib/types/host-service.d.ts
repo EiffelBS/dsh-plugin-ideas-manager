@@ -79,6 +79,12 @@ export declare class IdeasHostService {
         sessions?: SessionRunner;
     });
     setActive(active: boolean): void;
+    /**
+     * Live master switch. Exposed so the agent-tool registration reads the SAME
+     * flag the write path enforces: a disabled board answers no tool call, and
+     * that is only true if both sides look at one value.
+     */
+    isActive(): boolean;
     snapshot(): IdeasSnapshot;
     /** One full record for the deferred-body read (idea #34); undefined when absent. */
     idea(id: string): IdeaRecord | undefined;
@@ -200,6 +206,12 @@ export declare class IdeasHostService {
      * first-class case — it simply means "no note" (see {@link harvestNote}).
      */
     private settleRun;
+    /**
+     * Append one Host-transition entry to an idea's activity log (idea #92).
+     * Best-effort like every other mirror/poll write: a ledger that refuses the
+     * append must not take the settle down with it.
+     */
+    private recordRunEvent;
     /**
      * Harvest the delivery note of a finished run (idea #91) and store it as the
      * idea's host-written `deliveryNote`.

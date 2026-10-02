@@ -12,6 +12,7 @@
  * "sessions" service is absent or malformed the resolver returns undefined
  * and the board keeps the plain manual Create for workspace-targeted captures.
  */
+import type { IdeaEvent } from '../core/ideas.ts';
 /**
  * The captured idea handed to the analysing session. The human's priority
  * opinion fields (value/effort/rationale/rank) are optional: the analyst
@@ -77,6 +78,13 @@ export interface ReanalyzeInput {
     value?: number;
     effort?: number;
     rationale?: string;
+    /**
+     * The idea's recorded activity log (idea #92), oldest first. Handed to the
+     * analyst so a re-analysis reads the real past — "declined on 2026-09-20
+     * because …" — instead of re-deriving a history it cannot see. Empty when the
+     * board has recorded nothing for this idea yet.
+     */
+    activity?: readonly IdeaEvent[];
     /** Optional explicit model selection for the analysing session. */
     model?: ModelChoice;
 }

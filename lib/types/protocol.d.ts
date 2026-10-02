@@ -24,13 +24,17 @@ export interface IdeasSnapshot {
 export declare const BODY_EXCERPT_MAX_LENGTH = 280;
 /**
  * One list-view row: the full record minus the fields the list never shows
- * (`body`, `analysisAudit`) plus a short `bodyExcerpt` teaser. The MISSING
- * `body` field is deliberate: TypeScript then refuses every render/search
+ * (`body`, `analysisAudit`, `events`) plus a short `bodyExcerpt` teaser. The
+ * MISSING `body` field is deliberate: TypeScript then refuses every render/search
  * site that would silently grow back a full-body dependency, and the edit
  * modal can never save a partial body by accident (it always edits a full
  * IdeaRecord fetched through GET /api/ideas/idea).
+ *
+ * `events` is dropped for the same weight reason, not a secrecy one: up to 50
+ * entries per row on a 140-card poll would dwarf the board itself, and no card
+ * renders a timeline. The editor reads the full record, which carries it.
  */
-export type IdeaListRow = Omit<IdeaRecord, 'body' | 'analysisAudit'> & {
+export type IdeaListRow = Omit<IdeaRecord, 'body' | 'analysisAudit' | 'events'> & {
     /** Leading, whitespace-collapsed slice of the body (never the analysis). */
     bodyExcerpt: string;
 };
@@ -59,7 +63,7 @@ export declare const IDEAS_READ_MAX_SELECTORS = 100;
  * this projection because it can carry a second full body. The frozen raw
  * single-idea route remains the explicit full-detail escape hatch.
  */
-export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "deliveryNote", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body"];
+export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "deliveryNote", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body", "events"];
 /** One optional field accepted by the bounded field selector. */
 export type IdeasReadField = (typeof IDEAS_READ_SELECTABLE_FIELDS)[number];
 /** Fields always present on a bounded row, independent of field selection. */
@@ -140,7 +144,7 @@ export declare function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input?: 
  * carries an ellipsis.
  */
 export declare function bodyExcerptOf(body: string): string;
-/** Project one full record to its list row (drops body + analysisAudit). */
+/** Project one full record to its list row (drops body + analysisAudit + events). */
 export declare function toListRow(idea: IdeaRecord): IdeaListRow;
 /**
  * Project a full snapshot to the list view. Shared by the host (the
@@ -248,6 +252,16 @@ export interface FollowUpInput {
     title: string;
     body: string;
 }
+/**
+ * Strict parser for the action envelope `{ requestId, action, initiator? }`.
+ *
+ * The action is validated by the same gate the ledger's verbs rely on; the
+ * envelope fields are carried through VERBATIM, `initiator` included. That
+ * detail is load-bearing (idea #92): the initiator is the activity log's
+ * provenance — the writer of a mutation is read back from it — so a parse that
+ * validated it and then dropped it would silently turn every agent write into
+ * "a human did this".
+ */
 export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undefined;
 /** Convenience used by tests: build an idea record exactly as the ledger stores it. */
 export declare function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord;

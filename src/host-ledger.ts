@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { createIdea, isIdeaRunStatus, normalizeDeliveryNote, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
+import { appendIdeaEvent, createIdea, ideaEvent, ideaEventActor, IDEA_ACTOR_RUN, isIdeaRunStatus, normalizeDeliveryNote, normalizeIdeaEvents, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -75,6 +75,18 @@ export interface LedgerState {
   schemaVersion: typeof IDEAS_SCHEMA_VERSION
   revision: number
   ideas: IdeaRecord[]
+}
+
+/**
+ * Activity-log provenance of one mutation (idea #92). `actor` is the explicit
+ * override for a Host-written transition; when absent, `initiator` decides
+ * (`human` with no initiator, `agent:<initiator>` otherwise).
+ */
+export interface IdeaActionAudit {
+  /** Envelope initiator asserted by the caller, if any. */
+  initiator?: string
+  /** Explicit actor for a transition the Host itself writes. */
+  actor?: 'human' | 'run'
 }
 
 interface LockRecord {
@@ -163,6 +175,13 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
     const audit = auditOf(row.analysisAudit)
     if (audit !== undefined) idea.analysisAudit = audit
+    // Activity log (idea #92). This line IS the schema migration: a document
+    // written before the field existed simply has no `events` key, and the
+    // first recorded verb creates it — no version bump, no rewrite, and a
+    // document carrying a hand-edited or over-long log is repaired rather than
+    // quarantined.
+    const events = normalizeIdeaEvents(row.events)
+    if (events !== undefined) idea.events = events
     ideas.push(idea)
   }
   return ideas
@@ -259,8 +278,14 @@ export class IdeasHostLedger {
    * Apply one action with request-id dedupe: the same requestId replayed with
    * the same action returns the current state without mutating. The cache is
    * persisted with every commit, so a Host restart cannot replay a mutation.
+   *
+   * `audit` is the activity-log provenance of this mutation (idea #92): the
+   * asserted envelope initiator becomes `agent:<initiator>`, its absence means
+   * `human`, and the explicit `run` override marks a transition the Host itself
+   * writes (the launch settle opening the review gate). It is NOT part of the
+   * dedupe fingerprint on purpose: replaying a request id re-records nothing.
    */
-  applyRequest(requestId: string, action: IdeasAction): LedgerApplyResult {
+  applyRequest(requestId: string, action: IdeasAction, audit?: IdeaActionAudit): LedgerApplyResult {
     if (this.disposed) throw new Error('ideas ledger is disposed')
     const fingerprint = createHash('sha256').update(JSON.stringify(action)).digest('hex')
     const cached = this.requestCache.get(requestId)
@@ -271,13 +296,35 @@ export class IdeasHostLedger {
     this.requestCache.set(requestId, fingerprint)
     while (this.requestCache.size > MAX_REQUEST_CACHE) this.requestCache.delete(this.requestCache.keys().next().value as string)
     try {
-      const result = this.apply(action)
+      const result = this.apply(action, ideaEventActor(audit?.initiator, audit?.actor))
       result.state = this.snapshot()
       return result
     } catch (error) {
       this.requestCache.delete(requestId)
       throw error
     }
+  }
+
+  /**
+   * Host-internal activity entry (idea #92): the transitions that never pass
+   * through an action verb — a launch accepted, a run settled, a harvested
+   * delivery note — are exactly the ones a reader most wants in the timeline.
+   * Same system-field discipline as `bindTaskBoardId` and the same
+   * no-op-on-unchanged rule, so an idle poll cannot churn the revision.
+   *
+   * @returns true when the document changed and was committed.
+   */
+  recordEvent(ideaId: string, verb: string, summary: string): boolean {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const entry = ideaEvent(this.now(), verb, IDEA_ACTOR_RUN, summary)
+    if (entry.summary === '') return false
+    const current = this.document.ideas.find(idea => idea.id === ideaId)
+    if (current === undefined) return false
+    this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId
+      ? { ...idea, events: appendIdeaEvent(idea.events, entry) }
+      : idea)
+    this.commit()
+    return true
   }
 
   /**
@@ -392,9 +439,13 @@ export class IdeasHostLedger {
     return true
   }
 
-  private apply(action: IdeasAction): LedgerApplyResult {
+  private apply(action: IdeasAction, actor: string): LedgerApplyResult {
     const now = this.now()
     const beforeIdeas = this.document.ideas
+    // Activity entries this mutation will append (idea #92). Filled per case
+    // and applied ONCE after the switch, so the log and the state change in
+    // one commit and a no-op verb records nothing.
+    const recorded: Array<{ ideaId: string; verb: string; summary: string }> = []
     switch (action.kind) {
       case 'create': {
         if (this.document.ideas.some(idea => idea.id === action.id)) throw new Error('idea id already exists')
@@ -405,6 +456,11 @@ export class IdeasHostLedger {
         this.document.ideaSequence += 1
         idea = { ...idea, ideaNumber: this.document.ideaSequence }
         this.document.ideas = [...this.document.ideas, idea]
+        recorded.push({
+          ideaId: idea.id,
+          verb: 'create',
+          summary: `Captured as #${this.document.ideaSequence}${idea.workspaceId === undefined ? '' : ` in ${idea.workspaceId}`}${idea.rank === undefined ? '' : ` at rank ${idea.rank}`}`,
+        })
         break
       }
       case 'update': {
@@ -416,6 +472,7 @@ export class IdeasHostLedger {
         this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
           ? applyPatch(item, action.patch, this.now())
           : item)
+        recorded.push({ ideaId: action.ideaId, verb: 'update', summary: describePatch(action.patch) })
         break
       }
       case 'move': {
@@ -426,6 +483,7 @@ export class IdeasHostLedger {
         this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
           ? { ...withStatus(item, action.status, now), ...(archivedAt === undefined ? {} : { archivedAt }) }
           : item)
+        recorded.push({ ideaId: action.ideaId, verb: 'move', summary: `Moved ${idea.status} → ${action.status}` })
         break
       }
       case 'decline': {
@@ -436,6 +494,11 @@ export class IdeasHostLedger {
           this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
             ? { ...withStatus(item, 'declined', now), archivedAt: now, ...(decision === undefined ? {} : { decision }) }
             : item)
+          recorded.push({
+            ideaId: action.ideaId,
+            verb: 'decline',
+            summary: `Declined${decision === undefined ? '' : ` — ${decision}`}`,
+          })
         }
         break
       }
@@ -451,6 +514,7 @@ export class IdeasHostLedger {
         this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
           ? { ...withStatus(item, 'archived', now), archivedAt: now, deliveredAt: now }
           : item)
+        recorded.push({ ideaId: action.ideaId, verb: 'deliver', summary: 'Delivered — accepted, archived and stamped' })
         break
       }
       case 'triage': {
@@ -475,6 +539,15 @@ export class IdeasHostLedger {
           ideas = ideas.map(item => ({ ...item, rank: rankById.get(item.id) ?? item.rank }))
         }
         this.document.ideas = ideas
+        // One entry on the triaged idea only: the re-rank shifts its neighbours'
+        // positions, which is the triage's effect rather than an event in their
+        // own timeline.
+        const finalRank = ideas.find(item => item.id === action.ideaId)?.rank
+        recorded.push({
+          ideaId: action.ideaId,
+          verb: 'triage',
+          summary: `Priority opinion recorded${formatLevel('value', next.value)}${formatLevel('effort', next.effort)}${finalRank === undefined ? '' : ` · rank ${finalRank} in its workspace group`}`,
+        })
         break
       }
       case 'followUp': {
@@ -507,6 +580,9 @@ export class IdeasHostLedger {
             : item),
           child,
         ]
+        const parentNumber = parent.ideaNumber === undefined ? '' : `#${parent.ideaNumber}`
+        recorded.push({ ideaId: parent.id, verb: 'review', summary: `Review asked for a follow-up — archived in favour of #${this.document.ideaSequence}` })
+        recorded.push({ ideaId: childId, verb: 'create', summary: `Created as the follow-up of ${parentNumber === '' ? 'its parent' : parentNumber}` })
         break
       }
       case 'restore': {
@@ -516,12 +592,15 @@ export class IdeasHostLedger {
         this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
           ? { ...withStatus(item, 'open', now), archivedAt: undefined }
           : item)
+        recorded.push({ ideaId: action.ideaId, verb: 'restore', summary: `Restored from ${idea.status} to the open backlog` })
         break
       }
       case 'delete': {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
         this.document.ideas = this.document.ideas.filter(item => item.id !== action.ideaId)
+        // No activity entry: the row that would carry it is the row being
+        // removed. A delete is not an edit of an idea's life, it ends it.
         break
       }
       case 'reanalyze': {
@@ -545,6 +624,7 @@ export class IdeasHostLedger {
         this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
           ? { ...item, reanalyzeAt: now, analysisAudit: audit, updatedAt: now }
           : item)
+        recorded.push({ ideaId: action.ideaId, verb: 'reanalyze', summary: 'AI re-analysis started — the previous analysis is kept' })
         break
       }
       case 'reorder': {
@@ -569,6 +649,9 @@ export class IdeasHostLedger {
           ...idea,
           rank: rankById.get(idea.id) ?? idea.rank,
         }))
+        // Deliberately silent: a reorder is a display re-ordering, it changes no
+        // idea's content or state, and a drag would otherwise spend the bounded
+        // log on noise.
         break
       }
       case 'import': {
@@ -591,10 +674,26 @@ export class IdeasHostLedger {
           this.document.ideaSequence = maxImportedNumber
         }
         this.document.importedSources = [...this.document.importedSources, action.sourceId]
+        // Deliberately silent: the imported rows carry their own activity log,
+        // and a source that predates the field simply has none. Recording an
+        // "imported" line per row would bury that history and would double on a
+        // merge that re-imports the same source with new content.
         break
       }
       case 'export':
         return { state: this.snapshot(), export: buildIdeasExport(this.document.ideas, action.workspaceId) }
+    }
+    if (recorded.length > 0) {
+      const stamped = this.now()
+      const byId = new Map(recorded.map(entry => [entry.ideaId, entry]))
+      this.document.ideas = this.document.ideas.map(idea => {
+        const entry = byId.get(idea.id)
+        if (entry === undefined) return idea
+        return {
+          ...idea,
+          events: appendIdeaEvent(idea.events, ideaEvent(stamped, entry.verb, actor, entry.summary)),
+        }
+      })
     }
     if (this.document.ideas !== beforeIdeas) this.commit()
     return { state: this.snapshot() }
@@ -798,6 +897,32 @@ function applyPatch(idea: IdeaRecord, patch: IdeaUpdatePatch, now: number): Idea
 function blankToUndefined(value: string): string | undefined {
   const trimmed = value.trim()
   return trimmed === '' ? undefined : trimmed
+}
+
+/**
+ * One-line summary of an `update` patch: the field names the caller actually
+ * changed. Deliberately names fields, never values — a summary is a breadcrumb
+ * back to the idea, and the timeline must never become a second copy of a body
+ * (or quietly store the very content an update meant to replace).
+ */
+function describePatch(patch: IdeaUpdatePatch): string {
+  const fields: string[] = []
+  if (patch.title !== undefined && patch.title !== null) fields.push('title')
+  if (patch.body !== undefined && patch.body !== null) fields.push('description')
+  if (patch.summary !== undefined && patch.summary !== null) fields.push('summary')
+  if (patch.tags !== undefined) fields.push(patch.tags === null ? 'tags cleared' : 'tags')
+  if (patch.workspaceId !== undefined) fields.push('workspace')
+  if (patch.value !== undefined) fields.push('value')
+  if (patch.effort !== undefined) fields.push('effort')
+  if (patch.rationale !== undefined) fields.push('rationale')
+  if (patch.rank !== undefined) fields.push('rank')
+  if (fields.length === 0) return 'Edited (no field changed)'
+  return `Edited ${fields.join(', ')}`
+}
+
+/** Render one triage level, or nothing when the patch left it alone. */
+function formatLevel(label: string, level: number | undefined): string {
+  return level === undefined ? '' : ` · ${label} ${level}`
 }
 
 /** Helper of `apply`: rank-sorted rows (unranked last). */

@@ -1686,6 +1686,65 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-style: italic;
 }
 
+/* Activity timeline (idea #92): the editor's read-only record of what this
+   idea has been through. Quieter than the delivery note — it is bookkeeping,
+   not evidence — so it sits below the fields and above the verdict buttons and
+   stays recessed. The list is capped in CSS only: the host already bounds the
+   log to its last 50 entries. */
+.dsh-ideas-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 2px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--dsh-ideas-fb-fg) 12%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--dsh-ideas-fb-fg) 3%, transparent);
+}
+
+.dsh-ideas-activity-label {
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 55%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dsh-ideas-activity-list {
+  margin: 2px 0 0;
+  padding: 0 0 0 2px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.dsh-ideas-activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px 0;
+}
+
+.dsh-ideas-activity-row + .dsh-ideas-activity-row {
+  border-top: 1px solid color-mix(in srgb, var(--dsh-ideas-fb-fg) 7%, transparent);
+}
+
+.dsh-ideas-activity-when {
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 48%, transparent);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.dsh-ideas-activity-actor {
+  font-weight: 600;
+}
+
+.dsh-ideas-activity-summary {
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 82%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 /* The "N to review" badge on the sidebar panel row (idea #91) has NO rule here
    on purpose: it is painted inside the plugin's own glyph SVG (see
    panel-registration.tsx), which is the only DOM this plugin owns inside that
@@ -1944,6 +2003,13 @@ export const classes = {
   deliveryNoteLabel: 'dsh-ideas-delivery-note-label',
   deliveryNoteText: 'dsh-ideas-delivery-note-text',
   deliveryNoteEmpty: 'dsh-ideas-delivery-note-empty',
+  activity: 'dsh-ideas-activity',
+  activityLabel: 'dsh-ideas-activity-label',
+  activityList: 'dsh-ideas-activity-list',
+  activityRow: 'dsh-ideas-activity-row',
+  activityWhen: 'dsh-ideas-activity-when',
+  activityActor: 'dsh-ideas-activity-actor',
+  activitySummary: 'dsh-ideas-activity-summary',
   tabCount: 'dsh-ideas-tab-count',
   scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',

@@ -40,6 +40,17 @@ export interface LedgerState {
     revision: number;
     ideas: IdeaRecord[];
 }
+/**
+ * Activity-log provenance of one mutation (idea #92). `actor` is the explicit
+ * override for a Host-written transition; when absent, `initiator` decides
+ * (`human` with no initiator, `agent:<initiator>` otherwise).
+ */
+export interface IdeaActionAudit {
+    /** Envelope initiator asserted by the caller, if any. */
+    initiator?: string;
+    /** Explicit actor for a transition the Host itself writes. */
+    actor?: 'human' | 'run';
+}
 export declare class IdeasHostLedger {
     private document;
     private readonly requestCache;
@@ -71,8 +82,24 @@ export declare class IdeasHostLedger {
      * Apply one action with request-id dedupe: the same requestId replayed with
      * the same action returns the current state without mutating. The cache is
      * persisted with every commit, so a Host restart cannot replay a mutation.
+     *
+     * `audit` is the activity-log provenance of this mutation (idea #92): the
+     * asserted envelope initiator becomes `agent:<initiator>`, its absence means
+     * `human`, and the explicit `run` override marks a transition the Host itself
+     * writes (the launch settle opening the review gate). It is NOT part of the
+     * dedupe fingerprint on purpose: replaying a request id re-records nothing.
      */
-    applyRequest(requestId: string, action: IdeasAction): LedgerApplyResult;
+    applyRequest(requestId: string, action: IdeasAction, audit?: IdeaActionAudit): LedgerApplyResult;
+    /**
+     * Host-internal activity entry (idea #92): the transitions that never pass
+     * through an action verb — a launch accepted, a run settled, a harvested
+     * delivery note — are exactly the ones a reader most wants in the timeline.
+     * Same system-field discipline as `bindTaskBoardId` and the same
+     * no-op-on-unchanged rule, so an idle poll cannot churn the revision.
+     *
+     * @returns true when the document changed and was committed.
+     */
+    recordEvent(ideaId: string, verb: string, summary: string): boolean;
     /**
      * Host-internal association written only by the TaskBoard mirror: records
      * the mirrored card id on an idea. `taskBoardId` is a system field — the

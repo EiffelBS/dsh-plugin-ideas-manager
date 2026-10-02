@@ -51,6 +51,34 @@ describe('buildIdeasExport', () => {
     expect(result.ideasMd).not.toContain('- archived:')
   })
 
+  it('carries the activity log so an exported idea still knows its own story', () => {
+    const idea = {
+      ...createIdea({ title: 'Declined idea', body: 'Body.' }, T0, 'idea-3'),
+      events: [
+        { at: T0, verb: 'create', actor: 'human', summary: 'Captured as #3' },
+        { at: T1, verb: 'decline', actor: 'agent:plugin:ideas-manager:ai-capture', summary: 'Declined — superseded by the runtime' },
+      ],
+    }
+    const result = buildIdeasExport([idea], undefined)
+    // The block sits after the metadata and before the body, so a reader meets
+    // the history before the analysis it explains.
+    expect(result.ideasMd).toContain([
+      '**Activity**',
+      '',
+      '- 2026-09-16T08:00:00.000Z · create · human — Captured as #3',
+      '- 2026-09-16T09:30:00.000Z · decline · agent:plugin:ideas-manager:ai-capture — Declined — superseded by the runtime',
+    ].join('\n'))
+    expect(result.ideasMd.indexOf('**Activity**')).toBeLessThan(result.ideasMd.indexOf('Body.'))
+  })
+
+  it('prints no activity block for an idea that has recorded nothing', () => {
+    const plain = createIdea({ title: 'Fresh idea', body: 'Body.' }, T0, 'idea-4')
+    const result = buildIdeasExport([plain], undefined)
+    expect(result.ideasMd).not.toContain('**Activity**')
+    const empty = { ...plain, events: [] }
+    expect(buildIdeasExport([empty], undefined).ideasMd).not.toContain('**Activity**')
+  })
+
   it('filters by workspace when requested', () => {
     const alpha = createIdea({ title: 'Alpha idea', body: '', workspaceId: 'alpha' }, T0, 'alpha-1')
     const generic = createIdea({ title: 'Generic idea', body: '' }, T0, 'gen-1')

@@ -302,6 +302,12 @@ procedure above for that run:
   by an explicit human click on the board. Report and stop.
 - The board preserves your prior analysis in the card audit trail before your
   update lands - overwrite deliberately, never guardedly.
+- The launch prompt carries the idea's ACTIVITY LOG: what the board recorded
+  happening to it, with actor and date. That is the real history, so read it
+  before writing and never contradict it - an idea that was declined,
+  delivered, or archived and restored already has a story, and re-proposing
+  what was refused is a failed re-analysis. When the log contradicts the
+  current body, trust the log and say so in the analysis.
 
 ## Final report (≤ 4 sentences, in the requester's language)
 

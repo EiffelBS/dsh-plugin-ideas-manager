@@ -5,6 +5,13 @@
  * never parsed back (the ledger is the source of truth; bulk `import` of a
  * capture document moves *into* the ledger, never from a markdown file). The
  * format below is pinned by the golden tests — change consciously.
+ *
+ * The activity log IS carried (idea #92), as a bounded `**Activity**` block
+ * per idea. Decision and rationale: these two documents are the only portable
+ * artefact the plugin produces, and "why was this declined?" is unanswerable
+ * from a last-state record. The JSON round-trip (`GET /state` → `import`) also
+ * carries it, so nothing is lost either way — this block exists for the READER
+ * of the exported file, not for a parser.
  */
 import type { IdeaRecord } from './core/ideas.ts';
 /** Render one idea as a markdown section. */

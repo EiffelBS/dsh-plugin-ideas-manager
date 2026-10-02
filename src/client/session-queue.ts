@@ -13,7 +13,7 @@
  * and the board keeps the plain manual Create for workspace-targeted captures.
  */
 
-import type { IdeaStatus } from '../core/ideas.ts'
+import type { IdeaEvent, IdeaStatus } from '../core/ideas.ts'
 
 /**
  * The captured idea handed to the analysing session. The human's priority
@@ -83,6 +83,13 @@ export interface ReanalyzeInput {
   value?: number
   effort?: number
   rationale?: string
+  /**
+   * The idea's recorded activity log (idea #92), oldest first. Handed to the
+   * analyst so a re-analysis reads the real past — "declined on 2026-09-20
+   * because …" — instead of re-deriving a history it cannot see. Empty when the
+   * board has recorded nothing for this idea yet.
+   */
+  activity?: readonly IdeaEvent[]
   /** Optional explicit model selection for the analysing session. */
   model?: ModelChoice
 }
@@ -287,8 +294,24 @@ Load summary metadata first with GET ${origin}/api/ideas/state?view=summary&id=$
 
 Then fetch ONLY the target with GET ${origin}/api/ideas/idea?id=${encodeURIComponent(input.ideaId)}. Analyze its complete current body. Load full bodies only for directly related follow-ups identified by followUpOfId; never load the full /state snapshot and never load an unrelated body.
 
+=== What this idea has already been through (the board's activity log) ===
+${renderActivity(input.activity)}
+This is the REAL history, recorded by the board: read it before you write, and never contradict it. An idea that was already declined, delivered or archived-and-restored has a story — a re-analysis that ignores it will re-propose what was already refused. When the log contradicts the current body, believe the log and say so in your analysis.
+
 === Stored priority opinion (re-decide it and justify the final choice) ===
 ${opinion}`
+}
+
+/**
+ * Render the activity log for the re-analysis prompt. Chronological, one line
+ * per entry, oldest first — the order in which a reader of the board reads it.
+ * An empty log reads as "nothing recorded yet", never as an omission.
+ */
+function renderActivity(activity: readonly IdeaEvent[] | undefined): string {
+  if (activity === undefined || activity.length === 0) return '— nothing recorded yet (the idea predates the activity log, or nothing has happened to it since).'
+  return activity
+    .map(entry => `- ${new Date(entry.at).toISOString()} · ${entry.actor} · ${entry.verb}: ${entry.summary}`)
+    .join('\n')
 }
 
 /**

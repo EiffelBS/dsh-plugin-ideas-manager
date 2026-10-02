@@ -206,6 +206,10 @@ export const fr = {
   'settings.staleAfterDays': 'Marquer une idée « périmée » après',
   'settings.staleAfterDaysDesc': "Nombre de jours sans mise à jour avant qu'une idée ouverte affiche un badge « Périmée » : de 0 à 3650, 30 par défaut. 0 désactive complètement le badge. Calculé à l'affichage, rien n'est enregistré sur l'idée.",
   'board.columnResize': 'Redimensionner cette colonne — min {min} px, max {max} px ; double-clic pour réinitialiser',
+  'activity.label': 'Activité ({count})',
+  'activity.hint': "Ce que cette idée a traversé : qui a fait quoi, et quand. Les {count} derniers mouvements sont conservés.",
+  'activity.human': 'vous',
+  'activity.run': 'exécution',
 }
 
 export const en = {
@@ -407,6 +411,10 @@ export const en = {
   'settings.staleAfterDays': 'Mark an idea stale after',
   'settings.staleAfterDaysDesc': 'Days without an update before an open idea wears a quiet "Stale" badge: 0 to 3650, default 30. 0 turns the badge off entirely. Computed while rendering, nothing is stored on the idea.',
   'board.columnResize': 'Resize this column — min {min}px, max {max}px; double-click to reset',
+  'activity.label': 'Activity ({count})',
+  'activity.hint': 'What this idea has been through: who did what, and when. The last {count} moves are kept.',
+  'activity.human': 'you',
+  'activity.run': 'run',
 }
 
 /**
@@ -614,6 +622,10 @@ export const zh = {
   'settings.staleAfterDays': '标记想法为陈旧的天数',
   'settings.staleAfterDaysDesc': '开放中的想法在多少天没有更新后显示安静的「陈旧」徽标：0 到 3650，默认 30。填 0 可完全关闭该徽标。仅在渲染时计算，不会在想法上写入任何内容。',
   'board.columnResize': '调整此列宽度 — 最小 {min} 像素，最大 {max} 像素；双击重置',
+  'activity.label': '动态（{count}）',
+  'activity.hint': '这个想法经历过什么：谁做了什么，以及何时。仅保留最近 {count} 条记录。',
+  'activity.human': '你',
+  'activity.run': '执行',
 }
 
 export type IdeasKey = keyof typeof fr

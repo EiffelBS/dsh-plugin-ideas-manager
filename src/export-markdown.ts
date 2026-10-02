@@ -5,6 +5,13 @@
  * never parsed back (the ledger is the source of truth; bulk `import` of a
  * capture document moves *into* the ledger, never from a markdown file). The
  * format below is pinned by the golden tests — change consciously.
+ *
+ * The activity log IS carried (idea #92), as a bounded `**Activity**` block
+ * per idea. Decision and rationale: these two documents are the only portable
+ * artefact the plugin produces, and "why was this declined?" is unanswerable
+ * from a last-state record. The JSON round-trip (`GET /state` → `import`) also
+ * carries it, so nothing is lost either way — this block exists for the READER
+ * of the exported file, not for a parser.
  */
 
 import type { IdeaRecord } from './core/ideas.ts'
@@ -44,6 +51,19 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   // Carried like any other stored fact because the archive document is read by
   // humans AND by agents deciding whether an idea is still relevant.
   if (idea.deliveryNote !== undefined) lines.push(bullet('delivery note', idea.deliveryNote))
+  // Activity log (idea #92). Decision: the markdown export CARRIES it. The two
+  // export documents are the only portable artefact this plugin produces, and
+  // the question a re-reader of an archive section actually asks — "declined on
+  // 2026-09-20 because …?" — is unanswerable from the last state alone. It costs
+  // one bounded line per entry (at most IDEA_EVENT_LIMIT of them) and the log is
+  // never parsed back: `import` round-trips the JSON, not this document.
+  if (idea.events !== undefined && idea.events.length > 0) {
+    lines.push('', '**Activity**', '')
+    for (const entry of idea.events) {
+      lines.push(`- ${iso(entry.at)} · ${entry.verb} · ${entry.actor} — ${entry.summary}`)
+    }
+    lines.push('')
+  }
   if (idea.body.trim() !== '') {
     lines.push('', idea.body.trim(), '')
   }

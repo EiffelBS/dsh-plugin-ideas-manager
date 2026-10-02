@@ -6,6 +6,50 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.8.0 - 2026-10-03
+
+### Added
+
+- **Six agent tools: drive the board from any session.** When your DSH deployment
+  serves agent tools, any chat can now work the ideas board directly — no shell,
+  no hand-written JSON, no browser. `ideas_list` reads a filtered page of your
+  backlog, `ideas_get` reads one idea in full, `ideas_capture` captures an idea
+  together with its priority opinion, `ideas_triage` records value / effort /
+  rationale / rank and re-ranks a workspace group, `ideas_launch` starts the
+  execution, and `ideas_review` settles the review gate with **approve**,
+  **follow-up** or **decline**. They go through exactly the same gate as the web
+  board, so a call that would be refused in the interface is refused the same way
+  here, and an idea written by an agent shows up on your board at once — marked as
+  the agent's work in that idea's history. An agent still cannot write a run state
+  or claim a task card; those stay the host's. If your deployment serves no agent
+  tools, nothing changes: the board keeps every feature and the HTTP channel.
+- **Every idea now remembers what happened to it.** Each idea keeps a short
+  activity log — who did what, and when — and the editor shows it as a compact
+  timeline under the description, right above the Approve / Follow-up / Decline
+  buttons. It is written by the board itself: the capture, the ranking changes,
+  the launch, the run that finished or failed, the approval, the follow-up, the
+  decline with its reason. Entries are attributed, so you can tell your own
+  changes from an agent's and from the run's. The log keeps the **last 50
+  entries** and nothing more, and an idea that has recorded nothing yet shows
+  nothing at all rather than an empty box — so "nothing has happened" is never
+  mistaken for "something is missing".
+- **Your ideas travel with their history.** The JSON export and import carry the
+  activity log, and the markdown export prints it as a short **Activity** block
+  under each idea — so an archived document can still answer *why was this
+  declined?*, which a last-state record never could.
+- **Re-analysis reads the real past.** When you ask for a fresh analysis of an
+  idea, the analyst is now handed what actually happened to it before — the
+  decline, the delivery, the archive-and-restore — and is told to read it before
+  writing. A re-analysis can no longer re-propose something the board already
+  refused.
+
+### Fixed
+
+- The **initiator** of a write (the label an agent or a tool stamps on its
+  action) was being discarded on the way into the Host, so every automated change
+  looked like it had been made by you in the board. It is now recorded properly,
+  which is what makes the activity log able to tell your changes from an agent's.
+
 ## 0.7.8 - 2026-10-02
 
 ### Added

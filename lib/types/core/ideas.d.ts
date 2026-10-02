@@ -53,6 +53,85 @@ export declare const IDEA_SUMMARY_MAX_LENGTH = 300;
  * Roughly 2 KiB reads as "what was delivered" without becoming a second body.
  */
 export declare const DELIVERY_NOTE_MAX_BYTES: number;
+/**
+ * One line of an idea's own history: what happened, when, and who did it.
+ *
+ * `IdeaRecord` otherwise keeps only the last state, so "declined because …"
+ * survives only as long as somebody wrote it into the body. The log is what
+ * makes an idea remember its life, and it is deliberately tiny per entry:
+ * a verb, a timestamp, an actor and a one-line summary.
+ */
+export interface IdeaEvent {
+    /** When it happened (ms epoch). */
+    at: number;
+    /** Short verb label (`create`, `triage`, `review`, `launch`, …). */
+    verb: string;
+    /**
+     * Who acted: `human`, `run` (a Host-written transition such as a launch
+     * settle), or `agent:<initiator>` when the caller asserted an initiator
+     * label (the analyst sessions, the `ideas_*` tools).
+     */
+    actor: string;
+    /** One line, bounded; never a second body. */
+    summary: string;
+}
+/**
+ * Cap of the per-idea activity log. 50 entries is roughly two months of a
+ * busy idea; past that the oldest lines fall off and the ledger document stays
+ * the size the exports and snapshots were designed for.
+ */
+export declare const IDEA_EVENT_LIMIT = 50;
+/** Maximum length of one activity verb label. */
+export declare const IDEA_EVENT_VERB_MAX_LENGTH = 32;
+/** Maximum length of an actor label (`agent:` prefix included). */
+export declare const IDEA_EVENT_ACTOR_MAX_LENGTH = 128;
+/** Maximum length of one activity summary line. */
+export declare const IDEA_EVENT_SUMMARY_MAX_LENGTH = 200;
+/** Actor label of a caller that asserted no initiator (the board UI, the API). */
+export declare const IDEA_ACTOR_HUMAN = "human";
+/** Actor label of a Host-written transition (launch settle, review gate). */
+export declare const IDEA_ACTOR_RUN = "run";
+/**
+ * Resolve the actor label of one mutation. The initiator is the envelope field
+ * the write channel already carries: absent means "the human in front of the
+ * board", present means an agent stamped its own label. A host-only override
+ * (`run`) marks the transitions the Host itself writes.
+ * @param initiator - asserted envelope initiator, if any.
+ * @param override - explicit actor for a Host-written transition.
+ * @returns the bounded actor label.
+ */
+export declare function ideaEventActor(initiator: string | undefined, override?: 'human' | 'run'): string;
+/**
+ * Whether an unknown value is a well-formed activity entry.
+ *
+ * Strict on the four keys it owns — every one of them must be present and of
+ * the right type, so a truncated or half-written entry is refused — and
+ * deliberately tolerant of unknown keys, because this guard runs on PERSISTED
+ * logs: an entry a later version wrote with an extra field is still history
+ * worth keeping, and {@link normalizeIdeaEvents} rebuilds it from the four keys
+ * this returns, dropping whatever else travelled with it.
+ */
+export declare function isIdeaEvent(value: unknown): value is IdeaEvent;
+/** Build one well-formed entry, bounding every free-text field. */
+export declare function ideaEvent(at: number, verb: string, actor: string, summary: string): IdeaEvent;
+/**
+ * Append one entry to a bounded log and drop what falls off the tail. The
+ * input list is never mutated: the ledger keeps one immutable record per
+ * revision.
+ * @param events - the current log (any length; undefined = empty).
+ * @param entry - the entry to append.
+ * @returns the new log, at most {@link IDEA_EVENT_LIMIT} entries long.
+ */
+export declare function appendIdeaEvent(events: readonly IdeaEvent[] | undefined, entry: IdeaEvent): IdeaEvent[];
+/**
+ * Repair a persisted activity log: drop malformed entries, bound every field
+ * and keep only the last {@link IDEA_EVENT_LIMIT}. This is also the schema
+ * migration for documents written before the log existed — such a row simply
+ * has no `events` field, and the first append creates it.
+ * @param value - the raw stored value.
+ * @returns the repaired log, or undefined when nothing usable remains.
+ */
+export declare function normalizeIdeaEvents(value: unknown): IdeaEvent[] | undefined;
 /** Whether an unknown value is a well-formed tag (strict: the wire gate). */
 export declare function isIdeaTag(value: unknown): value is IdeaTag;
 /**
@@ -250,6 +329,18 @@ export interface IdeaRecord {
      * bounded — re-analyze replaces deliberately, never destroys history.
      */
     analysisAudit?: AnalysisAudit;
+    /**
+     * Bounded, append-only activity log (idea #92): the last
+     * {@link IDEA_EVENT_LIMIT} things that happened to this idea — who acted,
+     * when, and in one line what changed. The record above keeps only the last
+     * state, so without this an idea cannot answer "why was this declined?".
+     *
+     * Never written by an agent: the verbs append their own entry host-side, so
+     * an update cannot smuggle an invented history through the wire gate the way
+     * it could smuggle a title. `import` carries the log as already-recorded
+     * history, exactly like it carries a harvested delivery note.
+     */
+    events?: IdeaEvent[];
 }
 /** Input for creating an idea. */
 export interface NewIdeaInput {

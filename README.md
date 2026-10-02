@@ -103,6 +103,25 @@ minute of the session finishing.
 > A direct session inherits your normal DSH permissions. TaskBoard's own run
 > options (such as a confirmation prompt) are not applied to it.
 
+### An idea remembers what happened to it
+Every idea keeps a short **activity log** — who did what, and when — and the
+editor shows it as a compact timeline under the description, right above the
+verdict buttons.
+
+- It is written by the board itself: the capture, the rank and score changes,
+  the launch, the run that finished (or failed), the approval, the follow-up,
+  the decline with its reason. Entries name their author — **you**, an agent,
+  or the run itself — so a month-old decision is still attributable.
+- It keeps the **last 50 entries** and nothing more. An older idea simply shows
+  the tail of its life, and an idea that has recorded nothing yet shows nothing
+  at all rather than an empty box.
+- It travels with the idea: the JSON export/import carries it, and the markdown
+  export prints it as a short **Activity** block, so an archived document can
+  still answer *why was this declined?*.
+- It also feeds **Re-analyze**. When you ask for a fresh analysis, the analyst
+  is handed what actually happened to this idea before, so it re-reads the real
+  history instead of re-proposing something already refused.
+
 ### Workspaces
 - A header selector scopes the board to one workspace (or *all* / *none*).
 - New ideas default to the **current session's workspace** when not scoped.
@@ -247,8 +266,28 @@ dsh plugin --profile web remove dsh-plugin-ideas-manager
 
 ## For agents and integrators
 
-The board is one HTTP surface away. Scripts and agents can read the state and
-write ideas without any UI:
+**Six agent tools, when your deployment serves them.** Any DSH session can then
+work the board directly, with no shell and no hand-built JSON:
+
+| Tool | What it does |
+|---|---|
+| `ideas_list` | Read a filtered, paginated page of idea metadata |
+| `ideas_get` | Read one idea in full, including its activity log |
+| `ideas_capture` | Capture an idea with a priority opinion, in one call |
+| `ideas_triage` | Record value / effort / rationale / rank on an open idea |
+| `ideas_launch` | Start the idea's execution |
+| `ideas_review` | Settle the review gate: approve, follow-up, or decline |
+
+They drive the same ledger as the board, so anything a tool writes is on your
+board immediately, and it shows up in that idea's activity log as the agent's
+work. A call that would be invalid over HTTP is refused the same way. Nothing
+lets an agent write a run state or claim a task card.
+
+If your deployment serves no agent-tool registry, the board simply does not
+offer them — every feature below still works.
+
+**Or over HTTP.** The board is one HTTP surface away; scripts and agents can
+read the state and write ideas without any UI:
 
 | Route | Purpose |
 |---|---|

@@ -11,6 +11,7 @@ import {
   isIdeaRunStatus,
   isIdeaStatus,
   isIdeaTagList,
+  normalizeIdeaEvents,
   normalizeTags,
   type IdeaRecord,
   type IdeaStatus,
@@ -41,13 +42,17 @@ export const BODY_EXCERPT_MAX_LENGTH = 280
 
 /**
  * One list-view row: the full record minus the fields the list never shows
- * (`body`, `analysisAudit`) plus a short `bodyExcerpt` teaser. The MISSING
- * `body` field is deliberate: TypeScript then refuses every render/search
+ * (`body`, `analysisAudit`, `events`) plus a short `bodyExcerpt` teaser. The
+ * MISSING `body` field is deliberate: TypeScript then refuses every render/search
  * site that would silently grow back a full-body dependency, and the edit
  * modal can never save a partial body by accident (it always edits a full
  * IdeaRecord fetched through GET /api/ideas/idea).
+ *
+ * `events` is dropped for the same weight reason, not a secrecy one: up to 50
+ * entries per row on a 140-card poll would dwarf the board itself, and no card
+ * renders a timeline. The editor reads the full record, which carries it.
  */
-export type IdeaListRow = Omit<IdeaRecord, 'body' | 'analysisAudit'> & {
+export type IdeaListRow = Omit<IdeaRecord, 'body' | 'analysisAudit' | 'events'> & {
   /** Leading, whitespace-collapsed slice of the body (never the analysis). */
   bodyExcerpt: string
 }
@@ -85,7 +90,7 @@ export const IDEAS_READ_MAX_SELECTORS = 100
 export const IDEAS_READ_SELECTABLE_FIELDS = [
   'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId',
   'taskBoardId', 'taskBoardStatus', 'runStatus', 'runSessionId', 'deliveryNote',
-  'followUpOfId', 'deliveredAt', 'decision', 'archivedAt', 'reanalyzeAt', 'body',
+  'followUpOfId', 'deliveredAt', 'decision', 'archivedAt', 'reanalyzeAt', 'body', 'events',
 ] as const
 
 /** One optional field accepted by the bounded field selector. */
@@ -402,12 +407,13 @@ export function bodyExcerptOf(body: string): string {
   return `${text}…`
 }
 
-/** Project one full record to its list row (drops body + analysisAudit). */
+/** Project one full record to its list row (drops body + analysisAudit + events). */
 export function toListRow(idea: IdeaRecord): IdeaListRow {
-  // The omit pattern: `analysisAudit` is intentionally unused (dropped),
-  // `body` only feeds the excerpt.
-  const { body, analysisAudit, ...rest } = idea
+  // The omit pattern: `analysisAudit` and `events` are intentionally unused
+  // (dropped), `body` only feeds the excerpt.
+  const { body, analysisAudit, events, ...rest } = idea
   void analysisAudit
+  void events
   return { ...rest, bodyExcerpt: bodyExcerptOf(body) }
 }
 
@@ -569,6 +575,13 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
   if (row.summary !== undefined && row.summary !== null && typeof row.summary !== 'string') return undefined
   if (row.analysisAudit !== undefined && row.analysisAudit !== null && !isAnalysisAudit(row.analysisAudit)) return undefined
+  // Activity log (idea #92): host-appended provenance, carried through an
+  // export/import round-trip so an idea keeps its history when a ledger is
+  // moved between hosts. The shape is repaired (dropped malformed entries,
+  // bounded to the last IDEA_EVENT_LIMIT), never trusted: `update` still
+  // refuses it, so only `import` accepts it.
+  const events = normalizeIdeaEvents(row.events)
+  if (row.events !== undefined && row.events !== null && events === undefined) return undefined
   return {
     id: row.id,
     title: row.title,
@@ -595,6 +608,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
   ...(typeof row.reanalyzeAt === 'number' ? { reanalyzeAt: row.reanalyzeAt } : {}),
   ...(isAnalysisAudit(row.analysisAudit) ? { analysisAudit: row.analysisAudit } : {}),
+    ...(events === undefined ? {} : { events }),
   }
 }
 
@@ -661,12 +675,34 @@ function reorderList(value: unknown): boolean {
     && value.every(item => typeof item === 'string' && item !== '')
 }
 
+/**
+ * Strict parser for the action envelope `{ requestId, action, initiator? }`.
+ *
+ * The action is validated by the same gate the ledger's verbs rely on; the
+ * envelope fields are carried through VERBATIM, `initiator` included. That
+ * detail is load-bearing (idea #92): the initiator is the activity log's
+ * provenance — the writer of a mutation is read back from it — so a parse that
+ * validated it and then dropped it would silently turn every agent write into
+ * "a human did this".
+ */
 export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undefined {
   const envelope = record(value)
   if (envelope === undefined || !exactKeys(envelope, ['requestId', 'action', 'initiator'])) return undefined
   if (typeof envelope.requestId !== 'string' || envelope.requestId.trim() === '' || envelope.requestId.length > 256) return undefined
   if (envelope.initiator !== undefined && (typeof envelope.initiator !== 'string' || envelope.initiator.trim() === '' || envelope.initiator.length > 256)) return undefined
-  const action = record(envelope.action)
+  const parsed = parseActionOnly(envelope.action)
+  if (parsed === undefined) return undefined
+  const initiator = typeof envelope.initiator === 'string' ? envelope.initiator.trim() : ''
+  return {
+    requestId: envelope.requestId,
+    action: parsed.action,
+    ...(initiator === '' ? {} : { initiator }),
+  }
+}
+
+/** Validate the `action` member alone; the envelope fields are the caller's. */
+function parseActionOnly(value: unknown): { action: IdeasAction } | undefined {
+  const action = record(value)
   if (action === undefined || typeof action.kind !== 'string') return undefined
   const ideaId = typeof action.ideaId === 'string' && action.ideaId !== '' ? action.ideaId : undefined
   switch (action.kind) {
@@ -676,7 +712,7 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
       {
         const ideas = action.ideas.map(importedIdea)
         return ideas.every((idea): idea is IdeaRecord => idea !== undefined)
-          ? { requestId: envelope.requestId, action: { kind: 'import', sourceId: action.sourceId, ideas } }
+          ? { action: { kind: 'import', sourceId: action.sourceId, ideas } }
           : undefined
       }
     case 'create': {
@@ -687,55 +723,55 @@ export function parseActionEnvelope(value: unknown): IdeasActionEnvelope | undef
       const input = action.input as NewIdeaInput
       const tags = normalizeTags(input.tags)
       const sanitized: NewIdeaInput = tags === undefined ? { ...input, tags: undefined } : { ...input, tags }
-      return { requestId: envelope.requestId, action: { kind: 'create', id: action.id as string, input: sanitized } }
+      return { action: { kind: 'create', id: action.id as string, input: sanitized } }
     }
     case 'update': {
       if (!exactKeys(action, ['kind', 'ideaId', 'patch'])) return undefined
       if (ideaId === undefined || !updatePatch(action.patch)) return undefined
-      return { requestId: envelope.requestId, action: { kind: 'update', ideaId, patch: action.patch as IdeaUpdatePatch } }
+      return { action: { kind: 'update', ideaId, patch: action.patch as IdeaUpdatePatch } }
     }
     case 'move':
       if (!exactKeys(action, ['kind', 'ideaId', 'status'])) return undefined
       if (ideaId === undefined) return undefined
       return action.status === 'open' || action.status === 'underReview' || action.status === 'archived'
-        ? { requestId: envelope.requestId, action: { kind: 'move', ideaId, status: action.status } }
+        ? { action: { kind: 'move', ideaId, status: action.status } }
         : undefined
     case 'decline': {
       if (!exactKeys(action, ['kind', 'ideaId', 'decision'])) return undefined
       if (ideaId === undefined || !optionalString(action.decision)) return undefined
       return action.decision === undefined
-        ? { requestId: envelope.requestId, action: { kind: 'decline', ideaId } }
-        : { requestId: envelope.requestId, action: { kind: 'decline', ideaId, decision: action.decision } }
+        ? { action: { kind: 'decline', ideaId } }
+        : { action: { kind: 'decline', ideaId, decision: action.decision } }
     }
     case 'deliver':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
-      return ideaId === undefined ? undefined : { requestId: envelope.requestId, action: { kind: 'deliver', ideaId } }
+      return ideaId === undefined ? undefined : { action: { kind: 'deliver', ideaId } }
     case 'triage': {
       if (!exactKeys(action, ['kind', 'ideaId', 'patch'])) return undefined
       if (ideaId === undefined || !triagePatch(action.patch)) return undefined
-      return { requestId: envelope.requestId, action: { kind: 'triage', ideaId, patch: action.patch as TriagePatch } }
+      return { action: { kind: 'triage', ideaId, patch: action.patch as TriagePatch } }
     }
     case 'followUp': {
       if (!exactKeys(action, ['kind', 'ideaId', 'input'])) return undefined
       if (ideaId === undefined || !followUpInput(action.input)) return undefined
-      return { requestId: envelope.requestId, action: { kind: 'followUp', ideaId, input: action.input as FollowUpInput } }
+      return { action: { kind: 'followUp', ideaId, input: action.input as FollowUpInput } }
     }
     case 'restore':
     case 'delete':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
-      return ideaId === undefined ? undefined : { requestId: envelope.requestId, action: { kind: action.kind, ideaId } as IdeasAction }
+      return ideaId === undefined ? undefined : { action: { kind: action.kind, ideaId } as IdeasAction }
     case 'reanalyze':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
-      return ideaId === undefined ? undefined : { requestId: envelope.requestId, action: { kind: 'reanalyze', ideaId } }
+      return ideaId === undefined ? undefined : { action: { kind: 'reanalyze', ideaId } }
     case 'reorder':
       if (!exactKeys(action, ['kind', 'orderedIds'])) return undefined
       return reorderList(action.orderedIds)
-        ? { requestId: envelope.requestId, action: { kind: 'reorder', orderedIds: action.orderedIds as string[] } }
+        ? { action: { kind: 'reorder', orderedIds: action.orderedIds as string[] } }
         : undefined
     case 'export':
       if (!exactKeys(action, ['kind', 'workspaceId'])) return undefined
       return (action.workspaceId === undefined || typeof action.workspaceId === 'string')
-        ? { requestId: envelope.requestId, action: { kind: 'export', ...(action.workspaceId === undefined ? {} : { workspaceId: action.workspaceId }) } }
+        ? { action: { kind: 'export', ...(action.workspaceId === undefined ? {} : { workspaceId: action.workspaceId }) } }
         : undefined
     default:
       return undefined

@@ -108,6 +108,15 @@ export class IdeasHostService {
     this.emit()
   }
 
+  /**
+   * Live master switch. Exposed so the agent-tool registration reads the SAME
+   * flag the write path enforces: a disabled board answers no tool call, and
+   * that is only true if both sides look at one value.
+   */
+  isActive(): boolean {
+    return this.active
+  }
+
   snapshot(): IdeasSnapshot {
     const state = this.ledger.snapshot()
     return {
@@ -133,11 +142,15 @@ export class IdeasHostService {
   }
 
   apply(requestId: string, action: IdeasAction, initiator?: string): IdeasApplyResponse {
-    // P0: the initiator is accepted for contract parity and recorded by the
-    // ledger cache only; P1 adds the audit stamp to created/updated ideas.
-    void initiator
     if (!this.active) throw new Error('ideas plugin is disabled')
-    const result: LedgerApplyResult = this.ledger.applyRequest(requestId, action)
+    // The initiator is the activity-log provenance of this mutation (idea #92):
+    // the browser asserts none (the timeline reads "you"), an agent stamps its
+    // own label and the timeline reads which one.
+    const result: LedgerApplyResult = this.ledger.applyRequest(
+      requestId,
+      action,
+      initiator === undefined || initiator.trim() === '' ? undefined : { initiator },
+    )
     if (!result.replayed) this.scheduleMirror(action, result.state.ideas)
     const state = result.state
     return {
@@ -344,6 +357,7 @@ export class IdeasHostService {
     if (requestId !== undefined) {
       this.rememberLaunch(requestId, result)
     }
+    this.recordRunEvent(ideaId, `Execution started on the ${outcome.taskId === undefined ? 'fresh session' : 'task card'}`)
     return result
   }
 
@@ -419,16 +433,36 @@ export class IdeasHostService {
   private settleRun(ideaId: string, status: 'done' | 'failed', sessionId?: string): void {
     this.ledger.setRunStatus(ideaId, status)
     this.ledger.setRunSession(ideaId, undefined)
-    if (status !== 'done') return
+    if (status !== 'done') {
+      this.recordRunEvent(ideaId, 'The run failed — the idea stays in the backlog')
+      return
+    }
     this.harvestNote(ideaId, sessionId)
-    if (this.ledger.idea(ideaId)?.status !== 'open') return
+    if (this.ledger.idea(ideaId)?.status !== 'open') {
+      this.recordRunEvent(ideaId, 'The run finished — the delivery note is on the card')
+      return
+    }
     // A fresh request id per transition (the ledger dedupes replays); the move
-    // to underReview mirrors nothing - the card is already done.
+    // to underReview mirrors nothing - the card is already done. The `run`
+    // actor marks it as a Host transition: nobody clicked, the poll did it.
     this.ledger.applyRequest(`under-review-${ideaId}-${Date.now()}-${Math.random().toString(36).slice(2)}`, {
       kind: 'move',
       ideaId,
       status: 'underReview',
-    })
+    }, { actor: 'run' })
+  }
+
+  /**
+   * Append one Host-transition entry to an idea's activity log (idea #92).
+   * Best-effort like every other mirror/poll write: a ledger that refuses the
+   * append must not take the settle down with it.
+   */
+  private recordRunEvent(ideaId: string, summary: string): void {
+    try {
+      this.ledger.recordEvent(ideaId, 'run', summary)
+    } catch (error) {
+      console.error(`[dsh-plugin-ideas-manager] activity log append failed for ${ideaId}: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**

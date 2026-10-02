@@ -280,6 +280,48 @@ describe('reanalysis launch', () => {
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('your FRESH summary')
   })
 
+  it('hands the idea its real history so a re-analysis cannot re-propose what was refused', () => {
+    const prompt = buildReanalysisPrompt(
+      {
+        workspaceId: 'ws-1',
+        workspaceTitle: 'Alpha',
+        ideaId: 'idea-42',
+        title: 'Stored title',
+        status: 'open',
+        tags: [],
+        activity: [
+          { at: Date.parse('2026-09-16T08:00:00.000Z'), verb: 'create', actor: 'human', summary: 'Captured as #7' },
+          { at: Date.parse('2026-09-20T10:00:00.000Z'), verb: 'decline', actor: 'human', summary: 'Declined — the runtime already covers it' },
+        ],
+      },
+      'http://127.0.0.1:3101',
+    )
+    expect(prompt).toContain("What this idea has already been through")
+    expect(prompt).toContain('2026-09-20T10:00:00.000Z · human · decline: Declined — the runtime already covers it')
+    expect(prompt).toContain('never contradict it')
+  })
+
+  it('says so plainly when the board holds no history for the idea yet', () => {
+    const prompt = buildReanalysisPrompt(
+      {
+        workspaceId: 'ws-1',
+        workspaceTitle: 'Alpha',
+        ideaId: 'idea-42',
+        title: 'Stored title',
+        status: 'open',
+        tags: [],
+      },
+      'http://127.0.0.1:3101',
+    )
+    expect(prompt).toContain('nothing recorded yet')
+    expect(prompt).not.toContain('2026-09-20')
+  })
+
+  it('the skill tells the analyst the activity log is the real history', () => {
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('ACTIVITY LOG')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('never contradict it')
+  })
+
   it('the launcher face exposes launchReanalyze', () => {
     const created: { workspaceId?: string }[] = []
     const prompts: string[] = []

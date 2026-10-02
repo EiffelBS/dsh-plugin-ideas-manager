@@ -205,6 +205,10 @@ export declare const fr: {
     'settings.staleAfterDays': string;
     'settings.staleAfterDaysDesc': string;
     'board.columnResize': string;
+    'activity.label': string;
+    'activity.hint': string;
+    'activity.human': string;
+    'activity.run': string;
 };
 export declare const en: {
     'entry.label': string;
@@ -405,6 +409,10 @@ export declare const en: {
     'settings.staleAfterDays': string;
     'settings.staleAfterDaysDesc': string;
     'board.columnResize': string;
+    'activity.label': string;
+    'activity.hint': string;
+    'activity.human': string;
+    'activity.run': string;
 };
 /**
  * Simplified Chinese copy (the language DSH serves besides English), so a
@@ -611,6 +619,10 @@ export declare const zh: {
     'settings.staleAfterDays': string;
     'settings.staleAfterDaysDesc': string;
     'board.columnResize': string;
+    'activity.label': string;
+    'activity.hint': string;
+    'activity.human': string;
+    'activity.run': string;
 };
 export type IdeasKey = keyof typeof fr;
 /**
