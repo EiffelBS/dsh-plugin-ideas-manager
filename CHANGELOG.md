@@ -6,6 +6,31 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.7 - 2026-10-02
+
+### Added
+
+- **A new idea card carries your TaskBoard's own permission.** Until now every
+  mirrored card was stamped *read-only* whatever your deployment allowed, so an
+  idea could never write anything when its card ran — while a card whose
+  permission sat *above* the TaskBoard's session default refused to start until
+  you walked to the board and confirmed it. A new card now takes the level your
+  TaskBoard is configured with, never more, and launching raises an older card to
+  that same level before the run. On a deployment left at *read-only* nothing
+  changes at all; the plugin follows whatever you set, and never asks for
+  anything above it, so **a launch stays one click** — no detour to the board to
+  confirm a permission. A card you raised yourself is never lowered, and a card
+  whose permission the board did not report is never written to.
+- **A setting for the launches that have no card.** When you launch an idea while
+  the TaskBoard plugin is absent, the run happens in a brand-new session. That
+  session now starts at the level you pick in **Direct-launch permission**
+  (*read-only*, *workspace-write* or *danger-full-access*), applied before the
+  very first turn so the run never starts fenced. The default is
+  *workspace-write*: the run brief asks for an implementation, so a read-only
+  session would answer with a plan and settle the run having written nothing. If
+  the elevation cannot be applied, the launch stops with the reason instead of
+  quietly starting without it. Card-backed ideas ignore this setting.
+
 ## 0.7.6 - 2026-10-01
 
 ### Fixed
