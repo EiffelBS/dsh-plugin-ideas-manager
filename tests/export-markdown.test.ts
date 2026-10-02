@@ -93,6 +93,27 @@ describe('buildIdeasExport', () => {
     expect(result.ideasMd).not.toContain('- decision:')
   })
 
+  it('renders the delivery note it harvested, and omits the bullet without one', () => {
+    const withNote = {
+      ...createIdea({ title: 'Shipped idea', body: '' }, T0, 'idea-1'),
+      status: 'underReview' as const,
+      runStatus: 'done' as const,
+      deliveryNote: 'Delivered the harvest and its tests.',
+    }
+    const withoutNote = {
+      ...createIdea({ title: 'Silent run', body: '' }, T0, 'idea-2'),
+      status: 'underReview' as const,
+      runStatus: 'done' as const,
+    }
+    const result = buildIdeasExport([withNote, withoutNote], undefined)
+    // The export carries the note out of the app, so a markdown reader gets the
+    // same evidence the review gate shows...
+    expect(result.ideasMd).toContain('- delivery note: Delivered the harvest and its tests.')
+    // ...and an idea that never got one carries no bullet at all: the export
+    // never invents a placeholder either.
+    expect(result.ideasMd.match(/- delivery note:/g)).toHaveLength(1)
+  })
+
   it('keeps under-review ideas in the active document (review gate pending)', () => {
     const underReview = {
       ...createIdea({ title: 'Awaiting review', body: '' }, T0, 'idea-1'),

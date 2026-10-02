@@ -241,4 +241,35 @@ describe('parseActionEnvelope', () => {
     expect(idea?.summary).toBe('Imported abstract')
     expect(idea?.analysisAudit?.summary).toBe('Old abstract')
   })
+
+  it('round-trips the delivery note, and update still refuses it (idea #91)', () => {
+    // import is the ONE path that accepts a host-written delivery note, so an
+    // export/import round-trip of a ledger keeps the notes it harvested.
+    const parsed = parseActionEnvelope(envelope({
+      kind: 'import',
+      sourceId: 'src-1',
+      ideas: [{
+        id: 'idea-1',
+        title: 'T',
+        body: 'B',
+        status: 'underReview',
+        createdAt: 1,
+        updatedAt: 2,
+        runStatus: 'done',
+        deliveryNote: 'Done: the harvest landed.',
+      }],
+    }))
+    const idea = parsed && parsed.action.kind === 'import' ? parsed.action.ideas[0] : undefined
+    expect(idea?.deliveryNote).toBe('Done: the harvest landed.')
+    // A non-string is a malformed record, not a coerced note.
+    expect(parseActionEnvelope(envelope({
+      kind: 'import',
+      sourceId: 'src-1',
+      ideas: [{ id: 'x', title: 'T', body: 'B', status: 'open', createdAt: 1, updatedAt: 1, deliveryNote: 7 }],
+    }))).toBeUndefined()
+    // update refuses it outright: the note is host-written, never authored.
+    expect(parseActionEnvelope(envelope({
+      kind: 'update', ideaId: 'idea-1', patch: { deliveryNote: 'written by hand' },
+    }))).toBeUndefined()
+  })
 })

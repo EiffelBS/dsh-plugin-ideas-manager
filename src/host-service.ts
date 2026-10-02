@@ -268,8 +268,12 @@ export class IdeasHostService {
       if (idea.status !== 'open' || observed !== 'done') continue
       try {
         // Same settle helper as the direct-session backend, so the review gate
-        // reads identically for a finished run whatever ran it.
-        this.settleRun(idea.id, 'done')
+        // reads identically for a finished run whatever ran it. The card
+        // backend has no session of its own: it hands over the session id its
+        // last execution recorded (idea #91), read from the snapshot this very
+        // poll already holds - one status read, no extra request. undefined
+        // when the board exposes no such field, which simply means no note.
+        this.settleRun(idea.id, 'done', this.mirror.cardSessionOf(idea.taskBoardId))
       } catch (error) {
         console.error(`[dsh-plugin-ideas-manager] under-review transition failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -392,7 +396,7 @@ export class IdeasHostService {
       if (running === true) continue
       this.sessionRuns.delete(sessionId)
       try {
-        this.settleRun(ideaId, running === false ? 'done' : 'failed')
+        this.settleRun(ideaId, running === false ? 'done' : 'failed', sessionId)
       } catch (error) {
         console.error(`[dsh-plugin-ideas-manager] run settle failed for ${ideaId}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -404,11 +408,19 @@ export class IdeasHostService {
    * by both backends: a direct run that completes is finished work, so on a
    * card-less board the idea must still reach `underReview` for the human —
    * otherwise the review gate would silently depend on the task-board plugin.
+   *
+   * `sessionId` is the run's own session, resolved by the caller BEFORE the
+   * stamp is written (settling clears `runSessionId`): for the session backend
+   * that is the tracked session, for the card backend it is the id the mirrored
+   * card's last execution recorded. It is passed in rather than re-read so the
+   * harvest never has to guess which run it is describing, and undefined is a
+   * first-class case — it simply means "no note" (see {@link harvestNote}).
    */
-  private settleRun(ideaId: string, status: 'done' | 'failed'): void {
+  private settleRun(ideaId: string, status: 'done' | 'failed', sessionId?: string): void {
     this.ledger.setRunStatus(ideaId, status)
     this.ledger.setRunSession(ideaId, undefined)
     if (status !== 'done') return
+    this.harvestNote(ideaId, sessionId)
     if (this.ledger.idea(ideaId)?.status !== 'open') return
     // A fresh request id per transition (the ledger dedupes replays); the move
     // to underReview mirrors nothing - the card is already done.
@@ -417,6 +429,30 @@ export class IdeasHostService {
       ideaId,
       status: 'underReview',
     })
+  }
+
+  /**
+   * Harvest the delivery note of a finished run (idea #91) and store it as the
+   * idea's host-written `deliveryNote`.
+   *
+   * Strictly AFTER the review gate opens, and deliberately not awaited: the
+   * settle is a ledger write the reviewer is waiting on, the note is a bonus
+   * read that must never delay it or fail it. Everything about this call is
+   * best-effort — a missing gateway, a refused RPC, an unreadable journal all
+   * land on "no note", which the review gate renders as a quiet line rather
+   * than a blank space. The one thing it will not do is invent a note.
+   */
+  private harvestNote(ideaId: string, sessionId: string | undefined): void {
+    if (this.sessions === undefined || sessionId === undefined || sessionId === '') return
+    void (async (): Promise<void> => {
+      try {
+        const note = await this.sessions!.readDeliveryNote(sessionId)
+        if (note === undefined) return
+        this.ledger.setDeliveryNote(ideaId, note)
+      } catch (error) {
+        console.error(`[dsh-plugin-ideas-manager] delivery note harvest failed for ${ideaId}: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    })()
   }
 
   dispose(): void {

@@ -20,6 +20,10 @@
  *    itself is folded into runStatus by the next poll).
  *  - `runSessionId`: the direct-session run, with the button that opens it.
  *  - `deliveredAt`: the exit stamp.
+ *  - staleness (idea #91): a view-only marker for an OPEN idea untouched for
+ *    `staleAfterDays` days. Not a host-written field and not a state — it is
+ *    read off the row's own `updatedAt` at render time, and the threshold is a
+ *    display setting the caller passes in.
  *
  * Every tag is a LAST OBSERVATION, never a promise of a live state: the host
  * poll runs every 30 s and keeps the last value it saw. The tooltips keep
@@ -57,10 +61,24 @@ export interface RunStateBadgesProps {
      * all — restore only clears `archivedAt`, so its delivery date survives.
      */
     showDelivered?: boolean;
+    /**
+     * Days without an update before an open idea wears the quiet *stale* badge
+     * (idea #91); 0 or absent = off. Deliberately a prop and not a context: the
+     * threshold is one number from the settings, and passing it down keeps this
+     * file free of a settings dependency. The Delivered tab omits it — its rows
+     * are archived, and `isStaleIdea` only ever judges open ideas.
+     */
+    staleAfterDays?: number;
+    /**
+     * Render instant for the staleness comparison, passed in so every badge of
+     * one render agrees on "now" and React never sees a value that moves under
+     * its feet. Defaults to the clock when the caller has no reason to pin it.
+     */
+    now?: number;
 }
 /**
  * The shared state pills of one idea, in header order. Renders nothing (an
  * empty fragment) for an idea that is simply idle: the callers drop it in
  * unconditionally, each in the top-right corner of its card or row.
  */
-export declare function RunStateBadges({ idea, client, parentNumber, showDelivered }: RunStateBadgesProps): import("react").JSX.Element;
+export declare function RunStateBadges({ idea, client, parentNumber, showDelivered, staleAfterDays, now }: RunStateBadgesProps): import("react").JSX.Element;

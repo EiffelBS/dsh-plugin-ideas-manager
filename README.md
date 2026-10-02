@@ -56,6 +56,14 @@ Open · Under review · Archived · Declined.
   **stays in the backlog** — a failed run delivered nothing, so there is nothing
   to review — and you retry or adjust the idea. The badge follows the last status
   observed and clears itself when the task is retried.
+- A quiet **Stale** badge marks an **open** idea nobody has updated for a while,
+  on the Overview cards and in the Priorities list. Set *Stale after (days)* in
+  the settings (30 by default, 0 turns it off). It is a display aid only: it is
+  drawn when the board paints, nothing is written to your ideas, and it never
+  appears on an idea already under review, delivered or declined.
+- The **sidebar** icon carries a small amber count of how many ideas are waiting
+  in **Under review**, for the current workspace scope. It reads the list the page
+  already has, and vanishes when the gate is empty.
 - The **Delivered** tab shows the exit log (delivered vs. manually archived).
 - Restore, archive and delete are one click away on each card.
 
@@ -82,6 +90,12 @@ have to hunt the card back in the Overview to start a run.
    card.
 5. When it finishes, the idea moves to **Under review** for your verdict. If it
    failed, it stays in the backlog behind the **Task failed** badge.
+6. The card shows what the run **delivered**: the closing words of the run, kept
+   under the description, above the verdict buttons in the editor, and on the
+   row in the *Delivered* list. It is the run's own last answer, not a summary
+   written for you — and when a run leaves nothing behind, the note says so
+   instead of showing an empty box. **Open session** still remains the way to
+   watch the whole thing; the note is the short version for deciding.
 
 A run takes a while, and the board reflects the result within roughly half a
 minute of the session finishing.
@@ -123,6 +137,11 @@ The plugin contributes an **Ideas board** section to the DSH Settings modal:
   written nothing. Card-backed ideas are not affected — a mirrored card carries
   the TaskBoard's own deployment permission (never above it), so launching one
   never asks for a confirmation.
+- **Stale after (days)** (`staleAfterDays`, default 30): how long an **open** idea
+  may go without an update before it wears the quiet *Stale* badge on its Overview
+  card and its Priorities row. `0` turns the marker off. A display setting like the
+  others: applied immediately, stored per DSH profile, and nothing is written to
+  the ideas themselves.
 
 Both are a **view only** — neither stores anything, so the 2.5 s poll can never
 overwrite the ranking you chose, and the move arrows in the Priorities tab still

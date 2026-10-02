@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { createIdea, isIdeaRunStatus, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
+import { createIdea, isIdeaRunStatus, normalizeDeliveryNote, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -155,6 +155,8 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (runStatus !== undefined) idea.runStatus = runStatus
     const runSessionId = typeof row.runSessionId === 'string' ? normalizeOptionalId(row.runSessionId) : undefined
     if (runSessionId !== undefined) idea.runSessionId = runSessionId
+    const deliveryNote = normalizeDeliveryNote(typeof row.deliveryNote === 'string' ? row.deliveryNote : undefined)
+    if (deliveryNote !== undefined) idea.deliveryNote = deliveryNote
     if (typeof row.followUpOfId === 'string' && row.followUpOfId.trim() !== '') idea.followUpOfId = row.followUpOfId.trim()
     const tags = normalizeTags(row.tags)
     if (tags !== undefined) idea.tags = tags
@@ -362,6 +364,30 @@ export class IdeasHostLedger {
     const next = sessionId === undefined || sessionId === '' ? undefined : sessionId
     if (current.runSessionId === next) return false
     this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, runSessionId: next } : idea)
+    this.commit()
+    return true
+  }
+
+  /**
+   * Host-internal DELIVERY NOTE of the latest finished run (idea #91): the
+   * text harvested off the run at settle time, bounded to
+   * {@link DELIVERY_NOTE_MAX_BYTES}. Same system-field discipline as
+   * `bindTaskBoardId` (the wire gate never accepts `deliveryNote` from
+   * `update`) and the same no-op-on-unchanged rule, so a re-harvest of the
+   * same answer cannot churn the revision.
+   *
+   * `undefined` CLEARS the stamp, exactly like the run fields: the JSON
+   * persist/clone drops the key entirely.
+   *
+   * @returns true when the document changed and was committed.
+   */
+  setDeliveryNote(ideaId: string, note: string | undefined): boolean {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const current = this.document.ideas.find(idea => idea.id === ideaId)
+    if (current === undefined) return false
+    const next = normalizeDeliveryNote(note)
+    if (current.deliveryNote === next) return false
+    this.document.ideas = this.document.ideas.map(idea => idea.id === ideaId ? { ...idea, deliveryNote: next } : idea)
     this.commit()
     return true
   }

@@ -31,10 +31,16 @@ import type { IdeasClient } from './ideas-client.ts';
  * plugin owns inside that shell-owned row: the L2 contract (skins) resolves
  * which row belongs to which plugin through it, the shell stamping no
  * per-entry hook of its own.
+ *
+ * A non-zero review count adds a small pill to the glyph's top-right corner
+ * (`overflow: visible` lets it paint outside the 16px box, which is how a
+ * badged nav icon is expected to look). The shell's panel-row contract has no
+ * badge seat and takes no badge prop, so the glyph is the honest place to put
+ * it rather than taking the row's DOM back.
  * @param props - the shell's icon share: square edge and selection state.
  * @returns the decorative ideas glyph.
  */
-export declare function IdeasPanelIcon({ size }: {
+export declare function IdeasPanelIcon({ size, active }: {
     size: number;
     active: boolean;
 }): import("react").JSX.Element;

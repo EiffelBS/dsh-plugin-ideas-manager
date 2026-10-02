@@ -53,6 +53,15 @@ export interface PrioritiesProps {
      * are skipped when it is absent.
      */
     parentNumber?: (ideaId: string) => number | undefined;
+    /**
+     * Days without an update before an open row wears the quiet *stale* badge
+     * (idea #91); 0 or absent = off. Every row here is OPEN, so this is the one
+     * ranked surface the badge belongs on. Passed down by the board, which owns
+     * the display settings.
+     */
+    staleAfterDays?: number;
+    /** Render instant shared with the Overview cards (see IdeasBoard). */
+    now?: number;
 }
 /** Ranked backlog view (see module doc). */
-export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber }: PrioritiesProps): import("react").JSX.Element;
+export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now }: PrioritiesProps): import("react").JSX.Element;

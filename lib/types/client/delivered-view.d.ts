@@ -14,6 +14,11 @@
  * card header: a run started while the idea was already under review or
  * archived stays followed by the host poll until the stamp clears, so the
  * journal must not hide a row whose execution is still in flight.
+ *
+ * The delivery note (idea #91) rides along on the same rows: this tab is the
+ * exit log, so "what was delivered" belongs beside "when it was delivered" —
+ * and the editor reachable from here is the surface a reader lands on when the
+ * journal is not enough.
  */
 import type { IdeasClient } from './ideas-client.ts';
 import type { IdeaListRow } from '../protocol.ts';

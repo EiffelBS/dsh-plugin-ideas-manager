@@ -20,6 +20,10 @@
  *    itself is folded into runStatus by the next poll).
  *  - `runSessionId`: the direct-session run, with the button that opens it.
  *  - `deliveredAt`: the exit stamp.
+ *  - staleness (idea #91): a view-only marker for an OPEN idea untouched for
+ *    `staleAfterDays` days. Not a host-written field and not a state — it is
+ *    read off the row's own `updatedAt` at render time, and the threshold is a
+ *    display setting the caller passes in.
  *
  * Every tag is a LAST OBSERVATION, never a promise of a live state: the host
  * poll runs every 30 s and keeps the last value it saw. The tooltips keep
@@ -29,6 +33,7 @@
 import type { IdeaListRow } from '../protocol.ts'
 import type { IdeasClient } from './ideas-client.ts'
 import { t } from './locales.ts'
+import { isStaleIdea } from './staleness.ts'
 import { classes } from './style.ts'
 
 /** Compact day/month stamp, the canonical one (the Overview card's updated
@@ -64,6 +69,20 @@ export interface RunStateBadgesProps {
    * all — restore only clears `archivedAt`, so its delivery date survives.
    */
   showDelivered?: boolean
+  /**
+   * Days without an update before an open idea wears the quiet *stale* badge
+   * (idea #91); 0 or absent = off. Deliberately a prop and not a context: the
+   * threshold is one number from the settings, and passing it down keeps this
+   * file free of a settings dependency. The Delivered tab omits it — its rows
+   * are archived, and `isStaleIdea` only ever judges open ideas.
+   */
+  staleAfterDays?: number
+  /**
+   * Render instant for the staleness comparison, passed in so every badge of
+   * one render agrees on "now" and React never sees a value that moves under
+   * its feet. Defaults to the clock when the caller has no reason to pin it.
+   */
+  now?: number
 }
 
 /**
@@ -71,7 +90,7 @@ export interface RunStateBadgesProps {
  * empty fragment) for an idea that is simply idle: the callers drop it in
  * unconditionally, each in the top-right corner of its card or row.
  */
-export function RunStateBadges({ idea, client, parentNumber, showDelivered = true }: RunStateBadgesProps) {
+export function RunStateBadges({ idea, client, parentNumber, showDelivered = true, staleAfterDays = 0, now = Date.now() }: RunStateBadgesProps) {
   const sessionId = idea.runSessionId
   // Feature-detected once, here: a host with no sessions service renders the
   // running tag alone and no link.
@@ -133,6 +152,15 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
       {showDelivered && idea.deliveredAt !== undefined && (
         <span className={classes.deliveredBadge} title={t('card.deliveredHint')}>
           {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
+        </span>
+      )}
+      {/* Stale marker (idea #91), last so it never displaces a state tag: an
+          open idea nobody has touched in a month is the quietest thing on the
+          card, and it should read that way. Off unless the threshold is set,
+          and never on a closed idea (see isStaleIdea). */}
+      {isStaleIdea(idea, staleAfterDays, now) && (
+        <span className={classes.staleBadge} title={t('card.staleHint', { days: staleAfterDays })}>
+          {t('card.stale')}
         </span>
       )}
     </>

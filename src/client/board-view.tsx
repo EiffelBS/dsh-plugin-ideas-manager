@@ -35,6 +35,7 @@ import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
 import { RunStateBadges, shortDate } from './run-state-badges.tsx'
+import { DeliveryNote } from './delivery-note.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
@@ -696,6 +697,14 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           />
         </div>
         {initial !== undefined && (
+          // The delivery note of the last finished run (idea #91), directly
+          // above the verdict buttons: the editor is where the review gate is
+          // actually decided, so the evidence the verdict rests on has to be in
+          // the same eye-line. It is a READ-ONLY field - not an input, not part
+          // of the patch, and absent for anything that never ran.
+          <DeliveryNote idea={initial} />
+        )}
+        {initial !== undefined && (
           // Lifecycle actions, mirroring the card's own action row by
           // status — the author can move the idea without closing the editor.
           <div className={classes.editActions}>
@@ -1272,6 +1281,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // a COMPLETE legal value (sanitized on arrival); the spelled defaults
   // cover the gap before the first answer.
   const cfg = settings.value
+  // One instant per render, shared by every staleness badge (idea #91) so the
+  // board cannot show two rows disagreeing about "now" mid-paint. Computed at
+  // render time on purpose: the marker is a view, so it costs no host work and
+  // stores nothing, and it re-evaluates on the poll that redraws the board.
+  const renderedAt = Date.now()
   // Apply the persisted preferences ONCE, at the first SETTLED config load:
   // the chosen open tab, the markdown default and (when remembered) the
   // workspace scope. Session switches stay free afterwards, and a later
@@ -1943,6 +1957,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 idea={idea}
                                 client={client}
                                 parentNumber={parentNumberOf}
+                                staleAfterDays={cfg.staleAfterDays}
+                                now={renderedAt}
                               />
                               <div
                                 className={classes.cardGrip}
@@ -2000,6 +2016,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               </div>
                             )}
                             <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { openEdit(idea) }} />
+                            {/* The delivery note of a finished run (idea #91):
+                                what the reviewer needs to decide on without
+                                leaving the board. Renders nothing for a running
+                                or failed run, and says so when a finished one
+                                left nothing behind. */}
+                            {status === 'underReview' && <DeliveryNote idea={idea} />}
                             {(idea.value !== undefined || idea.effort !== undefined) && (
                               <div className={classes.cardMeta}>
                                 {idea.value !== undefined && <ScoreBadge axis="value" value={idea.value} />}
@@ -2188,6 +2210,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               mdMode={mdMode}
               grouped={workspaceFilter === ''}
               parentNumber={parentNumberOf}
+              staleAfterDays={cfg.staleAfterDays}
+              now={renderedAt}
             />
           )
           : (

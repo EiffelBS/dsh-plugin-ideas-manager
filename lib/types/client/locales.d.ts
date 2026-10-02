@@ -145,6 +145,12 @@ export declare const fr: {
     'card.taskRunningHint': string;
     'card.openSession': string;
     'card.openSessionHint': string;
+    'card.deliveryNote': string;
+    'card.deliveryNoteHint': string;
+    'card.deliveryNoteEmpty': string;
+    'card.stale': string;
+    'card.staleHint': string;
+    'entry.reviewCountHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;
@@ -196,6 +202,8 @@ export declare const fr: {
     'settings.columnMinWidthDesc': string;
     'settings.columnMaxWidth': string;
     'settings.columnMaxWidthDesc': string;
+    'settings.staleAfterDays': string;
+    'settings.staleAfterDaysDesc': string;
     'board.columnResize': string;
 };
 export declare const en: {
@@ -346,6 +354,12 @@ export declare const en: {
     'card.taskRunningHint': string;
     'card.openSession': string;
     'card.openSessionHint': string;
+    'card.deliveryNote': string;
+    'card.deliveryNoteHint': string;
+    'card.deliveryNoteEmpty': string;
+    'card.stale': string;
+    'card.staleHint': string;
+    'entry.reviewCountHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;
@@ -388,6 +402,8 @@ export declare const en: {
     'settings.columnMinWidthDesc': string;
     'settings.columnMaxWidth': string;
     'settings.columnMaxWidthDesc': string;
+    'settings.staleAfterDays': string;
+    'settings.staleAfterDaysDesc': string;
     'board.columnResize': string;
 };
 /**
@@ -535,6 +551,12 @@ export declare const zh: {
     'card.taskRunningHint': string;
     'card.openSession': string;
     'card.openSessionHint': string;
+    'card.deliveryNote': string;
+    'card.deliveryNoteHint': string;
+    'card.deliveryNoteEmpty': string;
+    'card.stale': string;
+    'card.staleHint': string;
+    'entry.reviewCountHint': string;
     'card.reviewOk': string;
     'card.reviewOkHint': string;
     'card.followUp': string;
@@ -586,6 +608,8 @@ export declare const zh: {
     'settings.columnMinWidthDesc': string;
     'settings.columnMaxWidth': string;
     'settings.columnMaxWidthDesc': string;
+    'settings.staleAfterDays': string;
+    'settings.staleAfterDaysDesc': string;
     'board.columnResize': string;
 };
 export type IdeasKey = keyof typeof fr;

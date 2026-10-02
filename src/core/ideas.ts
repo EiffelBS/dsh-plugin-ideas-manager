@@ -50,6 +50,14 @@ export const IDEA_BODY_MAX_BYTES = 32 * 1024
  * produces and the TaskBoard mirror ships as the card description.
  */
 export const IDEA_SUMMARY_MAX_LENGTH = 300
+/**
+ * Hard byte budget of one delivery note (idea #91): the short note a finished
+ * run leaves behind so the review gate has something to decide on. Bounded
+ * because it is harvested from a model answer — a 40 KB closing message would
+ * otherwise land in the ledger, in every snapshot and in the markdown export.
+ * Roughly 2 KiB reads as "what was delivered" without becoming a second body.
+ */
+export const DELIVERY_NOTE_MAX_BYTES = 2 * 1024
 
 /** Whether an unknown value is a well-formed tag (strict: the wire gate). */
 export function isIdeaTag(value: unknown): value is IdeaTag {
@@ -130,6 +138,30 @@ export function normalizeSummary(value: string | undefined): string | undefined 
   const trimmed = value?.trim()
   if (trimmed === undefined || trimmed === '') return undefined
   return trimmed.slice(0, IDEA_SUMMARY_MAX_LENGTH)
+}
+
+/**
+ * Normalize a harvested delivery note (idea #91): trim, blank collapses to
+ * undefined (an absent note is honest — the review gate says so in the UI), and
+ * the text is cut at DELIVERY_NOTE_MAX_BYTES **UTF-8 bytes**, never mid
+ * code point, with a trailing ellipsis marking the cut. Same discipline as
+ * `normalizeSummary`: the wire accepts any string, this is the one place that
+ * enforces the size contract on a persisted value.
+ */
+export function normalizeDeliveryNote(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  if (trimmed === undefined || trimmed === '') return undefined
+  const encoder = new TextEncoder()
+  if (encoder.encode(trimmed).byteLength <= DELIVERY_NOTE_MAX_BYTES) return trimmed
+  let bytes = 0
+  let end = 0
+  for (const character of trimmed) {
+    const size = encoder.encode(character).byteLength
+    if (bytes + size > DELIVERY_NOTE_MAX_BYTES) break
+    bytes += size
+    end += character.length
+  }
+  return `${trimmed.slice(0, end).trimEnd()}…`
 }
 
 /**
@@ -242,6 +274,24 @@ export interface IdeaRecord {
    */
   runSessionId?: string
   /**
+   * DELIVERY NOTE of the latest finished run (idea #91): the last thing the
+   * run said, harvested at settle time, bounded to
+   * {@link DELIVERY_NOTE_MAX_BYTES}. Its whole job is to give the review gate
+   * something to decide on — today a finished run lands in `underReview` and
+   * the only way to learn what happened is to open the session.
+   *
+   * Two rules, both deliberate:
+   *  - it is HARVESTED, never authored: the host reads it off the run, so an
+   *    absent note is a truth (a card backend that exposes no output, a
+   *    session with no assistant answer) and the UI says so instead of
+   *    inventing one. Never a model-generated summary either — that would be
+   *    the run describing itself rather than what it said;
+   *  - it is host-written only, exactly like `runStatus` / `runSessionId` /
+   *    `taskBoardId`: the wire gate rejects it on `update`, and `import`
+   *    carries it only as already-harvested text.
+   */
+  deliveryNote?: string
+  /**
    * Review rejected: id of the parent idea this idea is a follow-up of (set by
    * the `followUp` verb; the child carries the summary + justification and
    * stays open while the parent is archived).
@@ -307,6 +357,7 @@ export function isIdeaRecordShape(value: unknown): value is Omit<IdeaRecord, 'st
   if (typeof record.id !== 'string' || record.id === '') return false
   if (typeof record.title !== 'string' || typeof record.body !== 'string') return false
   if (record.summary !== undefined && typeof record.summary !== 'string') return false
+  if (record.deliveryNote !== undefined && typeof record.deliveryNote !== 'string') return false
   if (typeof record.createdAt !== 'number' || typeof record.updatedAt !== 'number') return false
   if (record.rank !== undefined && (typeof record.rank !== 'number' || !Number.isFinite(record.rank))) return false
   if (record.value !== undefined && (typeof record.value !== 'number' || !Number.isFinite(record.value))) return false

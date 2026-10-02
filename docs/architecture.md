@@ -16,6 +16,7 @@ src/
   host-settings.ts    # the fenced /api/ideas/config route (settings dual-path)
   taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb
   session-runner.ts   # direct-session backend: Host RPCs + the roster the settle reads
+  delivery-note.ts    # last-assistant-message extraction + the card `executions` pointer
   run-prompt.ts       # the execution prompt shared by every launch backend
   session-opener.ts   # the "Open session" jump from a running card
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
@@ -79,6 +80,31 @@ both backends, so the gate does not depend on the task-board plugin.
 - The wire quirk worth remembering: `session/list` takes `{_request}` on this
   RPC surface while every other method takes `{request}` (`invokeWireArgs`).
 
+### Delivery note harvest
+
+At settle time the host writes a short `deliveryNote` on the idea — the **last
+assistant message** of the run, bounded by `DELIVERY_NOTE_MAX_BYTES` (2 KiB, cut
+on a UTF-8 boundary, `…` appended). Three decisions shape it:
+
+- **Host-written, never authored.** `runStatus`, `runSessionId` and `taskBoardId`
+  are refused from `update`; `deliveryNote` joins that closed set. `import` is the
+  one path that accepts it, so an export/import round-trip keeps harvested notes.
+  It rides `IDEAS_READ_SELECTABLE_FIELDS`, hence default-on in `view=detail` and
+  absent from `view=summary` — like `runStatus`, not like `summary`.
+- **Best effort, never fatal.** `harvestNote` is called from `settleRun` *before*
+  the `underReview` move and is **not awaited**: the gate opens on the same tick,
+  and a refused RPC is logged and swallowed. A harvest failure can therefore never
+  fail a settle. An absent note renders as an explicit "this run left no delivery
+  note" line — the board never fabricates one.
+- **Two RPCs, whichever backend.** `session/projections {sessionId}` returns
+  `asOfSeq` (the last committed event seq = the page cursor, and the only honest
+  "now" for a page read), then `session/page {address, throughSeq: asOfSeq,
+  maxMessages: 24}`. A `null` baseline (session gone) is silence, not an error.
+  The direct backend already knows its `runSessionId`; the **card** backend has no
+  session of its own and reads `executions[].sessionId` off the task-board snapshot
+  the poll already fetched (`TaskBoardMirror.cardSessionOf`, zero extra requests).
+  When the board exposes no such pointer the note stays empty and the UI says so.
+
 ## Card mirror
 
 Card ids are **deterministic** (`idea-` + the idea id), so re-running any mirror
@@ -139,6 +165,23 @@ Two consequences of this contract are worth knowing without any tooling:
   modal (saving a partial body would silently truncate the analysis).
 - The three interface dictionaries are held in strict key parity — the build
   fails on a missing key.
+- The sidebar **"N to review" badge** is painted *inside the plugin's own glyph
+  SVG*. The `sidebar.panellist` contract exposes metadata as `{id, order, label}`
+  only, the icon component receives just `{size, active}`, and the row DOM is
+  shell-owned (`button.panelRow > span.panelGlyph > our icon`), so **there is no
+  badge seat**. Taking the row box back would undo the panel registration this
+  plugin exists to use, so the pill is drawn in glyph coordinates with
+  `overflow: visible`. The count is a `useSyncExternalStore` over the client
+  snapshot already in memory (`client/review-count.ts`): no timer, no request.
+  Its scope is the **persisted** `workspaceScope` (only when
+  `rememberWorkspaceScope` is on), because the board's transient `workspaceFilter`
+  does not exist while the board is closed. A shell whose glyph span clipped its
+  own overflow would silently drop the pill — cosmetic, never a broken row.
+- The **stale badge** is render-time only: `client/staleness.ts` compares the
+  row's `updatedAt` against a `now` the board passes in once per render, so every
+  badge of a paint agrees on the instant and no wall-clock timer exists. It is
+  re-evaluated on each poll/redraw, `staleAfterDays <= 0` means OFF, and it only
+  ever judges `open` ideas (a closed idea has a state that says more than a date).
 
 ## Performance
 

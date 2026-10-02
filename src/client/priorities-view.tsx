@@ -72,6 +72,15 @@ export interface PrioritiesProps {
    * are skipped when it is absent.
    */
   parentNumber?: (ideaId: string) => number | undefined
+  /**
+   * Days without an update before an open row wears the quiet *stale* badge
+   * (idea #91); 0 or absent = off. Every row here is OPEN, so this is the one
+   * ranked surface the badge belongs on. Passed down by the board, which owns
+   * the display settings.
+   */
+  staleAfterDays?: number
+  /** Render instant shared with the Overview cards (see IdeasBoard). */
+  now?: number
 }
 
 /** Drop indicator: which row is hovered and whether the drop inserts before
@@ -94,7 +103,7 @@ function groupTitle(group: OpenRankGroup<IdeaListRow>, workspaceTitle: (workspac
 }
 
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber }: PrioritiesProps) {
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now() }: PrioritiesProps) {
   // Workspace groups in display order; inside every group ideas are ranked
   // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
   // render a pure function of the props.
@@ -305,6 +314,8 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                           client={client}
                           parentNumber={parentNumber}
                           showDelivered={false}
+                          staleAfterDays={staleAfterDays}
+                          now={now}
                         />
                       </div>
                       <div className={classes.prioritiesActions}>

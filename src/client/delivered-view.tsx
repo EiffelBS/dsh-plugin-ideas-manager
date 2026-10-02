@@ -14,6 +14,11 @@
  * card header: a run started while the idea was already under review or
  * archived stays followed by the host poll until the stamp clears, so the
  * journal must not hide a row whose execution is still in flight.
+ *
+ * The delivery note (idea #91) rides along on the same rows: this tab is the
+ * exit log, so "what was delivered" belongs beside "when it was delivered" —
+ * and the editor reachable from here is the surface a reader lands on when the
+ * journal is not enough.
  */
 
 import { type CSSProperties } from 'react'
@@ -23,6 +28,7 @@ import { t } from './locales.ts'
 import { classes } from './style.ts'
 import { ScoreBadge } from './score-badge.tsx'
 import { RunStateBadges } from './run-state-badges.tsx'
+import { DeliveryNote } from './delivery-note.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { tagHue } from './tags.ts'
@@ -124,6 +130,11 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                       </div>
                     )}
                     <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
+                    {/* The delivery note of the run that produced this exit
+                        (idea #91): what was actually delivered, on the row that
+                        records the delivery. Renders nothing for an idea that was
+                        archived without ever running. */}
+                    <DeliveryNote idea={idea} />
                   </div>
                   {/* Run-state tags (idea #71), same component and same
                       top-right placement as the Overview card header: an idea

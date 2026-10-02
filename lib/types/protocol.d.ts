@@ -59,7 +59,7 @@ export declare const IDEAS_READ_MAX_SELECTORS = 100;
  * this projection because it can carry a second full body. The frozen raw
  * single-idea route remains the explicit full-detail escape hatch.
  */
-export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body"];
+export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "deliveryNote", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body"];
 /** One optional field accepted by the bounded field selector. */
 export type IdeasReadField = (typeof IDEAS_READ_SELECTABLE_FIELDS)[number];
 /** Fields always present on a bounded row, independent of field selection. */
@@ -340,6 +340,13 @@ export interface IdeasSettingsValue {
     columnMaxWidth: number;
     /** Permission a direct (card-less) launch starts its fresh session at. */
     directRunPermission: IdeasRunPermission;
+    /**
+     * Days without an update after which an OPEN idea wears a quiet *stale*
+     * badge (idea #91). View only: it is computed at render time from the row's
+     * own `updatedAt`, so it stores nothing on the idea and costs the Host no
+     * work. 0 turns the badge off entirely (see {@link STALE_AFTER_DAYS_RANGE}).
+     */
+    staleAfterDays: number;
 }
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
 export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;
@@ -377,6 +384,16 @@ export declare const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue;
 export declare const TAG_ROWS_MIN = 1;
 export declare const TAG_ROWS_MAX = 5;
 /**
+ * Inclusive bounds of the `staleAfterDays` option (idea #91). 0 is a real
+ * value, not "unset": it means "never flag an idea as stale", which is the
+ * escape hatch for a backlog the reader watches in another tool. The ceiling
+ * keeps a hand-edited value from parking the badge on a decade-old idea.
+ */
+export declare const STALE_AFTER_DAYS_RANGE: {
+    readonly min: 0;
+    readonly max: 3650;
+};
+/**
  * Clamp an unknown input to a legal tagRows value: finite numbers round to
  * the nearest integer and clamp into 1..5; anything else falls back to the
  * default. Hand-edited settings and hand-crafted wire values can never store
@@ -392,6 +409,13 @@ export declare function clampTagRows(value: unknown): number;
 export declare function clampColumnMinWidth(value: unknown): number;
 /** Clamp an unknown input to a legal maximum column width (see the min twin). */
 export declare function clampColumnMaxWidth(value: unknown): number;
+/**
+ * Clamp an unknown input to a legal `staleAfterDays`: finite numbers round and
+ * clamp into {@link STALE_AFTER_DAYS_RANGE}; anything else falls back to the
+ * default (30). Same guard discipline as the other numeric options — the
+ * clamp, not the schema, is the boundary.
+ */
+export declare function clampStaleAfterDays(value: unknown): number;
 /**
  * Sanitize a raw section into a COMPLETE legal value: both read paths (host
  * viewOf, client loadConfig) run every field through its guard, so a

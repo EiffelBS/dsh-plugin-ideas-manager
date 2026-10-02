@@ -83,6 +83,7 @@ export const IdeasSettingsSchema = z.object({
   openOrdering: z.string().default(IDEAS_SETTINGS_DEFAULTS.openOrdering),
   runningFirst: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.runningFirst),
   directRunPermission: z.string().default(IDEAS_SETTINGS_DEFAULTS.directRunPermission),
+  staleAfterDays: z.number().default(IDEAS_SETTINGS_DEFAULTS.staleAfterDays),
 })
 
 /**

@@ -191,8 +191,27 @@ export declare class IdeasHostService {
      * by both backends: a direct run that completes is finished work, so on a
      * card-less board the idea must still reach `underReview` for the human —
      * otherwise the review gate would silently depend on the task-board plugin.
+     *
+     * `sessionId` is the run's own session, resolved by the caller BEFORE the
+     * stamp is written (settling clears `runSessionId`): for the session backend
+     * that is the tracked session, for the card backend it is the id the mirrored
+     * card's last execution recorded. It is passed in rather than re-read so the
+     * harvest never has to guess which run it is describing, and undefined is a
+     * first-class case — it simply means "no note" (see {@link harvestNote}).
      */
     private settleRun;
+    /**
+     * Harvest the delivery note of a finished run (idea #91) and store it as the
+     * idea's host-written `deliveryNote`.
+     *
+     * Strictly AFTER the review gate opens, and deliberately not awaited: the
+     * settle is a ledger write the reviewer is waiting on, the note is a bonus
+     * read that must never delay it or fail it. Everything about this call is
+     * best-effort — a missing gateway, a refused RPC, an unreadable journal all
+     * land on "no note", which the review gate renders as a quiet line rather
+     * than a blank space. The one thing it will not do is invent a note.
+     */
+    private harvestNote;
     dispose(): void;
     private emit;
     /** Record a launch outcome for replay, bounded by TTL and entry count. */

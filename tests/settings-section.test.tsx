@@ -242,14 +242,16 @@ describe('IdeasSettingsSection page', () => {
     const transport = new ConfigTransport()
     const client = makeClient(transport)
     await render(client)
-    // The two column-width rows are the 2nd and 3rd number inputs (after tagRows).
+    // The two column-width rows are the 2nd and 3rd number inputs (after tagRows);
+    // the 4th is the stale-days threshold (idea #91).
     const numbers = Array.from(host.querySelectorAll(`.${classes.settingsNumber}`)) as HTMLInputElement[]
-    expect(numbers).toHaveLength(3)
+    expect(numbers).toHaveLength(4)
     const minInput = numbers[1]!
     const maxInput = numbers[2]!
     // Defaults render.
     expect(minInput.value).toBe('200')
     expect(maxInput.value).toBe('922')
+    expect(numbers[3]!.value).toBe('30')
     await act(async () => {
       setNativeValue(minInput, '99') // below the min range floor (120)
       pressEnter(minInput)
@@ -295,6 +297,7 @@ describe('IdeasSettingsSection page', () => {
       'settings.languageEn', 'settings.languageFr', 'settings.languageZh',
       'settings.columnMinWidth', 'settings.columnMinWidthDesc',
       'settings.columnMaxWidth', 'settings.columnMaxWidthDesc',
+      'settings.staleAfterDays', 'settings.staleAfterDaysDesc',
       'settings.openOrdering', 'settings.openOrderingDesc',
       'settings.openOrderingCreatedAt', 'settings.openOrderingCreatedAtDesc',
       'settings.openOrderingRank',
@@ -325,6 +328,7 @@ describe('IdeasSettingsSection page', () => {
       t('settings.renderMarkdown'),
       t('settings.columnMinWidth'),
       t('settings.columnMaxWidth'),
+      t('settings.staleAfterDays'),
       t('settings.defaultTab'),
       t('settings.openOrdering'),
       t('settings.runningFirst'),
@@ -332,10 +336,10 @@ describe('IdeasSettingsSection page', () => {
       t('settings.confirmLifecycle'),
       t('settings.hideDeclined'),
     ])
-    // Three number rows (tagRows + the two column-width bounds), five selects
-    // (density + language + direct-launch permission + open tab + open column
-    // order), five toggle switches.
-    expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(3)
+    // Four number rows (tagRows + the two column-width bounds + the stale-days
+    // threshold), five selects (density + language + direct-launch permission +
+    // open tab + open column order), five toggle switches.
+    expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(4)
     expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(5)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
     // renderMarkdown (on by default), then runningFirst (on by default), then

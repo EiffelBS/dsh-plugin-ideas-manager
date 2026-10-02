@@ -45,6 +45,14 @@ export declare const IDEA_BODY_MAX_BYTES: number;
  * produces and the TaskBoard mirror ships as the card description.
  */
 export declare const IDEA_SUMMARY_MAX_LENGTH = 300;
+/**
+ * Hard byte budget of one delivery note (idea #91): the short note a finished
+ * run leaves behind so the review gate has something to decide on. Bounded
+ * because it is harvested from a model answer — a 40 KB closing message would
+ * otherwise land in the ledger, in every snapshot and in the markdown export.
+ * Roughly 2 KiB reads as "what was delivered" without becoming a second body.
+ */
+export declare const DELIVERY_NOTE_MAX_BYTES: number;
 /** Whether an unknown value is a well-formed tag (strict: the wire gate). */
 export declare function isIdeaTag(value: unknown): value is IdeaTag;
 /**
@@ -76,6 +84,15 @@ export declare function normalizeOptionalId(value: string | undefined): string |
  * the single place that enforces the size contract on persisted values.
  */
 export declare function normalizeSummary(value: string | undefined): string | undefined;
+/**
+ * Normalize a harvested delivery note (idea #91): trim, blank collapses to
+ * undefined (an absent note is honest — the review gate says so in the UI), and
+ * the text is cut at DELIVERY_NOTE_MAX_BYTES **UTF-8 bytes**, never mid
+ * code point, with a trailing ellipsis marking the cut. Same discipline as
+ * `normalizeSummary`: the wire accepts any string, this is the one place that
+ * enforces the size contract on a persisted value.
+ */
+export declare function normalizeDeliveryNote(value: string | undefined): string | undefined;
 /**
  * Rank group of an idea: its manual rank is a position RELATIVE to the other
  * ideas of the same (status, workspace) pair — the "rank by workspace" model.
@@ -180,6 +197,24 @@ export interface IdeaRecord {
      * task-board runner. System field, host-written only.
      */
     runSessionId?: string;
+    /**
+     * DELIVERY NOTE of the latest finished run (idea #91): the last thing the
+     * run said, harvested at settle time, bounded to
+     * {@link DELIVERY_NOTE_MAX_BYTES}. Its whole job is to give the review gate
+     * something to decide on — today a finished run lands in `underReview` and
+     * the only way to learn what happened is to open the session.
+     *
+     * Two rules, both deliberate:
+     *  - it is HARVESTED, never authored: the host reads it off the run, so an
+     *    absent note is a truth (a card backend that exposes no output, a
+     *    session with no assistant answer) and the UI says so instead of
+     *    inventing one. Never a model-generated summary either — that would be
+     *    the run describing itself rather than what it said;
+     *  - it is host-written only, exactly like `runStatus` / `runSessionId` /
+     *    `taskBoardId`: the wire gate rejects it on `update`, and `import`
+     *    carries it only as already-harvested text.
+     */
+    deliveryNote?: string;
     /**
      * Review rejected: id of the parent idea this idea is a follow-up of (set by
      * the `followUp` verb; the child carries the summary + justification and

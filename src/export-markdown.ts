@@ -40,6 +40,10 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   lines.push(bullet('updated', iso(idea.updatedAt)))
   if (idea.deliveredAt !== undefined) lines.push(bullet('delivered', iso(idea.deliveredAt)))
   if (idea.archivedAt !== undefined) lines.push(bullet('archived', iso(idea.archivedAt)))
+  // Delivery note (idea #91): what the last finished run said, verbatim.
+  // Carried like any other stored fact because the archive document is read by
+  // humans AND by agents deciding whether an idea is still relevant.
+  if (idea.deliveryNote !== undefined) lines.push(bullet('delivery note', idea.deliveryNote))
   if (idea.body.trim() !== '') {
     lines.push('', idea.body.trim(), '')
   }

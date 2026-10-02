@@ -119,6 +119,20 @@ export declare class IdeasHostLedger {
      * @returns true when the document changed and was committed.
      */
     setRunSession(ideaId: string, sessionId: string | undefined): boolean;
+    /**
+     * Host-internal DELIVERY NOTE of the latest finished run (idea #91): the
+     * text harvested off the run at settle time, bounded to
+     * {@link DELIVERY_NOTE_MAX_BYTES}. Same system-field discipline as
+     * `bindTaskBoardId` (the wire gate never accepts `deliveryNote` from
+     * `update`) and the same no-op-on-unchanged rule, so a re-harvest of the
+     * same answer cannot churn the revision.
+     *
+     * `undefined` CLEARS the stamp, exactly like the run fields: the JSON
+     * persist/clone drops the key entirely.
+     *
+     * @returns true when the document changed and was committed.
+     */
+    setDeliveryNote(ideaId: string, note: string | undefined): boolean;
     private apply;
     private acquireLock;
     private readLockOwner;

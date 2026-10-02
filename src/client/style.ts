@@ -1623,6 +1623,79 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   .dsh-ideas-task-running-dot { animation: none; opacity: 0.7; }
 }
 
+/* Stale badge on an OPEN idea (idea #91): a deliberately quiet marker, not an
+   alarm. Neutral ink, no fill, dashed edge - it says "this one has been quiet"
+   without competing with the review gate's amber pill for attention. Rendered
+   next to the run-state tags of the Overview card header and the Priorities
+   rows, which is exactly the set of open-idea surfaces. */
+.dsh-ideas-stale-badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--dsh-ideas-fb-fg) 28%, transparent);
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 62%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Delivery note (idea #91): the one block that gives the review gate something
+   to decide on. Sits below the description on the Overview card, above the
+   verdict buttons in the editor, and under the exit stamp on a Delivered row.
+   Left-ruled and recessed so it reads as quoted output from the run rather
+   than as more of the idea's own prose. */
+.dsh-ideas-delivery-note {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 6px 0 2px;
+  padding: 6px 8px;
+  border-left: 2px solid color-mix(in srgb, var(--dsh-ideas-fb-fg) 20%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--dsh-ideas-fb-fg) 4%, transparent);
+}
+
+.dsh-ideas-delivery-note-label {
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 55%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The harvested text. Clamped rather than truncated in JS: the note is bounded
+   host-side, and a runaway model answer must still not push the verdict
+   buttons off the card. */
+.dsh-ideas-delivery-note-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 88%, transparent);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* The "no note" line: italic and dimmer than the text, so an absent delivery
+   is legible as an absence rather than read as an empty run. */
+.dsh-ideas-delivery-note-empty {
+  color: color-mix(in srgb, var(--dsh-ideas-fb-fg) 50%, transparent);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* The "N to review" badge on the sidebar panel row (idea #91) has NO rule here
+   on purpose: it is painted inside the plugin's own glyph SVG (see
+   panel-registration.tsx), which is the only DOM this plugin owns inside that
+   shell-owned row. The panel-row contract has no badge seat and no badge prop,
+   so taking the row box back is the only other way to draw one — and that would
+   undo the panel registration this plugin exists to use. The pill hangs off the
+   glyph's top-right corner through overflow:visible; a shell whose glyph span
+   clipped its own overflow would silently drop it, which is a cosmetic
+   degradation and never a broken row. */
+
 /* "Open the session" affordance on a card whose run is in flight (idea #66):
    the only way back into an execution the board started, whether it ran on a
    mirrored card or in a direct chat session. Renders beside the running
@@ -1866,6 +1939,11 @@ export const classes = {
   taskRunningDot: 'dsh-ideas-task-running-dot',
   openSession: 'dsh-ideas-open-session',
   followUpBadge: 'dsh-ideas-followup-badge',
+  staleBadge: 'dsh-ideas-stale-badge',
+  deliveryNote: 'dsh-ideas-delivery-note',
+  deliveryNoteLabel: 'dsh-ideas-delivery-note-label',
+  deliveryNoteText: 'dsh-ideas-delivery-note-text',
+  deliveryNoteEmpty: 'dsh-ideas-delivery-note-empty',
   tabCount: 'dsh-ideas-tab-count',
   scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',

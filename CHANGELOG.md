@@ -6,6 +6,37 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.7.8 - 2026-10-02
+
+### Added
+
+- **Every finished run leaves a delivery note.** When a run ends, the board keeps
+  the closing words of the run right under the description of the idea it worked
+  on — on the card in the *To review* column, in the idea editor above the
+  Approve / Follow-up / Decline buttons, and on the row of a delivered idea in the
+  *Delivered* list. It is the last thing the run actually said, not a summary
+  written for you: the board never invents one. When a run leaves nothing behind
+  — it was interrupted before answering, or the workspace it ran in is gone — the
+  note says exactly that, so an empty delivery can never be read as a successful
+  one. The note is short by design (a couple of lines; longer answers are cut) and
+  never changes what the run did: **Open the session** remains the way to watch
+  the whole thing. The note follows the idea through the markdown export too, and
+  nothing you type can overwrite it: it belongs to the run, not to you.
+- **The sidebar entry now tells you what is waiting.** A small amber count sits on
+  the Ideas icon and shows how many ideas of the current workspace scope are in the
+  *To review* column. It reads the board's own list already loaded in the page, so
+  it costs nothing, needs no extra polling, and disappears as soon as the gate is
+  empty. With **Remember the workspace** turned on, the count follows the
+  workspace you last worked in rather than mixing every workspace together.
+- **A quiet *Stale* marker on ideas nobody has touched.** An open idea with no
+  update for a while wears a discreet *Stale* badge next to its state, on the
+  Overview cards and in the Priorities list. How long counts as too long is yours
+  to set under **Stale after (days)**, which ships at 30 days; set it to 0 to turn
+  the marker off entirely. The marker is a display aid only: it is drawn when the
+  board paints and nothing is written to your ideas. It never appears on an idea
+  that is already under review, delivered or declined — those have a state that
+  says more than a date does.
+
 ## 0.7.7 - 2026-10-02
 
 ### Added

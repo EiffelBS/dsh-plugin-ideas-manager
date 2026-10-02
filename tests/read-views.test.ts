@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import {
   IDEAS_READ_MAX_BODY_BYTES,
   IDEAS_READ_MAX_RESPONSE_BYTES,
+  IDEAS_READ_SELECTABLE_FIELDS,
   IDEAS_SCHEMA_VERSION,
   buildIdeasReadSnapshot,
   ideasReadSearchParams,
@@ -172,6 +173,21 @@ describe('read query parser and serializer', () => {
       limit: 20,
       offset: 40,
     })
+  })
+
+  it('puts the delivery note in the detail view, never in the summary one (idea #91)', () => {
+    // The note is a small, bounded string, so it rides the default detail
+    // projection (everything selectable but the deferred body). It is NOT part
+    // of the summary projection: that one exists to keep the board's list read
+    // cheap, and no summary surface renders a note.
+    expect(IDEAS_READ_SELECTABLE_FIELDS).toContain('deliveryNote')
+    const ledger = snapshot([idea({ id: 'a', status: 'underReview', runStatus: 'done', deliveryNote: 'Delivered.' })])
+    expect(buildIdeasReadSnapshot(ledger, { view: 'summary' }).ideas[0]?.deliveryNote).toBeUndefined()
+    expect(buildIdeasReadSnapshot(ledger, { view: 'detail' }).ideas[0]?.deliveryNote).toBe('Delivered.')
+    // Explicit selection still works, and unselected fields stay absent.
+    const picked = buildIdeasReadSnapshot(ledger, { view: 'detail', fields: ['deliveryNote'] })
+    expect(picked.ideas[0]?.deliveryNote).toBe('Delivered.')
+    expect(picked.ideas[0]?.rationale).toBeUndefined()
   })
 
   it('rejects unknown keys, invalid statuses, oversized body limits, and unsafe pagination', () => {

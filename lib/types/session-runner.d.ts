@@ -28,7 +28,10 @@
  *    bit): a session that stops running settles `done`, one that disappears
  *    settles `failed`. A run that ends in an error therefore settles `done`
  *    too — the card backend's history scan distinguishes the two and this
- *    backend deliberately does not.
+ *    backend deliberately does not;
+ *  - a finished run leaves a delivery note (idea #91): `readDeliveryNote`
+ *    walks back to its last assistant message so the review gate has something
+ *    to decide on. Best-effort like the rest of this file.
  */
 import type { IdeaRecord } from './core/ideas.ts';
 /**
@@ -82,4 +85,26 @@ export declare class SessionRunner {
      * inventing a settle.
      */
     listRunning(): Promise<ReadonlyMap<string, boolean>>;
+    /**
+     * The delivery note of a finished run (idea #91): the text of the session's
+     * LAST assistant message, read back through the same `session` RPC surface
+     * this backend already speaks.
+     *
+     * Two calls, because the history page is cursor-addressed and the cursor is
+     * the projection watermark:
+     *  1. `session/projections` — a non-activating read whose `asOfSeq` is the
+     *     session's last committed event sequence;
+     *  2. `session/page` at that sequence, one bounded window of the tail.
+     *
+     * Deliberately two steps and not a follow stream: a harvest must not hold a
+     * live subscription open on the settle path of a run that already finished.
+     *
+     * Returns undefined — never a guess — when the session is gone, has no
+     * assistant turn, or answers a shape this reader does not recognise. Throws
+     * only on a transport refusal, which the caller catches: a harvest failure
+     * must never fail the settle.
+     *
+     * @param sessionId - the session the run executed in.
+     */
+    readDeliveryNote(sessionId: string): Promise<string | undefined>;
 }

@@ -84,8 +84,8 @@ export const IDEAS_READ_MAX_SELECTORS = 100
  */
 export const IDEAS_READ_SELECTABLE_FIELDS = [
   'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId',
-  'taskBoardId', 'taskBoardStatus', 'runStatus', 'runSessionId', 'followUpOfId',
-  'deliveredAt', 'decision', 'archivedAt', 'reanalyzeAt', 'body',
+  'taskBoardId', 'taskBoardStatus', 'runStatus', 'runSessionId', 'deliveryNote',
+  'followUpOfId', 'deliveredAt', 'decision', 'archivedAt', 'reanalyzeAt', 'body',
 ] as const
 
 /** One optional field accepted by the bounded field selector. */
@@ -558,6 +558,12 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   if (row.runStatus !== undefined && row.runStatus !== null && !isIdeaRunStatus(row.runStatus)) return undefined
   if (row.runSessionId !== undefined && row.runSessionId !== null
       && (typeof row.runSessionId !== 'string' || row.runSessionId.length > 128)) return undefined
+  // Delivery note (idea #91): host-written, but unlike the run stamps it is
+  // plain harvested text, so an export/import round-trip must carry it verbatim
+  // (bounded by normalizeDeliveryNote, never authored from the wire). `update`
+  // still refuses it — only `import` accepts it, exactly like the other
+  // host-written fields.
+  if (row.deliveryNote !== undefined && row.deliveryNote !== null && typeof row.deliveryNote !== 'string') return undefined
   if (row.archivedAt !== undefined && row.archivedAt !== null && typeof row.archivedAt !== 'number') return undefined
   if (row.followUpOfId !== undefined && row.followUpOfId !== null && typeof row.followUpOfId !== 'string') return undefined
   if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
@@ -584,6 +590,7 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(typeof row.taskBoardStatus === 'string' ? { taskBoardStatus: row.taskBoardStatus.toLowerCase() } : {}),
     ...(isIdeaRunStatus(row.runStatus) ? { runStatus: row.runStatus } : {}),
     ...(typeof row.runSessionId === 'string' ? { runSessionId: row.runSessionId } : {}),
+    ...(typeof row.deliveryNote === 'string' ? { deliveryNote: row.deliveryNote } : {}),
     ...(typeof row.followUpOfId === 'string' ? { followUpOfId: row.followUpOfId } : {}),
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
   ...(typeof row.reanalyzeAt === 'number' ? { reanalyzeAt: row.reanalyzeAt } : {}),
@@ -837,6 +844,13 @@ export interface IdeasSettingsValue {
   columnMaxWidth: number
   /** Permission a direct (card-less) launch starts its fresh session at. */
   directRunPermission: IdeasRunPermission
+  /**
+   * Days without an update after which an OPEN idea wears a quiet *stale*
+   * badge (idea #91). View only: it is computed at render time from the row's
+   * own `updatedAt`, so it stores nothing on the idea and costs the Host no
+   * work. 0 turns the badge off entirely (see {@link STALE_AFTER_DAYS_RANGE}).
+   */
+  staleAfterDays: number
 }
 
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
@@ -885,11 +899,20 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   columnMinWidth: COLUMN_MIN_WIDTH_DEFAULT,
   columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
   directRunPermission: 'workspace-write',
+  staleAfterDays: 30,
 }
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
 export const TAG_ROWS_MIN = 1
 export const TAG_ROWS_MAX = 5
+
+/**
+ * Inclusive bounds of the `staleAfterDays` option (idea #91). 0 is a real
+ * value, not "unset": it means "never flag an idea as stale", which is the
+ * escape hatch for a backlog the reader watches in another tool. The ceiling
+ * keeps a hand-edited value from parking the badge on a decade-old idea.
+ */
+export const STALE_AFTER_DAYS_RANGE = { min: 0, max: 3650 } as const
 
 /**
  * Clamp an unknown input to a legal tagRows value: finite numbers round to
@@ -917,6 +940,17 @@ export function clampColumnMinWidth(value: unknown): number {
 export function clampColumnMaxWidth(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return COLUMN_MAX_WIDTH_DEFAULT
   return Math.min(COLUMN_MAX_WIDTH_RANGE.max, Math.max(COLUMN_MAX_WIDTH_RANGE.min, Math.round(value)))
+}
+
+/**
+ * Clamp an unknown input to a legal `staleAfterDays`: finite numbers round and
+ * clamp into {@link STALE_AFTER_DAYS_RANGE}; anything else falls back to the
+ * default (30). Same guard discipline as the other numeric options — the
+ * clamp, not the schema, is the boundary.
+ */
+export function clampStaleAfterDays(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return IDEAS_SETTINGS_DEFAULTS.staleAfterDays
+  return Math.min(STALE_AFTER_DAYS_RANGE.max, Math.max(STALE_AFTER_DAYS_RANGE.min, Math.round(value)))
 }
 
 /** Unknown -> one of `allowed`, else the fallback (enum fields). */
@@ -956,6 +990,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     columnMinWidth: clampColumnMinWidth(row.columnMinWidth),
     columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
     directRunPermission: oneOf(row.directRunPermission, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission),
+    staleAfterDays: clampStaleAfterDays(row.staleAfterDays),
   }
 }
 
@@ -964,7 +999,7 @@ const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
   'language', 'openOrdering', 'runningFirst', 'columnMinWidth', 'columnMaxWidth',
-  'directRunPermission',
+  'directRunPermission', 'staleAfterDays',
 ] as const
 
 /**
@@ -1010,6 +1045,9 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
       patch.columnMaxWidth = clampColumnMaxWidth(field)
     } else if (key === 'directRunPermission') {
       patch.directRunPermission = oneOf(field, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission)
+    } else if (key === 'staleAfterDays') {
+      if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
+      patch.staleAfterDays = clampStaleAfterDays(field)
     } else {
       patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
     }

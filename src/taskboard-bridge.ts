@@ -35,6 +35,7 @@
 import { request as httpRequest } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { IDEA_SUMMARY_MAX_LENGTH, type IdeaRecord } from './core/ideas.ts'
+import { cardSessionOf } from './delivery-note.ts'
 import { runPromptOf } from './run-prompt.ts'
 
 export const TASK_BOARD_API_PREFIX = '/api/task-board'
@@ -568,6 +569,27 @@ export class TaskBoardMirror {
   /** The task-board plugin is not registered or did not answer. */
   get isUnavailable(): boolean {
     return !this.available
+  }
+
+  /**
+   * The session id of a card's last execution, as of the snapshot the run poll
+   * already read (idea #91). Zero extra requests: the poll calls
+   * {@link fetchTaskStatuses} once per tick and every read lands in
+   * `rememberSnapshot`, so the pointer to the run's own output is already in
+   * memory here.
+   *
+   * This is the card backend's half of the delivery note: the mirrored card
+   * does not own a session this plugin can read, only the id of the one its
+   * runner used, and the session backend then harvests from it. undefined
+   * when the board exposes no such field (an older board, a card that never
+   * ran) — the caller leaves the note empty rather than inventing one.
+   */
+  cardSessionOf(taskId: string): string | undefined {
+    for (const row of this.snapshotTasks ?? []) {
+      if (row['id'] !== taskId) continue
+      return cardSessionOf(row)
+    }
+    return undefined
   }
 
   /**

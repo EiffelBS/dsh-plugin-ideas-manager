@@ -28,10 +28,14 @@
  *    bit): a session that stops running settles `done`, one that disappears
  *    settles `failed`. A run that ends in an error therefore settles `done`
  *    too — the card backend's history scan distinguishes the two and this
- *    backend deliberately does not.
+ *    backend deliberately does not;
+ *  - a finished run leaves a delivery note (idea #91): `readDeliveryNote`
+ *    walks back to its last assistant message so the review gate has something
+ *    to decide on. Best-effort like the rest of this file.
  */
 
 import type { IdeaRecord } from './core/ideas.ts'
+import { DELIVERY_NOTE_PAGE_MESSAGES, deliveryNoteOfRecords } from './delivery-note.ts'
 import { runPromptOf } from './run-prompt.ts'
 
 /**
@@ -191,5 +195,41 @@ export class SessionRunner {
       roster.set(item.sessionId, item.running === true)
     }
     return roster
+  }
+
+  /**
+   * The delivery note of a finished run (idea #91): the text of the session's
+   * LAST assistant message, read back through the same `session` RPC surface
+   * this backend already speaks.
+   *
+   * Two calls, because the history page is cursor-addressed and the cursor is
+   * the projection watermark:
+   *  1. `session/projections` — a non-activating read whose `asOfSeq` is the
+   *     session's last committed event sequence;
+   *  2. `session/page` at that sequence, one bounded window of the tail.
+   *
+   * Deliberately two steps and not a follow stream: a harvest must not hold a
+   * live subscription open on the settle path of a run that already finished.
+   *
+   * Returns undefined — never a guess — when the session is gone, has no
+   * assistant turn, or answers a shape this reader does not recognise. Throws
+   * only on a transport refusal, which the caller catches: a harvest failure
+   * must never fail the settle.
+   *
+   * @param sessionId - the session the run executed in.
+   */
+  async readDeliveryNote(sessionId: string): Promise<string | undefined> {
+    if (sessionId.trim() === '') return undefined
+    const baseline = await this.invoke<{ asOfSeq?: unknown } | null>('session', 'projections', { sessionId })
+    const asOfSeq = baseline?.asOfSeq
+    // A null baseline means "no such session"; anything below zero means the
+    // log is empty. Both are "nothing was said".
+    if (typeof asOfSeq !== 'number' || !Number.isSafeInteger(asOfSeq) || asOfSeq < 0) return undefined
+    const page = await this.invoke<{ records?: unknown }>('session', 'page', {
+      address: { kind: 'session', sessionId },
+      throughSeq: asOfSeq,
+      maxMessages: DELIVERY_NOTE_PAGE_MESSAGES,
+    })
+    return deliveryNoteOfRecords(Array.isArray(page?.records) ? page.records : undefined)
   }
 }

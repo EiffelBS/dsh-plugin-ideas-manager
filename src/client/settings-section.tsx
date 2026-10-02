@@ -26,6 +26,7 @@ import {
   clampColumnMaxWidth,
   clampColumnMinWidth,
   clampTagRows,
+  clampStaleAfterDays,
   COLUMN_MAX_WIDTH_RANGE,
   COLUMN_MIN_WIDTH_RANGE,
   IDEAS_DENSITIES,
@@ -34,6 +35,7 @@ import {
   IDEAS_RUN_PERMISSIONS,
   IDEAS_TABS,
   sanitizeSettings,
+  STALE_AFTER_DAYS_RANGE,
   TAG_ROWS_MAX,
   TAG_ROWS_MIN,
   type IdeasSettingsPatch,
@@ -48,7 +50,7 @@ export type SettingsTab = 'display' | 'about'
 /** Plugin metadata for the About section (read from package.json at compile time). */
 const PLUGIN_METADATA = {
   repositoryUrl: 'https://github.com/EiffelBS/dsh-plugin-ideas-manager',
-  version: '0.5.0',
+  version: '0.7.8',
   license: 'MIT',
   compatibleVersions: '>=0.1.5-rc.1',
 } as const
@@ -109,7 +111,7 @@ function SettingsRow({ title, desc, control, controlOnTitle = false }: {
  * never writes per keystroke and a failed save reverts to the stored value.
  */
 function NumberRow({ field, title, desc, value, min, max, clamp, disabled, onSave }: {
-  field: 'columnMinWidth' | 'columnMaxWidth'
+  field: 'columnMinWidth' | 'columnMaxWidth' | 'staleAfterDays'
   title: string
   desc: string
   value: number
@@ -368,6 +370,20 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
               min={COLUMN_MAX_WIDTH_RANGE.min}
               max={COLUMN_MAX_WIDTH_RANGE.max}
               clamp={clampColumnMaxWidth}
+              disabled={disabled}
+              onSave={save}
+            />
+            {/* The staleness marker is a VIEW option (idea #91), so it sits with
+                the other display numbers rather than with the behaviour
+                toggles: nothing it does is stored on an idea. */}
+            <NumberRow
+              field="staleAfterDays"
+              title={t('settings.staleAfterDays')}
+              desc={t('settings.staleAfterDaysDesc')}
+              value={value.staleAfterDays}
+              min={STALE_AFTER_DAYS_RANGE.min}
+              max={STALE_AFTER_DAYS_RANGE.max}
+              clamp={clampStaleAfterDays}
               disabled={disabled}
               onSave={save}
             />
