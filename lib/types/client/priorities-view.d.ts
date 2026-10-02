@@ -62,6 +62,13 @@ export interface PrioritiesProps {
     staleAfterDays?: number;
     /** Render instant shared with the Overview cards (see IdeasBoard). */
     now?: number;
+    /**
+     * Multi-select (idea #94): is this row part of the current selection, and the
+     * toggle/extend handler. Absent = the ranked list renders no select box (the
+     * board always passes it, so the affordance is consistent across the tabs).
+     */
+    selectedIds?: ReadonlySet<string>;
+    onSelect?: (ideaId: string, shiftKey: boolean) => void;
 }
 /** Ranked backlog view (see module doc). */
-export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now }: PrioritiesProps): import("react").JSX.Element;
+export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now, selectedIds, onSelect }: PrioritiesProps): import("react").JSX.Element;

@@ -44,6 +44,7 @@ import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
+import { SelectBox } from './bulk-bar.tsx'
 
 export interface PrioritiesProps {
   client: IdeasClient
@@ -81,6 +82,13 @@ export interface PrioritiesProps {
   staleAfterDays?: number
   /** Render instant shared with the Overview cards (see IdeasBoard). */
   now?: number
+  /**
+   * Multi-select (idea #94): is this row part of the current selection, and the
+   * toggle/extend handler. Absent = the ranked list renders no select box (the
+   * board always passes it, so the affordance is consistent across the tabs).
+   */
+  selectedIds?: ReadonlySet<string>
+  onSelect?: (ideaId: string, shiftKey: boolean) => void
 }
 
 /** Drop indicator: which row is hovered and whether the drop inserts before
@@ -103,7 +111,7 @@ function groupTitle(group: OpenRankGroup<IdeaListRow>, workspaceTitle: (workspac
 }
 
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now() }: PrioritiesProps) {
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now(), selectedIds, onSelect }: PrioritiesProps) {
   // Workspace groups in display order; inside every group ideas are ranked
   // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
   // render a pure function of the props.
@@ -244,6 +252,13 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                       }}
                       onDrop={event => { dropOnRow(event, idea, index, group.ideas) }}
                     >
+                      {onSelect !== undefined && (
+                        <SelectBox
+                          checked={selectedIds?.has(idea.id) === true}
+                          label={t('bulk.select')}
+                          onToggle={shiftKey => { onSelect(idea.id, shiftKey) }}
+                        />
+                      )}
                       <span className={classes.prioritiesRank}>{index + 1}</span>
                       <div
                         className={classes.cardGrip}

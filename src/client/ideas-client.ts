@@ -5,7 +5,7 @@
  * registration at the edge owns the DOM.
  */
 
-import type { IdeaRecord, IdeaSimilarReport, IdeaStatus } from '../core/ideas.ts'
+import type { IdeaRecord, IdeaSimilarReport, IdeaStatus, IdeaTag } from '../core/ideas.ts'
 import {
   IDEAS_SETTINGS_DEFAULTS,
   sanitizeSettings,
@@ -28,7 +28,16 @@ function uuid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-/** Client-side patch accepted by `updateIdea`. */
+/**
+ * Client-side patch accepted by `updateIdea`.
+ *
+ * `tags` takes either the comma-separated names the modals collect as plain
+ * strings, or full {@link IdeaTag} rows. The second form exists for the bulk
+ * tag action (idea #94): a name-only array would silently DROP the
+ * `promptPrefix` line every existing label carries, because the wire patch
+ * replaces the whole set. Bulk tagging therefore rebuilds the union from the
+ * row's own tags and keeps each one's prompt line.
+ */
 export interface IdeaClientPatch {
   title?: string
   body?: string
@@ -36,7 +45,7 @@ export interface IdeaClientPatch {
   effort?: number
   rationale?: string
   /** Present means "replace the label set"; an empty array clears it. */
-  tags?: string[]
+  tags?: string[] | IdeaTag[]
   /** Present (including an empty string) replaces the workspace; '' = generic. */
   workspaceId?: string
 }
@@ -321,7 +330,7 @@ export class IdeasClient {
   }
 
   async updateIdea(ideaId: string, patch: IdeaClientPatch): Promise<void> {
-    const tags = patch.tags === undefined ? undefined : tagNames(patch.tags)
+    const tags = patch.tags === undefined ? undefined : normalizeClientTags(patch.tags)
     await this.run({
       kind: 'update',
       ideaId,
@@ -335,8 +344,9 @@ export class IdeasClient {
         // generic (the Host maps a blank trimmed string to undefined).
         ...(patch.workspaceId === undefined ? {} : { workspaceId: patch.workspaceId }),
         // An empty tag set clears the labels (null on the wire); a non-empty
-        // set replaces them.
-        ...(tags === undefined ? {} : { tags: tags.length === 0 ? null : tags.map(name => ({ name })) }),
+        // set replaces them, prompt lines included (idea #94 bulk tagging
+        // rebuilds the union from the row's own tags).
+        ...(tags === undefined ? {} : { tags: tags.length === 0 ? null : tags }),
       },
     })
   }
@@ -560,4 +570,28 @@ function tagNames(raw: string[] | undefined): string[] {
     .flatMap(line => line.split(','))
     .map(tag => tag.trim())
     .filter(tag => tag !== '')
+}
+
+/**
+ * Client-side tag patch normalization (idea #94): plain strings are the
+ * comma-separated modal input and become name-only rows, while {@link IdeaTag}
+ * rows travel through untouched so a bulk tag keeps every existing label's
+ * `promptPrefix` (the wire patch replaces the whole set, so dropping it would
+ * be a silent loss).
+ */
+function normalizeClientTags(raw: string[] | IdeaTag[]): IdeaTag[] {
+  const tags: IdeaTag[] = []
+  for (const entry of raw) {
+    if (typeof entry === 'string') {
+      for (const name of entry.split(',')) {
+        const trimmed = name.trim()
+        if (trimmed !== '') tags.push({ name: trimmed })
+      }
+      continue
+    }
+    if (entry !== null && typeof entry === 'object' && typeof entry.name === 'string') {
+      tags.push({ ...entry })
+    }
+  }
+  return tags
 }

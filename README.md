@@ -161,6 +161,32 @@ restored from the archive like any other.
 - The New/Edit modal carries a workspace field, so a capture lands in the right
   place and an idea can be moved to another workspace.
 
+### Many ideas at once
+- Every card — and every row of the Priorities and Delivered tabs — carries a
+  **select box**. Click it to pick one idea, **shift-click** to paint a range of
+  rows, or press **Select all** to take everything the current filter shows.
+- The bar above the board always states the truth: **how many are selected, out
+  of how many the filter shows, and which workspace, tags and search produced
+  that set**. "All" therefore never means a batch of ideas you cannot see.
+- The selection follows the filter: an idea that leaves it leaves the selection,
+  so a bulk action can never reach a row you are not looking at. It is a view
+  only — nothing about it is written to your ideas.
+- Three bulk actions, all reporting **idea by idea**:
+  - **Tag…** adds labels to the selection. The labels an idea already carries
+    are kept, and an idea with no room left is reported rather than quietly
+    losing the new label.
+  - **Move to workspace…** re-homes the selection. Workspaces are chosen by their
+    stable identity, so renaming one moves nothing.
+  - **Archive…** moves the selection to the Archived column. Declined ideas are
+    left untouched and reported, because archiving one would erase its decline.
+- Every batch ends with a report: what was applied, what was skipped and why,
+  and what failed with the reason — a partial failure is always visible per
+  idea, never as one blanket error.
+- **A bulk archive can be undone.** Its report offers to restore exactly the
+  ideas it archived. This is scoped on purpose to the reversible operation:
+  bulk tagging and re-homing carry no previous value, so their report says
+  plainly that there is no undo there.
+
 ---
 
 ## Settings

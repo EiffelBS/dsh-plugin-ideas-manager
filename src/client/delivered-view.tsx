@@ -32,6 +32,7 @@ import { DeliveryNote } from './delivery-note.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
 import { tagHue } from './tags.ts'
+import { SelectBox } from './bulk-bar.tsx'
 
 export interface DeliveredViewProps {
   client: IdeasClient
@@ -52,11 +53,24 @@ export interface DeliveredViewProps {
    * The board owns the id -> idea map and passes the resolver down.
    */
   parentNumber?: (ideaId: string) => number | undefined
+  /** Multi-select (idea #94): ids of the current selection, board-wide. */
+  selectedIds?: ReadonlySet<string>
+  /** Multi-select (idea #94): toggle this row, or extend a range on shift-click. */
+  onSelect?: (ideaId: string, shiftKey: boolean) => void
 }
 
 /** Most recent exit first (deliveredAt for delivered, archivedAt otherwise). */
 function mostRecentFirst(ideas: readonly IdeaListRow[]): IdeaListRow[] {
   return [...ideas].sort((a, b) => exitAt(b) - exitAt(a))
+}
+
+/**
+ * The Delivered log's display order, exported so the board's multi-select
+ * (idea #94) ranges over exactly the rows this view paints: a shift-click
+ * block must be the block the author sees, in the order they see it.
+ */
+export function deliveredRows(ideas: readonly IdeaListRow[]): IdeaListRow[] {
+  return mostRecentFirst(ideas)
 }
 
 /** The stamp date: the delivery date when delivered, the archive date else. */
@@ -71,7 +85,7 @@ function isoDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber }: DeliveredViewProps) {
+export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect }: DeliveredViewProps) {
   const rows = mostRecentFirst(archivedIdeas)
   return (
     <div className={classes.priorities} data-dsh-ideas-delivered="">
@@ -88,6 +102,13 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                 : t('delivered.archivedAt', { date: isoDate(exitAt(idea)) })
               return (
                 <li key={idea.id} className={classes.prioritiesRow}>
+                  {onSelect !== undefined && (
+                    <SelectBox
+                      checked={selectedIds?.has(idea.id) === true}
+                      label={t('bulk.select')}
+                      onToggle={shiftKey => { onSelect(idea.id, shiftKey) }}
+                    />
+                  )}
                   <span
                     className={delivered ? classes.deliveredStamp : classes.archivedStamp}
                     title={delivered ? t('card.deliveredHint') : t('delivered.archivedHint')}

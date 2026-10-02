@@ -22,7 +22,7 @@ import { renderMarkdown } from './markdown.ts'
 import { IdeaPreview } from './idea-preview.tsx'
 import { IDEA_LEVELS, levelForValue } from './levels.ts'
 import { buildWorkspaceCatalog } from './workspaces.ts'
-import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, orderOpenColumn, rebuildOrder, archivedIdeasOf } from './ordering.ts'
+import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspaceGroups, orderOpenColumn, rebuildOrder, archivedIdeasOf, groupOpenByWorkspace, compareWorkspaceGroups } from './ordering.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
@@ -46,6 +46,20 @@ import { ActivityTimeline } from './activity-timeline.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
+import {
+  EMPTY_SELECTION,
+  extendSelection,
+  isSelected,
+  isWholeScopeSelected,
+  pruneSelection,
+  selectAll,
+  selectedRows,
+  toggleSelection,
+  type Selection,
+} from './selection.ts'
+import { BulkDialog, SelectBox, SelectionBar } from './bulk-bar.tsx'
+import type { BulkOperation } from './bulk.ts'
+import { deliveredRows } from './delivered-view.tsx'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
@@ -1420,6 +1434,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // Lifecycle confirmation (settings option confirmLifecycle): the Deliver /
   // Approve / Decline button armed for an in-place Yes/No confirmation.
   const [confirmVerb, setConfirmVerb] = useState<{ id: string; verb: 'deliver' | 'decline' } | undefined>(undefined)
+  // Idea #94: the multi-select is VIEW state. It is never sent to the Host and
+  // never persisted, so the 2.5 s poll cannot overwrite it; it is pruned to the
+  // active scope (below) whenever the workspace selector, the tag filter, the
+  // search or the tab changes, which is what keeps "all" from meaning anything
+  // the author cannot see.
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION)
+  // Which bulk action the dialog is running (undefined = no dialog).
+  const [bulk, setBulk] = useState<BulkOperation | undefined>(undefined)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
   // Rendered-markdown view of descriptions (raw text is one click away).
@@ -1675,6 +1697,61 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
    * columns are always in rank order, so their drags are untouched.
    */
   const openColumnRanked = cfg.openOrdering === 'rank' && !cfg.runningFirst
+
+  /**
+   * The rows the multi-select may hold, in DISPLAY order (idea #94): the
+   * current tab's filtered rows, laid out exactly as they are painted. The
+   * Overview concatenates its columns in board order (so a shift-click range
+   * reads as the block of cards the author sees), Priorities reuses the same
+   * group-then-rank layout the view paints, Delivered the same exit-order sort.
+   * A shift-click range over this list is therefore never an arbitrary order.
+   */
+  const scopeRows = activeTab === 'overview'
+    ? IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn))
+        .flatMap(status => byStatus(status))
+    : activeTab === 'priorities'
+      ? groupOpenByWorkspace(scopedOpen)
+          .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
+          .flatMap(group => group.ideas)
+      : deliveredRows(archivedIdeas)
+  const scopeIds = scopeRows.map(row => row.id)
+  const scopeKey = scopeIds.join('\u0000')
+  // Re-bind the selection whenever the scope moves: an idea that left the
+  // filter leaves the selection, so a bulk action can never reach a row the
+  // current scope hides. pruneSelection returns the same object when nothing
+  // moved, so this never loops.
+  useEffect(() => {
+    setSelection(current => pruneSelection(current, scopeIds))
+  }, [scopeKey])
+  const wholeScope = isWholeScopeSelected(selection, scopeIds)
+  // One sentence naming what "all" means right now: the workspace scope, the
+  // active tags and the search that produced this set.
+  const scopeParts: string[] = [
+    workspaceFilter === ''
+      ? t('bulk.scope.allWorkspaces')
+      : workspaceFilter === NO_WORKSPACE_FILTER ? t('board.noWorkspace') : workspaceTitle(workspaceFilter),
+  ]
+  if (tagFilter.length > 0) scopeParts.push(t('bulk.scope.tags', { tags: tagFilter.join(', ') }))
+  if (filter.trim() !== '') scopeParts.push(t('bulk.scope.search', { query: filter.trim() }))
+  const scopeLabel = scopeParts.length === 1 && workspaceFilter === '' && tagFilter.length === 0 && filter.trim() === ''
+    ? t('bulk.scope.everything')
+    : t('bulk.scope.label', { scope: scopeParts.join(' · ') })
+  const bulkSelected = selectedRows(scopeRows, selection)
+  // Set form of the same selection, for the rows that render their own box.
+  const selectedSet = new Set(selection.ids)
+
+  /**
+   * Select box click: a plain click toggles one row, a shift-click paints the
+   * range between the anchor and this row. Drag & drop is deliberately NOT a
+   * selection gesture — the grip is an explicit move handle, and a drag that
+   * silently selected the rows it passed over would make a 10-card selection
+   * impossible to reason about.
+   */
+  const toggleRow = (ideaId: string, shiftKey: boolean): void => {
+    setSelection(current => shiftKey
+      ? extendSelection(current, ideaId, scopeIds)
+      : toggleSelection(current, ideaId, scopeIds))
+  }
 
   const toggleTag = (name: string): void => {
     setTagFilter(current => current.includes(name)
@@ -2032,6 +2109,28 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         />
       )}
 
+      {/* Multi-select bar (idea #94): shared by the three tabs, like the tag
+          filter above it. It states the count AND the scope that produced it,
+          so "select all" never means an invisible set; the three bulk actions
+          stay disabled until something is selected. It disappears only on a
+          board that holds no idea at all — where there is nothing to select —
+          but stays put while a filter merely hides everything, because "0 of 0
+          shown" is the useful half of that sentence. */}
+      {ideas.length > 0 && (
+        <SelectionBar
+          selectedCount={selection.ids.length}
+          scopeTotal={scopeRows.length}
+          scopeLabel={scopeLabel}
+          wholeScope={wholeScope}
+          busy={bulk !== undefined}
+          onSelectAll={() => { setSelection(current => wholeScope ? EMPTY_SELECTION : selectAll(scopeIds)) }}
+          onClear={() => { setSelection(EMPTY_SELECTION) }}
+          onTag={() => { setBulk('tag') }}
+          onWorkspace={() => { setBulk('workspace') }}
+          onArchive={() => { setBulk('archive') }}
+        />
+      )}
+
       {activeTab === 'overview'
         ? (
           <>
@@ -2103,6 +2202,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                     ? <div className={classes.empty}>{t(filtering ? 'board.emptyFiltered' : 'board.empty')}</div>
                     : columnIdeas.map((idea, index) => {
                       const confirm = confirmId === idea.id
+                      const selected = isSelected(selection, idea.id)
                       const workspaceId = idea.workspaceId
                       // A grip on an OPEN card in attention order explains
                       // itself instead of being silently inert (see
@@ -2155,8 +2255,21 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                             void performDrop(event, status, before ? idea.id : dropNextId)
                           }}
                         >
-                          <div className={classes.card} data-dsh-idea-id={idea.id}>
+                          <div
+                            className={selected ? `${classes.card} ${classes.cardSelected}` : classes.card}
+                            data-dsh-idea-id={idea.id}
+                            data-selected={selected ? '' : undefined}
+                          >
                             <div className={classes.cardHeader}>
+                              {/* Multi-select (idea #94): the select box is the
+                                  card's own control, so picking a card never
+                                  opens the editor; shift-click paints a range
+                                  across the columns in display order. */}
+                              <SelectBox
+                                checked={selected}
+                                label={t('bulk.select')}
+                                onToggle={shiftKey => { toggleRow(idea.id, shiftKey) }}
+                              />
                               <div
                                 className={classes.cardTitle}
                                 role="button"
@@ -2447,6 +2560,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               parentNumber={parentNumberOf}
               staleAfterDays={cfg.staleAfterDays}
               now={renderedAt}
+              selectedIds={selectedSet}
+              onSelect={toggleRow}
             />
           )
           : (
@@ -2459,6 +2574,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               activeTags={tagFilter}
               mdMode={mdMode}
               parentNumber={parentNumberOf}
+              selectedIds={selectedSet}
+              onSelect={toggleRow}
             />
           )}
 
@@ -2502,6 +2619,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           workspaceTitle={workspaceTitle(launching.workspaceId ?? '')}
           onLaunch={launchIdea}
           onClose={() => { setLaunching(undefined) }}
+        />
+      )}
+      {bulk !== undefined && (
+        <BulkDialog
+          client={client}
+          operation={bulk}
+          rows={bulkSelected}
+          catalog={catalog}
+          scopeLabel={scopeLabel}
+          onClose={() => { setBulk(undefined) }}
         />
       )}
     </div>

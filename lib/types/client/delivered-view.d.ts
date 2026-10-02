@@ -41,5 +41,15 @@ export interface DeliveredViewProps {
      * The board owns the id -> idea map and passes the resolver down.
      */
     parentNumber?: (ideaId: string) => number | undefined;
+    /** Multi-select (idea #94): ids of the current selection, board-wide. */
+    selectedIds?: ReadonlySet<string>;
+    /** Multi-select (idea #94): toggle this row, or extend a range on shift-click. */
+    onSelect?: (ideaId: string, shiftKey: boolean) => void;
 }
-export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber }: DeliveredViewProps): import("react").JSX.Element;
+/**
+ * The Delivered log's display order, exported so the board's multi-select
+ * (idea #94) ranges over exactly the rows this view paints: a shift-click
+ * block must be the block the author sees, in the order they see it.
+ */
+export declare function deliveredRows(ideas: readonly IdeaListRow[]): IdeaListRow[];
+export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect }: DeliveredViewProps): import("react").JSX.Element;

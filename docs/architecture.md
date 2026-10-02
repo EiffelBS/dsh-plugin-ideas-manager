@@ -24,6 +24,9 @@ src/
   http.ts / loopback.ts / mount-once.ts   # shared discipline
   core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation, activity log
                       # + the merge helpers and the pure near-duplicate signal
+  client/selection.ts    # the multi-select scope: toggle / range / all / prune (pure)
+  client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
+  client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
   client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
   client/activity-timeline.tsx  # the editor's read-only activity timeline
@@ -297,6 +300,124 @@ score in both directions, requires a line per weighed candidate, and **forbids
 the merge verb outright** — the run recommends a pair, the human merges. The
 `ideas-analyst` skill mirrors those rules (`## Find similar runs`) so a session
 that loads the skill obeys them even if the prompt is truncated.
+
+## Multi-select and bulk actions (idea #94)
+
+Two pure modules carry every rule, and the React half renders them:
+`client/selection.ts` owns the selection, `client/bulk.ts` owns the plans and
+the run; `client/bulk-bar.tsx` only paints and posts.
+
+### The selection is view state, and is bound to the scope
+
+- Nothing about a selection is sent to the Host or persisted, so the 2.5 s
+  poll cannot overwrite it — the same discipline as the `openOrdering` view of
+  idea #71. The selection lives in `IdeasBoard`'s own state.
+- **A selection can only hold ids inside the active scope** (the active tab's
+  filtered rows: workspace selector + tag filter + search). Every helper that
+  grows the set takes the scoped id list and refuses anything outside it, and
+  `pruneSelection` runs in an effect keyed on the scope's id list. This is the
+  load-bearing decision: it is what makes "Archive the selection" mean "the rows
+  I can see are ticked", and it is why an idea that falls out of the filter
+  leaves the selection instead of lurking in a pending batch.
+- **The scope order is the display order**, so a shift-click paints the block
+  the author is looking at: the Overview concatenates its columns in board
+  order, Priorities reuses the same `groupOpenByWorkspace` + `compareWorkspaceGroups`
+  layout the view paints, Delivered exports `deliveredRows` (its exit-date sort)
+  for exactly this purpose. Duplicating that order anywhere else would make a
+  range disagree with the screen, so all three go through the same helpers.
+- `pruneSelection` returns the SAME object when nothing left the scope, which
+  is what keeps the effect from looping on every poll tick.
+
+### Bulk = the ordinary verbs, batched client-side
+
+There is no bulk verb and no ledger edit on this path — the wire stays frozen
+and each batch is literally the sequence an author would perform by hand.
+
+- **`workspaceId` is the stable workspace UUID.** Re-homing is a batch of
+  `update` patches; `''` is the generic (workspace-less) group, and an idea
+  already in the target group is reported as skipped instead of spending a
+  revision and a mirror round trip on a no-op.
+- **Serial on purpose.** `IdeasClient.run` adopts the snapshot returned by every
+  verb, so interleaved responses could adopt a stale revision and paint an older
+  board than the ledger holds. A bulk run awaits each idea in turn and shows
+  progress; a deliberate batch is not a latency race.
+- **A refusal never aborts the batch.** `runBulkPlan` settles each idea
+  independently (applied / skipped / failed with the Host's own message), which
+  is what the "per-idea, never a blanket error" contract means in practice.
+
+### The mirror round trip, and why declined is never round-tripped
+
+An archived TaskBoard card is read-only for **every** verb, so a plain `update`
+on an archived, card-bound idea would change the idea while its card silently
+kept the old labels/workspace. Such an idea is therefore updated as
+`restore` → `update` → `archive` (`restore` clears `archivedAt` alone: status,
+labels, executions and schedule survive).
+
+- **Declined ideas are skipped by every tag/workspace batch.** Restoring one to
+  patch its card would move it to `open` and then archive it — rewriting a
+  decline into a plain archive. They are reported as skipped instead, which is
+  the honest answer: the bulk verb cannot touch them without changing what they
+  are.
+- **A failed round trip is compensated.** The `restore` has already landed, so a
+  failed `update` would leave the idea in the OPEN backlog; the runner re-issues
+  the archive and says which of the two happened (`rearchived` / `left-open`).
+  A bulk tag must not be able to quietly open an archived backlog.
+- A card that already **ran** stays frozen by design (see *Card mirror*); the
+  idea write still succeeds and the board reports the idea change, which is
+  what was asked for.
+
+### Two smaller invariants
+
+- **The label cap is checked up front.** `normalizeTags` DROPS an over-long or
+  ninth label rather than refusing, so the planner skips such an idea with
+  `tag-limit` and the dialog refuses an over-long name — a batch that reads
+  "tagged" must have actually tagged.
+- **`IdeaClientPatch.tags` accepts `IdeaTag[]` as well as `string[]`.** The wire
+  patch replaces the whole set, so a name-only array would silently drop every
+  existing label's `promptPrefix`. Bulk tagging rebuilds the union from the
+  row's own tags and keeps each prompt line; the capture/edit modals keep
+  sending plain strings.
+
+### Undo, scoped to the reversible operation
+
+`summarizeBulk` marks a report `reversible` for a bulk archive only, and
+`undoableIds` returns exactly the ideas the run **applied** — restoring a skipped
+idea would resurrect a row that never moved. Tag and re-home reports render the
+explicit "no undo here" line instead of offering a button. This is a batch
+restore, deliberately not a general undo system.
+
+### What the select box costs, measured
+
+The affordance is **always visible** — a checkbox the author cannot see is not
+an affordance, and arming a "selection mode" first would break the "click to
+select" contract — so it is one extra element on every row of every view. The
+`IDEAS_PERF=1` profile at 140 mounted cards, same machine, medians of three runs
+against the pre-feature baseline:
+
+| measurement | before | after |
+|---|---|---|
+| DOM nodes after mount | 6 948 | 7 097 (+2.1 %) |
+| search keystroke (full 140-card re-render) | ~148 ms | ~180 ms |
+| workspace scope (51 cards re-rendered) | ~30 ms | ~40 ms |
+| mount / idle poll / tab switches | — | within run-to-run spread |
+
+Two decisions come out of that profile, and one non-decision:
+
+- **The tick is a CSS pseudo-element, not a child span.** Measured: dropping the
+  span removed 140 DOM nodes but moved the timings by nothing, so the cost is
+  the *element with its attributes*, not the node count — yet one node per row
+  is still the right budget for a control that renders on every card.
+- **The scope is derived where the columns are drawn**, reusing `byStatus`
+  (which the Overview render already calls per column) instead of a second
+  ordering pass, so the Overview pays at most one extra filtered scan per paint
+  and the Priorities/Delivered tabs reuse the layout helpers their own views
+  paint with.
+- **The remaining ~20 ms is jsdom's element cost, not a real-browser cost.** The
+  profile measures main-thread JS plus DOM mutation with no style/layout/paint,
+  where creating an element and setting its attributes is the expensive part;
+  a real browser builds that button in microseconds. The number is recorded
+  because it is the honest "what did this feature add to a full board re-render"
+  answer, not because it predicts a dropped frame.
 
 ## Card mirror
 

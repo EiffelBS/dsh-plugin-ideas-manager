@@ -87,6 +87,13 @@ Discipline the tools keep, and so must you:
 - The tools refuse with `ok: false` plus a `code`; they never half-write.
 - If the tools are absent the board still works over HTTP — that is a
   capability downgrade, not an error.
+- **There is no bulk verb.** A batch is a sequence of ordinary per-idea
+  `update` / `move` / `restore` calls — exactly what the board's own bulk
+  actions post — so a batch is per idea by construction: one refusal never rolls
+  back the others and never becomes a single blanket error. Re-homing is a
+  batch of `update` with the stable `workspaceId`; an archived idea bound to a
+  task card needs `restore` -> `update` -> `archive`, because an archived card
+  is read-only for every verb.
 
 ## Per-idea activity log
 

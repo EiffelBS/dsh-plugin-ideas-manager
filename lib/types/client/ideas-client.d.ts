@@ -4,7 +4,7 @@
  * subscribers (the board React tree). No React, no cordis — the shell panel
  * registration at the edge owns the DOM.
  */
-import type { IdeaRecord, IdeaSimilarReport, IdeaStatus } from '../core/ideas.ts';
+import type { IdeaRecord, IdeaSimilarReport, IdeaStatus, IdeaTag } from '../core/ideas.ts';
 import { type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
 import { type PanelNavigator } from './panel-navigation.ts';
 import type { IdeasHostTransport } from './host-api.ts';
@@ -12,7 +12,16 @@ import type { SessionLauncher } from './session-queue.ts';
 import type { ActiveWorkspaceSource } from './session-context.ts';
 import type { SessionOpener } from './session-opener.ts';
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts';
-/** Client-side patch accepted by `updateIdea`. */
+/**
+ * Client-side patch accepted by `updateIdea`.
+ *
+ * `tags` takes either the comma-separated names the modals collect as plain
+ * strings, or full {@link IdeaTag} rows. The second form exists for the bulk
+ * tag action (idea #94): a name-only array would silently DROP the
+ * `promptPrefix` line every existing label carries, because the wire patch
+ * replaces the whole set. Bulk tagging therefore rebuilds the union from the
+ * row's own tags and keeps each one's prompt line.
+ */
 export interface IdeaClientPatch {
     title?: string;
     body?: string;
@@ -20,7 +29,7 @@ export interface IdeaClientPatch {
     effort?: number;
     rationale?: string;
     /** Present means "replace the label set"; an empty array clears it. */
-    tags?: string[];
+    tags?: string[] | IdeaTag[];
     /** Present (including an empty string) replaces the workspace; '' = generic. */
     workspaceId?: string;
 }

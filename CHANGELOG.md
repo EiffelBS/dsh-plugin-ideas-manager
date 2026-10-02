@@ -10,6 +10,33 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **Change many ideas at once.** The board now has a real multi-select: tick the
+  box on a card (or on a Priorities / Delivered row), **shift-click** to paint a
+  range of rows, or hit **Select all** to take everything the current filter
+  shows. A quiet bar under the filters always says how many are selected out of
+  how many are shown, **and which workspace, tags and search produced that
+  set** — so "all" can never mean a batch of ideas you cannot see. The
+  selection is a view: it is never written to your ideas, so the board's
+  background refresh cannot overwrite it, and an idea that leaves the filter
+  leaves the selection too.
+- **Three bulk actions: tag, re-home workspace, archive.** Each one applies to
+  the selection and answers **per idea**: a report lists what went through, what
+  was skipped and why, and what failed with the host's own reason — one refused
+  idea never stops the batch and never becomes a single blanket error. Bulk
+  tagging **keeps the labels an idea already carries** (including their prompt
+  lines) and adds yours, and it refuses rather than silently drops a label an
+  idea has no room for. Bulk re-homing targets a workspace by its stable
+  identity, so renaming a workspace moves nothing.
+- **A bulk archive can be undone in one click.** The report of a bulk archive
+  offers to restore exactly the ideas it archived. This is deliberately scoped
+  to the reversible operation: an update carries no previous value, so bulk
+  tagging and bulk re-homing say plainly that they have no undo here instead of
+  pretending otherwise.
+- An archived idea bound to a task card is restored, changed and archived again
+  during a bulk tag or re-home, so its mirrored card actually follows the change
+  (an archived card refuses every edit). Declined ideas are left alone in a bulk
+  operation and reported as such — archiving one would erase the decline.
+
 - **Duplicates can now be merged in one step.** The AI capture button has always
   said it would "create or merge a duplicate", and now it can: a new **merge**
   action folds a duplicate into the idea that survives. The surviving card keeps

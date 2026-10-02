@@ -1807,6 +1807,181 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
+/* --- multi-select and bulk actions (idea #94) --- */
+
+/* Per-row select box (idea #94): a real checkbox-looking control that stays
+   readable on a card surface and in both themes. The native appearance is
+   dropped so the mark and the checked fill follow the skin tokens like every
+   other control. The tick is a PSEUDO-ELEMENT, not a child span: this box
+   renders on every card, and a second node per card is ~140 extra DOM nodes on
+   each re-render of a full board. */
+.dsh-ideas-select-box,
+.dsh-ideas-select-box-checked {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  flex: none;
+  border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dsh-ideas-select-box:hover {
+  border-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+}
+
+.dsh-ideas-select-box-checked {
+  background: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  border-color: transparent;
+  color: var(--dsw-alias-label-primary-foreground, var(--dsh-ideas-fb-accent-fg));
+  font-weight: 700;
+}
+
+.dsh-ideas-select-box-checked::after {
+  /* CSS escape for U+2713 (the sheet stays pure ASCII); the TS template
+     literal needs the doubled backslash to emit one. */
+  content: '\\2713';
+}
+
+.dsh-ideas-select-box:focus-visible,
+.dsh-ideas-select-box-checked:focus-visible {
+  outline: 2px solid var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  outline-offset: 1px;
+}
+
+/* Selected card: an accent edge, never a repaint of the whole card — the
+   badges, tags and body of a selected row must stay exactly as readable as an
+   unselected one. */
+.dsh-ideas-card-selected {
+  border-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  box-shadow:
+    inset 3px 0 0 0 var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent))),
+    0 1px 2px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+}
+
+/* Selection bar: one quiet row above the tab content, like the tag filter row
+   above it. It is the place that states "N selected of M shown, in this scope",
+   which is what makes a bulk action auditable before it is posted. */
+.dsh-ideas-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: none;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-selection-count {
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  white-space: nowrap;
+}
+
+/* The scope sentence ("workspace X · tags a, b · search …"): it may wrap, the
+   count beside it never does. */
+.dsh-ideas-selection-scope {
+  min-width: 0;
+  flex: 1 1 160px;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* Bulk report: the per-idea answer to a batch. Applied rows are a plain list;
+   skipped and failed rows carry the accent/danger ink so a partial failure can
+   never read as a blanket success. */
+.dsh-ideas-bulk-summary {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+}
+
+.dsh-ideas-bulk-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+}
+
+.dsh-ideas-bulk-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-bulk-item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dsh-ideas-bulk-item-reason,
+.dsh-ideas-bulk-item-note {
+  flex: none;
+  max-width: 45%;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.dsh-ideas-bulk-item-skipped .dsh-ideas-bulk-item-reason {
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-bulk-item-failed .dsh-ideas-bulk-item-reason {
+  color: var(--dsw-alias-state-error-primary, var(--dsh-ideas-fb-danger));
+}
+
+.dsh-ideas-bulk-item-failed .dsh-ideas-bulk-item-note {
+  font-style: italic;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
+/* Progress of a running batch: the run is serial on purpose, so the author
+   watches it settle idea by idea rather than waiting on one opaque request. */
+.dsh-ideas-bulk-progress {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 12px;
+}
+
+.dsh-ideas-bulk-warning {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-warn-bg, color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent)) 12%, transparent));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 12px;
+}
+
 /* --- About panel (standardized plugin settings section) --- */
 
 .dsh-plugin-about-panel {
@@ -1967,6 +2142,24 @@ export const classes = {
   filterChipActive: 'dsh-ideas-filter-chip-active',
   dragHint: 'dsh-ideas-drag-hint',
   cardWrapper: 'dsh-ideas-card-wrapper',
+  cardSelected: 'dsh-ideas-card-selected',
+  selectBox: 'dsh-ideas-select-box',
+  selectBoxChecked: 'dsh-ideas-select-box-checked',
+  selectionBar: 'dsh-ideas-selection-bar',
+  selectionCount: 'dsh-ideas-selection-count',
+  selectionScope: 'dsh-ideas-selection-scope',
+  selectionActions: 'dsh-ideas-selection-actions',
+  bulkSummary: 'dsh-ideas-bulk-summary',
+  bulkItems: 'dsh-ideas-bulk-items',
+  bulkItem: 'dsh-ideas-bulk-item',
+  bulkItemApplied: 'dsh-ideas-bulk-item-applied',
+  bulkItemSkipped: 'dsh-ideas-bulk-item-skipped',
+  bulkItemFailed: 'dsh-ideas-bulk-item-failed',
+  bulkItemTitle: 'dsh-ideas-bulk-item-title',
+  bulkItemReason: 'dsh-ideas-bulk-item-reason',
+  bulkItemNote: 'dsh-ideas-bulk-item-note',
+  bulkProgress: 'dsh-ideas-bulk-progress',
+  bulkWarning: 'dsh-ideas-bulk-warning',
   cardActions: 'dsh-ideas-card-actions',
   actionButton: 'dsh-ideas-action-button',
   dangerButton: 'dsh-ideas-danger-button',
