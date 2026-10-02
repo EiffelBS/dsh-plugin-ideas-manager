@@ -166,7 +166,16 @@ export declare class IdeasHostLedger {
     private releaseLock;
     private load;
     private normalizeDocument;
-    /** Quarantine an unreadable document and start from an empty ledger. */
+    /**
+     * Start from an empty ledger after a failed load.
+     *
+     * Two very different situations share this path and MUST NOT read the same in
+     * the log: a document that existed and could not be parsed (something is wrong
+     * and the file is set aside), and no document at all (the normal first boot of
+     * a fresh install, where `readFileSync` throws ENOENT). Reporting the second as
+     * "corrupt ledger quarantined" trains the reader to ignore the first, so the
+     * genuinely alarming case arrives on a log full of harmless ones.
+     */
     private recoverCorrupt;
     /**
      * Atomic tmp+rename write; the tmp path never survives a successful commit.

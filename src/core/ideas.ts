@@ -561,3 +561,223 @@ export function createIdea(input: NewIdeaInput, now: number, id: string): IdeaRe
 export function withStatus(idea: IdeaRecord, status: IdeaStatus, now: number): IdeaRecord {
   return { ...idea, status, updatedAt: now }
 }
+
+/* --- merge (duplicate reconciliation) --- */
+
+/**
+ * How a merge settles the LOSER's rank onto the survivor. The merge itself is
+ * unconditional — the loser's tags, its follow-up lineage and its card are
+ * reconciled either way — so the only genuinely open question is the position
+ * the survivor ends up at inside the open backlog.
+ */
+export const IDEAS_MERGE_MODES = ['keepTargetRank', 'takeSourceRank'] as const
+/** One merge rank disposition. */
+export type IdeaMergeMode = (typeof IDEAS_MERGE_MODES)[number]
+
+/** Whether an unknown string is a well-formed merge mode (the wire gate). */
+export function isIdeaMergeMode(value: unknown): value is IdeaMergeMode {
+  return typeof value === 'string' && (IDEAS_MERGE_MODES as readonly string[]).includes(value)
+}
+
+/**
+ * Hard cap of the decision note a merge writes on the archived loser. The note
+ * is built from bounded pieces (the survivor's `#N` plus a title already capped
+ * at {@link IDEA_TITLE_MAX_LENGTH}), so this only guards a hand-forged record:
+ * the ledger must never grow an unbounded free-text field on a verb.
+ */
+export const MERGE_DECISION_MAX_LENGTH = 320
+
+/**
+ * The label set a merge hands to the survivor: the survivor's own labels first
+ * (so a duplicate name keeps the survivor's `promptPrefix` — the losing card's
+ * prompt line must not rewrite a card the runner already owns), then the
+ * loser's. {@link normalizeTags} deduplicates by name, trims and caps the
+ * result at {@link IDEA_TAG_LIMIT}, so the union is always a legal tag list.
+ *
+ * @returns the reconciled labels, or undefined when the union is empty (the
+ *   caller omits the field rather than storing an empty list).
+ */
+export function mergedIdeaTags(survivor: IdeaRecord, loser: IdeaRecord): IdeaTag[] | undefined {
+  return normalizeTags([...(survivor.tags ?? []), ...(loser.tags ?? [])])
+}
+
+/* --- near-duplicate signal (read-only flag) --- */
+
+/**
+ * One cheap signal that fired between two ideas. Deliberately a closed pair:
+ * the report says WHICH cheap evidence produced the score, so a reader can
+ * disagree with it, and a future signal is an additive union member rather
+ * than a silent change of meaning.
+ */
+export type IdeaSimilarSignal = 'title' | 'tags'
+
+/**
+ * Hard cap of the candidates one near-duplicate report may carry. A report is
+ * a *bounded* candidate set for a human (and for the analyst prompt), never a
+ * full similarity ranking of the workspace.
+ */
+export const IDEAS_SIMILAR_MAX_CANDIDATES = 20
+
+/**
+ * Combined score below which a pair is not reported at all. Chosen so that one
+ * shared tag out of eight (0.3 with no title overlap) stays noise, while a
+ * perfect title match (0.7) or a clear overlap on both axes clears the bar.
+ */
+export const IDEAS_SIMILAR_MIN_SCORE = 0.34
+
+/** Weight of the normalized-title signal in the combined score. */
+export const IDEAS_SIMILAR_TITLE_WEIGHT = 0.7
+
+/** One scored candidate of a near-duplicate report. */
+export interface IdeaSimilarCandidate {
+  /** The candidate idea id. */
+  id: string
+  /** Stable `#N` human reference, absent on an imported row without one. */
+  ideaNumber?: number
+  /** The candidate's own title (never its body: this is a metadata signal). */
+  title: string
+  /** Combined 0..1 signal score, rounded to 3 decimals. */
+  score: number
+  /** Which cheap signals actually fired; a reader may weigh them differently. */
+  signals: IdeaSimilarSignal[]
+}
+
+/**
+ * The near-duplicate report for ONE anchor idea. Purely derived from the
+ * current ledger revision: it is a FLAG, never an action, and nothing on the
+ * board is written because of it.
+ */
+export interface IdeaSimilarReport {
+  /** The anchor idea id as requested. */
+  ideaId: string
+  /** False when the anchor does not exist (distinct from "no candidates"). */
+  found: boolean
+  /** Open same-workspace peers the scan actually compared (its real size). */
+  scanned: number
+  /** Candidates at or above {@link IDEAS_SIMILAR_MIN_SCORE}, strongest first. */
+  candidates: IdeaSimilarCandidate[]
+  /** True when at least one candidate cleared the floor: the near-duplicate flag. */
+  flagged: boolean
+}
+
+/**
+ * A run of ideographic script (Han, Kana, Hangul): those scripts have no word
+ * separators, so a whole-title "word" would make two unrelated CJK titles look
+ * as unrelated as two unrelated English ones while hiding the real overlap.
+ */
+const IDEOGRAPHIC_RUN = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+$/u
+
+/**
+ * Comparison tokens of one title: lowercased, split on every non-alphanumeric
+ * boundary, duplicates collapsed. An ideographic run is split per CHARACTER so
+ * CJK titles overlap at the character level; every other script keeps its
+ * words. Nothing is stemmed and nothing is fuzzy — this is a cheap signal, and
+ * a real judgement belongs to a human or to the analyst.
+ */
+export function ideaTitleTokens(title: string): Set<string> {
+  const tokens = new Set<string>()
+  for (const part of title.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
+    if (part === '') continue
+    if (IDEOGRAPHIC_RUN.test(part)) {
+      for (const character of part) tokens.add(character)
+    } else {
+      tokens.add(part)
+    }
+  }
+  return tokens
+}
+
+/** Comparison tokens of one label set (names lowercased, order irrelevant). */
+function ideaTagTokens(tags: readonly IdeaTag[] | undefined): Set<string> {
+  const tokens = new Set<string>()
+  for (const tag of tags ?? []) {
+    const name = tag.name.trim().toLowerCase()
+    if (name !== '') tokens.add(name)
+  }
+  return tokens
+}
+
+/**
+ * Dice coefficient of two token sets: `2 * shared / (|a| + |b|)`. Symmetric,
+ * 0 when either side is empty, and linear in the smaller set — the shape that
+ * makes "one shared word out of five" read as a real overlap rather than as
+ * either nothing or everything.
+ */
+function diceCoefficient(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a]
+  let shared = 0
+  for (const token of small) if (large.has(token)) shared += 1
+  return (2 * shared) / (a.size + b.size)
+}
+
+/**
+ * Combined near-duplicate score of one pair: a weighted sum of the title
+ * overlap ({@link IDEAS_SIMILAR_TITLE_WEIGHT}) and the label overlap. Rounded
+ * to 3 decimals so the wire payload is stable and a report never carries
+ * float noise the reader would have to interpret.
+ */
+export function ideaSimilarity(anchor: IdeaRecord, other: IdeaRecord): { score: number; signals: IdeaSimilarSignal[] } {
+  const titleScore = diceCoefficient(ideaTitleTokens(anchor.title), ideaTitleTokens(other.title))
+  const tagScore = diceCoefficient(ideaTagTokens(anchor.tags), ideaTagTokens(other.tags))
+  const signals: IdeaSimilarSignal[] = []
+  if (titleScore > 0) signals.push('title')
+  if (tagScore > 0) signals.push('tags')
+  const score = Math.round((IDEAS_SIMILAR_TITLE_WEIGHT * titleScore + (1 - IDEAS_SIMILAR_TITLE_WEIGHT) * tagScore) * 1000) / 1000
+  return { score, signals }
+}
+
+/**
+ * Scan the OPEN BACKLOG OF THE ANCHOR'S OWN WORKSPACE for near-duplicates.
+ *
+ * Scope is deliberate and narrow: the anchor itself, every non-open row and
+ * every other workspace are excluded, so the flag means "this backlog already
+ * holds something like this", never "some idea somewhere scored highly". The
+ * workspace-less ideas form one generic group, exactly like
+ * {@link rankGroupKey}.
+ *
+ * `limit` clamps into 1..{@link IDEAS_SIMILAR_MAX_CANDIDATES}. The whole scan
+ * is O(open peers) token comparisons and runs only when a caller asks for it —
+ * it is deliberately NOT part of the default snapshot, so the board's 2.5 s
+ * poll neither pays for it nor grows by it (see docs/architecture.md).
+ *
+ * @returns the report, or undefined only when `ideaId` is blank.
+ */
+export function findIdeaSimilar(
+  ideas: readonly IdeaRecord[],
+  ideaId: string,
+  limit: number = IDEAS_SIMILAR_MAX_CANDIDATES,
+): IdeaSimilarReport {
+  const anchor = ideas.find(idea => idea.id === ideaId)
+  if (anchor === undefined) return { ideaId, found: false, scanned: 0, candidates: [], flagged: false }
+  const anchorWorkspace = anchor.workspaceId ?? ''
+  const peers = ideas.filter(idea =>
+    idea.id !== anchor.id
+    && idea.status === 'open'
+    && (idea.workspaceId ?? '') === anchorWorkspace)
+  const scored: Array<IdeaSimilarCandidate & { createdAt: number }> = []
+  for (const peer of peers) {
+    const { score, signals } = ideaSimilarity(anchor, peer)
+    if (score < IDEAS_SIMILAR_MIN_SCORE) continue
+    scored.push({
+      id: peer.id,
+      ...(peer.ideaNumber === undefined ? {} : { ideaNumber: peer.ideaNumber }),
+      title: peer.title,
+      score,
+      signals,
+      createdAt: peer.createdAt,
+    })
+  }
+  // Strongest first; ties broken by the older idea, then by id so two runs of
+  // the same revision always answer identically.
+  scored.sort((a, b) => b.score - a.score || a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const maximum = Math.min(IDEAS_SIMILAR_MAX_CANDIDATES, Math.max(1, Math.trunc(limit)))
+  const candidates = scored.slice(0, maximum).map(({ createdAt: _createdAt, ...candidate }) => candidate)
+  return {
+    ideaId,
+    found: true,
+    scanned: peers.length,
+    candidates,
+    flagged: candidates.length > 0,
+  }
+}

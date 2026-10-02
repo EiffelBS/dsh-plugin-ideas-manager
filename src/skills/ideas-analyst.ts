@@ -309,6 +309,57 @@ procedure above for that run:
   what was refused is a failed re-analysis. When the log contradicts the
   current body, trust the log and say so in the analysis.
 
+## Duplicates: the merge verb
+
+Two captures can describe the same work. When you judge that one idea
+duplicates another ALREADY IN THE LEDGER, reconcile them with one merge verb
+instead of leaving two cards that both claim the same value:
+
+    { "kind": "merge", "sourceId": "<the duplicate>", "targetId": "<the survivor>", "mode": "keepTargetRank" }
+
+- sourceId is the idea that FOLDS IN and gets archived; targetId is the one
+  that SURVIVES. Pick the survivor deliberately: the better-analysed, more
+  complete card wins, not the newer one.
+- BOTH ids must sit in the SAME workspace. The Host refuses a cross-workspace
+  merge with a reason, so re-home one idea explicitly first if you really mean
+  to move work between projects.
+- mode is how the loser's rank settles onto the survivor: keepTargetRank (the
+  survivor stays where it is, the default and the safe choice) or
+  takeSourceRank (the survivor takes the position the duplicate held, and the
+  open backlog of that workspace re-ranks around it).
+- The merge reconciles the loser's TAGS (unioned onto the survivor) and its
+  follow-up lineage (the survivor inherits the place in the chain, and the
+  loser's children are re-pointed at the survivor), then archives the loser
+  with a decision note naming the survivor. One commit, so there is no window
+  in which both cards are open.
+- The merge NEVER rewrites the survivor's title, body, summary or analysis,
+  and never touches its run state or its TaskBoard binding: a duplicate
+  contributes labels, lineage and position, never a second body. If the
+  duplicate genuinely carries better analysis, say so in your report and let
+  the human decide; do not merge to smuggle content across.
+- Use a FRESH requestId for every merge call: a replayed id returns the
+  cached first outcome without re-executing.
+
+## Find similar runs (find-similar action)
+
+When the launch prompt is a FIND SIMILAR run, this is a COMPARISON, not an
+analysis. The overrides in that prompt take precedence over everything above:
+
+- Write NOTHING: no create, no update, no triage, and above all NEVER the merge
+  verb. A merge is the human's decision; this run reports a recommendation the
+  human acts on.
+- Compare ONLY the candidates the prompt lists. Do not go looking for more:
+  that bounded list is the whole scope of the question.
+- The candidate scores are a CHEAP SIGNAL (normalized title overlap plus tag
+  overlap), not a judgement. Distrust them in both directions and read each
+  candidate's real body before you say anything about it.
+- The prompt names how many open ideas of the workspace were compared and how
+  many were kept. Say so in your report when the number kept is small relative
+  to the number compared, so the human knows the answer is bounded.
+- Report one line per candidate you weighed - its number, its title, then
+  DUPLICATE, RELATED BUT DISTINCT or UNRELATED with the reason - and close with
+  a single merge RECOMMENDATION. Report and stop.
+
 ## Final report (≤ 4 sentences, in the requester's language)
 
 End your reply with a short report stating: the idea number and final title

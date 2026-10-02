@@ -375,3 +375,118 @@ export declare function normalizeStatus(status: unknown): IdeaStatus;
 export declare function createIdea(input: NewIdeaInput, now: number, id: string): IdeaRecord;
 /** Clone an idea with an updated status and a fresh updatedAt. */
 export declare function withStatus(idea: IdeaRecord, status: IdeaStatus, now: number): IdeaRecord;
+/**
+ * How a merge settles the LOSER's rank onto the survivor. The merge itself is
+ * unconditional — the loser's tags, its follow-up lineage and its card are
+ * reconciled either way — so the only genuinely open question is the position
+ * the survivor ends up at inside the open backlog.
+ */
+export declare const IDEAS_MERGE_MODES: readonly ["keepTargetRank", "takeSourceRank"];
+/** One merge rank disposition. */
+export type IdeaMergeMode = (typeof IDEAS_MERGE_MODES)[number];
+/** Whether an unknown string is a well-formed merge mode (the wire gate). */
+export declare function isIdeaMergeMode(value: unknown): value is IdeaMergeMode;
+/**
+ * Hard cap of the decision note a merge writes on the archived loser. The note
+ * is built from bounded pieces (the survivor's `#N` plus a title already capped
+ * at {@link IDEA_TITLE_MAX_LENGTH}), so this only guards a hand-forged record:
+ * the ledger must never grow an unbounded free-text field on a verb.
+ */
+export declare const MERGE_DECISION_MAX_LENGTH = 320;
+/**
+ * The label set a merge hands to the survivor: the survivor's own labels first
+ * (so a duplicate name keeps the survivor's `promptPrefix` — the losing card's
+ * prompt line must not rewrite a card the runner already owns), then the
+ * loser's. {@link normalizeTags} deduplicates by name, trims and caps the
+ * result at {@link IDEA_TAG_LIMIT}, so the union is always a legal tag list.
+ *
+ * @returns the reconciled labels, or undefined when the union is empty (the
+ *   caller omits the field rather than storing an empty list).
+ */
+export declare function mergedIdeaTags(survivor: IdeaRecord, loser: IdeaRecord): IdeaTag[] | undefined;
+/**
+ * One cheap signal that fired between two ideas. Deliberately a closed pair:
+ * the report says WHICH cheap evidence produced the score, so a reader can
+ * disagree with it, and a future signal is an additive union member rather
+ * than a silent change of meaning.
+ */
+export type IdeaSimilarSignal = 'title' | 'tags';
+/**
+ * Hard cap of the candidates one near-duplicate report may carry. A report is
+ * a *bounded* candidate set for a human (and for the analyst prompt), never a
+ * full similarity ranking of the workspace.
+ */
+export declare const IDEAS_SIMILAR_MAX_CANDIDATES = 20;
+/**
+ * Combined score below which a pair is not reported at all. Chosen so that one
+ * shared tag out of eight (0.3 with no title overlap) stays noise, while a
+ * perfect title match (0.7) or a clear overlap on both axes clears the bar.
+ */
+export declare const IDEAS_SIMILAR_MIN_SCORE = 0.34;
+/** Weight of the normalized-title signal in the combined score. */
+export declare const IDEAS_SIMILAR_TITLE_WEIGHT = 0.7;
+/** One scored candidate of a near-duplicate report. */
+export interface IdeaSimilarCandidate {
+    /** The candidate idea id. */
+    id: string;
+    /** Stable `#N` human reference, absent on an imported row without one. */
+    ideaNumber?: number;
+    /** The candidate's own title (never its body: this is a metadata signal). */
+    title: string;
+    /** Combined 0..1 signal score, rounded to 3 decimals. */
+    score: number;
+    /** Which cheap signals actually fired; a reader may weigh them differently. */
+    signals: IdeaSimilarSignal[];
+}
+/**
+ * The near-duplicate report for ONE anchor idea. Purely derived from the
+ * current ledger revision: it is a FLAG, never an action, and nothing on the
+ * board is written because of it.
+ */
+export interface IdeaSimilarReport {
+    /** The anchor idea id as requested. */
+    ideaId: string;
+    /** False when the anchor does not exist (distinct from "no candidates"). */
+    found: boolean;
+    /** Open same-workspace peers the scan actually compared (its real size). */
+    scanned: number;
+    /** Candidates at or above {@link IDEAS_SIMILAR_MIN_SCORE}, strongest first. */
+    candidates: IdeaSimilarCandidate[];
+    /** True when at least one candidate cleared the floor: the near-duplicate flag. */
+    flagged: boolean;
+}
+/**
+ * Comparison tokens of one title: lowercased, split on every non-alphanumeric
+ * boundary, duplicates collapsed. An ideographic run is split per CHARACTER so
+ * CJK titles overlap at the character level; every other script keeps its
+ * words. Nothing is stemmed and nothing is fuzzy — this is a cheap signal, and
+ * a real judgement belongs to a human or to the analyst.
+ */
+export declare function ideaTitleTokens(title: string): Set<string>;
+/**
+ * Combined near-duplicate score of one pair: a weighted sum of the title
+ * overlap ({@link IDEAS_SIMILAR_TITLE_WEIGHT}) and the label overlap. Rounded
+ * to 3 decimals so the wire payload is stable and a report never carries
+ * float noise the reader would have to interpret.
+ */
+export declare function ideaSimilarity(anchor: IdeaRecord, other: IdeaRecord): {
+    score: number;
+    signals: IdeaSimilarSignal[];
+};
+/**
+ * Scan the OPEN BACKLOG OF THE ANCHOR'S OWN WORKSPACE for near-duplicates.
+ *
+ * Scope is deliberate and narrow: the anchor itself, every non-open row and
+ * every other workspace are excluded, so the flag means "this backlog already
+ * holds something like this", never "some idea somewhere scored highly". The
+ * workspace-less ideas form one generic group, exactly like
+ * {@link rankGroupKey}.
+ *
+ * `limit` clamps into 1..{@link IDEAS_SIMILAR_MAX_CANDIDATES}. The whole scan
+ * is O(open peers) token comparisons and runs only when a caller asks for it —
+ * it is deliberately NOT part of the default snapshot, so the board's 2.5 s
+ * poll neither pays for it nor grows by it (see docs/architecture.md).
+ *
+ * @returns the report, or undefined only when `ideaId` is blank.
+ */
+export declare function findIdeaSimilar(ideas: readonly IdeaRecord[], ideaId: string, limit?: number): IdeaSimilarReport;

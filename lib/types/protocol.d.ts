@@ -5,7 +5,7 @@
  * fields on the import path) so the ideas API behaves identically to the
  * sibling families without importing any of their code.
  */
-import { type IdeaRecord, type IdeaStatus, type IdeaTag, type NewIdeaInput } from './core/ideas.ts';
+import { type IdeaMergeMode, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type IdeaTag, type NewIdeaInput } from './core/ideas.ts';
 export declare const IDEAS_SCHEMA_VERSION: 1;
 export declare const IDEAS_API_PREFIX = "/api/ideas";
 /** Snapshot served by GET /api/ideas/state. */
@@ -75,7 +75,9 @@ type IdeasReadCore = Pick<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 
 };
 /** One projected row. Unselected and absent optional record fields are omitted. */
 export type IdeasReadRow = IdeasReadCore & Partial<Omit<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'ideaNumber' | 'body' | 'analysisAudit'>>;
-/** Caller-facing bounded-read query. Defaults are summary + 100 rows. */
+/**
+ * Caller-facing bounded-read query. Defaults are summary + 100 rows.
+ */
 export interface IdeasReadQuery {
     view?: IdeasReadView;
     workspaceId?: string;
@@ -87,6 +89,13 @@ export interface IdeasReadQuery {
     bodyLimit?: number;
     limit?: number;
     offset?: number;
+    /**
+     * OPT-IN near-duplicate scan: when present, the response also carries a
+     * `similar` report for this anchor idea. Absent by default and on the frozen
+     * full snapshot, so the board's 2.5 s poll neither pays for the scan nor
+     * grows by one byte because of it.
+     */
+    similar?: string;
 }
 /** Fully defaulted and validated bounded-read query. */
 export interface NormalizedIdeasReadQuery {
@@ -99,6 +108,8 @@ export interface NormalizedIdeasReadQuery {
     bodyLimit: number;
     limit: number;
     offset: number;
+    /** Anchor idea of the opt-in near-duplicate scan; undefined = not requested. */
+    similar?: string;
 }
 /** Explicit row, body, and pagination metadata for a bounded read. */
 export interface IdeasReadMetadata {
@@ -114,18 +125,31 @@ export interface IdeasReadMetadata {
     bodyTruncated: boolean;
     omittedFields: Array<IdeasReadField | 'analysisAudit'>;
 }
-/** Response served by `GET /api/ideas/state?view=summary|detail`. */
+/**
+ * Response served by `GET /api/ideas/state?view=summary|detail`.
+ *
+ * `similar` is OPT-IN and additive: it is present only when the query asked
+ * for it, so a response without it is byte-identical to the pre-existing one.
+ */
 export interface IdeasReadSnapshot {
     schemaVersion: typeof IDEAS_SCHEMA_VERSION;
     revision: number;
     ideas: IdeasReadRow[];
     meta: IdeasReadMetadata;
+    /** Near-duplicate report for the requested anchor (absent unless asked). */
+    similar?: IdeaSimilarReport;
 }
 /**
  * Parse and bound the additive read query. `status`, `id`, `number`, and
  * `fields` are repeatable; `status` and `fields` also accept comma-separated
  * lists. Unknown keys and out-of-range values reject instead of silently
  * broadening a read.
+ *
+ * `similar` is an anchor idea id for the near-duplicate scan. Like every other
+ * bounded-read key it only applies to `view=summary|detail`: the frozen full
+ * snapshot carries no `similar` block at all (the route serves that view
+ * without consulting this parser), which is exactly why the flag costs the
+ * board's poll nothing.
  */
 export declare function parseIdeasReadQuery(params: URLSearchParams): NormalizedIdeasReadQuery | undefined;
 /** Serialize a bounded-read query for the browser transport. */
@@ -135,6 +159,12 @@ export declare function ideasReadSearchParams(query: IdeasReadQuery): URLSearchP
  * or mutable view state is introduced: every response is derived from the
  * current ledger revision. If selected fields would exceed the hard wire
  * budget, trailing rows are omitted and `nextOffset` makes that explicit.
+ *
+ * The opt-in near-duplicate report is the ONLY extra work this function can
+ * do, and it happens strictly when `similar` names an anchor: the scan reads
+ * the same `snapshot.ideas` array (no extra ledger pass) and its candidates
+ * are capped by `limit` as well as by IDEAS_SIMILAR_MAX_CANDIDATES. Without
+ * the key the response is exactly what it was before this feature existed.
  */
 export declare function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input?: IdeasReadQuery): IdeasReadSnapshot;
 /**
@@ -195,6 +225,20 @@ export type IdeasAction = {
 } | {
     kind: 'delete';
     ideaId: string;
+}
+/**
+ * Fold a duplicate into the idea that survives: one commit reconciles the
+ * loser's labels, its follow-up lineage and (per `mode`) its position onto
+ * the survivor, then archives the loser with a decision note naming the
+ * survivor. Both ids must sit in the SAME workspace — the ledger refuses
+ * the merge otherwise, so a merge can never re-home work across projects
+ * behind the human's back.
+ */
+ | {
+    kind: 'merge';
+    sourceId: string;
+    targetId: string;
+    mode: IdeaMergeMode;
 } | {
     kind: 'reanalyze';
     ideaId: string;

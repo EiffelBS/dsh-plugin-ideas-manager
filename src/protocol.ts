@@ -8,12 +8,16 @@
 
 import {
   createIdea,
+  findIdeaSimilar,
+  isIdeaMergeMode,
   isIdeaRunStatus,
   isIdeaStatus,
   isIdeaTagList,
   normalizeIdeaEvents,
   normalizeTags,
+  type IdeaMergeMode,
   type IdeaRecord,
+  type IdeaSimilarReport,
   type IdeaStatus,
   type IdeaTag,
   type NewIdeaInput,
@@ -107,7 +111,9 @@ type IdeasReadCore = Pick<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 
 /** One projected row. Unselected and absent optional record fields are omitted. */
 export type IdeasReadRow = IdeasReadCore & Partial<Omit<IdeaRecord, 'id' | 'title' | 'status' | 'createdAt' | 'updatedAt' | 'ideaNumber' | 'body' | 'analysisAudit'>>
 
-/** Caller-facing bounded-read query. Defaults are summary + 100 rows. */
+/**
+ * Caller-facing bounded-read query. Defaults are summary + 100 rows.
+ */
 export interface IdeasReadQuery {
   view?: IdeasReadView
   workspaceId?: string
@@ -119,6 +125,13 @@ export interface IdeasReadQuery {
   bodyLimit?: number
   limit?: number
   offset?: number
+  /**
+   * OPT-IN near-duplicate scan: when present, the response also carries a
+   * `similar` report for this anchor idea. Absent by default and on the frozen
+   * full snapshot, so the board's 2.5 s poll neither pays for the scan nor
+   * grows by one byte because of it.
+   */
+  similar?: string
 }
 
 /** Fully defaulted and validated bounded-read query. */
@@ -132,6 +145,8 @@ export interface NormalizedIdeasReadQuery {
   bodyLimit: number
   limit: number
   offset: number
+  /** Anchor idea of the opt-in near-duplicate scan; undefined = not requested. */
+  similar?: string
 }
 
 /** Explicit row, body, and pagination metadata for a bounded read. */
@@ -149,12 +164,19 @@ export interface IdeasReadMetadata {
   omittedFields: Array<IdeasReadField | 'analysisAudit'>
 }
 
-/** Response served by `GET /api/ideas/state?view=summary|detail`. */
+/**
+ * Response served by `GET /api/ideas/state?view=summary|detail`.
+ *
+ * `similar` is OPT-IN and additive: it is present only when the query asked
+ * for it, so a response without it is byte-identical to the pre-existing one.
+ */
 export interface IdeasReadSnapshot {
   schemaVersion: typeof IDEAS_SCHEMA_VERSION
   revision: number
   ideas: IdeasReadRow[]
   meta: IdeasReadMetadata
+  /** Near-duplicate report for the requested anchor (absent unless asked). */
+  similar?: IdeaSimilarReport
 }
 
 const SUMMARY_READ_FIELDS: IdeasReadField[] = [
@@ -165,7 +187,7 @@ const DETAIL_READ_FIELDS = IDEAS_READ_SELECTABLE_FIELDS.filter(
 )
 
 const READ_QUERY_KEYS = new Set([
-  'view', 'workspaceId', 'status', 'id', 'number', 'fields', 'bodyLimit', 'limit', 'offset',
+  'view', 'workspaceId', 'status', 'id', 'number', 'fields', 'bodyLimit', 'limit', 'offset', 'similar',
 ])
 
 function uniqueBoundedStrings(
@@ -196,6 +218,12 @@ function queryInteger(params: URLSearchParams, key: string, fallback: number, mi
  * `fields` are repeatable; `status` and `fields` also accept comma-separated
  * lists. Unknown keys and out-of-range values reject instead of silently
  * broadening a read.
+ *
+ * `similar` is an anchor idea id for the near-duplicate scan. Like every other
+ * bounded-read key it only applies to `view=summary|detail`: the frozen full
+ * snapshot carries no `similar` block at all (the route serves that view
+ * without consulting this parser), which is exactly why the flag costs the
+ * board's poll nothing.
  */
 export function parseIdeasReadQuery(params: URLSearchParams): NormalizedIdeasReadQuery | undefined {
   if ([...params.keys()].some(key => !READ_QUERY_KEYS.has(key))) return undefined
@@ -217,6 +245,8 @@ export function parseIdeasReadQuery(params: URLSearchParams): NormalizedIdeasRea
   const offset = queryInteger(params, 'offset', 0, 0, 1_000_000)
   const bodyLimit = queryInteger(params, 'bodyLimit', 0, 0, IDEAS_READ_MAX_BODY_BYTES)
   if (limit === undefined || offset === undefined || bodyLimit === undefined) return undefined
+  const rawSimilar = params.get('similar')?.trim()
+  if (params.has('similar') && (rawSimilar === undefined || rawSimilar === '' || rawSimilar.length > 256)) return undefined
 
   const fields = uniqueBoundedStrings(rawFields as IdeasReadField[], IDEAS_READ_SELECTABLE_FIELDS.length) as IdeasReadField[] | undefined
   const ids = uniqueBoundedStrings(rawIds, IDEAS_READ_MAX_SELECTORS)
@@ -233,6 +263,7 @@ export function parseIdeasReadQuery(params: URLSearchParams): NormalizedIdeasRea
     bodyLimit,
     limit,
     offset,
+    ...(rawSimilar === undefined ? {} : { similar: rawSimilar }),
   }
 }
 
@@ -248,6 +279,7 @@ export function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams {
   if (query.bodyLimit !== undefined) params.set('bodyLimit', String(query.bodyLimit))
   if (query.limit !== undefined) params.set('limit', String(query.limit))
   if (query.offset !== undefined) params.set('offset', String(query.offset))
+  if (query.similar !== undefined) params.set('similar', query.similar)
   return params
 }
 
@@ -337,6 +369,7 @@ function validReadQuery(input: IdeasReadQuery): boolean {
     && (input.ids?.length ?? 0) <= IDEAS_READ_MAX_SELECTORS
     && (input.numbers?.length ?? 0) <= IDEAS_READ_MAX_SELECTORS
     && (input.fields?.length ?? 0) <= IDEAS_READ_SELECTABLE_FIELDS.length
+    && (input.similar === undefined || (input.similar !== '' && input.similar.length <= 256))
     && statusValid
     && idsValid
     && numbersValid
@@ -351,6 +384,12 @@ function validReadQuery(input: IdeasReadQuery): boolean {
  * or mutable view state is introduced: every response is derived from the
  * current ledger revision. If selected fields would exceed the hard wire
  * budget, trailing rows are omitted and `nextOffset` makes that explicit.
+ *
+ * The opt-in near-duplicate report is the ONLY extra work this function can
+ * do, and it happens strictly when `similar` names an anchor: the scan reads
+ * the same `snapshot.ideas` array (no extra ledger pass) and its candidates
+ * are capped by `limit` as well as by IDEAS_SIMILAR_MAX_CANDIDATES. Without
+ * the key the response is exactly what it was before this feature existed.
  */
 export function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input: IdeasReadQuery = {}): IdeasReadSnapshot {
   if (!validReadQuery(input)) throw new Error('invalid-query')
@@ -364,6 +403,7 @@ export function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input: IdeasRead
     bodyLimit: input.bodyLimit ?? 0,
     limit: input.limit ?? IDEAS_READ_DEFAULT_LIMIT,
     offset: input.offset ?? 0,
+    ...(input.similar === undefined ? {} : { similar: input.similar }),
   }
   const statuses = new Set(query.status)
   const ids = new Set(query.ids)
@@ -388,6 +428,12 @@ export function buildIdeasReadSnapshot(snapshot: IdeasSnapshot, input: IdeasRead
   while (rows.length > 0 && utf8Bytes(JSON.stringify(response)) > IDEAS_READ_MAX_RESPONSE_BYTES) {
     rows.pop()
     response = readResponse(snapshot.revision, rows, query, matchedIdeas.length, omittedFields)
+  }
+  // Attached LAST, outside the shrinking loop: the report is bounded by its
+  // own cap (a title + a number + a score), so it can never be the reason a
+  // row had to be dropped, and it must survive that loop untouched.
+  if (query.similar !== undefined) {
+    response.similar = findIdeaSimilar(snapshot.ideas, query.similar, query.limit)
   }
   return response
 }
@@ -452,6 +498,15 @@ export type IdeasAction =
     }
   | { kind: 'restore'; ideaId: string }
   | { kind: 'delete'; ideaId: string }
+  /**
+   * Fold a duplicate into the idea that survives: one commit reconciles the
+   * loser's labels, its follow-up lineage and (per `mode`) its position onto
+   * the survivor, then archives the loser with a decision note naming the
+   * survivor. Both ids must sit in the SAME workspace — the ledger refuses
+   * the merge otherwise, so a merge can never re-home work across projects
+   * behind the human's back.
+   */
+  | { kind: 'merge'; sourceId: string; targetId: string; mode: IdeaMergeMode }
   | {
       kind: 'reanalyze'
       ideaId: string
@@ -760,6 +815,24 @@ function parseActionOnly(value: unknown): { action: IdeasAction } | undefined {
     case 'delete':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
       return ideaId === undefined ? undefined : { action: { kind: action.kind, ideaId } as IdeasAction }
+    case 'merge':
+      // The two ids are named the way the merge reads: `sourceId` is the
+      // duplicate that is folded in, `targetId` is the idea that survives.
+      // Both are trimmed-non-blank (stricter than the shared `ideaId`, which
+      // only rejects ''): a merge names two rows and must not be able to spend
+      // a request id on a whitespace-only selector.
+      if (!exactKeys(action, ['kind', 'sourceId', 'targetId', 'mode'])) return undefined
+      if (typeof action.sourceId !== 'string' || action.sourceId.trim() === '' || action.sourceId.length > 256) return undefined
+      if (typeof action.targetId !== 'string' || action.targetId.trim() === '' || action.targetId.length > 256) return undefined
+      if (!isIdeaMergeMode(action.mode)) return undefined
+      return {
+        action: {
+          kind: 'merge',
+          sourceId: action.sourceId.trim(),
+          targetId: action.targetId.trim(),
+          mode: action.mode,
+        },
+      }
     case 'reanalyze':
       if (!exactKeys(action, ['kind', 'ideaId'])) return undefined
       return ideaId === undefined ? undefined : { action: { kind: 'reanalyze', ideaId } }

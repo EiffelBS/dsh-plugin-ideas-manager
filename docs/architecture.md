@@ -23,6 +23,8 @@ src/
   export-markdown.ts  # unidirectional ledger -> markdown (golden-tested)
   http.ts / loopback.ts / mount-once.ts   # shared discipline
   core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation, activity log
+                      # + the merge helpers and the pure near-duplicate signal
+  client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
   client/activity-timeline.tsx  # the editor's read-only activity timeline
 scripts/              # mirror reconciliation, mirror cycle check, live perf profiler
@@ -202,6 +204,99 @@ agent-tool registry.
 - Registration is owned by the fiber that created it: the disposers ride the
   scoped-injection cleanup, so a replaced registry is re-registered rather than
   short-circuited by a stale disposer, and a disabled board registers nothing.
+
+## Merge verb and the near-duplicate flag (idea #93)
+
+### `merge` (one commit, two ideas)
+
+`{ kind: 'merge', sourceId, targetId, mode }` reconciles a duplicate into the
+idea that survives. It is a single `apply` switch arm in `host-ledger.ts`, so it
+inherits the whole commit discipline for free: one revision, one persisted
+dedupe-cache entry, one `commit()`, and both activity-log lines written from the
+same `recorded[]` buffer.
+
+Design decisions worth keeping in mind:
+
+- **What reconciles is fixed; `mode` only settles the rank.** The loser's tags,
+  its follow-up lineage and its card are reconciled either way, because that is
+  what "these are the same idea" means. The only genuinely open question is
+  where the survivor ends up in the open backlog, so `mode` is exactly
+  `keepTargetRank` | `takeSourceRank`. Both verdicts re-use the existing
+  `triageOrderedIds` helper, so a merge cannot produce a rank group the triage
+  verb could not.
+- **Same workspace or refuse.** `(loser.workspaceId ?? '') !==
+  (survivor.workspaceId ?? '')` throws before anything is written. A merge that
+  silently re-homed an idea would move work between projects behind the human's
+  back. The workspace-less ideas compare as one generic group, exactly like
+  `rankGroupKey`.
+- **The survivor is rebuilt by spread, never reconstructed.** That is what
+  structurally guarantees `runStatus`, `runSessionId` and `taskBoardId` survive:
+  a bound card is the task-board's and the run poll owns the stamps. A merge
+  that reset either would orphan a run the Host is still watching.
+- **Tag union order is survivor-first.** `mergedIdeaTags` feeds the survivor's
+  labels before the loser's, so `normalizeTags` keeps the survivor's
+  `promptPrefix` for a duplicated name — the loser's prompt line must not
+  rewrite a card the runner already owns.
+- **An unranked loser has no position to give**, so `takeSourceRank` degrades to
+  keeping the survivor's rank rather than demoting it to the bottom of the
+  backlog.
+- **Lineage is guarded against self-links.** The survivor inherits the loser's
+  `followUpOfId` only when it has none of its own, and never a link equal to its
+  own id; children of the loser are re-pointed except the survivor row itself.
+- **Re-pointed children are silent in the activity log**, like `reorder`: they
+  keep body and status and only move a parent pointer.
+- **The mirror runs two ops on two chains** (`scheduleMirror` special-cases the
+  verb exactly like `followUp` does): the survivor as an `update` — its content
+  genuinely changed — and the loser as an `archive`, the same mapping `decline`
+  uses. Neither can roll back: a mirror failure only logs, and a frozen
+  post-run card refuses the patch by design.
+
+### The flag: cheap, opt-in, and never on the poll
+
+`findIdeaSimilar` (in `core/ideas.ts`, framework-free and unit-tested) compares
+one anchor against the **open backlog of its own workspace**: normalized-title
+token overlap and tag overlap, Dice on both, weighted `0.7 / 0.3`. Titles are
+split on non-alphanumerics, and an **ideographic run is split per character** —
+those scripts have no word separators, so whole-title tokens would make two CJK
+titles score zero overlap no matter how similar they are.
+
+The cost decision is the interesting part. The board's poll is a 2.5 s
+`?view=list` fetch, and the brief's envelope for the existing scans is
+0.07–0.41 ms at 420 ideas. Rather than spend that on every poll, the flag is
+**opt-in through a read query**: `GET /api/ideas/state?view=summary&similar=<id>`.
+Consequences worth stating:
+
+- The **frozen full snapshot is untouched** — it never carries a `similar` key
+  at all, and neither does the `?view=list` projection the poll actually uses.
+  `tests/idea-93-similar.test.ts` asserts both, because "the poll payload did not
+  change" is the real guarantee, far stronger than a timing measurement.
+- The scan itself is cheap enough to be worth keeping: `perf-host.test.ts`
+  measures **~0.13 ms over 420 ideas** (95 open same-workspace peers).
+- `limit` bounds the candidate count (and is capped again at
+  `IDEAS_SIMILAR_MAX_CANDIDATES`), so a caller cannot ask for a full ranking.
+- The report is attached **after** the 512 KiB response-shrinking loop: the
+  candidates are bounded metadata, so the report must never be the reason a row
+  was dropped, and it must survive that loop intact.
+- A single threshold (`IDEAS_SIMILAR_MIN_SCORE`) is the only tuning knob, and it
+  is chosen so one shared tag out of eight stays noise while a perfect title
+  match clears the bar.
+
+### Find similar: the judgement is not the board's
+
+The affordance is gated by `canFindSimilar` — **the same gate as `reanalyze`**:
+`open`, a resolved session launcher, and a workspace the DSH app actually knows
+(a ledger-only workspace cannot host a session). The two must appear and
+disappear together because they are the same gesture.
+
+The modal fetches the report when it opens rather than reading it from the
+snapshot, and re-reads it on submit: a set fetched at open time may be a revision
+old by the time the human clicks. It renders the score **with** the signal
+legend, because a number with no explanation reads as a verdict. The launch
+prompt then carries the bounded candidate set, tells the analyst to distrust the
+score in both directions, requires a line per weighed candidate, and **forbids
+the merge verb outright** — the run recommends a pair, the human merges. The
+`ideas-analyst` skill mirrors those rules (`## Find similar runs`) so a session
+that loads the skill obeys them even if the prompt is truncated.
 
 ## Card mirror
 

@@ -13,7 +13,7 @@
  * and the board keeps the plain manual Create for workspace-targeted captures.
  */
 
-import type { IdeaEvent, IdeaStatus } from '../core/ideas.ts'
+import type { IdeaEvent, IdeaSimilarSignal, IdeaStatus } from '../core/ideas.ts'
 
 /**
  * The captured idea handed to the analysing session. The human's priority
@@ -105,6 +105,57 @@ export interface ModelSelection {
 }
 
 /**
+ * One candidate of a FIND SIMILAR run, as the board hands it over: the
+ * server-computed cheap signal plus the identity the analyst needs to read
+ * the candidate's real body. `score` is a heuristic the analyst is told to
+ * distrust — it exists to bound and order the set, not to answer the question.
+ */
+export interface SimilarCandidateHint {
+  /** The candidate idea id (the exact selector for the deferred-body read). */
+  id: string
+  /** The stable "#N" human reference, absent on a row without one. */
+  ideaNumber?: number
+  /** The candidate's title (never its body: this is metadata, not content). */
+  title: string
+  /** The board's cheap 0..1 signal score — a ranking hint, never a verdict. */
+  score: number
+  /** Which cheap signals fired (normalized title, tag overlap). */
+  signals: readonly IdeaSimilarSignal[]
+}
+
+/**
+ * The existing idea handed to a FIND SIMILAR run together with its bounded
+ * candidate set. The judgement belongs to the analyst session; the board only
+ * supplies the signal and the scope. This run NEVER writes — not even when
+ * two candidates turn out to be the same idea.
+ */
+export interface FindSimilarInput {
+  /** Target workspace of the idea (the session runs in it). */
+  workspaceId: string
+  /** Display title of the target workspace, for the analyst's context. */
+  workspaceTitle: string
+  /** The idea under review — the anchor of the scan. */
+  ideaId: string
+  /** The stable "#N" human reference of the anchor, when it has one. */
+  ideaNumber?: number
+  title: string
+  summary?: string
+  status: IdeaStatus
+  tags: readonly string[]
+  /** The bounded candidate set, strongest first (already server-capped). */
+  candidates: readonly SimilarCandidateHint[]
+  /**
+   * How many open same-workspace peers the scan actually compared. Handed to
+   * the analyst so its report can say what was left out — a bounded set the
+   * reader cannot see the bounds of would read as "these are all the similar
+   * ideas", which is not what the board knows.
+   */
+  scanned: number
+  /** Optional explicit model selection for the judging session. */
+  model?: ModelChoice
+}
+
+/**
  * The write face the board uses to launch an AI capture. Resolved once per
  * page from the cordis "sessions" service; undefined degrades to manual.
  */
@@ -112,6 +163,12 @@ export interface SessionLauncher {
   launch(input: AiCaptureInput): Promise<AiLaunchResult>
   /** Re-run the analyst on an existing idea (idea #30 flow); same session mechanics. */
   launchReanalyze(input: ReanalyzeInput): Promise<AiLaunchResult>
+  /**
+   * Ask the analyst to judge a bounded near-duplicate candidate set (Find
+   * similar). Same session mechanics again, dedicated prompt; it reports and
+   * never writes.
+   */
+  launchFindSimilar(input: FindSimilarInput): Promise<AiLaunchResult>
   /** List the models available for an analysing session (empty when unavailable). */
   listModels(): Promise<ModelChoice[]>
   /**
@@ -315,6 +372,57 @@ function renderActivity(activity: readonly IdeaEvent[] | undefined): string {
 }
 
 /**
+ * The FIND SIMILAR launch prompt. Same split as the other two analyst
+ * prompts: the skill carries the methodology, this prompt carries the anchor,
+ * the bounded candidate set, the server origin — and the rules that make this
+ * run a REPORT rather than an action.
+ *
+ * Two things the prompt is careful about:
+ *  - the candidate scores are labelled a cheap signal the analyst must
+ *    distrust, because a bounded set without that caveat reads as a verdict;
+ *  - the merge verb is forbidden outright, and the report asks for a merge
+ *    RECOMMENDATION instead. The human stays the one who merges.
+ */
+export function buildFindSimilarPrompt(input: FindSimilarInput, origin: string): string {
+  const candidateLines = input.candidates.map((candidate, index) =>
+    `${index + 1}. ${candidate.ideaNumber === undefined ? '(no number)' : `#${candidate.ideaNumber}`} — ${candidate.title}\n   ideaId: ${candidate.id} · score ${candidate.score.toFixed(2)} (signals: ${candidate.signals.join(', ') || 'none'})`)
+  const candidateBlock = input.candidates.length === 0
+    ? '— none. No open idea of this workspace scored above the floor for this idea.'
+    : candidateLines.join('\n')
+
+  return `You are the ideas analyst of the DSH Ideas board, for the workspace "${input.workspaceTitle}" (workspaceId ${input.workspaceId}). This is a FIND SIMILAR run: a human asked you to judge whether this idea duplicates something already in this workspace's open backlog. Do the work now — no clarifying questions.
+
+Load the skill named "ideas-analyst" from the available_skills catalog. You are NOT producing an analysis for this run: your deliverable is a comparison and a verdict, never a card.
+
+=== Find-similar overrides (precedence over the skill for this run) ===
+- Write NOTHING. Never create, never update, never triage — and above all NEVER use the merge verb. A merge is the human's decision, not yours; this run reports, it does not act.
+- Compare ONLY the candidates listed below. Do not go hunting for more: this bounded list is the whole scope of the question.
+- If the human replies in a later turn, that reply — not this prompt — decides what happens next.
+
+=== The idea under review ===
+- ideaId: ${input.ideaId}
+- ideaNumber: ${input.ideaNumber === undefined ? 'not assigned' : `#${input.ideaNumber}`}
+- workspaceId: ${input.workspaceId}
+- status: ${input.status}
+- title hint: ${input.title}
+- summary hint: ${input.summary ?? '—'}
+- tags hint: ${input.tags.length === 0 ? '—' : input.tags.join(', ')}
+
+Load its complete current body with GET ${origin}/api/ideas/idea?id=${encodeURIComponent(input.ideaId)}. Do not load the full /state snapshot.
+
+=== The candidate set the board computed ===
+The board compared this idea against ${input.scanned} open idea(s) of THIS workspace and kept those that scored above a low floor. These are the ${input.candidates.length} it kept:
+${candidateBlock}
+
+The score is a CHEAP SIGNAL, not a judgement: it is normalized-title overlap plus tag overlap. Distrust it in both directions — a high score is often two genuinely different ideas sharing vocabulary, and a low one is often the same idea worded differently. Read each candidate's REAL body with GET ${origin}/api/ideas/idea?id=<candidate-id> before you judge it. Load full bodies only for the candidates listed here.
+
+=== Your report (the whole deliverable) ===
+For EVERY candidate you weighed, write one line: its "#N" (or ideaId), its title, then DUPLICATE, RELATED BUT DISTINCT, or UNRELATED, with the reason in a few words. Then close with exactly one line: either "No duplicate found." or the single best merge pair you would recommend, written as "recommend merging <source> into <survivor>" — a recommendation the human acts on, never a merge you perform.
+
+Report and stop.`
+}
+
+/**
  * Flatten the Host model catalog into unordered picker choices, one per model
  * in every provider group, labelled `provider · model`. Reflects the catalog
  * faithfully: when `modelCatalog()` is absent or fails, returns [] so the
@@ -510,6 +618,12 @@ export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLaunc
         // mechanics, dedicated prompt (the overrides carry the no-create /
         // no-recursion rules and the ai-reanalyze initiator).
         launchAnalystSession(controller, modelSource, input, buildReanalysisPrompt(input, pageOrigin())),
+      launchFindSimilar: async (input: FindSimilarInput): Promise<AiLaunchResult> =>
+        // Find similar: a fresh session judges a BOUNDED candidate set and
+        // reports. Same session mechanics, dedicated prompt (the overrides
+        // carry the write-nothing / no-merge rules), so it can never mutate
+        // the board on its own.
+        launchAnalystSession(controller, modelSource, input, buildFindSimilarPrompt(input, pageOrigin())),
       listModels: () => modelSource === undefined ? Promise.resolve([]) : modelChoicesOf(modelSource),
       // The current host session's model: read straight from its
       // `modelSelection` projection (defensively). The board preselects the

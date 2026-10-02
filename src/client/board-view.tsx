@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
-import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
+import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
 import type { IdeaListRow } from '../protocol.ts'
 import { t, interfaceLanguage, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
@@ -26,9 +26,15 @@ import { matchesWorkspaceScope, NO_WORKSPACE_FILTER, orderIdeas, orderByWorkspac
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
-import type { AiCaptureInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
+import type { AiCaptureInput, FindSimilarInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
 import { matchSessionSelection } from './session-queue.ts'
 import { canLaunch, classifyLaunchRefusal, modelTargetIdOf } from './launch.ts'
+import {
+  buildFindSimilarInput,
+  canFindSimilar,
+  FIND_SIMILAR_CANDIDATE_LIMIT,
+  similarCandidateViews,
+} from './find-similar.ts'
 import { openTaskBoardFiltered } from './taskboard-focus.ts'
 import { openIdeasSettingsSection } from './settings-navigation.ts'
 import { PrioritiesView } from './priorities-view.tsx'
@@ -147,6 +153,20 @@ function IconFollowUp() {
       <polyline points="1 20 1 14 7 14" />
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
       <path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  )
+}
+
+/**
+ * Copy: the find-similar affordance (a bounded near-duplicate question handed
+ * to the analyst). Deliberately NOT a funnel: a funnel reads as "merge
+ * duplicates", and this action never merges anything.
+ */
+function IconFindSimilar() {
+  return (
+    <svg {...actionIcon}>
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
     </svg>
   )
 }
@@ -364,7 +384,7 @@ function ModelPickerField({ picker, disabled }: {
 /** Shared capture/edit modal. The lifecycle actions of the card are mirrored
  *  here per status (deliver / archive / decline / review approved / follow-up /
  *  restore), so the author can move an idea without leaving the editor. */
-function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onReanalyze, onLaunch }: {
+function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onReanalyze, onFindSimilar, onLaunch }: {
   client: IdeasClient
   initial?: IdeaRecord
   /** Board scope preselected for a new capture ('' when the board shows all;
@@ -375,6 +395,8 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   onFollowUp?: (idea: IdeaRecord) => void
   /** Idea #30 flow: launch an analyst re-run on this open idea. */
   onReanalyze?: (idea: IdeaRecord) => void
+  /** Find similar: ask the analyst to judge this open idea's near-duplicates. */
+  onFindSimilar?: (idea: IdeaRecord) => void
   /**
    * Launch this idea's execution (defined only when a launch can actually
    * start). The editor is reachable from every tab, so this is the only way to
@@ -731,6 +753,18 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
                     {t('card.reanalyze')}
                   </button>
                 )}
+                {onFindSimilar !== undefined && (
+                  <button
+                    type="button"
+                    className={classes.actionButton}
+                    disabled={client.pending}
+                    title={t('card.findSimilarHint')}
+                    onClick={() => { onFindSimilar(initial); onClose() }}
+                  >
+                    <IconFindSimilar />
+                    {t('card.findSimilar')}
+                  </button>
+                )}
                 {onLaunch !== undefined && (
                   <button
                     type="button"
@@ -985,6 +1019,127 @@ function ReanalyzeModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             onClick={start}
           >
             {t('reanalyze.submit')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Find similar modal: the board's cheap near-duplicate FLAG, and the
+ * explicit hand-off of the real judgement to an analyst session.
+ *
+ * Three decisions live here.
+ *
+ * 1. The candidate list is FETCHED when the modal opens, through the opt-in
+ *    `similar` read query — never from the snapshot the poll already carries.
+ *    That is what keeps the flag free on the 2.5 s poll.
+ * 2. The scores are shown, and shown as what they are. The modal prints the
+ *    signal legend next to them: a score is title+tag overlap, and the analyst
+ *    reads each candidate's real body before saying anything about it. A
+ *    hidden or unexplained number would read as a verdict.
+ * 3. The modal can only ASK. There is no merge control anywhere in this tree,
+ *    and the prompt forbids the merge verb in the session it starts: the human
+ *    stays the one who merges.
+ *
+ * The model picker is the same cascade as the capture and the re-analyze, so
+ * the three AI affordances of the board behave identically.
+ */
+function SimilarModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
+  client: IdeasClient
+  idea: ReanalyzeSource
+  /** Display title of the idea's workspace (context line). */
+  workspaceTitle: string
+  /** Start the judging run with the picked (or default) model. */
+  onLaunch: (idea: ReanalyzeSource, model: ModelChoice | undefined) => void
+  onClose: () => void
+}) {
+  const picker = useAnalystModelPicker(client.sessionLauncher)
+  const [pending, setPending] = useState(false)
+  const [report, setReport] = useState<IdeaSimilarReport | undefined>(undefined)
+  const [error, setError] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('keydown', onKey, true) }
+  }, [onClose])
+  useEffect(() => {
+    let live = true
+    void client.findSimilarIdea(idea.id, FIND_SIMILAR_CANDIDATE_LIMIT).then(found => {
+      if (live) setReport(found)
+    }, loadError => {
+      // Kept IN the modal: a report the human asked for and did not get is a
+      // failed answer, not a background hiccup to log and forget.
+      console.error('[dsh-plugin-ideas-manager] similar-idea scan failed:', loadError)
+      if (live) setError(loadError instanceof Error ? loadError.message : String(loadError))
+    })
+    return () => { live = false }
+  }, [client, idea.id])
+  const views = report === undefined
+    ? []
+    : similarCandidateViews(report, { title: t('similar.signalTitle'), tags: t('similar.signalTags') })
+  const start = (): void => {
+    setPending(true)
+    onLaunch(idea, picker.selectedModel)
+  }
+  return (
+    <div className={classes.overlay} onClick={onClose}>
+      <div className={classes.modal} onClick={event => { event.stopPropagation() }}>
+        <h3 className={classes.modalTitle}>{t('similar.title')}</h3>
+        <div className={classes.field}>
+          <span className={classes.detailMeta}>
+            {idea.ideaNumber !== undefined ? `#${idea.ideaNumber} — ` : ''}{idea.title}
+          </span>
+        </div>
+        <div className={classes.field}>
+          <div className={classes.fieldHint}>
+            {error !== undefined
+              ? t('similar.loadFailed', { error })
+              : report === undefined
+                ? t('similar.hint', { workspace: workspaceTitle, scanned: '…' })
+                : t('similar.hint', { workspace: workspaceTitle, scanned: String(report.scanned) })}
+          </div>
+        </div>
+        {report !== undefined && views.length > 0 && (
+          <div className={classes.field}>
+            <span className={classes.fieldLabel}>{t('similar.candidates')}</span>
+            <div className={classes.preview} data-dsh-ideas-similar-candidates="">
+              {views.map(candidate => (
+                <div key={candidate.id} className={classes.detailMeta}>
+                  {candidate.ideaNumber !== undefined ? `#${candidate.ideaNumber} — ` : ''}{candidate.title}
+                  {' · '}
+                  {t('similar.score', {
+                    score: candidate.score.toFixed(2),
+                    signals: candidate.signals.join(' + '),
+                  })}
+                </div>
+              ))}
+            </div>
+            <div className={classes.fieldHint}>{t('similar.signalLegend')}</div>
+          </div>
+        )}
+        {report !== undefined && views.length === 0 && (
+          <div className={classes.field}>
+            <div className={classes.fieldHint}>{t('similar.empty')}</div>
+          </div>
+        )}
+        {picker.modelChoices.length > 0 && <ModelPickerField picker={picker} disabled={pending || client.pending} />}
+        <div className={classes.modalActions}>
+          <button type="button" className={classes.ghostButton} onClick={onClose}>{t('similar.cancel')}</button>
+          <button
+            type="button"
+            className={classes.primaryButton}
+            disabled={pending || client.pending || report === undefined}
+            data-dsh-ideas-find-similar-submit=""
+            onClick={start}
+          >
+            {t('similar.askAnalyst')}
           </button>
         </div>
       </div>
@@ -1255,6 +1410,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // The open idea a Re-analyze confirm modal is raised for (idea #30 flow):
   // a list row from the card, or the full record from the edit modal.
   const [reanalyzing, setReanalyzing] = useState<ReanalyzeSource | undefined>(undefined)
+  // The open idea a Find similar modal is raised for: the near-duplicate flag
+  // is a REPORT, so the modal is opened by an explicit click like the others.
+  const [findingSimilar, setFindingSimilar] = useState<ReanalyzeSource | undefined>(undefined)
   // The open idea a Launch confirm modal is raised for (idea #66): a launch is
   // an explicit human action, never a side effect of a card mutation.
   const [launching, setLaunching] = useState<ReanalyzeSource | undefined>(undefined)
@@ -1620,6 +1778,49 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     && client.sessionLauncher !== undefined
     && idea.workspaceId !== undefined
     && catalog.some(entry => entry.workspaceId === idea.workspaceId && entry.knownToApp)
+
+  /**
+   * The Find similar affordance, gated EXACTLY like Re-analyze: same status,
+   * same launcher requirement, same "workspace known to the app" test. Both are
+   * the same gesture — hand a bounded question to an analyst session in this
+   * idea's workspace — so they must appear and disappear together. The matrix
+   * itself lives in `canFindSimilar` (pure, unit-tested); this is only the
+   * board's wiring of the two inputs it has.
+   */
+  const canFindSimilarHere = (idea: ReanalyzeSource): boolean => canFindSimilar(idea, {
+    hasLauncher: client.sessionLauncher !== undefined,
+    knownWorkspaceIds: new Set(catalog.filter(entry => entry.knownToApp).map(entry => entry.workspaceId)),
+  })
+
+  /**
+   * Find similar: re-read the bounded report the modal is already showing and
+   * hand it to a fresh analyst session. The re-read costs one opt-in read and
+   * removes the only real race — a candidate set fetched when the modal opened
+   * may be a revision old by the time the human clicks.
+   *
+   * No write happens here, and the prompt forbids the merge verb, so the run
+   * can only report. A failure is logged, exactly like the AI capture: the
+   * modal closes either way because there is no card state to reconcile.
+   */
+  const findSimilarIdea = (idea: ReanalyzeSource, model: ModelChoice | undefined): void => {
+    const launcher = client.sessionLauncher
+    if (launcher === undefined) return
+    const run = async (): Promise<void> => {
+      const report = await client.findSimilarIdea(idea.id, FIND_SIMILAR_CANDIDATE_LIMIT)
+      const input: FindSimilarInput | undefined = buildFindSimilarInput(idea, report, {
+        workspaceTitle: workspaceTitle(idea.workspaceId ?? ''),
+        ...(model === undefined ? {} : { model }),
+      })
+      if (input === undefined) return
+      void launcher.launchFindSimilar(input).catch((launchError: unknown) => {
+        console.error('[dsh-plugin-ideas-manager] find similar failed:', launchError)
+      })
+    }
+    void run().catch((readError: unknown) => {
+      console.error('[dsh-plugin-ideas-manager] similar-idea scan failed:', readError)
+    })
+    setFindingSimilar(undefined)
+  }
 
   /** Stamp the audit cycle first so the Host preserves the current body as
    *  the prior-analysis audit, then launch with summary metadata only. */
@@ -2069,6 +2270,19 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('card.reanalyze')}
                                 </button>
                               )}
+                              {idea.status === 'open' && canFindSimilarHere(idea) && (
+                                <button
+                                  type="button"
+                                  className={classes.actionButton}
+                                  disabled={client.pending}
+                                  title={t('card.findSimilarHint')}
+                                  data-dsh-ideas-find-similar=""
+                                  onClick={() => { setFindingSimilar(idea) }}
+                                >
+                                  <IconFindSimilar />
+                                  {t('card.findSimilar')}
+                                </button>
+                              )}
                               {idea.status === 'open' && canLaunch(idea) && (
                                 <button
                                   type="button"
@@ -2256,7 +2470,17 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onClose={() => { setEditing(undefined) }}
           onFollowUp={(idea) => { setFollowUp(idea) }}
           onReanalyze={canReanalyze(editing) ? (idea) => { setReanalyzing(idea) } : undefined}
+          onFindSimilar={canFindSimilarHere(editing) ? (idea) => { setFindingSimilar(idea) } : undefined}
           onLaunch={editing.status === 'open' && canLaunch(editing) ? (idea) => { setLaunching(idea) } : undefined}
+        />
+      )}
+      {findingSimilar !== undefined && (
+        <SimilarModal
+          client={client}
+          idea={findingSimilar}
+          workspaceTitle={workspaceTitle(findingSimilar.workspaceId ?? '')}
+          onLaunch={findSimilarIdea}
+          onClose={() => { setFindingSimilar(undefined) }}
         />
       )}
       {reanalyzing !== undefined && (

@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { appendIdeaEvent, createIdea, ideaEvent, ideaEventActor, IDEA_ACTOR_RUN, isIdeaRunStatus, normalizeDeliveryNote, normalizeIdeaEvents, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
+import { appendIdeaEvent, createIdea, ideaEvent, ideaEventActor, IDEA_ACTOR_RUN, isIdeaRunStatus, MERGE_DECISION_MAX_LENGTH, mergedIdeaTags, normalizeDeliveryNote, normalizeIdeaEvents, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -583,6 +583,93 @@ export class IdeasHostLedger {
         const parentNumber = parent.ideaNumber === undefined ? '' : `#${parent.ideaNumber}`
         recorded.push({ ideaId: parent.id, verb: 'review', summary: `Review asked for a follow-up — archived in favour of #${this.document.ideaSequence}` })
         recorded.push({ ideaId: childId, verb: 'create', summary: `Created as the follow-up of ${parentNumber === '' ? 'its parent' : parentNumber}` })
+        break
+      }
+      case 'merge': {
+        // The AI capture flow promises to "create or merge a duplicate"; this
+        // is that merge. One commit, like followUp: the LOSER is folded into
+        // the idea that SURVIVES and is archived with a decision note naming
+        // it. Nothing here rewrites the survivor's content — a duplicate
+        // contributes labels, lineage and position, never a second body.
+        const loser = this.document.ideas.find(item => item.id === action.sourceId)
+        if (loser === undefined) throw new Error('source idea not found')
+        const survivor = this.document.ideas.find(item => item.id === action.targetId)
+        if (survivor === undefined) throw new Error('target idea not found')
+        if (loser.id === survivor.id) throw new Error('merge requires two distinct ideas')
+        // Same workspace or refuse. A merge that silently re-homed an idea
+        // would move work between projects behind the human's back, which is
+        // exactly what the workspace scoping exists to prevent. The
+        // workspace-less ideas are one generic group, as in rankGroupKey.
+        if ((loser.workspaceId ?? '') !== (survivor.workspaceId ?? '')) {
+          throw new Error('merge requires both ideas in the same workspace')
+        }
+
+        // Labels: survivor first, so a duplicate name keeps the survivor's own
+        // promptPrefix — the loser's prompt line must not rewrite a card the
+        // task-board runner already owns.
+        const tags = mergedIdeaTags(survivor, loser)
+        // Lineage: the survivor inherits the loser's place in a follow-up
+        // chain when it has none of its own, and every child of the loser is
+        // re-pointed at the survivor. Both guards below exist to keep the
+        // chain acyclic — inheriting would otherwise let a survivor become
+        // its own parent.
+        const inheritedParent = survivor.followUpOfId !== undefined || loser.followUpOfId === undefined || loser.followUpOfId === survivor.id
+          ? undefined
+          : loser.followUpOfId
+        const survivorLabel = survivor.ideaNumber === undefined
+          ? survivor.title
+          : `#${survivor.ideaNumber} ${survivor.title}`
+        const decision = `Merged as a duplicate of ${survivorLabel}`.slice(0, MERGE_DECISION_MAX_LENGTH)
+
+        this.document.ideas = this.document.ideas.map(item => {
+          if (item.id === survivor.id) {
+            // Spread, never a reconstruction: `runStatus`, `runSessionId` and
+            // `taskBoardId` are runner-owned system fields and this verb does
+            // not touch them. A bound card is the task-board's, and the run
+            // poll owns the stamps — a merge that reset either would orphan a
+            // run the Host is still watching.
+            return {
+              ...item,
+              ...(tags === undefined ? {} : { tags }),
+              ...(inheritedParent === undefined ? {} : { followUpOfId: inheritedParent }),
+              updatedAt: now,
+            }
+          }
+          if (item.id === loser.id) {
+            // The loser's own run stamps survive on the archived row exactly
+            // as they are: a run that already settled on this idea still
+            // reports its outcome on the card the human can restore.
+            return { ...item, status: 'archived', archivedAt: now, decision, updatedAt: now }
+          }
+          if (item.followUpOfId === loser.id) return { ...item, followUpOfId: survivor.id, updatedAt: now }
+          return item
+        })
+
+        // Rank, after the archive: `triageOrderedIds` re-numbers the SURVIVOR's
+        // own open workspace group, and the loser has already left that group,
+        // so a `takeSourceRank` merge cannot re-admit the idea it just retired.
+        // An unranked loser has no position to give, so the mode degrades to
+        // keeping the survivor's rank rather than demoting it to the bottom.
+        if (action.mode === 'takeSourceRank' && survivor.status === 'open' && loser.rank !== undefined) {
+          const ordered = triageOrderedIds(this.document.ideas, survivor.id, loser.rank)
+          const rankById = new Map(ordered.map((id, index) => [id, index + 1]))
+          this.document.ideas = this.document.ideas.map(item => ({
+            ...item,
+            rank: rankById.get(item.id) ?? item.rank,
+          }))
+        }
+
+        const survivorRef = survivor.ideaNumber === undefined ? 'the surviving idea' : `#${survivor.ideaNumber}`
+        const loserRef = loser.ideaNumber === undefined ? 'another idea' : `#${loser.ideaNumber}`
+        recorded.push({ ideaId: loser.id, verb: 'merge', summary: `Merged into ${survivorRef} — archived as a duplicate` })
+        recorded.push({
+          ideaId: survivor.id,
+          verb: 'merge',
+          summary: `Took in ${loserRef} as a duplicate${action.mode === 'takeSourceRank' ? ', re-ranked at its position' : ''}`,
+        })
+        // Deliberately silent for the re-pointed children: they keep their
+        // body and their status, and only their parent pointer moves — the
+        // same reasoning that keeps `reorder` out of the log.
         break
       }
       case 'restore': {

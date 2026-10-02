@@ -271,6 +271,7 @@ describe('board launch affordance', () => {
     client.sessionLauncher = {
       launch: async () => ({ accepted: true }),
       launchReanalyze: async () => ({ accepted: true }),
+      launchFindSimilar: async () => ({ accepted: true }),
       listModels: async () => [
         { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek · Chat' },
         { provider: 'deepseek', model: 'deepseek-reasoner', label: 'DeepSeek · Reasoner' },

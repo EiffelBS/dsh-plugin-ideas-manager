@@ -47,9 +47,19 @@ mentions ideas / backlog / idees / notes:
    archives the parent — or use `decline` (+ `decision`) when the review
    rejects the idea outright. The ledger keeps a stable `#N` sequence per
    idea (`ideaNumber`) — the stable human reference for a captured idea.
-5. **TaskBoard mirror** (best-effort, one-way, when the board is present):
+5. **Duplicates**: two captures of the same work are reconciled with ONE
+   `merge` (sourceId = the duplicate, targetId = the survivor, `mode` =
+   `keepTargetRank` or `takeSourceRank`). Pick the survivor as the better-analysed
+   card, not the newer one; both ids must share a workspace or the Host refuses
+   the merge. To FIND a duplicate first, read the opt-in near-duplicate flag with
+   `GET /api/ideas/state?view=summary&similar=<id>&limit=8` — it is a signal, not
+   a verdict: read each candidate's real body through
+   `GET /api/ideas/idea?id=<candidateId>` before deciding, then merge yourself
+   rather than reporting a guess.
+6. **TaskBoard mirror** (best-effort, one-way, when the board is present):
    capture → backlog card, updates → card update, decline / deliver →
-   archive; a card reaching `done` moves its idea to under review
+   archive, a merge → update on the survivor + archive on the loser; a card
+   reaching `done` moves its idea to under review
    automatically (the review gate) — the review verdict stays human-owned.
 
 ## `ideas_*` agent tools (preferred over hand-building the envelope)
@@ -120,6 +130,14 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 - `GET /api/ideas/state?view=detail` → the same bounded envelope with
   field-selectable detail rows; the raw `GET /api/ideas/idea?id=<id>` remains
   the full single-record read.
+- `GET /api/ideas/state?view=summary|detail&similar=<ideaId>` → the same bounded
+  envelope **plus** an opt-in `similar: { ideaId, found, scanned, candidates[],
+  flagged }` block. A **flag, never an action**: it writes nothing and merges
+  nothing. The scan compares the anchor against the **open backlog of its own
+  workspace** only (the workspace-less ideas form one generic group), and each
+  candidate carries `score` (0..1) plus the `signals` that fired (`title`,
+  `tags`). `limit` bounds the candidate count; it is absent from the frozen full
+  snapshot entirely, so the board's poll pays nothing for it.
 - `meta` always reports `matched`, `returned`, `rowTruncated`, `nextOffset`,
   `bodyTruncated`, and `omittedFields`. A response never exceeds 512 KiB.
 - `GET /api/ideas/events` → SSE frames `{ revision }` (no full list).
@@ -134,6 +152,7 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 | `decline` | kind, ideaId, decision | → `declined` + `archivedAt` + optional `decision` note. |
 | `deliver` | kind, ideaId | → `archived` + `archivedAt` + `deliveredAt`; works from `open` AND `underReview` (review approved). Mirrors the card archive; the card's `done` stays runner-owned. |
 | `followUp` | kind, ideaId, input | review rejected: creates an `open` child idea (title/body, `followUpOfId` → parent, parent's workspace inherited) and archives the parent — one atomic commit; requires the parent `underReview`. Mirrors the child as a new card only. |
+| `merge` | kind, sourceId, targetId, mode | folds the **source** (duplicate) into the **target** (survivor): union the loser's tags onto the survivor, re-point the loser's children and its own place in a follow-up chain at the survivor, then archive the loser with a `decision` naming the survivor — one atomic commit. `mode` is `keepTargetRank` (default) or `takeSourceRank` (the survivor takes the loser's position and its open workspace group re-ranks); an unranked loser degrades to `keepTargetRank`. **Refused** when the two ids are the same row or sit in different workspaces. Never rewrites the survivor's title/body/summary, and never touches `runStatus` / `runSessionId` / `taskBoardId`. Mirrors the survivor as an update and the loser as an archive. |
 | `restore` | kind, ideaId | `archived`/`declined` → `open`. |
 | `delete` | kind, ideaId | hard remove. |
 | `reorder` | kind, orderedIds | rewrites ranks 1..n. |
@@ -210,6 +229,8 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
 
 ```
 src/protocol.ts          wire gate (exactKeys, envelope)
+src/core/ideas.ts        domain model, tag validation, activity log, near-duplicate signal
+src/client/find-similar.ts  the Find similar gate + launch input (pure)
 src/agent-tools.ts       the ideas_* agent tools (feature-detected registry)
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind
 src/host-service.ts      apply + mirror scheduling

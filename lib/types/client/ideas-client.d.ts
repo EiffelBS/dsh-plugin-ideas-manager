@@ -4,7 +4,7 @@
  * subscribers (the board React tree). No React, no cordis — the shell panel
  * registration at the edge owns the DOM.
  */
-import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts';
+import type { IdeaRecord, IdeaSimilarReport, IdeaStatus } from '../core/ideas.ts';
 import { type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
 import { type PanelNavigator } from './panel-navigation.ts';
 import type { IdeasHostTransport } from './host-api.ts';
@@ -174,6 +174,20 @@ export declare class IdeasClient {
      * update+triage overwrite the card.
      */
     reanalyzeIdea(ideaId: string): Promise<void>;
+    /**
+     * Read the near-duplicate report for one idea (Find similar). Opt-in by
+     * construction: it rides the bounded read query's `similar` key, so the
+     * board's 2.5 s poll never runs the scan and the default snapshot never
+     * grows a byte because of it. `limit` bounds both the returned rows and the
+     * candidate set, so a caller cannot accidentally ask for the whole board.
+     *
+     * Not a write: it returns a FLAG (which open same-workspace ideas look
+     * similar, and on which cheap signals), never an action.
+     *
+     * @throws when the transport predates the bounded read (`read-view-unavailable`)
+     *   or answers without the report the query asked for.
+     */
+    findSimilarIdea(ideaId: string, limit?: number): Promise<IdeaSimilarReport>;
     deleteIdea(ideaId: string): Promise<void>;
     /**
      * Start the idea's execution (idea #66) through the Host, which owns the

@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
 import { afterEach, describe, expect, it } from 'vitest'
 import { IdeasHostService } from '../src/host-service.ts'
-import { rankGroupKey, type IdeaRecord } from '../src/core/ideas.ts'
+import { findIdeaSimilar, rankGroupKey, type IdeaRecord, IDEAS_SIMILAR_MAX_CANDIDATES } from '../src/core/ideas.ts'
 import { groupedIdOrder } from '../src/client/ordering.ts'
 import { toListSnapshot } from '../src/protocol.ts'
 import {
@@ -132,6 +132,24 @@ describe.runIf(process.env.IDEAS_PERF === '1')('perf-host: state payload + trans
     }), 'utf8')
     const legacyTargetBodyBytes = Buffer.byteLength(analystTarget.body, 'utf8')
     console.log(`[perf-host] analyst target prompt metadata: ${promptMetadataBytes} bytes; omitted target body: ${legacyTargetBodyBytes} bytes`)
+
+    // --- near-duplicate scan: OPT-IN, never on the poll -------------------
+    // The flag costs the 2.5 s board poll nothing because it is not part of
+    // the default snapshot: it only runs when a caller asks for `similar`.
+    // What this measures is the scan's OWN cost at the brief's 420-idea
+    // scale, against the same envelope the read path reports.
+    const tripled = [...host.snapshot().ideas, ...host.snapshot().ideas, ...host.snapshot().ideas]
+      .map((idea, index) => ({ ...idea, id: `${idea.id}-triple-${index}`, title: `${idea.title} #${index}` }))
+    const anchor = tripled.find(idea => idea.status === 'open')!
+    const scanMs = medianMs(200, () => { void findIdeaSimilar(tripled, anchor.id, 20) })
+    const scanReport = findIdeaSimilar(tripled, anchor.id, 20)
+    console.log(`[perf-host] near-duplicate scan over ${tripled.length} ideas (${scanReport.scanned} open same-workspace peers): ${scanMs.toFixed(2)} ms (median/200)`)
+    // The default snapshot must be untouched by the feature: no `similar` key,
+    // and the lean poll projection stays byte-identical to what it was.
+    const leanJson = JSON.stringify(toListSnapshot(host.snapshot()))
+    expect(leanJson).not.toContain('"similar"')
+    expect(findIdeaSimilar(tripled, anchor.id, 20).candidates.length)
+      .toBeLessThanOrEqual(IDEAS_SIMILAR_MAX_CANDIDATES)
 
     // --- transactional triage: reinsert at rank 1 + shift ---------------
     const snapshot0 = host.snapshot()

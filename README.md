@@ -26,6 +26,13 @@ TaskBoard: **zero hard dependency** on it.
 - Optional description (markdown), **tags**, workspace and a **Suggested rank**.
 - The **AI capture** button opens a session that analyzes the draft,
   creates/merges the idea in the backlog, and reports the retained ranking.
+- **Find similar** (on an open idea, next to *Re-analyze*) asks whether the idea
+  duplicates something you already have: the board lists the open ideas of the
+  same workspace whose title and tags look close, and an analyst session then
+  reads their real content and rules on each one — duplicate, related but
+  distinct, or unrelated. The score it shows is a rough signal the session is
+  told to distrust, and the action never merges anything: it recommends, you
+  decide.
 
 ### A 4-column kanban
 Open · Under review · Archived · Declined.
@@ -121,6 +128,32 @@ verdict buttons.
 - It also feeds **Re-analyze**. When you ask for a fresh analysis, the analyst
   is handed what actually happened to this idea before, so it re-reads the real
   history instead of re-proposing something already refused.
+
+### Merging duplicates
+Two captures can describe the same work. When that happens, one **merge** folds
+the duplicate into the idea that survives.
+
+- The surviving card keeps its **title, its analysis and its position** in the
+  backlog. A duplicate contributes only what it has that the survivor lacks:
+  its **tags**, and its place in a follow-up chain — the survivor inherits that
+  link, and any follow-up that hung off the duplicate now points at the
+  survivor instead.
+- The duplicate is **archived** with a note naming the card it was merged into,
+  so the reason is still there long after the backlog moved on. Both ideas record
+  it in their activity log.
+- It is **one commit**: there is never a moment where both cards are open.
+- **Different workspaces are refused** with a reason. Merging across projects
+  would quietly move work between them, which is your call to make explicitly.
+- Whether the survivor takes the duplicate's rank or keeps its own is chosen per
+  merge.
+- A merge **never touches a running execution or a bound task card**. If you want
+  the duplicate's analysis rather than the survivor's, that is a different thing
+  to ask for.
+
+You do not have to trigger a merge by hand. The **Find similar** action finds the
+candidates and asks the analyst to rule on them; the AI capture flow merges a
+duplicate on its own when it judges one. Both are reversible: a merged card can be
+restored from the archive like any other.
 
 ### Workspaces
 - A header selector scopes the board to one workspace (or *all* / *none*).
@@ -293,13 +326,20 @@ read the state and write ideas without any UI:
 |---|---|
 | `GET /api/ideas/state` | Full snapshot of the board |
 | `GET /api/ideas/state?view=summary` | Bounded reads: filters, pagination, selected fields, body-byte caps |
+| `GET /api/ideas/state?view=summary&similar=<id>` | The same, plus a cheap near-duplicate **flag** for one idea |
 | `GET /api/ideas/idea?id=<id>` | One complete idea |
-| `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
+| `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `merge`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
 | `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` |
 | `GET /api/ideas/events` | Server-sent change notifications |
 
 Actions are **deduplicated by `requestId`** (fresh id per call). The routes sit
 behind a same-origin fence (loopback socket or browser).
+
+The **`merge`** action is `{ sourceId, targetId, mode }`: the source is folded
+into the target and archived, and `mode` is `keepTargetRank` or
+`takeSourceRank`. The **`similar`** read query is opt-in — it reports which open
+ideas of the same workspace look close, and on which signals, and it changes
+nothing on disk.
 
 - [`SKILL.md`](SKILL.md) — the full wire contract: verb table, read-query
   fields, mirror mapping, PowerShell gotchas.

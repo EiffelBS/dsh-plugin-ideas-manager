@@ -5,7 +5,7 @@
  * registration at the edge owns the DOM.
  */
 
-import type { IdeaRecord, IdeaStatus } from '../core/ideas.ts'
+import type { IdeaRecord, IdeaSimilarReport, IdeaStatus } from '../core/ideas.ts'
 import {
   IDEAS_SETTINGS_DEFAULTS,
   sanitizeSettings,
@@ -395,6 +395,26 @@ export class IdeasClient {
    */
   async reanalyzeIdea(ideaId: string): Promise<void> {
     await this.run({ kind: 'reanalyze', ideaId })
+  }
+
+  /**
+   * Read the near-duplicate report for one idea (Find similar). Opt-in by
+   * construction: it rides the bounded read query's `similar` key, so the
+   * board's 2.5 s poll never runs the scan and the default snapshot never
+   * grows a byte because of it. `limit` bounds both the returned rows and the
+   * candidate set, so a caller cannot accidentally ask for the whole board.
+   *
+   * Not a write: it returns a FLAG (which open same-workspace ideas look
+   * similar, and on which cheap signals), never an action.
+   *
+   * @throws when the transport predates the bounded read (`read-view-unavailable`)
+   *   or answers without the report the query asked for.
+   */
+  async findSimilarIdea(ideaId: string, limit = 8): Promise<IdeaSimilarReport> {
+    const snapshot = await this.readIdeas({ view: 'summary', similar: ideaId, limit })
+    const report = snapshot.similar
+    if (report === undefined) throw new Error('similar-report-unavailable')
+    return report
   }
 
   async deleteIdea(ideaId: string): Promise<void> {

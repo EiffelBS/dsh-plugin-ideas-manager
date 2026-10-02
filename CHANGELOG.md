@@ -6,6 +6,39 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Added
+
+- **Duplicates can now be merged in one step.** The AI capture button has always
+  said it would "create or merge a duplicate", and now it can: a new **merge**
+  action folds a duplicate into the idea that survives. The surviving card keeps
+  its title, its analysis and its place in the backlog, and simply gains the
+  duplicate's **tags** and its place in any follow-up chain; the duplicate is
+  **archived** with a note naming the card it was merged into, and any follow-up
+  that hung off it now points at the survivor. It is a single commit, so there is
+  never a moment where both cards are open, and both ideas remember it in their
+  activity log. Two ideas in **different workspaces** are refused with a reason,
+  because merging across projects would quietly move work between them. Whether
+  the surviving card takes the duplicate's rank or keeps its own is your choice,
+  per merge. Running a task card, and the run it is in, are never touched by a
+  merge.
+- **Ask whether an idea duplicates something.** A new **Find similar** action on
+  an open idea, next to *Re-analyze*, does two things. The board first does its
+  own quick check — it compares the idea's title and its tags against the open
+  ideas of the same workspace and shows you the closest ones, with the score and
+  which of the two signals produced it. Then a fresh analyst session reads the
+  **real content** of those candidates and answers, for each one, whether it is a
+  duplicate, a related-but-distinct idea, or unrelated — and says which
+  candidates it weighed. The score it is shown is a rough signal, and the session
+  is told to distrust it in both directions; the human still makes the call. The
+  action can **never merge anything by itself**, and the session it starts is
+  explicitly forbidden to merge. Like *Re-analyze*, it offers the same model
+  picker and only appears when the idea's workspace is one your DSH app knows.
+- The near-duplicate check is available to any agent and script through the
+  board's read channel, and it is **opt-in**: it runs only when asked, so the
+  board's own polling costs exactly what it did before.
+
 ## 0.8.0 - 2026-10-03
 
 ### Added

@@ -536,6 +536,18 @@ export class IdeasHostService {
       this.enqueueMirror(child.id, 'create', child)
       return
     }
+    // The merge verb touches TWO ideas, so it maps to two mirror ops on two
+    // independent chains: the survivor's content genuinely changed (an update,
+    // exactly like `update`), and the loser leaves the backlog (an archive,
+    // exactly like `decline`). Re-pointed children change only their parent
+    // pointer and mirror nothing, the same silence `reorder` keeps.
+    if (action.kind === 'merge') {
+      const survivor = ideas.find(item => item.id === action.targetId)
+      if (survivor !== undefined) this.enqueueMirror(survivor.id, 'update', survivor)
+      const loser = ideas.find(item => item.id === action.sourceId)
+      if (loser !== undefined) this.enqueueMirror(loser.id, 'archive', loser)
+      return
+    }
     const kind = mirrorKindOf(action)
     if (kind === undefined) return
     const ideaId = actionIdeaId(action)
@@ -651,6 +663,9 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
     case 'followUp':
       // Handled in scheduleMirror directly (the child idea mirrors as create).
       return undefined
+    case 'merge':
+      // Handled in scheduleMirror directly (survivor update + loser archive).
+      return undefined
     case 'delete':
     case 'reorder':
     case 'triage':
@@ -707,6 +722,8 @@ function actionIdeaId(action: IdeasAction): string | undefined {
     case 'reorder':
     case 'import':
     case 'export':
+    case 'merge':
+      // merge: handled in scheduleMirror directly (it mirrors on BOTH ids).
       return undefined
   }
 }

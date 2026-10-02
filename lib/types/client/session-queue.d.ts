@@ -12,7 +12,7 @@
  * "sessions" service is absent or malformed the resolver returns undefined
  * and the board keeps the plain manual Create for workspace-targeted captures.
  */
-import type { IdeaEvent } from '../core/ideas.ts';
+import type { IdeaEvent, IdeaSimilarSignal, IdeaStatus } from '../core/ideas.ts';
 /**
  * The captured idea handed to the analysing session. The human's priority
  * opinion fields (value/effort/rationale/rank) are optional: the analyst
@@ -98,6 +98,55 @@ export interface ModelSelection {
     reasoningEffort?: string;
 }
 /**
+ * One candidate of a FIND SIMILAR run, as the board hands it over: the
+ * server-computed cheap signal plus the identity the analyst needs to read
+ * the candidate's real body. `score` is a heuristic the analyst is told to
+ * distrust — it exists to bound and order the set, not to answer the question.
+ */
+export interface SimilarCandidateHint {
+    /** The candidate idea id (the exact selector for the deferred-body read). */
+    id: string;
+    /** The stable "#N" human reference, absent on a row without one. */
+    ideaNumber?: number;
+    /** The candidate's title (never its body: this is metadata, not content). */
+    title: string;
+    /** The board's cheap 0..1 signal score — a ranking hint, never a verdict. */
+    score: number;
+    /** Which cheap signals fired (normalized title, tag overlap). */
+    signals: readonly IdeaSimilarSignal[];
+}
+/**
+ * The existing idea handed to a FIND SIMILAR run together with its bounded
+ * candidate set. The judgement belongs to the analyst session; the board only
+ * supplies the signal and the scope. This run NEVER writes — not even when
+ * two candidates turn out to be the same idea.
+ */
+export interface FindSimilarInput {
+    /** Target workspace of the idea (the session runs in it). */
+    workspaceId: string;
+    /** Display title of the target workspace, for the analyst's context. */
+    workspaceTitle: string;
+    /** The idea under review — the anchor of the scan. */
+    ideaId: string;
+    /** The stable "#N" human reference of the anchor, when it has one. */
+    ideaNumber?: number;
+    title: string;
+    summary?: string;
+    status: IdeaStatus;
+    tags: readonly string[];
+    /** The bounded candidate set, strongest first (already server-capped). */
+    candidates: readonly SimilarCandidateHint[];
+    /**
+     * How many open same-workspace peers the scan actually compared. Handed to
+     * the analyst so its report can say what was left out — a bounded set the
+     * reader cannot see the bounds of would read as "these are all the similar
+     * ideas", which is not what the board knows.
+     */
+    scanned: number;
+    /** Optional explicit model selection for the judging session. */
+    model?: ModelChoice;
+}
+/**
  * The write face the board uses to launch an AI capture. Resolved once per
  * page from the cordis "sessions" service; undefined degrades to manual.
  */
@@ -105,6 +154,12 @@ export interface SessionLauncher {
     launch(input: AiCaptureInput): Promise<AiLaunchResult>;
     /** Re-run the analyst on an existing idea (idea #30 flow); same session mechanics. */
     launchReanalyze(input: ReanalyzeInput): Promise<AiLaunchResult>;
+    /**
+     * Ask the analyst to judge a bounded near-duplicate candidate set (Find
+     * similar). Same session mechanics again, dedicated prompt; it reports and
+     * never writes.
+     */
+    launchFindSimilar(input: FindSimilarInput): Promise<AiLaunchResult>;
     /** List the models available for an analysing session (empty when unavailable). */
     listModels(): Promise<ModelChoice[]>;
     /**
@@ -263,6 +318,19 @@ export declare function buildAnalysisPrompt(input: AiCaptureInput, origin: strin
  * rank-churn rules).
  */
 export declare function buildReanalysisPrompt(input: ReanalyzeInput, origin: string): string;
+/**
+ * The FIND SIMILAR launch prompt. Same split as the other two analyst
+ * prompts: the skill carries the methodology, this prompt carries the anchor,
+ * the bounded candidate set, the server origin — and the rules that make this
+ * run a REPORT rather than an action.
+ *
+ * Two things the prompt is careful about:
+ *  - the candidate scores are labelled a cheap signal the analyst must
+ *    distrust, because a bounded set without that caveat reads as a verdict;
+ *  - the merge verb is forbidden outright, and the report asks for a merge
+ *    RECOMMENDATION instead. The human stays the one who merges.
+ */
+export declare function buildFindSimilarPrompt(input: FindSimilarInput, origin: string): string;
 /**
  * Read the CURRENT host session's model selection from its `modelSelection`
  * projection (the same source the shell's own selector reads: `faceOf`
