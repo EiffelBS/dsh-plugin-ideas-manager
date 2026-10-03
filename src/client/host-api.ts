@@ -12,11 +12,16 @@ import {
   toListSnapshot,
   type IdeasAction,
   type IdeasActionEnvelope,
+  type IdeasBackupView,
   type IdeasEventPayload,
   type IdeasListSnapshot,
   type IdeasReadQuery,
   type IdeasReadSnapshot,
+  type IdeasRestoreRequest,
+  type IdeasRestoreResponse,
   type IdeasSnapshot,
+  type IdeasSnapshotReason,
+  type IdeasSnapshotTaken,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
   type LaunchResponse,
@@ -32,8 +37,14 @@ function uuid(): string {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const body = await response.json() as T & { error?: string }
-  if (!response.ok) throw new Error(body.error ?? `ideas request failed: ${response.status}`)
+  const body = await response.json() as T & { error?: string; message?: string }
+  if (!response.ok) {
+    // A route that answers with a refusal carries BOTH a stable `error` code
+    // and a Host-written `message`; the sentence is what the panel shows, so it
+    // wins. Every other route sends no `message` and this is inert for them.
+    if (body.error === undefined) throw new Error(`ideas request failed: ${response.status}`)
+    throw new Error(typeof body.message === 'string' && body.message !== '' ? body.message : body.error)
+  }
   return body
 }
 
@@ -96,6 +107,23 @@ export interface IdeasHostTransport {
    * was refused stays visible.
    */
   launch?(ideaId: string, model?: string): Promise<LaunchResponse>
+  /**
+   * The snapshot folder (idea #95). Optional capability, like `config`: a
+   * transport without it simply shows no backup panel, and the board keeps
+   * working — a deployment must never lose its ledger surface because an older
+   * host does not know the route.
+   */
+  backups?(): Promise<IdeasBackupView>
+  /** Take a snapshot of the whole board now. */
+  takeSnapshot?(reason?: IdeasSnapshotReason): Promise<IdeasSnapshotTaken>
+  /** Adopt a snapshot (`name`) or an imported document (`document`). */
+  restoreSnapshot?(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse>
+  /**
+   * URL of one snapshot's raw document, served as a download. A plain link, not
+   * a blob: the bytes are the ledger's own and the browser stores them as the
+   * file they are, so an export is restorable on the machine it lands on.
+   */
+  snapshotContentUrl?(name: string): string
 }
 
 export class HttpIdeasHostTransport implements IdeasHostTransport {
@@ -130,6 +158,30 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
 
   async config(): Promise<IdeasSettingsView> {
     return await this.request(`${IDEAS_API_PREFIX}/config`, { cache: 'no-store' })
+  }
+
+  async backups(): Promise<IdeasBackupView> {
+    return await this.request(`${IDEAS_API_PREFIX}/backup`, { cache: 'no-store' })
+  }
+
+  async takeSnapshot(reason: IdeasSnapshotReason = 'manual'): Promise<IdeasSnapshotTaken> {
+    return await this.request<IdeasSnapshotTaken>(`${IDEAS_API_PREFIX}/backup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    })
+  }
+
+  async restoreSnapshot(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse> {
+    return await this.request<IdeasRestoreResponse>(`${IDEAS_API_PREFIX}/backup/restore`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+  }
+
+  snapshotContentUrl(name: string): string {
+    return `${IDEAS_API_PREFIX}/backup/content?name=${encodeURIComponent(name)}`
   }
 
   async saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView> {

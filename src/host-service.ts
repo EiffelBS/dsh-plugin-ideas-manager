@@ -26,14 +26,21 @@
  * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
 
-import { IdeasHostLedger, type LedgerApplyResult } from './host-ledger.ts'
+import { IdeasHostLedger, type LedgerApplyResult, type LedgerRestoreResult, type LedgerRestoreSource } from './host-ledger.ts'
+import { IDEAS_SNAPSHOT_RETENTION, type SnapshotFile } from './backup.ts'
 import { SessionRunner, SessionLaunchError } from './session-runner.ts'
 import { TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   type IdeasAction,
+  type IdeasBackupView,
   type IdeasEventPayload,
+  type IdeasRestoreRequest,
+  type IdeasRestoreResponse,
+  type IdeasSnapshotInfo,
+  type IdeasSnapshotReason,
+  type IdeasSnapshotTaken,
   type IdeasSnapshot,
 } from './protocol.ts'
 
@@ -160,6 +167,88 @@ export class IdeasHostService {
         ideas: state.ideas,
       },
       ...(result.export === undefined ? {} : { export: result.export }),
+    }
+  }
+
+  // --- snapshots, restore and portable transfer (idea #95) ---------------
+
+  /** Snapshot folder view (GET /api/ideas/backup).
+   *
+   * The list is built from file names and sizes — never by parsing a snapshot —
+   * so opening the settings section costs a directory read whatever the board
+   * weighs. `running` is reported up front so the panel can say why a restore
+   * would be refused instead of letting the human click into that answer.
+   */
+  backupsView(): IdeasBackupView {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    return {
+      ok: true,
+      dir: this.ledger.backupDir(),
+      retention: IDEAS_SNAPSHOT_RETENTION,
+      snapshots: this.ledger.snapshots().map(snapshotInfoOf),
+      running: this.ledger.runningIdeas().length,
+    }
+  }
+
+  /**
+   * Take a snapshot of the whole board. Additive and outside the action wire:
+   * a snapshot writes a FILE, not the ledger, so it must not consume the
+   * persisted request-id dedupe cache (the same reason the launch route is a
+   * dedicated endpoint).
+   */
+  takeSnapshot(reason: IdeasSnapshotReason = 'manual'): IdeasSnapshotTaken {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    const result = this.ledger.takeSnapshot(reason)
+    return {
+      ok: true,
+      snapshot: snapshotInfoOf(result.snapshot),
+      ideas: result.ideas,
+      pruned: result.pruned,
+    }
+  }
+
+  /** Raw snapshot document for the download route (export); undefined when absent. */
+  snapshotContent(name: string): string | undefined {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    const read = this.ledger.readSnapshot(name)
+    return read.ok ? read.text : undefined
+  }
+
+  /**
+   * Restore the board from a snapshot or from an imported document. A refusal
+   * (a run in flight, a broken file) is an ordinary answer carrying the Host's
+   * own sentence, never an exception: the panel renders the reason and the live
+   * board is untouched in every refusal case.
+   */
+  restoreBoard(request: IdeasRestoreRequest): IdeasRestoreResponse {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    // The wire parser guarantees exactly one source; the empty-string fallback
+    // keeps a direct in-process caller on the same refusal path instead of
+    // reaching into the ledger with `undefined`.
+    const source: LedgerRestoreSource = request.name !== undefined
+      ? { name: request.name }
+      : { document: request.document ?? '' }
+    const result: LedgerRestoreResult = this.ledger.restore(source)
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.reason,
+        message: result.message,
+        ...(result.running === undefined ? {} : {
+          running: result.running.map(idea => ({
+            id: idea.id,
+            ...(idea.ideaNumber === undefined ? {} : { ideaNumber: idea.ideaNumber }),
+            title: idea.title,
+          })),
+        }),
+      }
+    }
+    return {
+      ok: true,
+      revision: result.revision,
+      ideas: result.ideas,
+      source: result.source,
+      displaced: snapshotInfoOf(result.displaced),
     }
   }
 
@@ -677,6 +766,17 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
       // stamps the audit cycle; import and export do not cross the mirror
       // boundary.
       return undefined
+  }
+}
+
+/** Wire projection of one snapshot file (the absolute path stays host-side). */
+function snapshotInfoOf(file: SnapshotFile): IdeasSnapshotInfo {
+  return {
+    name: file.name,
+    createdAt: file.createdAt,
+    bytes: file.bytes,
+    reason: file.reason,
+    foreign: !file.managed,
   }
 }
 

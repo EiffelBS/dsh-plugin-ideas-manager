@@ -17,12 +17,16 @@ import {
   parseActionEnvelope,
   parseIdeasReadQuery,
   parseLaunchBody,
+  parseRestoreRequest,
   parseSettingsBody,
   toListSnapshot,
   IDEAS_API_PREFIX,
+  IDEAS_RESTORE_LIMIT,
+  IDEAS_RESTORE_CONFLICT,
   IDEAS_SETTINGS_DEFAULTS,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
+  type IdeasSnapshotReason,
 } from './protocol.ts'
 
 const ACTION_LIMIT = 64 * 1024
@@ -30,6 +34,8 @@ const IMPORT_LIMIT = 2 * 1024 * 1024
 const HEARTBEAT_MS = 15_000
 /** Launch model target cap: `provider/model`, the task-board's own shape. */
 const LAUNCH_MODEL_MAX_LENGTH = 256
+/** Cap of the snapshot-download route (a local file, read once per download). */
+const SNAPSHOT_CONTENT_LIMIT = 64 * 1024 * 1024
 
 /**
  * Harness browser-auth cookie prefix (dsh-client-connection): the
@@ -96,13 +102,13 @@ export function isTrustedIdeasRequest(req: IncomingMessage): boolean {
  * received byte count is returned so the caller can cap on wire bytes rather
  * than the (re-encoded) length of the decoded text.
  */
-async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unknown; byteLength: number }> {
+async function readBody(req: IncomingMessage, limit: number = IMPORT_LIMIT): Promise<{ raw: string; value: unknown; byteLength: number }> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     const buffer = chunk as Buffer
     size += buffer.length
-    if (size > IMPORT_LIMIT) throw new Error('body-too-large')
+    if (size > limit) throw new Error('body-too-large')
     chunks.push(buffer)
   }
   const raw = decodeRequestBody(Buffer.concat(chunks))
@@ -317,5 +323,140 @@ export function makeIdeasRoutes(
       }
     },
   }
-  return [state, ideaBody, action, events, config, launch]
+  /** Error text of an unknown throwable (every refusal carries its own reason). */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * The snapshot reason a caller may choose. The only meaningful choice is
+ * `export` (a copy taken to be carried to another machine); everything else —
+ * including an unknown value — is a plain `manual` snapshot. The `pre-restore`
+ * stamp is written by the restore itself and can never be asserted from the
+ * wire, so a displaced ledger can never be filed as a routine snapshot.
+ */
+function parseSnapshotReason(value: unknown): IdeasSnapshotReason {
+  const body = value === null || typeof value !== 'object' || Array.isArray(value)
+    ? undefined
+    : value as Record<string, unknown>
+  return body?.reason === 'export' ? 'export' : 'manual'
+}
+
+/**
+   * The snapshot folder (idea #95). A DEDICATED route family, not action verbs:
+   * a snapshot writes a FILE beside the ledger instead of mutating it, and a
+   * restore replaces the whole document — neither may consume the persisted
+   * request-id dedupe cache, and neither belongs in the frozen action envelope.
+   *
+   *  - `GET  /api/ideas/backup`  the folder as it stands (names, times, sizes);
+   *  - `POST /api/ideas/backup`  take a snapshot now (`{reason}`);
+   *  - `GET  /api/ideas/backup/content?name=<snapshot>` the raw document, for
+   *    the portable download;
+   *  - `POST /api/ideas/backup/restore` adopt `{name}` or `{document}`.
+   *
+   * Status mapping (a refusal always says why):
+   *  400 invalid-restore / an unusable snapshot (with the reason in `message`),
+   *  404 not-found, 409 a run in flight or a disabled plugin,
+   *  413/415/405 discipline.
+   */
+  const backup: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/backup`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string): void => {
+        writeJson(res, status, { ok: false, error }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'GET' && req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      if (req.method === 'GET') {
+        try {
+          writeJson(res, 200, service.backupsView(), { 'cache-control': 'no-store' })
+        } catch (error) {
+          deny(messageOf(error) === 'ideas plugin is disabled' ? 409 : 500, messageOf(error))
+        }
+        return
+      }
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { value: unknown; byteLength: number }
+      try {
+        body = await readBody(req, ACTION_LIMIT)
+      } catch (error) {
+        const message = messageOf(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      const reason = parseSnapshotReason(body.value)
+      try {
+        writeJson(res, 200, service.takeSnapshot(reason), { 'cache-control': 'no-store' })
+      } catch (error) {
+        const message = messageOf(error)
+        deny(message === 'ideas plugin is disabled' ? 409 : 500, message)
+      }
+    },
+  }
+  const snapshotContent: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/backup/content`,
+    handler: (req, res): void => {
+      if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      const name = new URL(req.url ?? '/', 'http://loopback').searchParams.get('name')
+      if (name === null || name === '') return writeJson(res, 400, { ok: false, error: 'name-required' }, { 'cache-control': 'no-store' })
+      let text: string | undefined
+      try {
+        text = service.snapshotContent(name)
+      } catch (error) {
+        const message = messageOf(error)
+        return writeJson(res, message === 'ideas plugin is disabled' ? 409 : 500, { ok: false, error: message }, { 'cache-control': 'no-store' })
+      }
+      if (text === undefined) return writeJson(res, 404, { ok: false, error: 'not-found' }, { 'cache-control': 'no-store' })
+      // The bytes are the same ones the ledger persists, so a downloaded file is
+      // a restorable document on the machine it lands on — the portable escape
+      // hatch, not a report about the board.
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': String(Buffer.byteLength(text)),
+        'content-disposition': `attachment; filename="${name.replace(/[^A-Za-z0-9._-]/g, '_')}"`,
+        'cache-control': 'no-store',
+      })
+      res.end(text)
+    },
+  }
+  const restore: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/backup/restore`,
+    handler: async (req, res): Promise<void> => {
+      const answer = (status: number, body: object): void => {
+        writeJson(res, status, body, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'POST') return answer(405, { ok: false, error: 'method-not-allowed' })
+      if (!guard(req, res)) return
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+        return answer(415, { ok: false, error: 'json-required' })
+      }
+      let body: { value: unknown; byteLength: number }
+      try {
+        body = await readBody(req, IDEAS_RESTORE_LIMIT)
+      } catch (error) {
+        const message = messageOf(error)
+        return answer(message === 'body-too-large' ? 413 : 400, { ok: false, error: message, message })
+      }
+      const request = parseRestoreRequest(body.value)
+      if (request === undefined) return answer(400, { ok: false, error: 'invalid-restore' })
+      try {
+        const outcome = service.restoreBoard(request)
+        if (outcome.ok) return answer(200, outcome)
+        // 404: the named snapshot is not there. 409: a STATE refuses the
+        // restore (a run in flight, a disabled plugin) and retrying unchanged
+        // would fail the same way. Everything else is 400: the document itself.
+        const status = outcome.error === 'snapshot-not-found'
+          ? 404
+          : IDEAS_RESTORE_CONFLICT.has(outcome.error) ? 409 : 400
+        answer(status, outcome)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        answer(message === 'ideas plugin is disabled' ? 409 : 400, { ok: false, error: message, message })
+      }
+    },
+  }
+  return [state, ideaBody, action, events, config, launch, backup, snapshotContent, restore]
 }

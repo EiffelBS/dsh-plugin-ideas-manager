@@ -1036,6 +1036,82 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
+/* --- Backup panel (snapshots, restore, portable export/import) --- */
+
+.dsh-ideas-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dsh-ideas-backup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.dsh-ideas-backup-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-backup-item-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dsh-ideas-backup-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.dsh-ideas-backup-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-backup-status-warn {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-warn-bg, color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent)) 12%, transparent));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dsh-ideas-backup-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+}
+
+.dsh-ideas-backup-file {
+  font-family: var(--dsh-font-family, monospace);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .dsh-ideas-settings-select {
   box-sizing: border-box;
   max-width: 240px;
@@ -2138,6 +2214,15 @@ export const classes = {
   settingsToggle: 'dsh-ideas-settings-toggle',
   settingsError: 'dsh-ideas-settings-error',
   settingsNote: 'dsh-ideas-settings-note',
+  backupActions: 'dsh-ideas-backup-actions',
+  backupList: 'dsh-ideas-backup-list',
+  backupItem: 'dsh-ideas-backup-item',
+  backupItemMeta: 'dsh-ideas-backup-item-meta',
+  backupItemActions: 'dsh-ideas-backup-item-actions',
+  backupStatus: 'dsh-ideas-backup-status',
+  backupStatusWarn: 'dsh-ideas-backup-status-warn',
+  backupDownload: 'dsh-ideas-backup-download',
+  backupFile: 'dsh-ideas-backup-file',
   filterChip: 'dsh-ideas-filter-chip',
   filterChipActive: 'dsh-ideas-filter-chip-active',
   dragHint: 'dsh-ideas-drag-hint',

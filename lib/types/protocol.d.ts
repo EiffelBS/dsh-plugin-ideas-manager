@@ -310,6 +310,112 @@ export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope
 /** Convenience used by tests: build an idea record exactly as the ledger stores it. */
 export declare function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord;
 /**
+ * Why a snapshot exists: taken by hand, taken to be exported to another
+ * machine, or displaced by a restore (the board a restore replaced). Spelled
+ * here, in the protocol module, because the browser half renders it and
+ * `protocol.ts` is the one module both halves share — importing the Node-side
+ * store here would drag `node:fs` into the browser bundle.
+ */
+export type IdeasSnapshotReason = 'manual' | 'export' | 'pre-restore';
+/** One snapshot of the backup folder, as the list route reports it. */
+export interface IdeasSnapshotInfo {
+    /** File name inside the backup folder (the only accepted restore selector). */
+    name: string;
+    /** When it was taken (epoch ms). */
+    createdAt: number;
+    /** Size in bytes on disk. */
+    bytes: number;
+    reason: IdeasSnapshotReason;
+    /**
+     * True for a file the plugin did not write (an exported ledger dropped into
+     * the folder by hand — a supported way in). The retention policy never
+     * removes those.
+     */
+    foreign: boolean;
+}
+/**
+ * `GET /api/ideas/backup`: the snapshot folder as it stands.
+ *
+ * `dir` is a diagnostic for agents and scripts; the settings panel never
+ * prints a filesystem path. `running` is the count of ideas whose execution is
+ * in flight — the number a restore would refuse over.
+ */
+export interface IdeasBackupView {
+    ok: true;
+    dir: string;
+    retention: number;
+    snapshots: IdeasSnapshotInfo[];
+    running: number;
+}
+/** `POST /api/ideas/backup`: the snapshot that was just written. */
+export interface IdeasSnapshotTaken {
+    ok: true;
+    snapshot: IdeasSnapshotInfo;
+    /** How many ideas the snapshot holds. */
+    ideas: number;
+    /** How many older snapshots the retention policy removed. */
+    pruned: number;
+}
+/**
+ * `POST /api/ideas/backup/restore`: exactly one source, never both. `name`
+ * restores a snapshot of the local folder; `document` hands a whole ledger over
+ * in the request body (the portable import — the same bytes an export
+ * downloaded, so a file that travelled to another machine lands in exactly one
+ * validator).
+ *
+ * `document` is a JSON **string** on purpose: the browser posts the file it
+ * read verbatim, so there is exactly one parser and one validator, and a large
+ * ledger is never re-encoded twice through `JSON.parse`/`JSON.stringify`.
+ */
+export interface IdeasRestoreRequest {
+    name?: string;
+    document?: string;
+}
+/** A restore that displaced the current board and adopted another one. */
+export interface IdeasRestoreOutcome {
+    ok: true;
+    /** Revision of the restored board (always above the one it replaced). */
+    revision: number;
+    /** How many ideas the restored document holds. */
+    ideas: number;
+    /** Label of what was restored (the file name, or the import). */
+    source: string;
+    /** The displaced ledger, kept as a snapshot of its own. */
+    displaced: IdeasSnapshotInfo;
+}
+/**
+ * A refused restore. `error` is the stable code (the panel localizes the ones it
+ * knows), `message` is the Host's own sentence naming what is wrong — a refusal
+ * must always say WHY, which is the whole point of refusing loudly.
+ */
+export interface IdeasRestoreRefusal {
+    ok: false;
+    error: string;
+    message: string;
+    /** The ideas whose run is in flight (only on `restore-run-in-flight`). */
+    running?: Array<{
+        id: string;
+        ideaNumber?: number;
+        title: string;
+    }>;
+}
+/** Answer of the restore route; a refusal is a normal 4xx answer, not a 500. */
+export type IdeasRestoreResponse = IdeasRestoreOutcome | IdeasRestoreRefusal;
+/**
+ * Request cap of the restore route (8 MiB). The 64 KiB action cap is sized for
+ * a single mutation and the 2 MiB import cap for a migration batch; a full
+ * ledger with long analyses is simply larger, and truncating it would be the one
+ * failure mode this route must never have.
+ */
+export declare const IDEAS_RESTORE_LIMIT: number;
+/**
+ * Validate the restore body. Exactly one source must be present: a name alone
+ * for the local snapshot, a document alone for the portable import.
+ */
+export declare function parseRestoreRequest(value: unknown): IdeasRestoreRequest | undefined;
+/** Reasons the restore route answers 409 rather than 400: a state, not a bad request. */
+export declare const IDEAS_RESTORE_CONFLICT: Set<string>;
+/**
  * Panel tabs, mirror of BOARD_TABS (src/client/tabs.ts): spelled here so the
  * host bundle never pulls the client model — same discipline as the defaults.
  */

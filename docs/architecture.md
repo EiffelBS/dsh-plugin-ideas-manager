@@ -13,6 +13,9 @@ src/
   agent-tools.ts      # the six ideas_* tools + the feature-detected registry
   host-service.ts     # apply + mirror scheduling + run dispatch + run poll
   host-ledger.ts      # persisted ledger, dedupe cache, lock, activity log, internal bind
+                      #   + snapshots / restore (idea #95)
+  backup.ts           # the snapshot FOLDER only: atomic write, list, read, quarantine, retention
+                      #   (knows nothing about the document — host-ledger validates that)
   host-routes.ts      # state (+ list / summary / detail), idea?id=, action, launch, events
   host-settings.ts    # the fenced /api/ideas/config route (settings dual-path)
   taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb
@@ -28,6 +31,7 @@ src/
   client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
   client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
+  client/backup-panel.tsx  # the settings section's Backup tab (snapshot / restore / export)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
   client/activity-timeline.tsx  # the editor's read-only activity timeline
 scripts/              # mirror reconciliation, mirror cycle check, live perf profiler
@@ -419,6 +423,112 @@ Two decisions come out of that profile, and one non-decision:
   because it is the honest "what did this feature add to a full board re-render"
   answer, not because it predicts a dropped frame.
 
+## Snapshots, restore and portable transfer (idea #95)
+
+Backup is a first-class surface here, not a script: a ledger has already been
+lost in this project and put back by hand from `GET /api/ideas/state`.
+
+### The split: a folder that knows nothing, and a ledger that knows everything
+
+`src/backup.ts` is a **document-agnostic** filesystem store: write a text, list
+the folder, read one back, rename a broken file aside, prune. It holds no lock
+of its own — two writers would be worse than none, and the parent ledger already
+refuses to boot a second Host on the same home — and it is constructed from the
+ledger's directory, so a snapshot can only be produced THROUGH the lock holder.
+
+Everything about the document lives in `host-ledger.ts`, where the two paths
+that already existed were extended rather than duplicated:
+
+- `parseHostIdeas` was split into `readIdeaRow` (one row + the reason it could
+  not be repaired) and the lenient list built on top. The **boot** path keeps the
+  lenient behaviour exactly (a hand-edited ledger must still open, repaired where
+  it can be).
+- `normalizeDocument` became the module-level `normalizeParsedDocument`, because
+  the restore path needs the same repair and a private method is not reachable
+  from a validator.
+
+### The snapshot IS the portable document
+
+A snapshot is the ledger document **plus** a `snapshot: {version, createdAt,
+reason, ideas, revision}` stamp, written exactly as the ledger persists it. One
+serializer, one validator, one file format — so the download the panel hands the
+browser is byte-identical to what a restore adopts on the other machine, and
+there is no second "export format" that could drift from the first. The stamp is
+additive and ignored by the validator; the `export` VERB is untouched and stays
+the markdown view.
+
+The file **name** carries the same provenance (`snapshot-<epoch ms>-<8 hex>.json`,
+`export-…`, `displaced-…`) so the list can be built from `readdir` + `stat`
+without parsing a single snapshot: opening the settings section costs a directory
+read whatever the board weighs.
+
+**Retention is explicit and asymmetric.** `IDEAS_SNAPSHOT_RETENTION` (10) bounds
+only the files the plugin wrote. A file the user dropped in — an export carried
+from another machine — is `managed: false`, is listed and restorable, and is
+**never pruned and never quarantined**: silently deleting someone's file because
+a counter was reached would be the worst thing this feature could do.
+
+### Restore: the order of the checks is the contract
+
+1. **A run in flight refuses the whole restore** (`restore-run-in-flight`, 409).
+   The Host polls that run and writes its settle onto an idea that may be gone.
+   Checking the live state FIRST also means a refusal has no filesystem side
+   effect — a broken snapshot is not quarantined as a side effect of being told
+   to wait.
+2. **Validate strictly, then displace, then adopt.** `validateLedgerDocument`
+   is the deliberate opposite of the boot path: an unreadable live ledger is
+   quarantined and the board starts empty, because a broken board must still
+   open; a restore is a deliberate act with a good copy in hand, so the only
+   acceptable failure is a refusal that names what is wrong. It refuses on the
+   schema version, on the shape of every counter/list, on any record `readIdeaRow`
+   cannot repair (naming the index: "record 2 of 3"), and on two records sharing
+   an id — each of which `normalizeParsedDocument` would have silently dropped.
+3. **The displaced document is written BEFORE anything is replaced.** If that
+   write fails the answer is `restore-not-saved` and nothing is restored: "the
+   board you have now" must always exist somewhere.
+4. **The revision only moves forward** (the adopt reuses the live revision and
+   `commit()` bumps it), so the browser's 2.5 s poll cannot mistake the restored
+   board for the one it already holds, and **the dedupe cache is NOT rewound**:
+   replaying a `requestId` must keep meaning "this already ran", even though the
+   board it ran on is gone.
+
+A broken plugin-written snapshot is renamed `<name>.corrupt-<stamp>-<rand>`
+instead of being deleted, and then refuses the restore with that path in the
+message.
+
+### Routes, not verbs
+
+`GET|POST /api/ideas/backup`, `GET /api/ideas/backup/content`, and
+`POST /api/ideas/backup/restore`. A snapshot writes a FILE rather than mutating
+the document and a restore replaces it wholesale, so neither may consume the
+persisted request-id cache — the same reason the launch route is dedicated. The
+frozen action envelope and the default `GET /state` response are untouched
+(`idea-95-backup-routes.test.ts` asserts both, and that `{kind:'snapshot'}` is
+still an `invalid-action`).
+
+`readJson` in the client transport now prefers a refusal's `message` over its
+`error` code when both are present. It is inert for every pre-existing route
+(none sends `message`) and it is what lets the panel print the Host's own
+sentence rather than a code.
+
+### The Backup tab, and the settings dual-path
+
+`client/backup-panel.tsx` is a third tab of the settings section and drives its
+**own** routes. That is the whole reason a deployment whose settings port is
+unavailable (`available: false`, no `settings.register`, no SettingsForms) still
+gets snapshots, restore and the portable export — the display options degrade to
+the spelled defaults, the backup surface does not. A host that serves no backup
+route at all (an older Host, a test fake) renders one explicit note instead of
+empty buttons: the capabilities are optional on the transport for the same
+reason `config` and `launch` are.
+
+Two copy decisions worth keeping: the restore toggle and its confirmation button
+have **different** labels ("Restore…" vs "Replace the board") because two buttons
+reading "Restore" on one row is an accessibility bug as much as a UX one, and
+the download is a plain `<a href>` to the content route (the server sets
+`content-disposition`) rather than a Blob — the file the browser stores is then
+exactly the document a restore adopts elsewhere, with no client-side copy of it.
+
 ## Card mirror
 
 Card ids are **deterministic** (`idea-` + the idea id), so re-running any mirror
@@ -511,6 +621,11 @@ registered `ideas` namespace; hosts that removed it in the 0.1.7 SettingsForms
 refactor get a plugin-owned versioned `<DSH_HOME>/ideas-manager-settings.json`
 behind the same incrementing revision fence. Both answer the identical wire
 contract, so the section behaves identically everywhere.
+
+The **Backup** tab is deliberately outside that dual-path: it needs no settings
+port at all (see *Snapshots, restore and portable transfer* above), which is
+what keeps snapshots available on a deployment that has neither settings
+contract.
 
 ## Design archaeology
 

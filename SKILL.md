@@ -174,6 +174,43 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
 `deliveredAt`/`decision`, `ideaNumber` (stable capture `#N`), timestamps, and
 `events` (≤50 activity entries).
 
+## Snapshots, restore and moving a ledger (issue #95)
+
+The ledger is a single-writer file, so backup/restore is a **dedicated route
+family**, not action verbs: a snapshot writes a file instead of mutating the
+document, so it never consumes the `requestId` cache, and a restore replaces the
+document wholesale.
+
+| Route | Body / query | Answer |
+|---|---|---|
+| `GET /api/ideas/backup` | — | `{ ok, dir, retention, snapshots[], running }` — `running` counts the ideas whose execution is in flight |
+| `POST /api/ideas/backup` | `{ reason?: 'manual' \| 'export' }` | `{ ok, snapshot, ideas, pruned }` |
+| `GET /api/ideas/backup/content?name=<snapshot>` | — | the snapshot's raw document, `content-disposition: attachment` |
+| `POST /api/ideas/backup/restore` | `{ name }` **or** `{ document }` (never both) | `{ ok, revision, ideas, source, displaced }` |
+
+- Snapshots live in `<DSH_HOME>/ideas/backups/`, are written atomically through
+  the ledger that owns the lock, and the plugin keeps the **last 10** it wrote.
+  A file the plugin did not write is listed, restorable and **never pruned**.
+- A restore is **refused (409) while an idea has `runStatus: 'running'`**, with
+  the offending ideas in `running`. It also refuses (404) an unknown snapshot and
+  (400, `message` = the reason) a document it cannot adopt: another schema
+  version, a record without an id or a title, two records sharing an id. A
+  broken plugin-written snapshot is renamed `<name>.corrupt-…` — evidence kept,
+  never deleted.
+- **What a restore replaces is displaced, not overwritten**: the current document
+  is written as its own `pre-restore` snapshot first, and the answer names it in
+  `displaced`. The revision only moves forward and the dedupe cache is never
+  rewound, so a replayed `requestId` keeps meaning "this already ran".
+- The **JSON document is the portable artifact** and round-trips every field the
+  ledger holds (`events`, `runStatus`, `runSessionId`, `taskBoardId`,
+  `deliveryNote`, `analysisAudit`, tags with their `promptPrefix`, `ideaNumber`
+  and `ideaSequence`). Nothing is dropped. The `export` verb above stays the
+  markdown VIEW, which is generated and never parsed back.
+- The escape hatch for "a second Host on the same `DSH_HOME` refuses to start":
+  **never share the folder** (the lock exists because a shared home has already
+  destroyed a ledger). Export on the machine that owns the board and import it on
+  the machine that should.
+
 ## TaskBoard mirror (P2)
 
 - Feature-detect: the Host probes its own `GET /api/task-board/state` over
@@ -230,13 +267,19 @@ rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoard
 - The loopback guard needs the browser markers — a bare curl is refused.
 - Ledger: `~/.dsh/ideas/ledger-v2.json` (atomic tmp+rename, no fsync; a crash
   recovers via the corrupt/quarantine path). Do not hand-edit while a Host is
-  live — the lock directory refuses a second writer.
+  live — the lock directory refuses a second writer. Snapshots live beside it in
+  `~/.dsh/ideas/backups/` and are only ever written through the ledger
+  (`POST /api/ideas/backup`), never by hand.
 
 ## File map
 
 ```
 src/protocol.ts          wire gate (exactKeys, envelope)
 src/core/ideas.ts        domain model, tag validation, activity log, near-duplicate signal
+src/backup.ts            the snapshot folder (atomic write, list, quarantine, retention)
+src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind,
+                         snapshots + restore (strict validation, displaced-on-restore)
+src/client/backup-panel.tsx  the settings section's Backup tab (snapshots/restore/export/import)
 src/client/find-similar.ts  the Find similar gate + launch input (pure)
 src/agent-tools.ts       the ideas_* agent tools (feature-detected registry)
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind

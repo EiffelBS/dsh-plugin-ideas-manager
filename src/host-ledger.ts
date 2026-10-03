@@ -30,6 +30,7 @@ import {
 } from 'node:fs'
 import { join } from 'node:path'
 import { appendIdeaEvent, createIdea, ideaEvent, ideaEventActor, IDEA_ACTOR_RUN, isIdeaRunStatus, MERGE_DECISION_MAX_LENGTH, mergedIdeaTags, normalizeDeliveryNote, normalizeIdeaEvents, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
+import { IdeasBackupStore, IDEAS_BACKUP_DIR_NAME, type SnapshotFile, type SnapshotRead, type SnapshotReason } from './backup.ts'
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
@@ -89,6 +90,48 @@ export interface IdeaActionAudit {
   actor?: 'human' | 'run'
 }
 
+/**
+ * Where a restore takes its document from: a snapshot file of the backup folder
+ * (the local case) or an inline document handed over by a caller (the portable
+ * import). Both end in the SAME validation and the SAME adoption path — a
+ * downloaded file is not a second-class document.
+ */
+export type LedgerRestoreSource = { name: string } | { document: string }
+
+/** Outcome of {@link IdeasHostLedger.restore}. A refusal is never an exception. */
+export type LedgerRestoreResult =
+  | {
+      ok: true
+      /** Revision of the restored board (always above the one it replaced). */
+      revision: number
+      /** How many ideas the restored document holds. */
+      ideas: number
+      /** Label of what was restored (the file name, or the import). */
+      source: string
+      /** The displaced ledger, kept as a snapshot of its own. */
+      displaced: SnapshotFile
+    }
+  | {
+      ok: false
+      /** Stable machine code (the HTTP layer maps it to a status). */
+      reason: string
+      /** Human sentence naming what is wrong and what was left alone. */
+      message: string
+      /** Ideas whose run is still in flight (run-in-flight refusals only). */
+      running?: IdeaRecord[]
+      /** Where a broken snapshot was moved aside, when the store could. */
+      quarantined?: string
+    }
+
+/** Outcome of {@link IdeasHostLedger.takeSnapshot}. */
+export interface LedgerSnapshotResult {
+  snapshot: SnapshotFile
+  /** How many ideas the snapshot holds. */
+  ideas: number
+  /** How many older snapshots the retention policy removed. */
+  pruned: number
+}
+
 interface LockRecord {
   token: string
   pid: number
@@ -132,57 +175,74 @@ function normalizeRunStatus(value: unknown): IdeaRunStatus | undefined {
   return isIdeaRunStatus(value) ? value : undefined
 }
 
-/** Structural repair of a persisted idea list (mirrors the import repair). */
+/**
+ * Structural repair of ONE persisted idea row: `ok: false` carries the reason
+ * it could not be repaired, which is what a strict reader (a restore) reports
+ * instead of silently dropping the row.
+ *
+ * The repair is the same one the boot path has always applied — a hand-edited
+ * document must not brick the board — and it is TOLERANT of unknown keys: a
+ * record written by a later version keeps its extra fields harmless.
+ */
+function readIdeaRow(value: unknown): { ok: true; idea: IdeaRecord } | { ok: false; reason: string } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { ok: false, reason: 'not a JSON object' }
+  }
+  const row = value as Record<string, unknown>
+  if (typeof row.id !== 'string' || row.id === '') return { ok: false, reason: 'no id' }
+  if (typeof row.title !== 'string' || row.title.trim() === '') return { ok: false, reason: 'no title' }
+  const idea: IdeaRecord = {
+    id: row.id,
+    title: row.title.trim(),
+    body: typeof row.body === 'string' ? row.body.trim() : '',
+    status: normalizeStatus(row.status),
+    createdAt: typeof row.createdAt === 'number' ? row.createdAt : Date.now(),
+    updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : Date.now(),
+  }
+  const summary = normalizeSummary(typeof row.summary === 'string' ? row.summary : undefined)
+  if (summary !== undefined) idea.summary = summary
+  if (typeof row.rank === 'number' && Number.isFinite(row.rank)) idea.rank = row.rank
+  if (typeof row.value === 'number' && Number.isFinite(row.value)) idea.value = row.value
+  if (typeof row.effort === 'number' && Number.isFinite(row.effort)) idea.effort = row.effort
+  if (typeof row.rationale === 'string' && row.rationale.trim() !== '') idea.rationale = row.rationale.trim()
+  if (typeof row.decision === 'string' && row.decision.trim() !== '') idea.decision = row.decision.trim()
+  if (typeof row.ideaNumber === 'number' && Number.isFinite(row.ideaNumber)) idea.ideaNumber = row.ideaNumber
+  if (typeof row.deliveredAt === 'number') idea.deliveredAt = row.deliveredAt
+  if (typeof row.archivedAt === 'number') idea.archivedAt = row.archivedAt
+  const workspaceId = typeof row.workspaceId === 'string' ? normalizeOptionalId(row.workspaceId) : undefined
+  if (workspaceId !== undefined) idea.workspaceId = workspaceId
+  const taskBoardId = typeof row.taskBoardId === 'string' ? normalizeOptionalId(row.taskBoardId) : undefined
+  if (taskBoardId !== undefined) idea.taskBoardId = taskBoardId
+  const taskBoardStatus = normalizeTaskBoardStatus(typeof row.taskBoardStatus === 'string' ? row.taskBoardStatus : undefined)
+  if (taskBoardStatus !== undefined) idea.taskBoardStatus = taskBoardStatus
+  const runStatus = normalizeRunStatus(row.runStatus)
+  if (runStatus !== undefined) idea.runStatus = runStatus
+  const runSessionId = typeof row.runSessionId === 'string' ? normalizeOptionalId(row.runSessionId) : undefined
+  if (runSessionId !== undefined) idea.runSessionId = runSessionId
+  const deliveryNote = normalizeDeliveryNote(typeof row.deliveryNote === 'string' ? row.deliveryNote : undefined)
+  if (deliveryNote !== undefined) idea.deliveryNote = deliveryNote
+  if (typeof row.followUpOfId === 'string' && row.followUpOfId.trim() !== '') idea.followUpOfId = row.followUpOfId.trim()
+  const tags = normalizeTags(row.tags)
+  if (tags !== undefined) idea.tags = tags
+  if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
+  const audit = auditOf(row.analysisAudit)
+  if (audit !== undefined) idea.analysisAudit = audit
+  // Activity log (idea #92). This line IS the schema migration: a document
+  // written before the field existed simply has no `events` key, and the
+  // first recorded verb creates it — no version bump, no rewrite, and a
+  // document carrying a hand-edited or over-long log is repaired rather than
+  // quarantined.
+  const events = normalizeIdeaEvents(row.events)
+  if (events !== undefined) idea.events = events
+  return { ok: true, idea }
+}
+
+/** Lenient repair of a persisted idea list (mirrors the import repair): unusable rows are dropped. */
 function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
   const ideas: IdeaRecord[] = []
   for (const value of rows) {
-    if (typeof value !== 'object' || value === null) continue
-    const row = value as Record<string, unknown>
-    if (typeof row.id !== 'string' || row.id === '' || typeof row.title !== 'string' || row.title.trim() === '') continue
-    const idea: IdeaRecord = {
-      id: row.id,
-      title: row.title.trim(),
-      body: typeof row.body === 'string' ? row.body.trim() : '',
-      status: normalizeStatus(row.status),
-      createdAt: typeof row.createdAt === 'number' ? row.createdAt : Date.now(),
-      updatedAt: typeof row.updatedAt === 'number' ? row.updatedAt : Date.now(),
-    }
-    const summary = normalizeSummary(typeof row.summary === 'string' ? row.summary : undefined)
-    if (summary !== undefined) idea.summary = summary
-    if (typeof row.rank === 'number' && Number.isFinite(row.rank)) idea.rank = row.rank
-    if (typeof row.value === 'number' && Number.isFinite(row.value)) idea.value = row.value
-    if (typeof row.effort === 'number' && Number.isFinite(row.effort)) idea.effort = row.effort
-    if (typeof row.rationale === 'string' && row.rationale.trim() !== '') idea.rationale = row.rationale.trim()
-    if (typeof row.decision === 'string' && row.decision.trim() !== '') idea.decision = row.decision.trim()
-    if (typeof row.ideaNumber === 'number' && Number.isFinite(row.ideaNumber)) idea.ideaNumber = row.ideaNumber
-    if (typeof row.deliveredAt === 'number') idea.deliveredAt = row.deliveredAt
-    if (typeof row.archivedAt === 'number') idea.archivedAt = row.archivedAt
-    const workspaceId = typeof row.workspaceId === 'string' ? normalizeOptionalId(row.workspaceId) : undefined
-    if (workspaceId !== undefined) idea.workspaceId = workspaceId
-    const taskBoardId = typeof row.taskBoardId === 'string' ? normalizeOptionalId(row.taskBoardId) : undefined
-    if (taskBoardId !== undefined) idea.taskBoardId = taskBoardId
-    const taskBoardStatus = normalizeTaskBoardStatus(typeof row.taskBoardStatus === 'string' ? row.taskBoardStatus : undefined)
-    if (taskBoardStatus !== undefined) idea.taskBoardStatus = taskBoardStatus
-    const runStatus = normalizeRunStatus(row.runStatus)
-    if (runStatus !== undefined) idea.runStatus = runStatus
-    const runSessionId = typeof row.runSessionId === 'string' ? normalizeOptionalId(row.runSessionId) : undefined
-    if (runSessionId !== undefined) idea.runSessionId = runSessionId
-    const deliveryNote = normalizeDeliveryNote(typeof row.deliveryNote === 'string' ? row.deliveryNote : undefined)
-    if (deliveryNote !== undefined) idea.deliveryNote = deliveryNote
-    if (typeof row.followUpOfId === 'string' && row.followUpOfId.trim() !== '') idea.followUpOfId = row.followUpOfId.trim()
-    const tags = normalizeTags(row.tags)
-    if (tags !== undefined) idea.tags = tags
-    if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
-    const audit = auditOf(row.analysisAudit)
-    if (audit !== undefined) idea.analysisAudit = audit
-    // Activity log (idea #92). This line IS the schema migration: a document
-    // written before the field existed simply has no `events` key, and the
-    // first recorded verb creates it — no version bump, no rewrite, and a
-    // document carrying a hand-edited or over-long log is repaired rather than
-    // quarantined.
-    const events = normalizeIdeaEvents(row.events)
-    if (events !== undefined) idea.events = events
-    ideas.push(idea)
+    const read = readIdeaRow(value)
+    if (read.ok) ideas.push(read.idea)
   }
   return ideas
 }
@@ -206,6 +266,132 @@ function auditOf(value: unknown): IdeaRecord['analysisAudit'] {
   }
 }
 
+/** Error text of an unknown throwable (refusals carry their own sentence). */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/** JSON.parse without the throw (a snapshot that is not JSON is a refusal). */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+/** Human reference of one idea: `#12 title`, the label the board itself uses. */
+function ideaReference(idea: IdeaRecord): string {
+  return idea.ideaNumber === undefined ? `"${idea.title}"` : `#${idea.ideaNumber} "${idea.title}"`
+}
+
+/** Strict validation of a candidate ledger document (the restore path). */
+type LedgerValidation =
+  | { ok: true; document: LedgerDocument }
+  | { ok: false; reason: string; message: string }
+
+/**
+ * Validate a document a caller wants to ADOPT as the whole board.
+ *
+ * This is deliberately the opposite of the boot path. At boot an unreadable
+ * ledger is quarantined and the board starts empty, because a broken board must
+ * still open; a restore is a deliberate act with a good copy in hand, so the
+ * only acceptable failure is a refusal that names what is wrong. Every check
+ * below therefore refuses rather than repairs:
+ *
+ *  - the schema version must be the one this host reads (an unknown version
+ *    means the file was written by a different plugin generation, and guessing
+ *    would corrupt the board);
+ *  - the shape of every counter/list the document carries is checked, because
+ *    `normalizeDocument` silently drops what it does not understand — fine for a
+ *    boot, silently lossy for an import;
+ *  - **every** record must survive `readIdeaRow`. A document where 2 of 40 rows
+ *    are unusable is a half-broken document, and adopting it would look like a
+ *    successful restore of a smaller board;
+ *  - two records sharing an id would collapse into one, so that is refused too.
+ */
+function validateLedgerDocument(parsed: unknown): LedgerValidation {
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, reason: 'snapshot-shape', message: 'the file is not a ledger document (expected a JSON object)' }
+  }
+  const row = parsed as Record<string, unknown>
+  if (row.schemaVersion !== IDEAS_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      reason: 'snapshot-schema',
+      message: typeof row.schemaVersion === 'number'
+        ? `the file uses ledger schema ${String(row.schemaVersion)}, this version of the plugin reads schema ${String(IDEAS_SCHEMA_VERSION)}`
+        : 'the file carries no ledger schema version, so it is not an ideas ledger document',
+    }
+  }
+  if (!Array.isArray(row.ideas)) {
+    return { ok: false, reason: 'snapshot-shape', message: 'the ledger document carries no idea list' }
+  }
+  for (const key of ['revision', 'ideaSequence'] as const) {
+    const value = row[key]
+    if (value === undefined) continue
+    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+      return { ok: false, reason: 'snapshot-shape', message: `the ledger document has an unreadable "${key}" counter` }
+    }
+  }
+  if (row.importedSources !== undefined
+      && (!Array.isArray(row.importedSources) || row.importedSources.some(entry => typeof entry !== 'string'))) {
+    return { ok: false, reason: 'snapshot-shape', message: 'the ledger document has an unreadable import history' }
+  }
+  if (row.recentRequests !== undefined && !Array.isArray(row.recentRequests)) {
+    return { ok: false, reason: 'snapshot-shape', message: 'the ledger document has an unreadable request history' }
+  }
+  const seen = new Set<string>()
+  for (const [index, value] of row.ideas.entries()) {
+    const read = readIdeaRow(value)
+    if (!read.ok) {
+      return {
+        ok: false,
+        reason: 'snapshot-records',
+        message: `record ${index + 1} of ${row.ideas.length} is unusable (${read.reason}), so the whole file was refused`,
+      }
+    }
+    if (seen.has(read.idea.id)) {
+      return {
+        ok: false,
+        reason: 'snapshot-records',
+        message: `two records share the id ${read.idea.id}, so the whole file was refused`,
+      }
+    }
+    seen.add(read.idea.id)
+  }
+  return { ok: true, document: normalizeParsedDocument(row) }
+}
+
+/**
+ * Repair a parsed document into the live shape. Lenient BY DESIGN: this is the
+ * boot path, where a field a document does not carry must not stop the board
+ * from opening. The restore path validates the same fields strictly first
+ * (see {@link validateLedgerDocument}) so nothing is silently dropped there.
+ */
+function normalizeParsedDocument(parsed: ParsedLedgerDocument): LedgerDocument {
+  return {
+    schemaVersion: IDEAS_SCHEMA_VERSION,
+    revision: Number.isSafeInteger(parsed.revision) && (parsed.revision ?? -1) >= 0 ? parsed.revision as number : 0,
+    ideas: parseHostIdeas(Array.isArray(parsed.ideas) ? parsed.ideas : []),
+    ideaSequence: Number.isSafeInteger(parsed.ideaSequence) && (parsed.ideaSequence ?? -1) >= 0
+      ? parsed.ideaSequence as number
+      : 0,
+    importedSources: Array.isArray(parsed.importedSources)
+      ? parsed.importedSources.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+      : [],
+    recentRequests: Array.isArray(parsed.recentRequests)
+      ? parsed.recentRequests.flatMap((entry): PersistedRequest[] => {
+          if (typeof entry !== 'object' || entry === null) return []
+          const request = entry as { requestId?: unknown; fingerprint?: unknown }
+          return typeof request.requestId === 'string' && request.requestId !== '' && typeof request.fingerprint === 'string'
+            ? [{ requestId: request.requestId, fingerprint: request.fingerprint }]
+            : []
+        }).slice(-MAX_REQUEST_CACHE)
+      : [],
+  }
+}
+
 export class IdeasHostLedger {
   private document: LedgerDocument
   private readonly requestCache = new Map<string, string>()
@@ -216,14 +402,22 @@ export class IdeasHostLedger {
   private readonly lockDir: string
   private readonly lockOwnerFile: string
   private readonly lockToken = randomUUID()
+  /**
+   * The snapshot folder, INSIDE the ledger folder so it can only ever be
+   * reached through the ledger that owns the lock. It deliberately holds no
+   * lock of its own: two writers would be worse than none, and the parent
+   * ledger already refuses to boot a second Host on the same home.
+   */
+  private readonly backups: IdeasBackupStore
   private disposed = false
 
-  constructor(options: { dir?: string; now?: () => number } = {}) {
+  constructor(options: { dir?: string; now?: () => number; backups?: IdeasBackupStore } = {}) {
     this.now = options.now ?? Date.now
     this.dir = options.dir ?? join(dshHome(), IDEAS_LEDGER_DIR_NAME)
     this.file = join(this.dir, IDEAS_LEDGER_FILE_NAME)
     this.lockDir = join(this.dir, IDEAS_LOCK_FILE_NAME)
     this.lockOwnerFile = join(this.lockDir, LOCK_OWNER_FILE)
+    this.backups = options.backups ?? new IdeasBackupStore(join(this.dir, IDEAS_BACKUP_DIR_NAME))
     this.acquireLock()
     try {
       this.document = this.load()
@@ -265,6 +459,170 @@ export class IdeasHostLedger {
     const found = this.document.ideas.find(idea => idea.id === id)
     if (found === undefined) return undefined
     return cloneIdeas([found])[0]
+  }
+
+  // --- snapshots and restore (idea #95) --------------------------------------
+
+  /** Absolute path of the snapshot folder (diagnostics; never a UI string). */
+  backupDir(): string {
+    return this.backups.dir
+  }
+
+  /** Snapshot folder listing, newest first. Never parses a file. */
+  snapshots(): SnapshotFile[] {
+    return this.backups.list()
+  }
+
+  /** One snapshot of the folder by name (undefined when it is not there). */
+  snapshotFile(name: string): SnapshotFile | undefined {
+    return this.backups.list().find(file => file.name === name)
+  }
+
+  /** Raw snapshot document for the download route; never throws. */
+  readSnapshot(name: string): SnapshotRead {
+    return this.backups.read(name)
+  }
+
+  /** Ideas whose execution is in flight (a restore refuses while any is). */
+  runningIdeas(): IdeaRecord[] {
+    return cloneIdeas(this.document.ideas.filter(idea => idea.runStatus === 'running'))
+  }
+
+  /**
+   * Take a snapshot of the CURRENT document.
+   *
+   * Written through this instance on purpose: the single-writer lock is what
+   * makes a snapshot trustworthy, and there is no supported way to produce one
+   * beside a live ledger. The document is serialized from memory (never copied
+   * off disk), so a snapshot can never catch the file mid-rename, and the
+   * retention policy runs right after the write so the folder stays bounded.
+   */
+  takeSnapshot(reason: SnapshotReason = 'manual'): LedgerSnapshotResult {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const at = this.now()
+    const snapshot = this.backups.write(this.serializeDocument(reason, at), reason, at)
+    return { snapshot, ideas: this.document.ideas.length, pruned: this.backups.prune() }
+  }
+
+  /**
+   * Restore the board from a snapshot (local file) or from a document handed
+   * over in full (the portable import).
+   *
+   * The order of the checks IS the contract, and each step is there for a
+   * reason a real restore got wrong in this project before it had a supported
+   * escape hatch:
+   *
+   *  1. **A run in flight refuses the whole restore.** The Host polls that run
+   *     and writes its settle onto an idea that may no longer exist; worse, the
+   *     displaced board could be one the run then resurrects. The refusal names
+   *     the ideas involved so the human knows what to wait for.
+   *  2. **Validate strictly, then displace, then adopt.** The boot path is
+   *     lenient (an unreadable live ledger is quarantined and the board starts
+   *     empty) because a broken board must still open; a restore is the
+   *     opposite case — half a document adopted as a whole board is worse than
+   *     a refusal, so every record must survive the repair.
+   *  3. **The displaced document is written BEFORE anything is replaced.** If
+   *     that write fails, nothing is restored: "the board you have now" always
+   *     exists somewhere, and the panel can always go back to it.
+   *  4. **The revision only ever moves forward** (commit() bumps it) so the
+   *     browser's 2.5 s poll cannot mistake the restored board for the one it
+   *     already holds, and **the dedupe cache is NOT rewound**: replaying a
+   *     request id must keep meaning "this already ran", even though the board
+   *     it ran on is gone.
+   */
+  restore(source: LedgerRestoreSource): LedgerRestoreResult {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const running = this.document.ideas.filter(idea => idea.runStatus === 'running')
+    if (running.length > 0) {
+      return {
+        ok: false,
+        reason: 'restore-run-in-flight',
+        message: `an execution is still running on ${running.map(idea => ideaReference(idea)).join(', ')}; wait for it to finish before restoring a snapshot`,
+        running: cloneIdeas(running),
+      }
+    }
+
+    let text: string
+    let label: string
+    let file: SnapshotFile | undefined
+    if ('document' in source) {
+      text = source.document
+      label = 'the imported ledger'
+    } else {
+      label = source.name
+      const read = this.backups.read(source.name)
+      if (!read.ok) {
+        return {
+          ok: false,
+          reason: `snapshot-${read.reason}`,
+          message: read.reason === 'not-found'
+            ? `there is no snapshot named ${source.name} in the backups folder`
+            : `the snapshot ${source.name} could not be read (${read.reason.replace('-', ' ')})`,
+        }
+      }
+      text = read.text
+      file = this.backups.list().find(candidate => candidate.name === source.name)
+    }
+
+    const parsed = parseJson(text)
+    const validated = parsed === undefined
+      ? { ok: false as const, reason: 'snapshot-unreadable', message: 'the file is not readable JSON, so it was not restored' }
+      : validateLedgerDocument(parsed)
+    if (!validated.ok) {
+      const quarantined = file === undefined ? undefined : this.backups.quarantine(file)
+      return {
+        ok: false,
+        reason: validated.reason,
+        // The quarantine PATH stays host-side (it is on the `quarantined`
+        // field): a refusal sentence is rendered by the settings panel, and no
+        // user-facing line of this plugin names a filesystem location.
+        message: quarantined === undefined
+          ? validated.message
+          : `${validated.message}; the unusable file was moved aside, renamed beside itself for evidence`,
+        ...(quarantined === undefined ? {} : { quarantined }),
+      }
+    }
+
+    const at = this.now()
+    let displaced: SnapshotFile
+    try {
+      displaced = this.backups.write(this.serializeDocument('pre-restore', at), 'pre-restore', at)
+    } catch (error) {
+      // The whole point of displacing first is that the current board survives
+      // the restore. If it cannot be kept, nothing is replaced.
+      return {
+        ok: false,
+        reason: 'restore-not-saved',
+        message: `the current board could not be kept as a snapshot (${messageOf(error)}), so nothing was restored`,
+      }
+    }
+
+    this.document = { ...validated.document, revision: this.document.revision }
+    this.commit()
+    return {
+      ok: true,
+      revision: this.document.revision,
+      ideas: this.document.ideas.length,
+      source: label,
+      displaced,
+    }
+  }
+
+  /**
+   * Serialize the document exactly as it is persisted, plus the snapshot stamp
+   * that says what the file is. The stamp is additive and ignored by the
+   * validator, so a snapshot stays a faithful copy of the live document — the
+   * same bytes an export moves between machines.
+   */
+  private serializeDocument(reason: SnapshotReason, at: number): string {
+    const stamp = {
+      version: 1 as const,
+      createdAt: at,
+      reason,
+      ideas: this.document.ideas.length,
+      revision: this.document.revision,
+    }
+    return `${JSON.stringify({ ...this.document, snapshot: stamp }, null, 2)}\n`
   }
 
   dispose(): void {
@@ -858,26 +1216,7 @@ export class IdeasHostLedger {
   }
 
   private normalizeDocument(parsed: ParsedLedgerDocument): LedgerDocument {
-    return {
-      schemaVersion: IDEAS_SCHEMA_VERSION,
-      revision: Number.isSafeInteger(parsed.revision) && (parsed.revision ?? -1) >= 0 ? parsed.revision as number : 0,
-      ideas: parseHostIdeas(Array.isArray(parsed.ideas) ? parsed.ideas : []),
-      ideaSequence: Number.isSafeInteger(parsed.ideaSequence) && (parsed.ideaSequence ?? -1) >= 0
-        ? parsed.ideaSequence as number
-        : 0,
-      importedSources: Array.isArray(parsed.importedSources)
-        ? parsed.importedSources.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
-        : [],
-      recentRequests: Array.isArray(parsed.recentRequests)
-        ? parsed.recentRequests.flatMap((entry): PersistedRequest[] => {
-            if (typeof entry !== 'object' || entry === null) return []
-            const request = entry as { requestId?: unknown; fingerprint?: unknown }
-            return typeof request.requestId === 'string' && request.requestId !== '' && typeof request.fingerprint === 'string'
-              ? [{ requestId: request.requestId, fingerprint: request.fingerprint }]
-              : []
-          }).slice(-MAX_REQUEST_CACHE)
-        : [],
-    }
+    return normalizeParsedDocument(parsed)
   }
 
   /**

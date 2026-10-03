@@ -5,7 +5,7 @@
  * in for the former SSE stream (see `subscribe` for the connection-pool
  * rationale). Mirrors the dsh-task-board host-api discipline.
  */
-import { type IdeasAction, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSnapshot, type IdeasSettingsPatch, type IdeasSettingsView, type LaunchResponse } from '../protocol.ts';
+import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshot, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSettingsPatch, type IdeasSettingsView, type LaunchResponse } from '../protocol.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
 export interface IdeasHostTransport {
     /**
@@ -66,6 +66,23 @@ export interface IdeasHostTransport {
      * was refused stays visible.
      */
     launch?(ideaId: string, model?: string): Promise<LaunchResponse>;
+    /**
+     * The snapshot folder (idea #95). Optional capability, like `config`: a
+     * transport without it simply shows no backup panel, and the board keeps
+     * working — a deployment must never lose its ledger surface because an older
+     * host does not know the route.
+     */
+    backups?(): Promise<IdeasBackupView>;
+    /** Take a snapshot of the whole board now. */
+    takeSnapshot?(reason?: IdeasSnapshotReason): Promise<IdeasSnapshotTaken>;
+    /** Adopt a snapshot (`name`) or an imported document (`document`). */
+    restoreSnapshot?(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse>;
+    /**
+     * URL of one snapshot's raw document, served as a download. A plain link, not
+     * a blob: the bytes are the ledger's own and the browser stores them as the
+     * file they are, so an export is restorable on the machine it lands on.
+     */
+    snapshotContentUrl?(name: string): string;
 }
 export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     state(): Promise<IdeasListSnapshot>;
@@ -80,6 +97,10 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
      */
     action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>;
     config(): Promise<IdeasSettingsView>;
+    backups(): Promise<IdeasBackupView>;
+    takeSnapshot(reason?: IdeasSnapshotReason): Promise<IdeasSnapshotTaken>;
+    restoreSnapshot(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse>;
+    snapshotContentUrl(name: string): string;
     saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
     /**
      * The launch route (idea #66) is a dedicated POST, not an action verb: the

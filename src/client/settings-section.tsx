@@ -5,13 +5,20 @@
  * /api/ideas/config route (the DSH settings RPC domain serves only
  * allowlisted namespaces to configuration clients - the Side card precedent).
  *
- * Two jobs, one install function:
+ * Three jobs, one install function:
  *  - applyTagChipRows runs on every IdeasClient config change and pushes the
  *    `tagRows` row budget onto the document (--dsh-ideas-tag-rows), which
  *    the tag-zone rule reads through calc();
+ *  - the Display and About tabs render the plugin's own copy of its options
+ *    and its metadata;
  *  - registerIdeasSettingsSection contributes the nav row + page when the
  *    shell exposes the slots contract; a shell without it still gets the
  *    style wiring (never throws - the GUI must survive this plugin).
+ *
+ * The Backup tab (idea #95, `client/backup-panel.tsx`) drives its OWN Host
+ * routes rather than the settings port, so a deployment whose settings service
+ * is unavailable still gets snapshots, restore and the portable export: only
+ * the display options above degrade to the spelled defaults.
  *
  * Copy discipline: every option carries an explicit title AND a description
  * stating what it changes, its range/default and when it applies; failures
@@ -43,9 +50,11 @@ import {
 import { classes } from './style.ts'
 import { t } from './locales.ts'
 import { AboutPanel } from './about-panel.tsx'
+import { BackupPanel } from './backup-panel.tsx'
+import { SettingsRow } from './settings-row.tsx'
 
 /** One tab in the settings section. */
-export type SettingsTab = 'display' | 'about'
+export type SettingsTab = 'display' | 'backup' | 'about'
 
 /** Plugin metadata for the About section (read from package.json at compile time). */
 const PLUGIN_METADATA = {
@@ -81,27 +90,6 @@ export interface IdeasSettingsSectionProps {
   client: IdeasClient
   /** Shell runtime props (ignored - the page renders the plugin's own copy). */
   [key: string]: unknown
-}
-
-/** One option row: title and description, with an optional control on the title line. */
-function SettingsRow({ title, desc, control, controlOnTitle = false }: {
-  title: string
-  desc: string
-  control: ReactNode
-  controlOnTitle?: boolean
-}) {
-  return (
-    <div className={classes.settingsRow}>
-      <div className={`${classes.settingsRowText}${controlOnTitle ? ` ${classes.settingsRowTextWithTitleControl}` : ''}`}>
-        <div className={classes.settingsRowHeading}>
-          <span className={classes.settingsRowTitle}>{title}</span>
-          {controlOnTitle && control}
-        </div>
-        <span className={classes.settingsRowDesc}>{desc}</span>
-      </div>
-      {!controlOnTitle && control}
-    </div>
-  )
 }
 
 /**
@@ -250,6 +238,14 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
           onClick={() => setActiveTab('display')}
         >
           {t('about.tabDisplay')}
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === 'backup'}
+          className={activeTab === 'backup' ? classes.tabActive : classes.tab}
+          onClick={() => setActiveTab('backup')}
+        >
+          {t('about.tabBackup')}
         </button>
         <button
           role="tab"
@@ -488,6 +484,8 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
           </div>
         </>
       )}
+
+      {activeTab === 'backup' && <BackupPanel client={client} />}
 
       {activeTab === 'about' && (
         <div className={classes.aboutPanel}>

@@ -5,7 +5,7 @@
  * registration at the edge owns the DOM.
  */
 import type { IdeaRecord, IdeaSimilarReport, IdeaStatus, IdeaTag } from '../core/ideas.ts';
-import { type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasSettingsPatch, type IdeasSettingsView } from '../protocol.ts';
+import { type IdeasBackupView, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasSnapshotInfo, type IdeasSnapshotReason } from '../protocol.ts';
 import { type PanelNavigator } from './panel-navigation.ts';
 import type { IdeasHostTransport } from './host-api.ts';
 import type { SessionLauncher } from './session-queue.ts';
@@ -69,6 +69,29 @@ export declare class IdeasClient {
      * it. This is also the face a launch refusal redirects through.
      */
     panelNavigator: PanelNavigator | undefined;
+    /**
+     * Snapshot folder (idea #95), undefined until the backup panel asks for it.
+     * A transport without the capability leaves it undefined forever, which the
+     * panel reads as "this deployment has no backup surface" — a downgrade, never
+     * an error: the board itself does not depend on it.
+     */
+    backups: IdeasBackupView | undefined;
+    /** Last backup failure, verbatim (the Host's own refusal sentence). */
+    backupError: string | undefined;
+    /** Whether a snapshot/restore request is in flight (the panel disables itself). */
+    backupPending: boolean;
+    /** The snapshot a fresh export produced, so the panel can offer its download. */
+    exported: IdeasSnapshotInfo | undefined;
+    /**
+     * The outcome of the last successful restore, so the panel can name the
+     * snapshot the displaced board was kept as: a restore must be loud about what
+     * it replaced, and that fact is only true for a moment after the click.
+     */
+    lastRestore: {
+        source: string;
+        displaced: IdeasSnapshotInfo;
+        ideas: number;
+    } | undefined;
     private readonly listeners;
     private unsubscribeEvents;
     private workspaces;
@@ -214,6 +237,38 @@ export declare class IdeasClient {
      */
     launchIdea(ideaId: string, model?: string): Promise<void>;
     reorderIdea(orderedIds: string[]): Promise<void>;
+    /**
+     * Load the snapshot folder. Reads only: opening the backup panel never
+     * writes, so browsing the list cannot be the thing that fills the folder.
+     */
+    loadBackups(): Promise<void>;
+    /**
+     * Take a snapshot now. `reason: 'export'` is the portable copy: the same
+     * write, stamped as the one meant to travel, and remembered in `exported` so
+     * the panel can hand the human the download instead of guessing a file name.
+     *
+     * @returns whether the snapshot was written.
+     */
+    takeSnapshot(reason?: IdeasSnapshotReason): Promise<boolean>;
+    /**
+     * Restore the board from a snapshot or from an imported document.
+     *
+     * A refusal is reported through `backupError` (the Host's own sentence) and
+     * answers false — never thrown — because the panel's job is to explain it, not
+     * to break. A success re-reads the board: the whole document was replaced, so
+     * the open panel must not keep painting the ideas that just went away.
+     */
+    restoreSnapshot(request: IdeasRestoreRequest): Promise<boolean>;
+    /** Download URL of one snapshot (the portable export / a hand-off copy). */
+    snapshotContentUrl(name: string): string | undefined;
+    /** Whether this deployment serves the backup surface at all. */
+    get backupAvailable(): boolean;
+    /**
+     * Report a backup failure that happened in the BROWSER (a file the page could
+     * not open, for instance): same channel as a Host refusal, so the panel has
+     * one place where "what went wrong" is rendered.
+     */
+    reportBackupError(message: string): void;
     /** Republish the DSH registry rows and wake the board (catalog refresh). */
     private syncWorkspaces;
     /** Post one action, adopt the Host snapshot, and expose errors. */

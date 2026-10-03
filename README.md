@@ -187,11 +187,56 @@ restored from the archive like any other.
   bulk tagging and re-homing carry no previous value, so their report says
   plainly that there is no undo there.
 
+### Keep a copy of your board
+Your board is a real file on your machine, so it can be copied, kept and put
+back — from the **Backup** tab of the settings section (see
+[Settings](#settings)).
+
+- **Take a snapshot** writes a timestamped copy of the **whole** board into your
+  ideas backups folder: every idea, its activity log, its scores, its labels,
+  its tags' prompt lines, the run it belongs to and the task card it is bound to.
+  The last **ten** snapshots are kept for you; older ones are removed.
+- **Restore** puts one back. It asks first, it says exactly what it is
+  replacing, and the board it replaces is **kept as its own snapshot** — so a
+  restore is never a one-way door, and the panel names the snapshot you can go
+  back to.
+- **A restore is refused while an execution is running**, and the panel says so
+  before you click: wait for the run, then restore. Your board is left exactly
+  as it is.
+- **A file that cannot be read is refused, never half-imported.** A snapshot
+  that is not a ledger, that was written by another version of the plugin, or
+  that holds a record the board cannot read is rejected **with the reason**,
+  moved aside for evidence, and nothing on your board changes.
+
+### Move your board to another machine
+The same tab **exports the board as one JSON file** and **imports it back**.
+This is the supported way to move a ledger between machines — and the way out
+of one very common DSH situation:
+
+> **A second Host pointed at the same DSH home refuses to start.** That is
+> deliberate: the ledger has exactly one writer, and two Hosts sharing a home
+> have already destroyed one. Do not try to share the folder. Take the board with
+> you instead — export it here, and import it on the machine that should own it.
+
+An import brings back **every field** the board holds — the activity log, the
+run and session stamps, the task-card binding, the analysis audit, the delivery
+note, the ranks and the stable `#N` numbers, so the next capture on the new
+machine never re-issues a number. You can also drop an exported file straight
+into the backups folder: it shows up in the list and restores from there, and a
+file the plugin did not write is never deleted by the retention policy.
+
+The **markdown export** is unchanged and stays what it always was: a generated
+view for reading, not a backup.
+
 ---
 
 ## Settings
 
-The plugin contributes an **Ideas board** section to the DSH Settings modal:
+The plugin contributes an **Ideas board** section to the DSH Settings modal.
+It has three tabs — **Display** (the options below), **Backup** (snapshots,
+restore and the portable export, described above) and **About**.
+
+On the **Display** tab:
 
 - **Visible tag-filter lines** (`tagRows`, 1–5, default 3): how many rows of
   tags the board shows under the tabs before the zone scrolls. The sticky header
@@ -230,8 +275,8 @@ off brings the grip back. The **Priorities** tab always stays on the stored rank
 it prints a position number and its arrows write one rank step.
 
 Deployments without a settings service keep the defaults; the board never depends
-on the settings surface. Options are stored per DSH profile and never leave your
-machine.
+on the settings surface — and neither does **Backup**, which keeps working there.
+Options are stored per DSH profile and never leave your machine.
 
 ---
 
@@ -357,6 +402,10 @@ read the state and write ideas without any UI:
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `merge`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
 | `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` |
 | `GET /api/ideas/events` | Server-sent change notifications |
+| `GET /api/ideas/backup` | The snapshot folder: `{ ok, dir, retention, snapshots[], running }` |
+| `POST /api/ideas/backup` | Take a snapshot now: `{ reason?: 'manual' \| 'export' }` |
+| `GET /api/ideas/backup/content?name=<snapshot>` | One snapshot's raw document, as a download |
+| `POST /api/ideas/backup/restore` | Adopt a snapshot `{ name }` or an imported document `{ document }` |
 
 Actions are **deduplicated by `requestId`** (fresh id per call). The routes sit
 behind a same-origin fence (loopback socket or browser).
@@ -365,7 +414,11 @@ The **`merge`** action is `{ sourceId, targetId, mode }`: the source is folded
 into the target and archived, and `mode` is `keepTargetRank` or
 `takeSourceRank`. The **`similar`** read query is opt-in — it reports which open
 ideas of the same workspace look close, and on which signals, and it changes
-nothing on disk.
+nothing on disk. The **backup routes** are a separate family, not action verbs:
+a snapshot writes a file rather than mutating the ledger, so it never consumes
+the `requestId` cache, and a refused restore answers **409** while a run is in
+flight, **404** for an unknown snapshot and **400** with the reason in `message`
+for a document that cannot be adopted.
 
 - [`SKILL.md`](SKILL.md) — the full wire contract: verb table, read-query
   fields, mirror mapping, PowerShell gotchas.
@@ -387,7 +440,7 @@ pnpm run build       # types -> lib/types, bundles -> lib/index.js + lib/client.
 
 The browser half is served at `/plugins/<id>/client.js` (re-resolved per
 request); the host half registers the `/api/ideas` routes at boot. Data lives in
-`~/.dsh/ideas/ledger-v2.json`.
+`~/.dsh/ideas/ledger-v2.json`, and its snapshots in `~/.dsh/ideas/backups/`.
 
 > **Maintainers:** this README describes what an installed user sees — keep it
 > user-facing (no internal issue numbers, no design archaeology) and update it

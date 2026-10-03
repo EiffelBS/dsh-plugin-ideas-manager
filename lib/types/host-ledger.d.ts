@@ -18,6 +18,7 @@
  * another live host owns the ledger) without descriptor APIs.
  */
 import { type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts';
+import { IdeasBackupStore, type SnapshotFile, type SnapshotRead, type SnapshotReason } from './backup.ts';
 import { type IdeasExport } from './export-markdown.ts';
 import { IDEAS_SCHEMA_VERSION, type IdeasAction } from './protocol.ts';
 export declare const IDEAS_LEDGER_DIR_NAME = "ideas";
@@ -51,6 +52,47 @@ export interface IdeaActionAudit {
     /** Explicit actor for a transition the Host itself writes. */
     actor?: 'human' | 'run';
 }
+/**
+ * Where a restore takes its document from: a snapshot file of the backup folder
+ * (the local case) or an inline document handed over by a caller (the portable
+ * import). Both end in the SAME validation and the SAME adoption path — a
+ * downloaded file is not a second-class document.
+ */
+export type LedgerRestoreSource = {
+    name: string;
+} | {
+    document: string;
+};
+/** Outcome of {@link IdeasHostLedger.restore}. A refusal is never an exception. */
+export type LedgerRestoreResult = {
+    ok: true;
+    /** Revision of the restored board (always above the one it replaced). */
+    revision: number;
+    /** How many ideas the restored document holds. */
+    ideas: number;
+    /** Label of what was restored (the file name, or the import). */
+    source: string;
+    /** The displaced ledger, kept as a snapshot of its own. */
+    displaced: SnapshotFile;
+} | {
+    ok: false;
+    /** Stable machine code (the HTTP layer maps it to a status). */
+    reason: string;
+    /** Human sentence naming what is wrong and what was left alone. */
+    message: string;
+    /** Ideas whose run is still in flight (run-in-flight refusals only). */
+    running?: IdeaRecord[];
+    /** Where a broken snapshot was moved aside, when the store could. */
+    quarantined?: string;
+};
+/** Outcome of {@link IdeasHostLedger.takeSnapshot}. */
+export interface LedgerSnapshotResult {
+    snapshot: SnapshotFile;
+    /** How many ideas the snapshot holds. */
+    ideas: number;
+    /** How many older snapshots the retention policy removed. */
+    pruned: number;
+}
 export declare class IdeasHostLedger {
     private document;
     private readonly requestCache;
@@ -61,10 +103,18 @@ export declare class IdeasHostLedger {
     private readonly lockDir;
     private readonly lockOwnerFile;
     private readonly lockToken;
+    /**
+     * The snapshot folder, INSIDE the ledger folder so it can only ever be
+     * reached through the ledger that owns the lock. It deliberately holds no
+     * lock of its own: two writers would be worse than none, and the parent
+     * ledger already refuses to boot a second Host on the same home.
+     */
+    private readonly backups;
     private disposed;
     constructor(options?: {
         dir?: string;
         now?: () => number;
+        backups?: IdeasBackupStore;
     });
     subscribe(listener: () => void): () => void;
     snapshot(): LedgerState;
@@ -77,6 +127,60 @@ export declare class IdeasHostLedger {
      * the whole-ledger snapshot clone for one card.
      */
     idea(id: string): IdeaRecord | undefined;
+    /** Absolute path of the snapshot folder (diagnostics; never a UI string). */
+    backupDir(): string;
+    /** Snapshot folder listing, newest first. Never parses a file. */
+    snapshots(): SnapshotFile[];
+    /** One snapshot of the folder by name (undefined when it is not there). */
+    snapshotFile(name: string): SnapshotFile | undefined;
+    /** Raw snapshot document for the download route; never throws. */
+    readSnapshot(name: string): SnapshotRead;
+    /** Ideas whose execution is in flight (a restore refuses while any is). */
+    runningIdeas(): IdeaRecord[];
+    /**
+     * Take a snapshot of the CURRENT document.
+     *
+     * Written through this instance on purpose: the single-writer lock is what
+     * makes a snapshot trustworthy, and there is no supported way to produce one
+     * beside a live ledger. The document is serialized from memory (never copied
+     * off disk), so a snapshot can never catch the file mid-rename, and the
+     * retention policy runs right after the write so the folder stays bounded.
+     */
+    takeSnapshot(reason?: SnapshotReason): LedgerSnapshotResult;
+    /**
+     * Restore the board from a snapshot (local file) or from a document handed
+     * over in full (the portable import).
+     *
+     * The order of the checks IS the contract, and each step is there for a
+     * reason a real restore got wrong in this project before it had a supported
+     * escape hatch:
+     *
+     *  1. **A run in flight refuses the whole restore.** The Host polls that run
+     *     and writes its settle onto an idea that may no longer exist; worse, the
+     *     displaced board could be one the run then resurrects. The refusal names
+     *     the ideas involved so the human knows what to wait for.
+     *  2. **Validate strictly, then displace, then adopt.** The boot path is
+     *     lenient (an unreadable live ledger is quarantined and the board starts
+     *     empty) because a broken board must still open; a restore is the
+     *     opposite case — half a document adopted as a whole board is worse than
+     *     a refusal, so every record must survive the repair.
+     *  3. **The displaced document is written BEFORE anything is replaced.** If
+     *     that write fails, nothing is restored: "the board you have now" always
+     *     exists somewhere, and the panel can always go back to it.
+     *  4. **The revision only ever moves forward** (commit() bumps it) so the
+     *     browser's 2.5 s poll cannot mistake the restored board for the one it
+     *     already holds, and **the dedupe cache is NOT rewound**: replaying a
+     *     request id must keep meaning "this already ran", even though the board
+     *     it ran on is gone.
+     */
+    restore(source: LedgerRestoreSource): LedgerRestoreResult;
+    /**
+     * Serialize the document exactly as it is persisted, plus the snapshot stamp
+     * that says what the file is. The stamp is additive and ignored by the
+     * validator, so a snapshot stays a faithful copy of the live document — the
+     * same bytes an export moves between machines.
+     */
+    private serializeDocument;
     dispose(): void;
     /**
      * Apply one action with request-id dedupe: the same requestId replayed with

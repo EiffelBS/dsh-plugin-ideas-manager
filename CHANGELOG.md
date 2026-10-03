@@ -10,6 +10,35 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **Back up your board, and put it back.** The settings section has a new
+  **Backup** tab. **Take a snapshot** writes a timestamped copy of the whole
+  board — every idea, its activity log, its scores, its labels, the run it
+  belongs to — into your ideas backups folder, and the last ten snapshots are
+  kept for you. **Restore** puts one back: it asks first, it tells you exactly
+  what it is replacing, and the board it replaces is **kept as its own
+  snapshot**, so you can always go back to it.
+- **A restore never lands on a running idea.** While an execution is still in
+  flight the restore is refused, the panel says so before you click, and it
+  names the idea that is busy. Your board is left exactly as it is.
+- **A file that cannot be read is refused, not imported.** A snapshot that is
+  not a ledger, was written by another version of the plugin, or holds a record
+  the ledger cannot read is rejected **with the reason**, moved aside for
+  evidence, and your current board is not touched. A half-imported board is
+  never the outcome.
+- **Move the board to another machine.** **Export a copy** downloads the board
+  as one JSON file, and **Import** brings it back — every field included: the
+  activity log, the run and session stamps, the task-card binding, the analysis
+  audit, the delivery note, the ranks and the `#N` numbers, so the next capture
+  never re-issues a number. This is the supported way out of a home where a
+  second Host refuses to start: that Host already owns the board, so take the
+  board with you instead of sharing the folder. The **markdown export** is
+  unchanged — it stays a generated view for reading, not a backup.
+- You can also drop an exported file straight into the backups folder: it
+  appears in the list and can be restored from there, and the plugin never
+  deletes a file it did not write.
+- The Backup tab needs no settings service of its own: on a deployment where the
+  display options are unavailable, snapshots, restore and the export still work.
+
 - **Change many ideas at once.** The board now has a real multi-select: tick the
   box on a card (or on a Priorities / Delivered row), **shift-click** to paint a
   range of rows, or hit **Select all** to take everything the current filter

@@ -29,7 +29,7 @@ import { IdeasHostLedger } from './host-ledger.ts';
 import { SessionRunner } from './session-runner.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts';
-import { type IdeasAction, type IdeasEventPayload, type IdeasSnapshot } from './protocol.ts';
+import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot } from './protocol.ts';
 /** Answer of a launch (idea #66): backend-neutral on purpose, so the card
  *  backend and the direct-session backend serve the same route with the same
  *  shape. */
@@ -92,6 +92,30 @@ export declare class IdeasHostService {
     eventPayload(): IdeasEventPayload;
     subscribe(listener: () => void): () => void;
     apply(requestId: string, action: IdeasAction, initiator?: string): IdeasApplyResponse;
+    /** Snapshot folder view (GET /api/ideas/backup).
+     *
+     * The list is built from file names and sizes — never by parsing a snapshot —
+     * so opening the settings section costs a directory read whatever the board
+     * weighs. `running` is reported up front so the panel can say why a restore
+     * would be refused instead of letting the human click into that answer.
+     */
+    backupsView(): IdeasBackupView;
+    /**
+     * Take a snapshot of the whole board. Additive and outside the action wire:
+     * a snapshot writes a FILE, not the ledger, so it must not consume the
+     * persisted request-id dedupe cache (the same reason the launch route is a
+     * dedicated endpoint).
+     */
+    takeSnapshot(reason?: IdeasSnapshotReason): IdeasSnapshotTaken;
+    /** Raw snapshot document for the download route (export); undefined when absent. */
+    snapshotContent(name: string): string | undefined;
+    /**
+     * Restore the board from a snapshot or from an imported document. A refusal
+     * (a run in flight, a broken file) is an ordinary answer carrying the Host's
+     * own sentence, never an exception: the panel renders the reason and the live
+     * board is untouched in every refusal case.
+     */
+    restoreBoard(request: IdeasRestoreRequest): IdeasRestoreResponse;
     /**
      * Test seam: wait for every scheduled mirror op to settle. The production
      * path never awaits mirrors (they are fire-and-forget), so this blocks only

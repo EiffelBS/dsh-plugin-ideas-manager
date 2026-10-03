@@ -10,11 +10,16 @@ import {
   IDEAS_SETTINGS_DEFAULTS,
   sanitizeSettings,
   type IdeasAction,
+  type IdeasBackupView,
   type IdeasListSnapshot,
   type IdeasReadQuery,
   type IdeasReadSnapshot,
+  type IdeasRestoreRequest,
+  type IdeasRestoreResponse,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
+  type IdeasSnapshotInfo,
+  type IdeasSnapshotReason,
 } from '../protocol.ts'
 import { setLanguageOverride } from './locales.ts'
 import { IDEAS_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
@@ -85,6 +90,25 @@ export class IdeasClient {
    * it. This is also the face a launch refusal redirects through.
    */
   panelNavigator: PanelNavigator | undefined
+  /**
+   * Snapshot folder (idea #95), undefined until the backup panel asks for it.
+   * A transport without the capability leaves it undefined forever, which the
+   * panel reads as "this deployment has no backup surface" — a downgrade, never
+   * an error: the board itself does not depend on it.
+   */
+  backups: IdeasBackupView | undefined
+  /** Last backup failure, verbatim (the Host's own refusal sentence). */
+  backupError: string | undefined
+  /** Whether a snapshot/restore request is in flight (the panel disables itself). */
+  backupPending = false
+  /** The snapshot a fresh export produced, so the panel can offer its download. */
+  exported: IdeasSnapshotInfo | undefined
+  /**
+   * The outcome of the last successful restore, so the panel can name the
+   * snapshot the displaced board was kept as: a restore must be loud about what
+   * it replaced, and that fact is only true for a moment after the click.
+   */
+  lastRestore: { source: string; displaced: IdeasSnapshotInfo; ideas: number } | undefined
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
   private workspaces: WorkspaceViewLite[] = []
@@ -460,6 +484,109 @@ export class IdeasClient {
 
   async reorderIdea(orderedIds: string[]): Promise<void> {
     await this.run({ kind: 'reorder', orderedIds })
+  }
+
+  // --- snapshots, restore and portable transfer (idea #95) -------------------
+
+  /**
+   * Load the snapshot folder. Reads only: opening the backup panel never
+   * writes, so browsing the list cannot be the thing that fills the folder.
+   */
+  async loadBackups(): Promise<void> {
+    if (this.transport.backups === undefined) {
+      this.backups = undefined
+      this.emit()
+      return
+    }
+    try {
+      this.backups = await this.transport.backups()
+      this.backupError = undefined
+    } catch (error) {
+      this.backupError = error instanceof Error ? error.message : String(error)
+    }
+    this.emit()
+  }
+
+  /**
+   * Take a snapshot now. `reason: 'export'` is the portable copy: the same
+   * write, stamped as the one meant to travel, and remembered in `exported` so
+   * the panel can hand the human the download instead of guessing a file name.
+   *
+   * @returns whether the snapshot was written.
+   */
+  async takeSnapshot(reason: IdeasSnapshotReason = 'manual'): Promise<boolean> {
+    if (this.transport.takeSnapshot === undefined) return false
+    this.backupPending = true
+    this.backupError = undefined
+    this.emit()
+    try {
+      const taken = await this.transport.takeSnapshot(reason)
+      if (reason === 'export') this.exported = taken.snapshot
+      await this.loadBackups()
+      return true
+    } catch (error) {
+      this.backupError = error instanceof Error ? error.message : String(error)
+      return false
+    } finally {
+      this.backupPending = false
+      this.emit()
+    }
+  }
+
+  /**
+   * Restore the board from a snapshot or from an imported document.
+   *
+   * A refusal is reported through `backupError` (the Host's own sentence) and
+   * answers false — never thrown — because the panel's job is to explain it, not
+   * to break. A success re-reads the board: the whole document was replaced, so
+   * the open panel must not keep painting the ideas that just went away.
+   */
+  async restoreSnapshot(request: IdeasRestoreRequest): Promise<boolean> {
+    if (this.transport.restoreSnapshot === undefined) {
+      this.backupError = 'backup-unavailable'
+      this.emit()
+      return false
+    }
+    this.backupPending = true
+    this.backupError = undefined
+    this.emit()
+    try {
+      const outcome: IdeasRestoreResponse = await this.transport.restoreSnapshot(request)
+      if (!outcome.ok) {
+        this.backupError = outcome.message
+        return false
+      }
+      await this.loadBackups()
+      await this.refresh()
+      this.lastRestore = outcome
+      return true
+    } catch (error) {
+      this.backupError = error instanceof Error ? error.message : String(error)
+      return false
+    } finally {
+      this.backupPending = false
+      this.emit()
+    }
+  }
+
+  /** Download URL of one snapshot (the portable export / a hand-off copy). */
+  snapshotContentUrl(name: string): string | undefined {
+    return this.transport.snapshotContentUrl?.(name)
+  }
+
+  /** Whether this deployment serves the backup surface at all. */
+  get backupAvailable(): boolean {
+    return this.transport.backups !== undefined
+  }
+
+  /**
+   * Report a backup failure that happened in the BROWSER (a file the page could
+   * not open, for instance): same channel as a Host refusal, so the panel has
+   * one place where "what went wrong" is rendered.
+   */
+  reportBackupError(message: string): void {
+    this.backupError = message
+    this.emit()
   }
 
   /** Republish the DSH registry rows and wake the board (catalog refresh). */

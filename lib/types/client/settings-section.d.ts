@@ -5,13 +5,20 @@
  * /api/ideas/config route (the DSH settings RPC domain serves only
  * allowlisted namespaces to configuration clients - the Side card precedent).
  *
- * Two jobs, one install function:
+ * Three jobs, one install function:
  *  - applyTagChipRows runs on every IdeasClient config change and pushes the
  *    `tagRows` row budget onto the document (--dsh-ideas-tag-rows), which
  *    the tag-zone rule reads through calc();
+ *  - the Display and About tabs render the plugin's own copy of its options
+ *    and its metadata;
  *  - registerIdeasSettingsSection contributes the nav row + page when the
  *    shell exposes the slots contract; a shell without it still gets the
  *    style wiring (never throws - the GUI must survive this plugin).
+ *
+ * The Backup tab (idea #95, `client/backup-panel.tsx`) drives its OWN Host
+ * routes rather than the settings port, so a deployment whose settings service
+ * is unavailable still gets snapshots, restore and the portable export: only
+ * the display options above degrade to the spelled defaults.
  *
  * Copy discipline: every option carries an explicit title AND a description
  * stating what it changes, its range/default and when it applies; failures
@@ -21,7 +28,7 @@
  */
 import type { IdeasClient } from './ideas-client.ts';
 /** One tab in the settings section. */
-export type SettingsTab = 'display' | 'about';
+export type SettingsTab = 'display' | 'backup' | 'about';
 /** Structural face of the shell slot registry (no ui-slots dependency). */
 export interface SettingsSlotsFace {
     inject(name: string, factory: () => unknown): () => void;
