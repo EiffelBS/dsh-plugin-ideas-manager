@@ -10,6 +10,31 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **A Health tab: is this backlog healthy?** Five questions about the workspace
+  you are looking at, answered **by the host** in one small read the board asks
+  for on its own — your background refresh is not slowed by a single byte.
+  - **How much is open**, and how it splits across workspaces.
+  - **How many were delivered this month** — the label names the calendar month
+    it measured, on your own clock, not a vague "recently".
+  - **The median time to deliver**, which is deliberately cautious. Only ideas
+    that were really **delivered** count. Until there are **five** of them the
+    tab says *Not enough deliveries yet (n / 5)*, with the count it has, instead
+    of printing a confident number computed from one or two rows. When a backlog
+    is closed by dragging cards to Archived rather than delivering them, the tab
+    also tells you **how many ideas left it without a delivery stamp** — that
+    count is the reason a median can be missing, and it is a number you can act
+    on rather than a silent zero.
+  - **Your most used labels** on the open backlog.
+  - **What is waiting to be triaged**: how many open ideas carry no rank, and
+    how many carry no value. It is work to do, never a quality score.
+  - The workspace selector scopes all of it, like the other tabs, and the
+    figures follow your panel language. Nothing is stored: closing the tab
+    forgets it and the next visit re-reads the host.
+  - **It never leaves you reading stale figures as if they were current.** The
+    board and the Health tab refresh on their own clock, so a quiet line under
+    the numbers names the revision they came from and whether a refresh is on
+    its way — or failed, with the host's own reason.
+
 - **Go straight to an idea.** The board header has a small **Go to idea** box:
   type an idea's number (`#42`) and the board opens that card, scrolls it into
   view and rings it. It works from a cold panel load, across workspaces, and on
@@ -120,6 +145,12 @@ Versions before 0.3.0 predate this file.
   you straight to the idea on your own board if you want to look at it first.
 
 ### Fixed
+
+- **The About tab tells the truth about which version you are running.** The
+  number it printed was written by hand into the source and left behind at
+  release time, so a panel installed from a recent version could still announce
+  itself as an old one. It now reads the version of the package you actually
+  installed, and a release cannot ship with it out of step any more.
 
 - **Drag & drop is never switched off by the Open column order any more.** While
   the column was laid out by date (or with the running ideas floated to the top),

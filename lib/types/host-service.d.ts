@@ -29,7 +29,8 @@ import { IdeasHostLedger } from './host-ledger.ts';
 import { SessionRunner } from './session-runner.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts';
-import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot } from './protocol.ts';
+import { type IdeasStatsOptions } from './core/ideas-stats.ts';
+import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot, type IdeasStats } from './protocol.ts';
 /** Answer of a launch (idea #66): backend-neutral on purpose, so the card
  *  backend and the direct-session backend serve the same route with the same
  *  shape. */
@@ -90,6 +91,21 @@ export declare class IdeasHostService {
     idea(id: string): IdeaRecord | undefined;
     /** SSE frame payload; deliberately skips the ideas deep-clone of {@link snapshot}. */
     eventPayload(): IdeasEventPayload;
+    /**
+     * The bounded backlog-health aggregate (idea #110), served by
+     * `GET /api/ideas/state?view=stats`.
+     *
+     * Deliberately NOT built on {@link snapshot}: the aggregate reads counters
+     * out of the rows and keeps nothing, so the deep clone that every reader
+     * pays would buy a megabyte of work to produce a few kilobytes of answer.
+     * `ledger.statsSource` is the read-only seam that makes this cheap, and the
+     * numbers themselves come from `core/ideas-stats.ts` — the single definition
+     * every surface of this plugin shares.
+     *
+     * A READ: it mutates nothing, consumes no request id, and is never part of
+     * the board's 2.5 s poll.
+     */
+    ideasStats(options?: IdeasStatsOptions): IdeasStats;
     subscribe(listener: () => void): () => void;
     apply(requestId: string, action: IdeasAction, initiator?: string): IdeasApplyResponse;
     /** Snapshot folder view (GET /api/ideas/backup).

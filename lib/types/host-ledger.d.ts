@@ -18,6 +18,7 @@
  * another live host owns the ledger) without descriptor APIs.
  */
 import { type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts';
+import type { IdeasStatsSource } from './core/ideas-stats.ts';
 import { IdeasBackupStore, type SnapshotFile, type SnapshotRead, type SnapshotReason } from './backup.ts';
 import { type IdeasExport } from './export-markdown.ts';
 import { IDEAS_SCHEMA_VERSION, type IdeasAction } from './protocol.ts';
@@ -121,6 +122,24 @@ export declare class IdeasHostLedger {
     summary(): {
         revision: number;
     };
+    /**
+     * Read-only view of the current document for a PURE aggregate (idea #110),
+     * without the deep clone every other reader pays.
+     *
+     * The one exception to "every reader gets its own copy", and it exists
+     * because the health aggregate reads nothing but counters: cloning a
+     * megabyte-wide document to produce forty numbers is precisely the waste the
+     * bounded view was written to avoid. Two rules keep it safe:
+     *  - the document reference is captured ONCE, so the revision and the rows
+     *    always come from the same revision (a commit replaces the document
+     *    wholesale rather than mutating it, so the array cannot tear);
+     *  - the rows are typed `readonly`, so the only consumer this seam has —
+     *    `buildIdeasStats` — cannot write through it even by accident.
+     *
+     * A route that needs to MUTATE an idea must keep using `applyRequest`, which
+     * is the only writer in the process.
+     */
+    statsSource(): IdeasStatsSource;
     /**
      * One idea, deep-cloned like a snapshot row (idea #34): the deferred-body
      * read GET /api/ideas/idea?id= clones a SINGLE record instead of paying

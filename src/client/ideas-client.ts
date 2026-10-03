@@ -20,11 +20,13 @@ import {
   type IdeasSettingsView,
   type IdeasSnapshotInfo,
   type IdeasSnapshotReason,
+  type IdeasStats,
 } from '../protocol.ts'
 import { setLanguageOverride } from './locales.ts'
 import { IDEAS_PANEL_ID, TASK_BOARD_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
 import { focusReadQuery, parseIdeaRef, resolveIdeaRef, type FocusableIdea } from './deeplink.ts'
 import type { IdeasHostTransport } from './host-api.ts'
+import { IdeasRouteMissingError } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
 import type { SessionOpener } from './session-opener.ts'
@@ -120,6 +122,14 @@ export class IdeasClient {
   backupError: string | undefined
   /** Whether a snapshot/restore request is in flight (the panel disables itself). */
   backupPending = false
+  /**
+   * The running Host serves no backup route (idea #95 follow-up): an instance
+   * that has not been restarted since the plugin was updated answers 404 on
+   * `/api/ideas/backup` while serving the NEW panel. Set by `loadBackups`, it
+   * turns the capability check into a runtime fact and the panel into one
+   * explanatory note instead of three dead buttons.
+   */
+  backupUnavailable = false
   /** The snapshot a fresh export produced, so the panel can offer its download. */
   exported: IdeasSnapshotInfo | undefined
   /**
@@ -140,6 +150,26 @@ export class IdeasClient {
   focusResult: { ref: string; seq: number; outcome: IdeaFocusOutcome } | undefined
   /** The card a deep-link landed on, or undefined once the human took over. */
   focusedIdeaId: string | undefined
+  /**
+   * Backlog-health aggregate (idea #110), undefined until the Health tab asks
+   * for it. It lives here rather than in React state for the same reason the
+   * deep-link request does: the tab is opened by the panel, and the fetch it
+   * owns must survive the panel being closed and reopened without re-deciding
+   * anything.
+   */
+  stats: IdeasStats | undefined
+  /**
+   * The scope {@link stats} was computed for, so the panel can refuse to paint
+   * numbers that answer a question the reader is no longer asking. `undefined`
+   * = every workspace; `''` = the workspace-less group.
+   */
+  statsScope: string | undefined
+  /** Whether a stats request is in flight (the view shows it is refreshing). */
+  statsPending = false
+  /** Last stats failure, verbatim; cleared on success. */
+  statsError: string | undefined
+  /** Sequence of the newest stats request; older answers are dropped on arrival. */
+  private statsRequestSeq = 0
   private focusSeq = 0
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
@@ -648,18 +678,32 @@ export class IdeasClient {
   /**
    * Load the snapshot folder. Reads only: opening the backup panel never
    * writes, so browsing the list cannot be the thing that fills the folder.
+   *
+   * A 404 without a body is NOT a failure to show — it means the running Host
+   * has no backup route (an instance that has not been restarted since the
+   * plugin was updated). That is a capability downgrade, so it clears the
+   * error, records {@link backupUnavailable} and lets the panel render its one
+   * explanatory note instead of three buttons that cannot work.
    */
   async loadBackups(): Promise<void> {
     if (this.transport.backups === undefined) {
       this.backups = undefined
+      this.backupUnavailable = true
       this.emit()
       return
     }
     try {
       this.backups = await this.transport.backups()
       this.backupError = undefined
+      this.backupUnavailable = false
     } catch (error) {
-      this.backupError = error instanceof Error ? error.message : String(error)
+      if (error instanceof IdeasRouteMissingError) {
+        this.backups = undefined
+        this.backupError = undefined
+        this.backupUnavailable = true
+      } else {
+        this.backupError = error instanceof Error ? error.message : String(error)
+      }
     }
     this.emit()
   }
@@ -731,9 +775,17 @@ export class IdeasClient {
     return this.transport.snapshotContentUrl?.(name)
   }
 
-  /** Whether this deployment serves the backup surface at all. */
+  /**
+   * Whether this deployment serves the backup surface at all.
+   *
+   * Both halves matter and only the second one is a runtime fact: a transport
+   * can lack the method (a test fake, an older shell build), AND the running
+   * Host can lack the route (an instance not restarted since the plugin was
+   * updated). A capability check that only looks at the method shows a working
+   * panel over a route table that answers 404.
+   */
   get backupAvailable(): boolean {
-    return this.transport.backups !== undefined
+    return this.transport.backups !== undefined && !this.backupUnavailable
   }
 
   /**
@@ -844,6 +896,68 @@ export class IdeasClient {
   /** Surface a transport/UI failure through the board's existing error bar. */
   reportError(message: string): void {
     this.error = message
+    this.emit()
+  }
+
+  // --- backlog health (idea #110) --------------------------------------------
+
+  /** Whether this deployment serves the health aggregate at all. */
+  get statsAvailable(): boolean {
+    return this.transport.stats !== undefined
+  }
+
+  /**
+   * Load the bounded health aggregate for one workspace scope.
+   *
+   * Called by the Health tab when it opens and whenever the ledger revision
+   * actually moves while it is open — never on the 2.5 s poll, which keeps its
+   * exact pre-existing request and payload. A transport without the capability
+   * leaves {@link stats} undefined forever, which the view reads as "this
+   * deployment has no health surface" (a downgrade, like the backup one).
+   *
+   * The result is stored WITH the scope it was asked for, so switching the
+   * workspace selector can never paint the previous scope's numbers under the
+   * new label: a stale scope reads as "no data yet" until its own fetch lands.
+   *
+   * @param workspaceId - the scope; undefined = every workspace.
+   */
+  async loadStats(workspaceId?: string): Promise<void> {
+    if (this.transport.stats === undefined) {
+      this.stats = undefined
+      this.statsError = undefined
+      this.emit()
+      return
+    }
+    this.statsPending = true
+    this.statsError = undefined
+    this.emit()
+    // Supersession guard: switching the workspace selector while a request is
+    // in flight starts another one, and the two can land in either order. Only
+    // the LAST request may write, so a slow answer can never repaint the panel
+    // with numbers the reader is no longer asking for.
+    const seq = ++this.statsRequestSeq
+    try {
+      const query = workspaceId === undefined ? {} : { workspaceId }
+      const fresh = await this.transport.stats(query)
+      if (seq !== this.statsRequestSeq) return
+      this.stats = fresh
+      this.statsScope = workspaceId
+    } catch (error) {
+      if (seq === this.statsRequestSeq) {
+        this.statsError = error instanceof Error ? error.message : String(error)
+      }
+    } finally {
+      if (seq === this.statsRequestSeq) this.statsPending = false
+      this.emit()
+    }
+  }
+
+  /** Forget the aggregate (the Health tab was left): the next open refetches. */
+  dropStats(): void {
+    if (this.stats === undefined && this.statsScope === undefined) return
+    this.stats = undefined
+    this.statsScope = undefined
+    this.statsRequestSeq += 1
     this.emit()
   }
 }

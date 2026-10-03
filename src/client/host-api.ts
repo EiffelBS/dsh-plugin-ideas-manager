@@ -9,6 +9,7 @@
 import {
   IDEAS_API_PREFIX,
   ideasReadSearchParams,
+  ideasStatsSearchParams,
   toListSnapshot,
   type IdeasAction,
   type IdeasActionEnvelope,
@@ -24,6 +25,8 @@ import {
   type IdeasSnapshotTaken,
   type IdeasSettingsPatch,
   type IdeasSettingsView,
+  type IdeasStats,
+  type IdeasStatsQuery,
   type LaunchResponse,
 } from '../protocol.ts'
 import type { IdeaRecord } from '../core/ideas.ts'
@@ -36,15 +39,61 @@ function uuid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+/**
+ * The Host answered 404 WITHOUT a JSON body — i.e. no route of ours is
+ * registered on the running instance.
+ *
+ * This is not a rare shape: the browser half is re-resolved per request while
+ * the host half registers its routes at boot, so a plugin updated under a LIVE
+ * instance serves the new panel against the old route table. The caller turns
+ * this into a capability downgrade (see `IdeasClient.backupUnavailable`)
+ * instead of showing a dead button, and the reader never sees a parser error.
+ */
+export class IdeasRouteMissingError extends Error {
+  /** The status that proved it (always 404). */
+  readonly status = 404
+
+  constructor() {
+    super('the running Host does not serve this route')
+    this.name = 'IdeasRouteMissingError'
+  }
+}
+
+/**
+ * The error an answer that is not JSON at all deserves. A typed
+ * {@link IdeasRouteMissingError} for a 404 (so the caller can downgrade
+ * instead of reporting a failure), a plain status sentence otherwise.
+ */
+function unreadableAnswer(status: number): Error {
+  return status === 404 ? new IdeasRouteMissingError() : new Error(`the Host answered ${status} without a readable body`)
+}
+
+/**
+ * Decode one JSON answer, and never let the parser speak.
+ *
+ * `response.json()` throws a raw `SyntaxError` on a non-JSON body, which is how
+ * a user ended up reading `Unexpected token 'o', "not found" is not valid JSON`
+ * from the settings panel. The body is read as text and parsed defensively: a
+ * JSON refusal keeps its own sentence, a missing route becomes a typed
+ * {@link IdeasRouteMissingError}, and anything else is reported by status.
+ */
 async function readJson<T>(response: Response): Promise<T> {
-  const body = await response.json() as T & { error?: string; message?: string }
+  const text = await response.text()
+  let body: (T & { error?: string; message?: string }) | undefined
+  try {
+    body = text.trim() === '' ? undefined : JSON.parse(text) as T & { error?: string; message?: string }
+  } catch {
+    body = undefined
+  }
   if (!response.ok) {
+    if (body === undefined) throw unreadableAnswer(response.status)
     // A route that answers with a refusal carries BOTH a stable `error` code
     // and a Host-written `message`; the sentence is what the panel shows, so it
     // wins. Every other route sends no `message` and this is inert for them.
     if (body.error === undefined) throw new Error(`ideas request failed: ${response.status}`)
     throw new Error(typeof body.message === 'string' && body.message !== '' ? body.message : body.error)
   }
+  if (body === undefined) throw unreadableAnswer(response.status)
   return body
 }
 
@@ -124,6 +173,15 @@ export interface IdeasHostTransport {
    * file they are, so an export is restorable on the machine it lands on.
    */
   snapshotContentUrl?(name: string): string
+  /**
+   * The bounded backlog-health aggregate (idea #110). Optional capability, like
+   * `backups`: a transport without it (an older Host, a test fake) shows no
+   * Health tab content rather than an error, and the board itself is untouched.
+   *
+   * Never called on the 2.5 s poll — the health view asks for itself when it is
+   * opened and when the ledger revision actually moves.
+   */
+  stats?(query?: IdeasStatsQuery): Promise<IdeasStats>
 }
 
 export class HttpIdeasHostTransport implements IdeasHostTransport {
@@ -182,6 +240,15 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
 
   snapshotContentUrl(name: string): string {
     return `${IDEAS_API_PREFIX}/backup/content?name=${encodeURIComponent(name)}`
+  }
+
+  /**
+   * The health aggregate (idea #110): its own small GET, never folded into the
+   * board poll. The scope mirrors the board's workspace selector — omitted for
+   * every workspace, a blank value for the workspace-less group.
+   */
+  async stats(query: IdeasStatsQuery = {}): Promise<IdeasStats> {
+    return await this.request<IdeasStats>(`${IDEAS_API_PREFIX}/state?${ideasStatsSearchParams(query).toString()}`, { cache: 'no-store' })
   }
 
   async saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView> {

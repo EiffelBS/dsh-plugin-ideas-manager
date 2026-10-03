@@ -23,6 +23,32 @@ import {
   type NewIdeaInput,
 } from './core/ideas.ts'
 
+/**
+ * The backlog-health aggregate (idea #110) lives in its own module so the
+ * definition of every number it prints has exactly one home. The types are
+ * re-exported here because `protocol.ts` is the ONE module both halves share,
+ * and the browser bundle must reach the shape without importing the Host half.
+ */
+export {
+  IDEAS_STATS_DAY_MS,
+  IDEAS_STATS_MAX_TAGS,
+  IDEAS_STATS_MAX_WORKSPACES,
+  IDEAS_STATS_MEDIAN_MIN_SAMPLES,
+  IDEAS_STATS_SCHEMA_VERSION,
+  calendarMonthStart,
+  durationParts,
+  type IdeasDurationUnit,
+  type IdeasStats,
+  type IdeasStatsDelivery,
+  type IdeasStatsOptions,
+  type IdeasStatsScope,
+  type IdeasStatsScopeKind,
+  type IdeasStatsTagRow,
+  type IdeasStatsTriage,
+  type IdeasStatsWindow,
+  type IdeasStatsWorkspaceRow,
+} from './core/ideas-stats.ts'
+
 export const IDEAS_SCHEMA_VERSION = 1 as const
 export const IDEAS_API_PREFIX = '/api/ideas'
 
@@ -280,6 +306,49 @@ export function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams {
   if (query.limit !== undefined) params.set('limit', String(query.limit))
   if (query.offset !== undefined) params.set('offset', String(query.offset))
   if (query.similar !== undefined) params.set('similar', query.similar)
+  return params
+}
+
+/* --- backlog health (idea #110) --- */
+
+/**
+ * Query of the bounded health aggregate, `GET /api/ideas/state?view=stats`.
+ *
+ * Three scopes, spelled the way the board's own workspace selector spells them:
+ * an ABSENT key answers for every workspace, a BLANK value answers for the
+ * workspace-less (generic) group, and a real id answers for that workspace.
+ * Nothing else is accepted — this view is one aggregate, and every key the
+ * bounded rows take (`limit`, `fields`, `similar`, …) would be a second set of
+ * definitions for the same numbers.
+ */
+export interface IdeasStatsQuery {
+  workspaceId?: string
+}
+
+const STATS_QUERY_KEYS = new Set(['view', 'workspaceId'])
+
+/**
+ * Parse and bound the health query. Unknown keys reject rather than being
+ * ignored, so a caller that misspelled a selector is told rather than quietly
+ * answered for the wrong population.
+ *
+ * @returns the query, or undefined when `view` is not `stats` or a key is
+ *   unknown/oversized.
+ */
+export function parseIdeasStatsQuery(params: URLSearchParams): IdeasStatsQuery | undefined {
+  if ([...params.keys()].some(key => !STATS_QUERY_KEYS.has(key))) return undefined
+  if (params.get('view') !== 'stats') return undefined
+  if (!params.has('workspaceId')) return {}
+  const workspaceId = params.get('workspaceId')?.trim() ?? ''
+  if (workspaceId.length > 256) return undefined
+  return { workspaceId }
+}
+
+/** Serialize the health query for the browser transport. */
+export function ideasStatsSearchParams(query: IdeasStatsQuery = {}): URLSearchParams {
+  const params = new URLSearchParams()
+  params.set('view', 'stats')
+  if (query.workspaceId !== undefined) params.set('workspaceId', query.workspaceId)
   return params
 }
 
@@ -996,7 +1065,7 @@ export const IDEAS_RESTORE_CONFLICT = new Set([
  * Panel tabs, mirror of BOARD_TABS (src/client/tabs.ts): spelled here so the
  * host bundle never pulls the client model — same discipline as the defaults.
  */
-export const IDEAS_TABS = ['overview', 'priorities', 'delivered'] as const
+export const IDEAS_TABS = ['overview', 'priorities', 'delivered', 'health'] as const
 /** One panel tab id. */
 export type IdeasTab = (typeof IDEAS_TABS)[number]
 

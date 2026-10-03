@@ -5,8 +5,23 @@
  * in for the former SSE stream (see `subscribe` for the connection-pool
  * rationale). Mirrors the dsh-task-board host-api discipline.
  */
-import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshot, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSettingsPatch, type IdeasSettingsView, type LaunchResponse } from '../protocol.ts';
+import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshot, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasStats, type IdeasStatsQuery, type LaunchResponse } from '../protocol.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
+/**
+ * The Host answered 404 WITHOUT a JSON body — i.e. no route of ours is
+ * registered on the running instance.
+ *
+ * This is not a rare shape: the browser half is re-resolved per request while
+ * the host half registers its routes at boot, so a plugin updated under a LIVE
+ * instance serves the new panel against the old route table. The caller turns
+ * this into a capability downgrade (see `IdeasClient.backupUnavailable`)
+ * instead of showing a dead button, and the reader never sees a parser error.
+ */
+export declare class IdeasRouteMissingError extends Error {
+    /** The status that proved it (always 404). */
+    readonly status = 404;
+    constructor();
+}
 export interface IdeasHostTransport {
     /**
      * Board state as the LIST projection (idea #34): list fields + a short
@@ -83,6 +98,15 @@ export interface IdeasHostTransport {
      * file they are, so an export is restorable on the machine it lands on.
      */
     snapshotContentUrl?(name: string): string;
+    /**
+     * The bounded backlog-health aggregate (idea #110). Optional capability, like
+     * `backups`: a transport without it (an older Host, a test fake) shows no
+     * Health tab content rather than an error, and the board itself is untouched.
+     *
+     * Never called on the 2.5 s poll — the health view asks for itself when it is
+     * opened and when the ledger revision actually moves.
+     */
+    stats?(query?: IdeasStatsQuery): Promise<IdeasStats>;
 }
 export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     state(): Promise<IdeasListSnapshot>;
@@ -101,6 +125,12 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     takeSnapshot(reason?: IdeasSnapshotReason): Promise<IdeasSnapshotTaken>;
     restoreSnapshot(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse>;
     snapshotContentUrl(name: string): string;
+    /**
+     * The health aggregate (idea #110): its own small GET, never folded into the
+     * board poll. The scope mirrors the board's workspace selector — omitted for
+     * every workspace, a blank value for the workspace-less group.
+     */
+    stats(query?: IdeasStatsQuery): Promise<IdeasStats>;
     saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
     /**
      * The launch route (idea #66) is a dedicated POST, not an action verb: the

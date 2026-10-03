@@ -7,7 +7,7 @@
  */
 
 /** The panel tabs, in display order. */
-export const BOARD_TABS = ['overview', 'priorities', 'delivered'] as const
+export const BOARD_TABS = ['overview', 'priorities', 'delivered', 'health'] as const
 
 /** One panel tab id. */
 export type BoardTab = (typeof BOARD_TABS)[number]

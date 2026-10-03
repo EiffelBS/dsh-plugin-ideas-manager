@@ -38,8 +38,7 @@ TaskBoard: **zero hard dependency** on it.
 Open · Under review · Archived · Declined.
 - **Drag & drop** moves cards between columns and reorders them; the columns
   auto-scroll when you drag toward an edge.
-- **Search** and a **conjunctive tag filter** narrow the whole board — all three
-  tabs (Overview columns, Priorities ranking, Delivered log) share both filters.
+- **Search** and a **conjunctive tag filter** narrow the whole board — the Overview columns, the Priorities ranking and the Delivered log all share both filters. The **Health** tab is the exception: it is one figure per question, not a list, so it has nothing to narrow and says which workspace it covers.
 - Click a card title or its description to open the **editor** (raw text or
   rendered markdown). It edits the whole body, fetched on demand, and is titled
   with the card number it is editing.
@@ -73,6 +72,39 @@ Open · Under review · Archived · Declined.
   already has, and vanishes when the gate is empty.
 - The **Delivered** tab shows the exit log (delivered vs. manually archived).
 - Restore, archive and delete are one click away on each card.
+
+### Is this backlog healthy?
+A fourth tab, **Health**, answers five questions about the workspace you are
+looking at — and answers them **on the host**, in one small read the board asks
+for on its own. Your background refresh is not slowed by it, and the figures are
+never re-counted in the browser.
+
+- **How much is open**, and how that splits across workspaces.
+- **How many were delivered this month.** The label names the month it
+  measured — a calendar month on your machine's clock, not a vague "recently".
+- **The median time to deliver.** This one is deliberately cautious. Only ideas
+  that were really **delivered** count: an idea you dragged straight to Archived
+  closed without delivering anything, so there is no honest lead time to take
+  from it. Until there are **five** real deliveries the tab says *Not enough
+  deliveries yet (n / 5)* — with the count it has — instead of printing a
+  confident number computed from one or two rows. When a backlog is mostly
+  dragged away rather than delivered, the tab also tells you how many ideas left
+  it without a delivery stamp: that count is the reason a median may be missing,
+  and it is the honest answer rather than a zero.
+- **Your most used labels** on the open backlog.
+- **What is waiting to be triaged**: how many open ideas carry no rank, and how
+  many carry no value. It is work to do, not a score — nothing here judges an
+  idea or the person who wrote it.
+
+The workspace selector scopes all of it, exactly like the other tabs, and the
+figures follow your panel language. Nothing here is stored anywhere: closing the
+tab forgets it, and the next visit re-reads the host.
+
+The board refreshes and the Health tab refreshes on their own clock, so there is
+a moment where the figures describe a board that has just moved. The tab tells
+you: a quiet line under the numbers names the revision they came from and
+whether a refresh is on its way — or failed. You are never left reading stale
+figures as if they were current.
 
 ### Run an idea
 An open idea that has a **workspace** and no run in flight offers a
@@ -417,6 +449,7 @@ read the state and write ideas without any UI:
 | `GET /api/ideas/state` | Full snapshot of the board |
 | `GET /api/ideas/state?view=summary` | Bounded reads: filters, pagination, selected fields, body-byte caps |
 | `GET /api/ideas/state?view=summary&similar=<id>` | The same, plus a cheap near-duplicate **flag** for one idea |
+| `GET /api/ideas/state?view=stats` | Bounded backlog health: one aggregate, optionally scoped to `workspaceId` |
 | `GET /api/ideas/idea?id=<id>` | One complete idea |
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `merge`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
 | `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` |
@@ -433,7 +466,11 @@ The **`merge`** action is `{ sourceId, targetId, mode }`: the source is folded
 into the target and archived, and `mode` is `keepTargetRank` or
 `takeSourceRank`. The **`similar`** read query is opt-in — it reports which open
 ideas of the same workspace look close, and on which signals, and it changes
-nothing on disk. The **backup routes** are a separate family, not action verbs:
+nothing on disk. The **`view=stats`** read is the bounded backlog-health
+aggregate described above: it takes only `workspaceId` (absent = every
+workspace, blank = the ideas with no workspace), it is a read that consumes no
+`requestId`, and it never appears on the board's background refresh. The
+**backup routes** are a separate family, not action verbs:
 a snapshot writes a file rather than mutating the ledger, so it never consumes
 the `requestId` cache, and a refused restore answers **409** while a run is in
 flight, **404** for an unknown snapshot and **400** with the reason in `message`

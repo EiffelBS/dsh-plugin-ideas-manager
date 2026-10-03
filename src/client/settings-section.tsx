@@ -56,10 +56,23 @@ import { SettingsRow } from './settings-row.tsx'
 /** One tab in the settings section. */
 export type SettingsTab = 'display' | 'backup' | 'about'
 
-/** Plugin metadata for the About section (read from package.json at compile time). */
-const PLUGIN_METADATA = {
+/**
+ * Build-time constant: tsdown inlines the package.json version here (see the
+ * `define` block in tsdown.config.ts), so the About tab cannot drift away from
+ * the published package again. It used to carry a hand-written literal and did:
+ * the published 0.7.6 announced itself as 0.5.0 in the settings panel.
+ */
+declare const __IDEAS_PLUGIN_VERSION__: string
+
+/**
+ * Plugin metadata for the About section. `version` is injected from
+ * package.json at build time — never spelled out here. The typeof guard keeps
+ * the module importable where no bundler ran (a bare vitest pass, a plain
+ * typecheck); only a real bundle ever prints the fallback.
+ */
+export const PLUGIN_METADATA = {
   repositoryUrl: 'https://github.com/EiffelBS/dsh-plugin-ideas-manager',
-  version: '0.7.8',
+  version: typeof __IDEAS_PLUGIN_VERSION__ === 'string' ? __IDEAS_PLUGIN_VERSION__ : 'unreleased',
   license: 'MIT',
   compatibleVersions: '>=0.1.5-rc.1',
 } as const
@@ -195,6 +208,7 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
     overview: t('tab.overview'),
     priorities: t('tab.priorities'),
     delivered: t('tab.delivered'),
+    health: t('tab.health'),
   }
   const densityLabels: Record<(typeof IDEAS_DENSITIES)[number], string> = {
     comfortable: t('settings.densityComfortable'),

@@ -38,6 +38,7 @@ import {
 import { openIdeasSettingsSection } from './settings-navigation.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
+import { HealthView } from './health-view.tsx'
 import { ScoreBadge } from './score-badge.tsx'
 import { RunStateBadges, shortDate } from './run-state-badges.tsx'
 import { DeliveryNote } from './delivery-note.tsx'
@@ -1811,7 +1812,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       ? groupOpenByWorkspace(scopedOpen)
           .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
           .flatMap(group => group.ideas)
-      : deliveredRows(archivedIdeas)
+      : activeTab === 'delivered'
+        ? deliveredRows(archivedIdeas)
+        // The Health tab paints an aggregate, not a list: there is nothing to
+        // select here, and the selection bar is hidden with the other list-only
+        // affordances below.
+        : []
   const scopeIds = scopeRows.map(row => row.id)
   const scopeKey = scopeIds.join('\u0000')
   // Re-bind the selection whenever the scope moves: an idea that left the
@@ -1837,6 +1843,26 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const bulkSelected = selectedRows(scopeRows, selection)
   // Set form of the same selection, for the rows that render their own box.
   const selectedSet = new Set(selection.ids)
+
+  /* --- backlog health (idea #110) ---------------------------------------
+   * The aggregate is a SEPARATE bounded read (`?view=stats`), and it is asked
+   * for ONLY while its tab is open and ONLY when the ledger revision or the
+   * workspace scope actually moved. The board's 2.5 s poll therefore keeps its
+   * exact pre-existing request and payload: this feature costs the poll
+   * nothing, and it costs the idle board nothing at all.
+   *
+   * Leaving the tab drops the answer, so re-opening it asks the Host again
+   * rather than showing numbers that may have aged out of view. */
+  const listTab = activeTab !== 'health'
+  useEffect(() => {
+    if (activeTab !== 'health') {
+      client.dropStats()
+      return
+    }
+    void client.loadStats(workspaceFilter === ''
+      ? undefined
+      : workspaceFilter === NO_WORKSPACE_FILTER ? '' : workspaceFilter)
+  }, [client, activeTab, workspaceFilter, snapshot?.revision])
 
   /**
    * Select box click: a plain click toggles one row, a shift-click paints the
@@ -2148,10 +2174,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             {t('board.jumpGo')}
           </button>
         </form>
-        {/* The header text search is SHARED by all three tabs (review
+        {/* The header text search is SHARED by all three list tabs (review
             follow-up: it used to be Overview-only) — it narrows the kanban
             columns, the Priorities ranking and the Delivered log alike, like
-            the tag chips above already did. */}
+            the tag chips above already did. It is HIDDEN on the Health tab:
+            that view is one server-side aggregate over the workspace scope and
+            a client-side text filter cannot narrow it, so offering the box
+            there would promise a narrowing that never happens. */}
+        {listTab && (
         <input
           className={classes.search}
           type="search"
@@ -2160,6 +2190,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           aria-label={t('board.search')}
           onChange={event => { client.clearFocus(); setFilter(event.target.value) }}
         />
+        )}
         <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
           <button
             type="button"
@@ -2229,6 +2260,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           {t('tab.delivered')}
           <span className={classes.tabCount}>{archivedIdeas.length}</span>
         </button>
+        {/* Health (idea #110): no count badge on purpose. The other three tabs
+            count rows they are about to paint; this one paints an aggregate
+            whose headline number is inside it, and a stale count beside the
+            live figure would be the second way to show the same thing. */}
+        <button
+          type="button"
+          role="tab"
+          className={activeTab === 'health' ? classes.tabActive : classes.tab}
+          data-active={activeTab === 'health' ? '' : undefined}
+          aria-selected={activeTab === 'health'}
+          onClick={() => { client.clearFocus(); switchTab('health') }}
+        >
+          {t('tab.health')}
+        </button>
       </nav>
 
       {client.error !== undefined && (
@@ -2261,7 +2306,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           below it; a selected tag is never hidden by the search. The same
           selection narrows the Overview columns, the Priorities ranking and
           the Delivered log. */}
-      {knownTags.length > 0 && (
+      {knownTags.length > 0 && listTab && (
         <TagFilterRow
           knownTags={knownTags}
           selected={tagFilter}
@@ -2277,7 +2322,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           board that holds no idea at all — where there is nothing to select —
           but stays put while a filter merely hides everything, because "0 of 0
           shown" is the useful half of that sentence. */}
-      {ideas.length > 0 && (
+      {ideas.length > 0 && listTab && (
         <SelectionBar
           selectedCount={selection.ids.length}
           scopeTotal={scopeRows.length}
@@ -2732,20 +2777,29 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               onSelect={toggleRow}
             />
           )
-          : (
-            <DeliveredView
-              client={client}
-              archivedIdeas={archivedIdeas}
-              workspaceTitle={workspaceTitle}
-              onEdit={openEdit}
-              onToggleTag={toggleTag}
-              activeTags={tagFilter}
-              mdMode={mdMode}
-              parentNumber={parentNumberOf}
-              selectedIds={selectedSet}
-              onSelect={toggleRow}
-            />
-          )}
+          : activeTab === 'delivered'
+            ? (
+              <DeliveredView
+                client={client}
+                archivedIdeas={archivedIdeas}
+                workspaceTitle={workspaceTitle}
+                onEdit={openEdit}
+                onToggleTag={toggleTag}
+                activeTags={tagFilter}
+                mdMode={mdMode}
+                parentNumber={parentNumberOf}
+                selectedIds={selectedSet}
+                onSelect={toggleRow}
+              />
+            )
+            : (
+              <HealthView
+                client={client}
+                scopeWorkspaceId={workspaceFilter}
+                workspaceTitle={workspaceTitle}
+                boardRevision={revision}
+              />
+            )}
 
       {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (

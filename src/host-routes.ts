@@ -16,6 +16,7 @@ import {
   buildIdeasReadSnapshot,
   parseActionEnvelope,
   parseIdeasReadQuery,
+  parseIdeasStatsQuery,
   parseLaunchBody,
   parseRestoreRequest,
   parseSettingsBody,
@@ -154,8 +155,22 @@ export function makeIdeasRoutes(
       // idea #65: view=summary|detail is a separate additive contract with
       // workspace/id/number/status filters, field selection, pagination, and
       // explicit truncation metadata. It never mutates or caches the ledger.
+      //
+      // idea #110: view=stats is the bounded backlog-health aggregate. It is a
+      // THIRD, separate contract — it never runs through parseIdeasReadQuery,
+      // so it inherits neither that parser's keys nor its row semantics — and
+      // the board's 2.5 s poll has no reason to ask for it.
       const params = new URL(req.url ?? '/', 'http://loopback').searchParams
       const view = params.get('view')
+      if (view === 'stats') {
+        const query = parseIdeasStatsQuery(params)
+        if (query === undefined) {
+          writeJson(res, 400, { ok: false, error: 'invalid-query' }, { 'cache-control': 'no-store' })
+          return
+        }
+        writeJson(res, 200, service.ideasStats({ workspaceId: query.workspaceId }), { 'cache-control': 'no-store' })
+        return
+      }
       if (view === 'summary' || view === 'detail') {
         const query = parseIdeasReadQuery(params)
         if (query === undefined) {

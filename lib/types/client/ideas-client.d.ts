@@ -5,7 +5,7 @@
  * registration at the edge owns the DOM.
  */
 import type { IdeaRecord, IdeaSimilarReport, IdeaStatus, IdeaTag } from '../core/ideas.ts';
-import { type IdeasBackupView, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasSnapshotInfo, type IdeasSnapshotReason } from '../protocol.ts';
+import { type IdeasBackupView, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasSnapshotInfo, type IdeasSnapshotReason, type IdeasStats } from '../protocol.ts';
 import { type PanelNavigator } from './panel-navigation.ts';
 import { type FocusableIdea } from './deeplink.ts';
 import type { IdeasHostTransport } from './host-api.ts';
@@ -97,6 +97,14 @@ export declare class IdeasClient {
     backupError: string | undefined;
     /** Whether a snapshot/restore request is in flight (the panel disables itself). */
     backupPending: boolean;
+    /**
+     * The running Host serves no backup route (idea #95 follow-up): an instance
+     * that has not been restarted since the plugin was updated answers 404 on
+     * `/api/ideas/backup` while serving the NEW panel. Set by `loadBackups`, it
+     * turns the capability check into a runtime fact and the panel into one
+     * explanatory note instead of three dead buttons.
+     */
+    backupUnavailable: boolean;
     /** The snapshot a fresh export produced, so the panel can offer its download. */
     exported: IdeasSnapshotInfo | undefined;
     /**
@@ -125,6 +133,26 @@ export declare class IdeasClient {
     } | undefined;
     /** The card a deep-link landed on, or undefined once the human took over. */
     focusedIdeaId: string | undefined;
+    /**
+     * Backlog-health aggregate (idea #110), undefined until the Health tab asks
+     * for it. It lives here rather than in React state for the same reason the
+     * deep-link request does: the tab is opened by the panel, and the fetch it
+     * owns must survive the panel being closed and reopened without re-deciding
+     * anything.
+     */
+    stats: IdeasStats | undefined;
+    /**
+     * The scope {@link stats} was computed for, so the panel can refuse to paint
+     * numbers that answer a question the reader is no longer asking. `undefined`
+     * = every workspace; `''` = the workspace-less group.
+     */
+    statsScope: string | undefined;
+    /** Whether a stats request is in flight (the view shows it is refreshing). */
+    statsPending: boolean;
+    /** Last stats failure, verbatim; cleared on success. */
+    statsError: string | undefined;
+    /** Sequence of the newest stats request; older answers are dropped on arrival. */
+    private statsRequestSeq;
     private focusSeq;
     private readonly listeners;
     private unsubscribeEvents;
@@ -347,6 +375,12 @@ export declare class IdeasClient {
     /**
      * Load the snapshot folder. Reads only: opening the backup panel never
      * writes, so browsing the list cannot be the thing that fills the folder.
+     *
+     * A 404 without a body is NOT a failure to show — it means the running Host
+     * has no backup route (an instance that has not been restarted since the
+     * plugin was updated). That is a capability downgrade, so it clears the
+     * error, records {@link backupUnavailable} and lets the panel render its one
+     * explanatory note instead of three buttons that cannot work.
      */
     loadBackups(): Promise<void>;
     /**
@@ -368,7 +402,15 @@ export declare class IdeasClient {
     restoreSnapshot(request: IdeasRestoreRequest): Promise<boolean>;
     /** Download URL of one snapshot (the portable export / a hand-off copy). */
     snapshotContentUrl(name: string): string | undefined;
-    /** Whether this deployment serves the backup surface at all. */
+    /**
+     * Whether this deployment serves the backup surface at all.
+     *
+     * Both halves matter and only the second one is a runtime fact: a transport
+     * can lack the method (a test fake, an older shell build), AND the running
+     * Host can lack the route (an instance not restarted since the plugin was
+     * updated). A capability check that only looks at the method shows a working
+     * panel over a route table that answers 404.
+     */
     get backupAvailable(): boolean;
     /**
      * Report a backup failure that happened in the BROWSER (a file the page could
@@ -413,5 +455,25 @@ export declare class IdeasClient {
     ensureSearchIndex(): Promise<void>;
     /** Surface a transport/UI failure through the board's existing error bar. */
     reportError(message: string): void;
+    /** Whether this deployment serves the health aggregate at all. */
+    get statsAvailable(): boolean;
+    /**
+     * Load the bounded health aggregate for one workspace scope.
+     *
+     * Called by the Health tab when it opens and whenever the ledger revision
+     * actually moves while it is open — never on the 2.5 s poll, which keeps its
+     * exact pre-existing request and payload. A transport without the capability
+     * leaves {@link stats} undefined forever, which the view reads as "this
+     * deployment has no health surface" (a downgrade, like the backup one).
+     *
+     * The result is stored WITH the scope it was asked for, so switching the
+     * workspace selector can never paint the previous scope's numbers under the
+     * new label: a stale scope reads as "no data yet" until its own fetch lands.
+     *
+     * @param workspaceId - the scope; undefined = every workspace.
+     */
+    loadStats(workspaceId?: string): Promise<void>;
+    /** Forget the aggregate (the Health tab was left): the next open refetches. */
+    dropStats(): void;
 }
 export {};

@@ -6,7 +6,7 @@
  * default tab without throwing.
  */
 /** The panel tabs, in display order. */
-export declare const BOARD_TABS: readonly ["overview", "priorities", "delivered"];
+export declare const BOARD_TABS: readonly ["overview", "priorities", "delivered", "health"];
 /** One panel tab id. */
 export type BoardTab = (typeof BOARD_TABS)[number];
 /** Default tab shown when nothing is persisted. */

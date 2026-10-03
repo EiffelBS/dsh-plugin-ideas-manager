@@ -27,6 +27,9 @@ src/
   http.ts / loopback.ts / mount-once.ts   # shared discipline
   core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation, activity log
                       # + the merge helpers and the pure near-duplicate signal
+  core/ideas-stats.ts # idea #110: the ONE definition of every backlog-health number
+                      #   (sample floor, calendar-month window, scope, triage gaps)
+  client/health-view.tsx  # idea #110: the Health tab, which renders and computes nothing
   client/selection.ts    # the multi-select scope: toggle / range / all / prune (pure)
   client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
@@ -565,6 +568,145 @@ reading "Restore" on one row is an accessibility bug as much as a UX one, and
 the download is a plain `<a href>` to the content route (the server sets
 `content-disposition`) rather than a Blob — the file the browser stores is then
 exactly the document a restore adopts elsewhere, with no client-side copy of it.
+
+## Backlog health (idea #110)
+
+`src/core/ideas-stats.ts` is the whole feature on the host side: a pure
+`buildIdeasStats(source, options)` over a `{revision, ideas}` slice, served by
+`GET /api/ideas/state?view=stats` and painted by `client/health-view.tsx`.
+Everything below is a decision that had to be taken before the code, and each
+one is a place where the obvious implementation would have lied.
+
+### Why a separate `view`, not a fold into `view=list`
+
+The board's poll is a 2.5 s `?view=list` fetch and the full snapshot is over a
+megabyte. Re-reducing a second copy of it in the browser on every paint is
+exactly the cost idea #34 removed, so the aggregate is a **separate bounded
+read**: two hard-capped arrays and a handful of scalars, ~600 bytes on a
+14-idea board and provably under the 512 KiB wire cap at the 140-card fixture
+(`idea-110-stats.test.ts`). The poll URL, its payload and its cadence are
+untouched, and the panel asks for the aggregate only while the Health tab is
+open and only when the ledger revision or the workspace scope actually moved.
+
+`view=stats` deliberately does **not** run through `parseIdeasReadQuery`: it
+takes only `view` and `workspaceId`, and an unknown key is a `400` rather than
+a silently broader answer. Every key the row views take (`limit`, `fields`,
+`similar`, …) would be a second set of definitions for the same numbers.
+
+### Why `ledger.statsSource()` breaks the clone-on-read rule
+
+Every other reader of the ledger gets `snapshot()`, a deep clone of all 140
+records. For an aggregate that reads counters and keeps nothing, cloning a
+megabyte to produce forty numbers is precisely the waste this feature exists to
+avoid, so `IdeasHostLedger.statsSource()` hands over the document's rows
+directly. Two rules keep that safe: the document reference is captured ONCE, so
+revision and rows always come from the same revision (a commit replaces the
+document wholesale rather than mutating it, so the array cannot tear), and the
+rows are typed `readonly`, so the only consumer — a pure function — cannot write
+through the seam even by accident. `applyRequest` remains the only writer.
+
+### The median: the honest answer is sometimes no answer
+
+`deliveredAt` is stamped by the `deliver` verb and is only as honest as the way
+the backlog is closed. A backlog whose ideas are dragged to Archived has no
+delivery data at all, and a median computed over that sample is a confident
+wrong number — worse than none. So:
+
+- **The sample is every idea carrying a real stamp** (`deliveredAt` present,
+  finite, and not before its own `createdAt`), across the WHOLE board, not just
+  this month. "How long does a delivery take here" is a property of the backlog,
+  not of the current calendar month.
+- **Below `IDEAS_STATS_MEDIAN_MIN_SAMPLES` (5) the response is
+  `medianMs: null`** and the UI prints *Not enough deliveries yet (n / 5)*. The
+  floor and the sample size both travel in the payload, so no surface can
+  render a different rule than the Host applied. The floor is a constant and
+  not a percentage on purpose: a percentage would let a small board print a
+  median off two rows while a big one stayed silent.
+- **`withoutStamp` is reported next to it.** How many ideas left the backlog
+  with no delivery stamp is the number that explains a missing median, and
+  naming it is the difference between "we know nothing" and "nothing happened".
+  A DECLINED idea is deliberately excluded from it: an honest "no" is not work
+  closed without a delivery. Conversely a delivery keeps its place in the sample
+  even if the idea was restored and declined afterwards — `restore` clears
+  `archivedAt` alone, and the delivery really happened.
+- **`inconsistent` is never averaged.** A stamp before its own creation is only
+  reachable through a hand-edited or imported document; it is counted and
+  excluded rather than silently folded into a median.
+
+### "This month" means the local calendar month, and says so
+
+`window` is `{kind: 'calendarMonth', start, end}` with `start` the Host's LOCAL
+first instant of the month and `end` the instant the aggregate was measured. The
+label can therefore be checked against the data it claims, and the panel prints
+the month name it actually measured rather than "recently". A rolling window
+would have needed a different label ("last 30 days"); the words on the card mean
+this one.
+
+### Scoped, not global
+
+The view follows the board's workspace selector like every other tab, so a
+number never answers a different question than the one on screen. The payload
+is self-describing — `scope.kind` is `all`, `generic` (the workspace-less
+group) or `workspace` — and the wire maps the board's three selector values onto
+them directly: the key is **absent** for all, **blank** for the generic group,
+and the id otherwise. The per-workspace breakdown is therefore "open per
+workspace *in scope*": eight rows when the scope is everything, one when it is
+narrowed, which is correct rather than a degradation.
+
+### What the view refuses to say
+
+- **Triage is work, not a score.** `missingRank` / `missingValue` count OPEN
+  ideas in scope, and the copy says so. A closed idea without a value is not
+  backlog triage — nothing is being decided about it.
+- **Labels are counted on the open backlog only.** A label that only appears on
+  closed work is history, not work to do. Counting is case-folded (first
+  spelling wins) so `Perf` and `perf` are one row to a reader.
+- **The panel computes nothing.** `health-view.tsx` renders the Host's numbers
+  verbatim; the only computation it does is `durationParts()`, the shared helper
+  from the same module, which turns milliseconds into a value and a unit while
+  the dictionary supplies the words. An aggregate is the easiest thing in this
+  codebase to compute two different ways in two places, and a panel that
+  recomputed would be exactly that second place.
+- **The list-only affordances step aside.** The search box, the tag filter and
+  the selection bar are hidden on the Health tab: none of them can narrow an
+  aggregate computed on the host, and offering them would promise a narrowing
+  that never happens. The workspace selector stays — it IS the scope.
+
+### An aggregate goes stale, and says so
+
+The board poll moves the instant the ledger does; the aggregate answers for ONE
+revision. That leaves a window — however short — where the figures on screen
+describe a board that no longer exists. A health view that cannot say when it is
+out of date is exactly the "looks authoritative and is not" failure the idea was
+deferred to avoid, so the staleness is **stated, not hidden**:
+
+- `IdeasStats.revision` is the ledger revision the numbers came from, and the
+  panel compares it with the revision it is painting. This is the ONLY consumer
+  of that field, and shipping a field nothing reads is how it rots.
+- The figures **stay on screen** when they go stale. Blanking them would flicker
+  on every commit and punish the reader for the board being busy; a note under
+  them names the revision they describe instead.
+- The note distinguishes the three real states, because they need different
+  reactions: `refreshing` (a fetch is in flight), `stale` (nothing in flight —
+  treat the numbers as history), and `staleError` with the Host's own message
+  when the refresh **failed**. The last one is the case that would otherwise be
+  invisible forever: a failed background refresh, with the old numbers quietly
+  still on screen and no way for the reader to know they are old.
+
+`statsPending` exists for exactly that third branch; without it the view cannot
+tell "being refreshed" from "stuck".
+
+### Degradation, not breakage
+
+`stats` is an **optional capability** on `IdeasHostTransport`. A Host that
+predates the route leaves the client on `undefined` forever and the tab prints
+one explicit note ("this deployment does not serve the health view") rather than
+figures that read as zero. `IdeasClient.loadStats` carries a supersession guard:
+switching the workspace selector while a request is in flight starts another
+one, and only the LAST may write, so a slow answer can never repaint the panel
+with numbers the reader is no longer asking for. The stored result also travels
+with the scope it was computed for, and the view renders nothing rather than
+another scope's figures while its own fetch is in flight.
 
 ## Deep-link to an idea (idea #105)
 

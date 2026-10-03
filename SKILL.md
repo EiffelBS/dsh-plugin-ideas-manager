@@ -163,6 +163,30 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
   snapshot entirely, so the board's poll pays nothing for it.
 - `meta` always reports `matched`, `returned`, `rowTruncated`, `nextOffset`,
   `bodyTruncated`, and `omittedFields`. A response never exceeds 512 KiB.
+- `GET /api/ideas/state?view=stats` → the **bounded backlog-health aggregate**
+  (idea #110), a separate contract that is NOT one of the row views and accepts
+  no row query key. It takes `workspaceId` only: **absent** = every workspace,
+  **blank** = the ideas with no workspace, a real id = that workspace; anything
+  else is `400 invalid-query`. It is a READ — no `requestId`, no mutation — and
+  it is never part of the board's poll. It answers one object per scope:
+
+  | field | meaning |
+  |---|---|
+  | `revision` | the ledger revision the numbers were derived from |
+  | `scope` | `{kind: 'all' \| 'generic' \| 'workspace', workspaceId?, ideas}` |
+  | `window` | `{kind: 'calendarMonth', start, end}` — the Host's LOCAL month, so the label is checkable |
+  | `openTotal`, `openByWorkspace[]`, `workspacesTotal` | open backlog, busiest first, capped at 8 rows |
+  | `deliveredInWindow` | deliveries stamped inside `window` |
+  | `delivery` | `{sample, withoutStamp, inconsistent, medianMs, minSamples}` |
+  | `topTags[]`, `tagsTotal` | most used labels of the OPEN backlog, capped at 8 |
+  | `triage` | `{open, missingRank, missingValue}` — work to do, never a score |
+
+  **`delivery.medianMs` is `null` — and only `null` — when `sample <
+  minSamples`.** The median is taken over every idea carrying a real
+  `deliveredAt` (never one that precedes its own `createdAt`); ideas archived
+  without a stamp are counted in `withoutStamp` and excluded, and that count is
+  the honest explanation for a missing median. Never infer a median from a thin
+  sample, and never report a missing one as `0`.
 - `GET /api/ideas/events` → SSE frames `{ revision }` (no full list).
 - `POST /api/ideas/action` verbs:
 
@@ -290,8 +314,9 @@ document wholesale.
 ## File map
 
 ```
-src/protocol.ts          wire gate (exactKeys, envelope)
+src/protocol.ts          wire gate (exactKeys, envelope) + the `view=stats` query parser
 src/core/ideas.ts        domain model, tag validation, activity log, near-duplicate signal
+src/core/ideas-stats.ts  the ONE definition of every backlog-health number (idea #110)
 src/backup.ts            the snapshot folder (atomic write, list, quarantine, retention)
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind,
                          snapshots + restore (strict validation, displaced-on-restore)

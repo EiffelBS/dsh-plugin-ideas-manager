@@ -31,6 +31,7 @@ import { IDEAS_SNAPSHOT_RETENTION, type SnapshotFile } from './backup.ts'
 import { SessionRunner, SessionLaunchError } from './session-runner.ts'
 import { TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts'
+import { buildIdeasStats, type IdeasStatsOptions } from './core/ideas-stats.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   type IdeasAction,
@@ -42,6 +43,7 @@ import {
   type IdeasSnapshotReason,
   type IdeasSnapshotTaken,
   type IdeasSnapshot,
+  type IdeasStats,
 } from './protocol.ts'
 
 /** How often the run poll re-reads the task-board card statuses. */
@@ -141,6 +143,24 @@ export class IdeasHostService {
   /** SSE frame payload; deliberately skips the ideas deep-clone of {@link snapshot}. */
   eventPayload(): IdeasEventPayload {
     return this.ledger.summary()
+  }
+
+  /**
+   * The bounded backlog-health aggregate (idea #110), served by
+   * `GET /api/ideas/state?view=stats`.
+   *
+   * Deliberately NOT built on {@link snapshot}: the aggregate reads counters
+   * out of the rows and keeps nothing, so the deep clone that every reader
+   * pays would buy a megabyte of work to produce a few kilobytes of answer.
+   * `ledger.statsSource` is the read-only seam that makes this cheap, and the
+   * numbers themselves come from `core/ideas-stats.ts` — the single definition
+   * every surface of this plugin shares.
+   *
+   * A READ: it mutates nothing, consumes no request id, and is never part of
+   * the board's 2.5 s poll.
+   */
+  ideasStats(options: IdeasStatsOptions = {}): IdeasStats {
+    return buildIdeasStats(this.ledger.statsSource(), options)
   }
 
   subscribe(listener: () => void): () => void {

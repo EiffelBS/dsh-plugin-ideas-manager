@@ -13,10 +13,27 @@
  * bundle: the loader module table only answers platform modules and plugin
  * ids, never 'react'.
  */
+import { readFileSync } from 'node:fs'
 import type { UserConfig } from 'tsdown'
 
 /** Plugin id (package name) stamped into the __ModuleLoader__.load handoff. */
 const ID = 'dsh-plugin-ideas-manager'
+
+/**
+ * The single source of truth for the version the About tab prints: the
+ * package.json version, read at build time and inlined as
+ * __IDEAS_PLUGIN_VERSION__. The About section used to carry a hand-written
+ * literal, which drifted at every release — a published 0.7.6 announced
+ * itself as 0.5.0. Nothing else may spell a version out.
+ */
+const VERSION: string = (
+  JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+    version?: unknown
+  }
+).version as string
+if (typeof VERSION !== 'string' || VERSION === '') {
+  throw new Error('package.json has no version to stamp into the client bundle')
+}
 
 /** Node-half externals resolved from the running dsh host profile tree. */
 const HOST_EXTERNALS: readonly string[] = [
@@ -68,6 +85,7 @@ const clientHalf: UserConfig = {
     onlyBundle: false,
   },
   define: {
+    __IDEAS_PLUGIN_VERSION__: JSON.stringify(VERSION),
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env.MODE': JSON.stringify(process.env.NODE_ENV ?? 'production'),
     'import.meta.env': JSON.stringify({ MODE: process.env.NODE_ENV ?? 'production' }),

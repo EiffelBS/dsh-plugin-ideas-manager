@@ -1435,6 +1435,141 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   line-height: 1;
 }
 
+/* Health view (idea #110): the bounded aggregate. Same flex/scroll contract as
+   the Priorities wrapper — the panel owns the height, the view owns its scroll.
+   The five figures sit on one wrapping grid so the row never forces a
+   horizontal scrollbar on a narrow panel. */
+.dsh-ideas-health {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.dsh-ideas-health-hint {
+  flex: none;
+  margin: 4px 0 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-health-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dsh-ideas-health-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l, var(--dsh-ideas-fb-border));
+  border-radius: 6px;
+  background: var(--dsw-alias-card-bg, var(--dsh-ideas-fb-bg));
+}
+
+/* The "not enough deliveries yet" figure: a missing median is a fact to read,
+   not an error to hide, so it is tinted rather than greyed out. */
+.dsh-ideas-health-figure-warn {
+  border-color: var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent));
+  background: var(--dsw-alias-warn-bg, color-mix(in srgb, var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent)) 12%, transparent));
+}
+
+.dsh-ideas-health-figure-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-health-figure-value {
+  font-size: 17px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.dsh-ideas-health-figure-hint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-health-note {
+  flex: none;
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-health-note p {
+  margin: 2px 0;
+}
+
+.dsh-ideas-health-section {
+  flex: none;
+  margin-bottom: 10px;
+}
+
+.dsh-ideas-health-section-title {
+  margin: 8px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dsh-ideas-health-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l, var(--dsh-ideas-fb-border));
+}
+
+.dsh-ideas-health-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsh-ideas-health-row-value {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-health-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dsh-ideas-health-tag-count {
+  margin-left: 5px;
+  opacity: 0.75;
+}
+
+.dsh-ideas-health-more {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
 /* Priorities view: the ranked open backlog. The wrapper is a flex column
    pinned to the board's remaining height (flex: 1) so a long backlog scrolls
    inside the panel instead of overflowing it; the hint stays put at the top,
@@ -2350,6 +2485,24 @@ export const classes = {
   activityActor: 'dsh-ideas-activity-actor',
   activitySummary: 'dsh-ideas-activity-summary',
   tabCount: 'dsh-ideas-tab-count',
+  health: 'dsh-ideas-health',
+  healthHint: 'dsh-ideas-health-hint',
+  healthFigures: 'dsh-ideas-health-figures',
+  healthFigure: 'dsh-ideas-health-figure',
+  healthFigureWarn: 'dsh-ideas-health-figure-warn',
+  healthFigureLabel: 'dsh-ideas-health-figure-label',
+  healthFigureValue: 'dsh-ideas-health-figure-value',
+  healthFigureHint: 'dsh-ideas-health-figure-hint',
+  healthNote: 'dsh-ideas-health-note',
+  healthSection: 'dsh-ideas-health-section',
+  healthSectionTitle: 'dsh-ideas-health-section-title',
+  healthList: 'dsh-ideas-health-list',
+  healthRow: 'dsh-ideas-health-row',
+  healthRowName: 'dsh-ideas-health-row-name',
+  healthRowValue: 'dsh-ideas-health-row-value',
+  healthTags: 'dsh-ideas-health-tags',
+  healthTagCount: 'dsh-ideas-health-tag-count',
+  healthMore: 'dsh-ideas-health-more',
   scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',
   aboutPanel: 'dsh-plugin-about-panel',

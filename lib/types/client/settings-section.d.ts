@@ -29,6 +29,18 @@
 import type { IdeasClient } from './ideas-client.ts';
 /** One tab in the settings section. */
 export type SettingsTab = 'display' | 'backup' | 'about';
+/**
+ * Plugin metadata for the About section. `version` is injected from
+ * package.json at build time — never spelled out here. The typeof guard keeps
+ * the module importable where no bundler ran (a bare vitest pass, a plain
+ * typecheck); only a real bundle ever prints the fallback.
+ */
+export declare const PLUGIN_METADATA: {
+    readonly repositoryUrl: "https://github.com/EiffelBS/dsh-plugin-ideas-manager";
+    readonly version: string;
+    readonly license: "MIT";
+    readonly compatibleVersions: ">=0.1.5-rc.1";
+};
 /** Structural face of the shell slot registry (no ui-slots dependency). */
 export interface SettingsSlotsFace {
     inject(name: string, factory: () => unknown): () => void;
