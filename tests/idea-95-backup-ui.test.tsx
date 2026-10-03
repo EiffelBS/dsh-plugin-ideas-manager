@@ -259,6 +259,37 @@ describe('BackupPanel', () => {
     expect(transport.restoreAnswer.ok).toBe(true)
   })
 
+  it('renders against a Host that predates unknownFields (a page refresh before a restart)', async () => {
+    // The rolling-upgrade shape, and a crash that really happened: the browser
+    // half is re-read on every page load while the routes are registered at
+    // start-up, so a refreshed page runs the NEW panel against an OLD Host that
+    // answers a restore without `unknownFields`. The panel must degrade to "no
+    // warning", never to a TypeError that takes the whole settings section down.
+    const transport = new BackupTransport()
+    transport.restoreAnswer = {
+      ok: true,
+      revision: 7,
+      ideas: 3,
+      source: 'export-1800000000000-cccccccc.json',
+      displaced: snapshot('displaced-1800000009000-bbbbbbbb.json', { reason: 'pre-restore' }),
+    } as IdeasRestoreResponse
+    await renderPanel(new IdeasClient(transport, undefined))
+
+    await act(async () => {
+      byLabel(en['backup.restore']).click()
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    await act(async () => {
+      byLabel(en['backup.restoreYes']).click()
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+
+    // No unknownFields on the wire, so no warning line and no crash.
+    expect(host.querySelector('[data-dsh-ideas-backup-unknown]')).toBeNull()
+    expect(host.querySelector('[data-dsh-ideas-backup]')).not.toBeNull()
+    expect(host.textContent).toContain('displaced-1800000009000-bbbbbbbb.json')
+  })
+
   it('prints the Host refusal verbatim and changes nothing', async () => {
     const transport = new BackupTransport()
     transport.restoreAnswer = {

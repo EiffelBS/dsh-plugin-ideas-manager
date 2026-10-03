@@ -231,6 +231,14 @@ Versions before 0.3.0 predate this file.
   itself as an old one. It now reads the version of the package you actually
   installed, and a release cannot ship with it out of step any more.
 
+- **Refreshing the page no longer takes the settings section down when the
+  running instance is older than the page.** The Backup tab read the list of
+  fields a restore could not carry as if the running instance always sent it; a
+  browser half reloaded against an instance started before that field existed
+  crashed the whole section with a TypeError after a restore. It now degrades to
+  simply showing no warning. That one-sided upgrade stays fine everywhere else —
+  the browser half reloads with the page, the routes come with a restart.
+
 - **One button in the Backup tab, not two.** *Take a snapshot* and *Export a
   copy* wrote the same file through the same call and differed only by a stamp in
   its name — and every entry in the list already carried its own **Download**

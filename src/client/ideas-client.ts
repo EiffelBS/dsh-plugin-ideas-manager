@@ -780,7 +780,14 @@ export class IdeasClient {
       }
       await this.loadBackups()
       await this.refresh()
-      this.lastRestore = outcome
+      // Normalize the optional field HERE, at the transport edge, not in the
+      // panel: the browser half is re-read on every page load while the routes
+      // are registered at start-up, so a refreshed page can run this code
+      // against a Host that predates the field and answers without it. Same
+      // discipline as `readJson` preferring a refusal's `message` — inert for
+      // every matching deployment, and the difference between a warning and a
+      // crashed settings section.
+      this.lastRestore = { ...outcome, unknownFields: outcome.unknownFields ?? [] }
       return true
     } catch (error) {
       this.backupError = error instanceof Error ? error.message : String(error)

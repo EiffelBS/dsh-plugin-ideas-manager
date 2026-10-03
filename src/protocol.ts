@@ -1047,8 +1047,13 @@ export interface IdeasRestoreOutcome {
    * Record keys the file carried that THIS build does not know (empty in the
    * normal case). They were not restored, and the panel says so: a backup that
    * quietly dropped data would be worse than no backup.
+   *
+   * OPTIONAL on purpose: the browser half is re-read on every page load while
+   * the routes are registered at start-up, so a refreshed page legitimately runs
+   * a NEW panel against an OLD Host that has never been restarted — and that
+   * Host answers without the field. The client normalizes it to `[]`.
    */
-  unknownFields: string[]
+  unknownFields?: string[]
 }
 
 /**

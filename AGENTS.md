@@ -69,6 +69,11 @@ node node_modules/vitest/vitest.mjs run                # tests (add IDEAS_PERF=1
 
 `lib/` is committed: a release commit ships the rebuilt bundles and types.
 
+**Never round-trip a source file through PowerShell.** `Get-Content -Raw` +
+`[IO.File]::WriteAllText` reads UTF-8 as the ANSI code page and writes every
+em-dash back as `â€"` — silently, with every test still green. Use `read`/`edit`
+for source, and `node scripts/scan-mojibake.mjs` after any scripted rewrite.
+
 ## House rules
 
 - A bug fix lands with the test that would have caught it; a feature lands with
