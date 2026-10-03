@@ -29,7 +29,7 @@ import {
   type TaskBoardTransport,
 } from '../src/taskboard-bridge.ts'
 import { SessionRunner, SessionLaunchError, type HostSessionGateway } from '../src/session-runner.ts'
-import { sanitizeSettings, IDEAS_SETTINGS_DEFAULTS, type IdeasSettingsValue } from '../src/protocol.ts'
+import { sanitizeSettings, toListSnapshot, parseActionEnvelope, parseLaunchBody, parseSettingsBody, IDEAS_SCHEMA_VERSION, IDEAS_SETTINGS_DEFAULTS, type IdeasSettingsValue } from '../src/protocol.ts'
 
 let dir = ''
 
@@ -333,5 +333,82 @@ describe('a workspace that no longer exists', () => {
     await service.launchIdea('idea-1')
 
     expect(taskBoard.posts.map(entry => entry.action)).toEqual([{ kind: 'run', taskId: 'idea-idea-1' }])
+  })
+})
+
+/* --- the frozen wire did not move ---------------------------------------- */
+
+describe('the frozen wire is untouched (idea #107 is additive elsewhere)', () => {
+  it('still accepts exactly {requestId, action, initiator} on the action route', () => {
+    const parsed = parseActionEnvelope({
+      requestId: 'r1',
+      action: { kind: 'update', ideaId: 'a', patch: { title: 'Alpha' } },
+      initiator: 'agent:test',
+    })
+    expect(parsed?.action).toEqual({ kind: 'update', ideaId: 'a', patch: { title: 'Alpha' } })
+    // The initiator still travels through verbatim (idea #92's rule), and no
+    // fourth envelope key appeared.
+    expect(parsed?.initiator).toBe('agent:test')
+    expect(parseActionEnvelope({ requestId: 'r1', action: { kind: 'export' }, weight: 1 })).toBeUndefined()
+  })
+
+  it('refuses the default on an idea PATCH — the setting is not idea data', () => {
+    // The load-bearing negative: if any of these spellings parsed, the board's
+    // 2.5 s poll could write a launch default back over the human's choice, and
+    // the row would start travelling with the portable ledger document.
+    const patch = (value: unknown) => parseActionEnvelope({
+      requestId: 'r1',
+      action: { kind: 'update', ideaId: 'a', patch: value },
+    })
+    for (const key of ['launchModel', 'launchModelByWorkspace', 'model', 'defaultModel']) {
+      expect(patch({ [key]: 'p/m' })).toBeUndefined()
+    }
+    // Nor on `create`, which is the other way a row could be born carrying it.
+    expect(parseActionEnvelope({
+      requestId: 'r1',
+      action: { kind: 'create', id: 'a', input: { title: 'T', body: 'B', launchModel: 'p/m' } },
+    })).toBeUndefined()
+  })
+
+  it('leaves the default full GET /state response byte-identical', async () => {
+    const { service } = await serve({ launchModels: { ws1: 'p/default', ws2: 'p/two' } })
+    const snapshot = service.snapshot()
+
+    // The frozen response is these three keys — not a new one, even though the
+    // Host now holds a per-workspace model map in memory.
+    expect(Object.keys(snapshot).sort()).toEqual(['ideas', 'revision', 'schemaVersion'])
+    expect(snapshot.schemaVersion).toBe(IDEAS_SCHEMA_VERSION)
+    // IDEAS_SCHEMA_VERSION stays 1: the ledger schema did not gain a field.
+    expect(IDEAS_SCHEMA_VERSION).toBe(1)
+    // No row carries anything model-shaped, and the list projection the board
+    // actually polls is free of it too.
+    for (const idea of snapshot.ideas) {
+      expect(Object.keys(idea).filter(key => /model/i.test(key))).toEqual([])
+    }
+    const wire = JSON.stringify(snapshot) + JSON.stringify(toListSnapshot(snapshot))
+    expect(wire).not.toContain('launchModel')
+    expect(wire).not.toContain('p/default')
+    expect(wire).not.toContain('p/two')
+  })
+
+  it('leaves the launch BODY exactly {requestId?, initiator?, ideaId, model?}', () => {
+    expect(parseLaunchBody({ ideaId: 'a' })).toEqual({ ideaId: 'a' })
+    expect(parseLaunchBody({ ideaId: 'a', model: 'p/m' })).toEqual({ ideaId: 'a', model: 'p/m' })
+    // `model` stays OPTIONAL and stays a plain string: the fallback is resolved
+    // from the workspace when it is absent, not from a new body key.
+    for (const extra of ['workspaceModel', 'launchModel', 'useWorkspaceDefault']) {
+      expect(parseLaunchBody({ ideaId: 'a', [extra]: 'p/m' })).toBeUndefined()
+    }
+    expect(parseLaunchBody({ ideaId: 'a', model: null })).toBeUndefined()
+  })
+
+  it('adds its surface on the CONFIG route only, never as an action verb', () => {
+    // `launchModel` is not a verb, and the settings family is not an action
+    // kind: a POST /action carrying it is still `invalid-action` on the Host.
+    expect(parseActionEnvelope({ requestId: 'r1', action: { kind: 'launchModel', ideaId: 'a' } })).toBeUndefined()
+    expect(parseActionEnvelope({ requestId: 'r1', action: { kind: 'settings', patch: {} } })).toBeUndefined()
+    // And it lives on the config body, which is a different route entirely.
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: 'p/m' } } })?.patch.launchModelByWorkspace)
+      .toEqual({ ws1: 'p/m' })
   })
 })
