@@ -365,10 +365,17 @@ behaviour, measured on the shipped component rather than reconstructed.
 [perf-virtual] scroll the window across 5 positions: 43.44 ms, 17 cards painted at the end
 ```
 
-A repeat of the same gate gave 881.54 ms / 101.58 ms and a 28.92 ms changed poll —
-the same shape, so the figures above are a run and not a single lucky sample. The
-**node counts and card counts are deterministic** (29 276 / 2 121 / 500 / 10 /
-115.0 KiB px) and reproduced exactly on both runs; only the timings move.
+A repeat of the same gate gave 881.54 ms / 101.58 ms and a 28.92 ms changed poll.
+A third run, taken later with **four DSH hosts live** on the machine (3080, 3090,
+3199 and the 3207 acceptance instance), gave 905.02 ms / 163.96 ms and a 26.11 ms
+changed poll — the same shape, with the windowed arm moving the most because it
+is the shorter one and therefore the most sensitive to contention.
+
+So the honest reading of the timings is a **range, not a point**, and the claim
+that survives every run is the deterministic one: **node counts and card counts
+reproduced exactly on all three runs** (29 276 / 2 121 / 500 / 10 / 115.0 KiB px).
+The -88% below is stated against the quiet-machine pair; against the contended
+pair the same run is -82%, which is the floor worth quoting.
 
 | measurement at 500 open cards | fully painted | windowed | delta |
 |---|---|---|---|

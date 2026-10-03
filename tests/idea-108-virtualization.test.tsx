@@ -40,7 +40,7 @@ import {
   type IdeasSettingsView,
   type IdeasSnapshot,
 } from '../src/protocol.ts'
-import type { IdeaRecord } from '../src/core/ideas.ts'
+import type { IdeaRecord, IdeaStatus } from '../src/core/ideas.ts'
 import { IDEA_OPEN_COLUMN_NOTICE_AT } from '../src/client/windowing.ts'
 
 const VIEWPORT_PX = 600
@@ -253,6 +253,85 @@ async function dragOnto(transport: StaticTransport, ideaId: string, dropOnId: st
   void rects
   void transport
 }
+
+/**
+ * Every column, not just Open.
+ *
+ * The idea is explicit about this: "virtualizing only the Open column leaves
+ * the other three inconsistent for no gain; virtualizing all four is the honest
+ * unit". An implementation that windowed only Open would pass every test above
+ * and still be the wrong thing, so this asserts the closed columns too - each
+ * with its own geometry, its own scroll offset and its own window.
+ */
+
+/** `count` cards of one status, so each column can be made long on purpose. */
+function cardsOfStatus(status: IdeaStatus, count: number, firstNumber = 1): IdeaRecord[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${status}-${index}`,
+    ideaNumber: firstNumber + index,
+    title: `${status} card ${index}`,
+    body: 'Body',
+    status,
+    createdAt: 1_000 + index,
+    updatedAt: 1_000 + index,
+    ...(status === 'open' ? { rank: index + 1 } : {}),
+    ...(status === 'archived' ? { archivedAt: 500 } : {}),
+    ...(status === 'declined' ? { archivedAt: 500, decision: 'no' } : {}),
+  }))
+}
+
+/** Painted cards per column, in board order, with what each header claims. */
+function columnReport(): { painted: number; claimed: number }[] {
+  return Array.from(host.querySelectorAll('.dsh-ideas-column')).map(section => ({
+    painted: section.querySelectorAll('.dsh-ideas-card-wrapper').length,
+    claimed: Number(section.querySelector('.dsh-ideas-column-count')?.textContent ?? '0'),
+  }))
+}
+
+describe('all four columns are the same unit', () => {
+  const EACH = 120
+
+  it('windows Open, Under review, Archived AND Declined alike', async () => {
+    await renderBoard([
+      ...cardsOfStatus('open', EACH),
+      ...cardsOfStatus('underReview', EACH, 1_000),
+      ...cardsOfStatus('archived', EACH, 2_000),
+      ...cardsOfStatus('declined', EACH, 3_000),
+    ])
+    const report = columnReport()
+    expect(report, 'a column is missing from the Overview').toHaveLength(4)
+    for (const [index, column] of report.entries()) {
+      expect(column.claimed, `column ${index} header count`).toBe(EACH)
+      expect(column.painted, `column ${index} mounted its whole backlog`).toBeLessThan(EACH)
+      expect(column.painted, `column ${index} painted nothing`).toBeGreaterThan(0)
+    }
+    // 480 cards exist; a fraction of them is mounted.
+    const painted = report.reduce((sum, column) => sum + column.painted, 0)
+    expect(painted).toBeLessThan(120)
+    expect(painted).toBeGreaterThan(0)
+  })
+
+  it('gives each column its own geometry: a scrolled Open does not move Archived', async () => {
+    await renderBoard([
+      ...cardsOfStatus('open', EACH),
+      ...cardsOfStatus('underReview', EACH, 1_000),
+      ...cardsOfStatus('archived', EACH, 2_000),
+      ...cardsOfStatus('declined', EACH, 3_000),
+    ])
+    const archivedBefore = Array.from(
+      host.querySelectorAll('[data-dsh-column-scroll]')[2]!.querySelectorAll('.dsh-ideas-card-wrapper'),
+      node => node.getAttribute('data-dsh-idea-id'),
+    )
+    scrollColumnTo(40_000)
+    const archivedAfter = Array.from(
+      host.querySelectorAll('[data-dsh-column-scroll]')[2]!.querySelectorAll('.dsh-ideas-card-wrapper'),
+      node => node.getAttribute('data-dsh-idea-id'),
+    )
+    // The Open column moved; the Archived one kept every row it had.
+    expect(paintedIds()[0]).not.toBe('open-0')
+    expect(archivedAfter).toEqual(archivedBefore)
+  })
+})
 
 describe('a windowed Open column', () => {
   const BIG = IDEA_OPEN_COLUMN_NOTICE_AT + 200
