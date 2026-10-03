@@ -17,7 +17,11 @@
  * is selected. Both are views, never a persisted order — every 2.5 s client poll
  * re-derives them from the same snapshot, so they cannot rewrite the human
  * ranking behind the reader's back.
- * Pure and unit-testable in isolation.
+ *
+ * A view order is a DEFAULT, not a lock (see the `targetOrder` argument of
+ * rebuildOrder): a drop in a column that paints something else than the rank
+ * writes the ranking the author actually built on screen, and the board then
+ * paints that ranking. Pure and unit-testable in isolation.
  */
 import { type RankableIdea, type IdeaRunStatus, type IdeaStatus } from '../core/ideas.ts';
 import type { IdeasOpenOrdering } from '../protocol.ts';
@@ -64,8 +68,16 @@ export declare function groupedIdOrder(all: readonly RankableIdea[], override?: 
  * the group end (a cross-workspace drop cannot define a within-group
  * insertion point). Columns are always laid out open, archived, declined,
  * each workspace group rank-sorted.
+ *
+ * `targetOrder` is the DISPLAY order of the target group when that column does
+ * not paint the stored rank (a date order, or the running block floated to the
+ * top). The drop anchor is read from the rows the author actually sees, so the
+ * rank that gets written has to be built from that same list: resolving the
+ * anchor in rank space instead is what used to make a drop in a reordered
+ * column land on the rank the card already held. Omitted, the behaviour is the
+ * historical rank-space rebuild, which every rank-ordered column still uses.
  */
-export declare function rebuildOrder(all: readonly RankableIdea[], movedId: string, targetStatus: IdeaStatus, beforeId: string | undefined): string[];
+export declare function rebuildOrder(all: readonly RankableIdea[], movedId: string, targetStatus: IdeaStatus, beforeId: string | undefined, targetOrder?: readonly string[]): string[];
 /**
  * Next rank order after moving `movedId` one step up or down INSIDE its own
  * workspace group of the open column (the Priorities ranking). Returns

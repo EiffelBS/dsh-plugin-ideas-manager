@@ -105,6 +105,30 @@ describe('rebuildOrder', () => {
     // of w1 = [x, a] in rank order; declined stays untouched after it.
     expect(rebuildOrder(all, 'a', 'archived', undefined)).toEqual(['x', 'a', 'd'])
   })
+
+  it('writes the DISPLAY order of the target group when the column is not rank-ordered', () => {
+    // Ranks say a,b,c; the column PAINTS c,b,a (a date order). Dropping 'a' on
+    // 'b' means "before b as I see it", so the written rank must follow the
+    // display order — resolving the anchor in rank space is the bug this
+    // optional argument exists to prevent.
+    const all = [idea('a', 'open', 1), idea('b', 'open', 2), idea('c', 'open', 3)]
+    expect(rebuildOrder(all, 'a', 'open', 'b', ['c', 'b', 'a'])).toEqual(['c', 'a', 'b'])
+    // Append at the end of the display order when there is no anchor.
+    expect(rebuildOrder(all, 'a', 'open', undefined, ['c', 'b', 'a'])).toEqual(['c', 'b', 'a'])
+    // Omitted, the historical rank-space rebuild is untouched.
+    expect(rebuildOrder(all, 'a', 'open', 'b')).toEqual(['a', 'b', 'c'])
+  })
+
+  it('a display order never rewrites a rank outside the group it was dropped in', () => {
+    const all = [
+      ideaW('a', 'open', 'w1', 1),
+      ideaW('b', 'open', 'w1', 2),
+      ideaW('x', 'open', 'w2', 1),
+      ideaW('y', 'open', 'w2', 2),
+    ]
+    // w1 is reordered by hand; w2 keeps its own relative ranks.
+    expect(rebuildOrder(all, 'b', 'open', 'a', ['b', 'a'])).toEqual(['b', 'a', 'x', 'y'])
+  })
 })
 
 describe('moveIdeaInOpenBacklog', () => {

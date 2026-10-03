@@ -95,6 +95,17 @@ Versions before 0.3.0 predate this file.
   board's read channel, and it is **opt-in**: it runs only when asked, so the
   board's own polling costs exactly what it did before.
 
+### Fixed
+
+- **Drag & drop is never switched off by the Open column order any more.** While
+  the column was laid out by date (or with the running ideas floated to the top),
+  its handle was inert — which also killed the one gesture that has nothing to do
+  with ranks, **dragging a card into another column**, the very gesture the board
+  hints at. The sort is now what it says it is: a *default*. The handle is always
+  live, a cross-column drop is the ordinary move it always was, and reordering the
+  column by hand now writes the ranking **you built on screen** and shows it from
+  then on (until you pick another order in the settings). Nothing is refused.
+
 ## 0.8.0 - 2026-10-03
 
 ### Added

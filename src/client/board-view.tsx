@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
-import type { IdeaListRow } from '../protocol.ts'
+import type { IdeaListRow, IdeasOpenOrdering } from '../protocol.ts'
 import { t, interfaceLanguage, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
@@ -1442,6 +1442,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION)
   // Which bulk action the dialog is running (undefined = no dialog).
   const [bulk, setBulk] = useState<BulkOperation | undefined>(undefined)
+  // The author reordered the Open column by hand this session, so the column
+  // shows THEIR order instead of the `openOrdering` default (idea #71 kept the
+  // option as the initial layout; a drag is the user having the last word).
+  const [openColumnReordered, setOpenColumnReordered] = useState(false)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
   // Rendered-markdown view of descriptions (raw text is one click away).
@@ -1664,6 +1668,18 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     .filter(idea =>
       matchesFilter(idea, filter, client.cachedBodyOf(idea.id))
       && matchesTags(idea, tagFilter))
+  // Idea #94 follow-up: `openOrdering` is the column's DEFAULT order, and a
+  // hand-made order takes it over for the session. Reordering the Open column
+  // by drag is an explicit statement of order, so it must not be refused — and
+  // a view that keeps painting a date order after the author arranged the cards
+  // would make the drop look like it did nothing. Session view state (like the
+  // multi-select), never a settings write: picking another order in the
+  // settings is what puts the default back.
+  const openOrdering: IdeasOpenOrdering = openColumnReordered ? 'rank' : cfg.openOrdering
+  // Whether the Open column paints the stored rank. Only the WORDING of the
+  // drag handle depends on it: the drag itself is always available.
+  const openColumnRanked = openOrdering === 'rank'
+
   const byStatus = (status: IdeaStatus): IdeaListRow[] => {
     const rows = visible.filter(idea => idea.status === status)
     // "All workspaces": lay the column out per workspace group (named by
@@ -1680,23 +1696,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     // poll can never overwrite the human ranking.
     const grouped = workspaceFilter === ''
     return status === 'open'
-      ? orderOpenColumn(rows, grouped, workspaceTitle, cfg.openOrdering, cfg.runningFirst)
+      ? orderOpenColumn(rows, grouped, workspaceTitle, openOrdering, cfg.runningFirst)
       : grouped ? orderByWorkspaceGroups(rows, workspaceTitle) : orderIdeas(rows)
   }
-
-  /**
-   * Whether the Open column is laid out in the order it is stored in (idea
-   * #71). False as soon as a view reorders it — a date order or the running
-   * block — and that is not cosmetic: the drop anchor comes from the DISPLAY
-   * order (dropNextId / the half-split line) while rebuildOrder resolves it in
-   * RANK space, so in a reordered column a drop can land on the rank it
-   * already held, a wire call whose only visible effect is nothing. The Open
-   * column therefore stops accepting a drag while it is a view: its cards keep
-   * every action button (archive, decline, restore…), and selecting the rank
-   * order with the running float off brings the grip back. The three closed
-   * columns are always in rank order, so their drags are untouched.
-   */
-  const openColumnRanked = cfg.openOrdering === 'rank' && !cfg.runningFirst
 
   /**
    * The rows the multi-select may hold, in DISPLAY order (idea #94): the
@@ -1790,6 +1792,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     const draggedId = draggedIdFrom(event, drag?.id)
     if (draggedId === undefined || drag === undefined) return
     const source = drag.source
+    // The DISPLAY order of the column being dropped on. The anchor under the
+    // pointer was chosen from these very rows, so the rank we write has to be
+    // built from the same list — resolving it in rank space is what used to
+    // make a drop in a date-ordered column land on the rank the card already
+    // held, which is why the whole grip used to be switched off there.
+    const displayOrder = byStatus(status).map(row => row.id)
     try {
       if (source !== status) {
         if (status === 'declined') {
@@ -1801,8 +1809,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         }
       }
       const all = client.snapshot?.ideas ?? []
-      const ordered = rebuildOrder(all, draggedId, status, beforeId)
+      const ordered = rebuildOrder(all, draggedId, status, beforeId, displayOrder)
       await client.reorderIdea(ordered)
+      // A reorder INSIDE the Open column is the author arranging the backlog by
+      // hand: their order takes over the `openOrdering` default for the session,
+      // otherwise the column would keep painting the date order and the drop
+      // would look like it did nothing. A cross-column move does not: there the
+      // status change is the point, and the column keeps the order it displays.
+      if (source === 'open' && status === 'open' && !openColumnRanked) setOpenColumnReordered(true)
     } catch {
       // The board reflects the Host verdict; a failed drop needs no retry UI.
     }
@@ -2204,12 +2218,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                       const confirm = confirmId === idea.id
                       const selected = isSelected(selection, idea.id)
                       const workspaceId = idea.workspaceId
-                      // A grip on an OPEN card in attention order explains
-                      // itself instead of being silently inert (see
-                      // openColumnRanked); every other grip carries the plain
-                      // drag hint.
+                      // The grip is always draggable. The Open column only changes the WORDING of
+                      // its handle: the `openOrdering` option is the default layout,
+                      // and reordering the column by hand takes it over for the
+                      // session (idea #94 follow-up), so nothing is ever refused.
                       const dragLabel = status === 'open' && !openColumnRanked
-                        ? t('card.dragLocked')
+                        ? t('card.dragTakesOver')
                         : t('card.drag')
                       // Half-split insertion line, like the Priorities rows:
                       // hovering the upper half drops before the card, the
@@ -2297,7 +2311,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               />
                               <div
                                 className={classes.cardGrip}
-                                draggable={!client.pending && (status !== 'open' || openColumnRanked)}
+                                draggable={!client.pending}
                                 title={dragLabel}
                                 aria-label={dragLabel}
                                 onDragStart={(event) => {

@@ -246,9 +246,11 @@ On the **Display** tab:
   language, independent of the DSH shell setting. `auto` follows the shell, and
   `en` / `fr` / `zh` pin the panel to one dictionary. Applied immediately.
   Dictionaries: English (default fallback), French, Simplified Chinese.
-- **Open column order** (`openOrdering`, default `createdAt`): how the Overview's
-  Open column is laid out. `createdAt` shows the oldest idea first, `createdAtDesc`
-  the newest first, and `rank` the ranking you set by hand.
+- **Open column order** (`openOrdering`, default `createdAt`): the default layout
+  of the Overview's Open column. `createdAt` shows the oldest idea first,
+  `createdAtDesc` the newest first, and `rank` the ranking you set by hand.
+  It is only a *default*: reorder that column by drag and drop and the column
+  shows **your** order from then on, until you pick another order here.
 - **Show running ideas at the top** (`runningFirst`, on by default): floats the
   ideas whose run is in flight above whichever of the three orders is selected,
   without changing that order. A failed run keeps its red tag but stays where the
@@ -266,13 +268,13 @@ On the **Display** tab:
   others: applied immediately, stored per DSH profile, and nothing is written to
   the ideas themselves.
 
-Both are a **view only** — neither stores anything, so the 2.5 s poll can never
-overwrite the ranking you chose, and the move arrows in the Priorities tab still
-write the rank you edit there. While either one reorders the Open column, its drag
-grip is off (the position you see is not the rank you would be writing); the card
-buttons still move an idea to another column, and choosing `rank` with the float
-off brings the grip back. The **Priorities** tab always stays on the stored rank —
-it prints a position number and its arrows write one rank step.
+Both are a **view only** — neither stores anything on its own, so the 2.5 s poll can
+never overwrite the ranking you chose, and the move arrows in the Priorities tab still
+write the rank you edit there. **Drag & drop is never switched off by them**: you can
+always move a card to another column, and you can always reorder the Open column by
+hand — a hand-made order takes over the default sort for the session. The
+**Priorities** tab always stays on the stored rank — it prints a position number and
+its arrows write one rank step.
 
 Deployments without a settings service keep the defaults; the board never depends
 on the settings surface — and neither does **Backup**, which keeps working there.

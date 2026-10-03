@@ -302,7 +302,7 @@ describe('IdeasSettingsSection page', () => {
       'settings.openOrderingCreatedAt', 'settings.openOrderingCreatedAtDesc',
       'settings.openOrderingRank',
       'settings.runningFirst', 'settings.runningFirstDesc',
-      'card.dragLocked',
+      'card.dragTakesOver',
       'card.confirmLifecycle',
     ] as const) {
       expect(typeof fr[key]).toBe('string')

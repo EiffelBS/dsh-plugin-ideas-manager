@@ -23,6 +23,7 @@ import { t } from '../src/client/locales.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   IDEAS_SETTINGS_DEFAULTS,
+  type IdeasAction,
   type IdeasEventPayload,
   type IdeasListSnapshot,
   type IdeasSettingsPatch,
@@ -63,14 +64,20 @@ function fixture(): IdeasListSnapshot {
 }
 
 /** Static list transport, plus an optional config surface (a fresh view keeps
- *  the shipped defaults; `configView` overrides it to pin one setting). */
+ *  the shipped defaults; `configView` overrides it to pin one setting). The
+ *  posted actions are recorded so a drag can be asserted on the WIRE, which is
+ *  the only place the drop semantics are decided. */
 class StaticTransport implements IdeasHostTransport {
   configView: IdeasSettingsView | undefined
+  readonly posted: IdeasAction[] = []
 
   constructor(private readonly list: IdeasListSnapshot) {}
 
   async state(): Promise<IdeasListSnapshot> { return this.list }
-  async action(): Promise<IdeasListSnapshot> { return this.list }
+  async action(action: IdeasAction): Promise<IdeasListSnapshot> {
+    this.posted.push(action)
+    return this.list
+  }
   subscribe(_listener: (event?: IdeasEventPayload) => void): () => void { return () => {} }
   async config(): Promise<IdeasSettingsView> {
     return this.configView ?? { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS }, revision: 1 }
@@ -80,6 +87,52 @@ class StaticTransport implements IdeasHostTransport {
     this.configView = { available: true, value: { ...current.value, ...patch }, revision: (current.revision ?? 0) + 1 }
     return this.configView
   }
+}
+
+/** The HTML5 transfer stub: the board reads the payload, writes effectAllowed
+ *  and ghosts the drag image (which jsdom cannot do, so it is a no-op). */
+function fakeTransfer(): { getData(type: string): string; setData(type: string, value: string): void; setDragImage(): void } {
+  const store = new Map<string, string>()
+  return {
+    getData: type => store.get(type) ?? '',
+    setData: (type, value) => { store.set(type, value) },
+    setDragImage: () => {},
+  }
+}
+
+/** Dispatch one drag event on `target` (jsdom has no DragEvent constructor, so
+ *  the transfer and the pointer position ride on a plain Event). */
+function fireDrag(target: Element, type: string, transfer: ReturnType<typeof fakeTransfer>, clientY: number): void {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: transfer })
+  Object.defineProperty(event, 'clientY', { value: clientY })
+  act(() => { target.dispatchEvent(event) })
+}
+
+/**
+ * One HTML5 drag: grab the grip of `ideaId`, hover the drop target and drop.
+ * `dropOn` is an idea id (its card wrapper, the surface that owns the drop
+ * handler) or an element (a whole column surface), so both gesture shapes can
+ * be exercised.
+ */
+async function dragOnto(
+  transport: StaticTransport,
+  ideaId: string,
+  dropOn: string | Element,
+  options: { clientY?: number },
+): Promise<void> {
+  const grip = host.querySelector(`[data-dsh-idea-id="${ideaId}"] .dsh-ideas-card-grip`)
+  if (grip === null) throw new Error(`no grip on ${ideaId}`)
+  const target = typeof dropOn === 'string' ? host.querySelector(`[data-dsh-idea-id="${dropOn}"]`) : dropOn
+  if (target === null) throw new Error(`no drop target ${String(dropOn)}`)
+  const transfer = fakeTransfer()
+  const clientY = options.clientY ?? 0
+  fireDrag(grip, 'dragstart', transfer, clientY)
+  fireDrag(target, 'dragover', transfer, clientY)
+  fireDrag(target, 'drop', transfer, clientY)
+  // The drop handler awaits the verbs it posts; let the board settle.
+  await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  void transport
 }
 
 let host: HTMLDivElement
@@ -314,29 +367,69 @@ describe('Open column display order (openOrdering + runningFirst)', () => {
     expect(reviewColumn.textContent).toContain('Under review idea')
   })
 
-  it('takes the OPEN column out of drag & drop whenever the view reorders it', async () => {
-    // The drop anchor is read from the DISPLAY order (the half-split line and
-    // dropNextId) while rebuildOrder resolves it in RANK space. In a reordered
-    // column the two disagree and a drop can rewrite the rank the card already
-    // had - a wire call whose only visible effect is nothing. The grip is
-    // therefore inert (with a tooltip that says why) while the column is a
-    // view, and the card's own action buttons still move the idea.
-    for (const patch of [{ runningFirst: true }, { openOrdering: 'createdAt' as const }]) {
+  it('keeps the Open column draggable under EVERY display order', async () => {
+    // The sort is the column's DEFAULT, not a lock. Whatever it shows, the grip
+    // stays live: a cross-column move is the `move` verb (ranks play no part),
+    // and an in-column reorder now writes the rank built from the rows the
+    // author sees, so there is no reason left to refuse either gesture.
+    for (const patch of [
+      { runningFirst: true },
+      { openOrdering: 'createdAt' as const },
+      { openOrdering: 'createdAtDesc' as const },
+      { runningFirst: false },
+    ]) {
       await renderBoard(withSettings(patch))
-      const openGrip = host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')
-      expect(openGrip?.getAttribute('draggable'), JSON.stringify(patch)).toBe('false')
-      expect(openGrip?.getAttribute('title')).toBe(t('card.dragLocked'))
-      // The archive action on the same card is untouched, so a lifecycle move
-      // never depended on the grip.
-      expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-actions')).not.toBeNull()
+      const grip = host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')
+      expect(grip?.getAttribute('draggable'), JSON.stringify(patch)).toBe('true')
+      // The wording tells the author their hand-made order takes over.
+      expect(grip?.getAttribute('title')).toBe(t('card.dragTakesOver'))
     }
   })
 
-  it('leaves the drag enabled everywhere else: rank order with the float off, and the closed columns', async () => {
+  it('leaves the drag enabled in the rank order and in every closed column', async () => {
     await renderBoard(withSettings({ openOrdering: 'rank', runningFirst: false }))
     expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')?.getAttribute('draggable')).toBe('true')
-    // Under review / Archived / Declined are always in rank order.
+    // Rank display: the plain hint again, nothing to take over.
+    expect(host.querySelector('[data-dsh-idea-id="plain"] .dsh-ideas-card-grip')?.getAttribute('title')).toBe(t('card.drag'))
     expect(host.querySelector('[data-dsh-idea-id="gate"] .dsh-ideas-card-grip')?.getAttribute('draggable')).toBe('true')
+  })
+
+  it('reorders the Open column by hand: the written rank is the DISPLAY order, and it takes over the default', async () => {
+    const transport = withSettings({ openOrdering: 'createdAt', runningFirst: false })
+    await renderBoard(transport)
+    // Date order: failed(100), child(200), restored(300), running(400),
+    // plain(500) - nothing to do with the ranks plain(1)..restored(5).
+    expect(columnIds(0)).toEqual(['failed', 'child', 'restored', 'running', 'plain'])
+
+    // Drag `plain` (display last) onto the FIRST card, in its upper half: the
+    // author means "before this one", in the order they are looking at.
+    await dragOnto(transport, 'plain', 'failed', { clientY: -1 })
+    const reorder = transport.posted.find(action => action.kind === 'reorder')
+    // The Open group is written in the display order with the card inserted at
+    // the drop point - the one shape a date-ordered column could get wrong.
+    expect(reorder?.orderedIds).toEqual(['plain', 'failed', 'child', 'restored', 'running', 'gate', 'archived-run'])
+    // No `move`: an in-column drop is a pure reorder.
+    expect(transport.posted.map(action => action.kind)).toEqual(['reorder'])
+
+    // And the column now paints the order the author just built (the default
+    // sort has stepped aside), so the drop is visible instead of a no-op.
+    expect(columnIds(0)).toEqual(['plain', 'failed', 'running', 'child', 'restored'])
+  })
+
+  it('moves between columns by drag from the Open column, and leaves its display order alone', async () => {
+    const transport = withSettings({ openOrdering: 'createdAt', runningFirst: false })
+    await renderBoard(transport)
+    const before = columnIds(0)
+    const archivedColumn = host.querySelectorAll('[data-dsh-column-scroll]')[2]!
+    await dragOnto(transport, 'plain', archivedColumn, {})
+    // The cross-column gesture is the ordinary per-idea verbs, in order.
+    expect(transport.posted.map(action => action.kind)).toEqual(['move', 'reorder'])
+    expect(transport.posted[0]).toEqual({ kind: 'move', ideaId: 'plain', status: 'archived' })
+    // The Open column keeps displaying the order it displayed: a move is not
+    // the author reordering the backlog, so the default sort does NOT step
+    // aside (the static transport still serves the pre-move rows).
+    expect(columnIds(0)).toEqual(before)
+    expect(columnIds(0)).not.toEqual(['plain', 'failed', 'running', 'child', 'restored'])
   })
 })
 

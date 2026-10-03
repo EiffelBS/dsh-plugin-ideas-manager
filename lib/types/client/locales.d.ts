@@ -59,7 +59,7 @@ export declare const fr: {
     'settings.openOrderingRank': string;
     'settings.runningFirst': string;
     'settings.runningFirstDesc': string;
-    'card.dragLocked': string;
+    'card.dragTakesOver': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -361,7 +361,7 @@ export declare const en: {
     'settings.openOrderingRank': string;
     'settings.runningFirst': string;
     'settings.runningFirstDesc': string;
-    'card.dragLocked': string;
+    'card.dragTakesOver': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;
@@ -669,7 +669,7 @@ export declare const zh: {
     'settings.openOrderingRank': string;
     'settings.runningFirst': string;
     'settings.runningFirstDesc': string;
-    'card.dragLocked': string;
+    'card.dragTakesOver': string;
     'card.confirmLifecycle': string;
     'board.dragHint': string;
     'board.mdToggleLabel': string;

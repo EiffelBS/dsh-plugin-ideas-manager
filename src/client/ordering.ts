@@ -17,7 +17,11 @@
  * is selected. Both are views, never a persisted order — every 2.5 s client poll
  * re-derives them from the same snapshot, so they cannot rewrite the human
  * ranking behind the reader's back.
- * Pure and unit-testable in isolation.
+ *
+ * A view order is a DEFAULT, not a lock (see the `targetOrder` argument of
+ * rebuildOrder): a drop in a column that paints something else than the rank
+ * writes the ranking the author actually built on screen, and the board then
+ * paints that ranking. Pure and unit-testable in isolation.
  */
 
 import { IDEA_COLUMNS, rankGroupKey, type RankableIdea, type IdeaRunStatus, type IdeaStatus } from '../core/ideas.ts'
@@ -117,18 +121,33 @@ export function groupedIdOrder(
  * the group end (a cross-workspace drop cannot define a within-group
  * insertion point). Columns are always laid out open, archived, declined,
  * each workspace group rank-sorted.
+ *
+ * `targetOrder` is the DISPLAY order of the target group when that column does
+ * not paint the stored rank (a date order, or the running block floated to the
+ * top). The drop anchor is read from the rows the author actually sees, so the
+ * rank that gets written has to be built from that same list: resolving the
+ * anchor in rank space instead is what used to make a drop in a reordered
+ * column land on the rank the card already held. Omitted, the behaviour is the
+ * historical rank-space rebuild, which every rank-ordered column still uses.
  */
 export function rebuildOrder(
   all: readonly RankableIdea[],
   movedId: string,
   targetStatus: IdeaStatus,
   beforeId: string | undefined,
+  targetOrder?: readonly string[],
 ): string[] {
   const moved = all.find(idea => idea.id === movedId)
   if (moved === undefined) return groupedIdOrder(all)
   const targetKey = rankGroupKey(targetStatus, moved.workspaceId)
-  const targetIds = orderIdeas(all.filter(idea =>
-    idea.id !== movedId && groupKeyOf(idea) === targetKey)).map(idea => idea.id)
+  const groupRows = all.filter(idea => idea.id !== movedId && groupKeyOf(idea) === targetKey)
+  // The display order, when given, is authoritative for THIS group only: every
+  // other group keeps its rank-sorted order, so one drop never rewrites ranks
+  // outside the column it landed in.
+  const groupIds = new Set(groupRows.map(idea => idea.id))
+  const targetIds = targetOrder === undefined
+    ? orderIdeas(groupRows).map(idea => idea.id)
+    : targetOrder.filter(id => id !== movedId && groupIds.has(id))
   let at = targetIds.length
   if (beforeId !== undefined) {
     // The anchor shares the moved idea's target group: insert before it.

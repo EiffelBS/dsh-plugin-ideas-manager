@@ -311,6 +311,41 @@ Two pure modules carry every rule, and the React half renders them:
 `client/selection.ts` owns the selection, `client/bulk.ts` owns the plans and
 the run; `client/bulk-bar.tsx` only paints and posts.
 
+### The drag is never locked by a display order (idea #71 revisited)
+
+Idea #71 shipped with the Open column's grip inert whenever the column painted
+something other than the stored rank. The rationale was real but narrower than
+the gate: the drop anchor is read from the **display** order while `rebuildOrder`
+resolved it in **rank** space, so an in-column drop could land on the rank the
+card already held. Two things followed that were wrong:
+
+- The gate also killed the **cross-column** drop, whose semantics are the `move`
+  verb and have nothing to do with ranks — and which the board's own drag hint
+  promises.
+- The gate refused a gesture the author is entitled to make.
+
+What the board does now:
+
+- **The grip is always draggable**, whatever the column displays.
+- **`performDrop` passes the target column's DISPLAY order** to `rebuildOrder`
+  (its new `targetOrder` argument), so the written rank is the order the author
+  just built on screen. `rebuildOrder` still leaves every OTHER group
+  rank-sorted, so one drop never rewrites ranks outside its column.
+- **An in-column drop on the Open column takes over the default order** for the
+  session (`openColumnReordered`, view state next to the multi-select — never a
+  settings write), because a column that keeps painting a date order after the
+  author arranged its cards would make the drop look like it did nothing. A
+  cross-column move does NOT: there the status change is the point, so the
+  column keeps the order it displays.
+- `openOrdering` therefore means what its copy says — the column's **default**
+  layout. The `card.dragLocked` copy is gone (`card.dragTakesOver` explains the
+  takeover on the handle itself).
+
+`tests/run-state-badges.test.tsx` drives the real HTML5 handlers (a transfer
+stub plus dragstart/dragover/drop) and asserts the WIRE: an in-column drop posts
+one `reorder` whose group is the display order with the card inserted at the drop
+point, and a cross-column drop posts `move` then `reorder`.
+
 ### The selection is view state, and is bound to the scope
 
 - Nothing about a selection is sent to the Host or persisted, so the 2.5 s
