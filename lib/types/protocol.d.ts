@@ -69,8 +69,15 @@ export declare const IDEAS_READ_MAX_SELECTORS = 100;
  * intentionally unavailable in
  * this projection because it can carry a second full body. The frozen raw
  * single-idea route remains the explicit full-detail escape hatch.
+ *
+ * `relatesTo` and `blocks` are selectable and, unlike `events`, they are part of
+ * BOTH default views: a relation is reference-shaped (ids, not prose), so what
+ * a poll pays for them is a few dozen bytes on the rows that carry one — and
+ * without them a bounded reader cannot answer "what does this wait on?" at all.
+ * The `blockedBy` side is derived from `blocks`, never stored, so it costs
+ * nothing on the wire.
  */
-export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "deliveryNote", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body", "events"];
+export declare const IDEAS_READ_SELECTABLE_FIELDS: readonly ["summary", "rank", "value", "effort", "rationale", "tags", "workspaceId", "taskBoardId", "taskBoardStatus", "runStatus", "runSessionId", "deliveryNote", "followUpOfId", "deliveredAt", "decision", "archivedAt", "reanalyzeAt", "body", "events", "relatesTo", "blocks"];
 /** One optional field accepted by the bounded field selector. */
 export type IdeasReadField = (typeof IDEAS_READ_SELECTABLE_FIELDS)[number];
 /** Fields always present on a bounded row, independent of field selection. */
@@ -302,6 +309,15 @@ export interface IdeaUpdatePatch {
     rationale?: string;
     tags?: IdeaTagListOrNull;
     workspaceId?: string;
+    /**
+     * Generic relations (idea #106), one key per stored kind: absent leaves the
+     * list alone, an array REPLACES it, null (or an empty array) clears it —
+     * exactly the `tags` contract. `blockedBy` is the DERIVED inverse of `blocks`
+     * and is never accepted: a second spelling of one edge would be a second fact
+     * to keep in step, and the ledger would have no way to tell which is the truth.
+     */
+    relatesTo?: string[] | null;
+    blocks?: string[] | null;
 }
 type IdeaTagListOrNull = IdeaTag[] | null;
 /**

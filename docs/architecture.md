@@ -35,6 +35,8 @@ src/
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
   client/deeplink.ts     # idea #105: reference grammar + board-wide resolver (pure)
   client/deeplink-service.ts # idea #105: the published `ideas-manager.board` service
+  client/relations.ts    # idea #106: the relation views, candidates and diff (pure)
+  client/relations-view.tsx # idea #106: the card's relation line + the editor section
   client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
   client/backup-panel.tsx  # the settings section's Backup tab (snapshot / restore / export)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
@@ -786,6 +788,163 @@ decision and is stated in the CHANGELOG rather than hidden.
   persisted, and it is dropped the moment the human narrows the scope, searches,
   toggles a tag or changes tab — the same discipline as the multi-select
   (idea #94), for the same reason: the poll must never fight the reader.
+
+## Relations between ideas (idea #106)
+
+Two new record fields, `relatesTo` and `blocks`, each a list of idea ids capped
+at `IDEA_RELATION_LIMIT` (20). `blockedBy` is **never stored**. Everything below
+is a decision that had to be taken before the code, and the rejected alternative
+is named in each case so the next reader does not re-open it.
+
+### Cardinality: a list of ids ON THE ROW, not an edge table
+
+**Chosen: `relatesTo?: string[]` and `blocks?: string[]` on `IdeaRecord`.**
+
+The rejected alternative is a top-level `relations: [{from, to, kind}]` edge
+table in the ledger document. It was rejected for three reasons that only matter
+at the size this feature was deferred to (~100 ideas in a workspace), which is
+exactly why the cost was judged permanent and the benefit felt:
+
+- **Every read in this plugin is "give me this row".** `GET /api/ideas/idea?id=`
+  is the single-record read, the editor already fetches it, and the list rows
+  are the board's only data. With a list on the row, one read returns the edges
+  with no join and no index; with a table, every one of those reads becomes two
+  passes, and the `IdeaListRow` type (which is `Omit<IdeaRecord, …>`, the reason
+  a full-body dependency cannot silently grow back) stops describing the row.
+- **The document-level invariants already have a home.** `parseHostIdeas`,
+  `validateLedgerDocument` and the `import` merge all work on a row list. A
+  table would need its own boot repair, its own strict validator and its own
+  merge step, three more places to get wrong.
+- **Deletion and merge become row rewrites.** `delete` sweeps one field;
+  `merge` re-points one field. With a table both become index maintenance with
+  dangling-reference rules, on a board where a dangling reference is invisible.
+
+Rejected for the record: an edge table is the right shape at a thousand ideas
+across several workspaces, where the board grows a real graph view. That board
+does not exist yet, and the row layout converts to a table without a migration
+(it is the same data, read differently).
+
+### Direction: `blocks` is stored, `blockedBy` is derived
+
+**Chosen: one stored direction per kind. `blockedBy` is computed at read time
+by `ideaBlockedBy`.**
+
+The rejected alternative is storing `blockedBy` on the blocked row as its own
+key. It was rejected because `X.blockedBy = [Y]` and `Y.blocks = [X]` would be
+two independent facts about one edge, with no shared invariant and nothing able
+to tell which is the truth. Every verb would then have to write both sides, and
+`merge` / `delete` would have to reconcile both or leave the graph disagreeing
+with itself — a drift nobody would notice until a card printed "blocked by an
+idea that does not know it is blocking".
+
+The precedent is `followUpOfId`: the lineage marker is stored on the child alone
+and both directions are presented. That is the whole rule here.
+
+The presentation is what makes the decision worth anything, so the two
+spellings are actually shown: a card prints `→ #31` next to *Waits for* and
+`← #7` next to *Waiting for this idea*, and the editor's third line is the
+derived one — **read-only**, with the declaring card named. It is read-only
+because "removing" an incoming edge would mean writing a patch to a row the
+human never opened, and a verb whose name does not tell you which card it edits
+is worse than one that says "open that card".
+
+`relatesTo` is symmetric by MEANING and stored symmetrically: writing
+`A.relatesTo = [B]` also writes `B.relatesTo = [A]` in the same commit
+(`applyRelationPatch`). The rejected alternative was storing it in one direction
+and deriving the inverse like `blockedBy`. That was rejected because "these two
+are adjacent" is one sentence about two ideas: a human who typed it once would
+have to find the other card to type it again, and the two spellings would then be
+two edges. There is still exactly one KIND and one key per endpoint — no second
+spelling exists anywhere, which is the property the direction rule is about. The
+cost is that the symmetry is an invariant the ledger must maintain, and
+`reconcileRelations` re-imposes it wherever a document is repaired.
+
+A consequence worth stating because it is visible: **a merged duplicate keeps its
+own lists.** Its edges still name the survivor, so the survivor shows the
+archived duplicate as related, and restoring the duplicate is lossless. Clearing
+them would make the graph tidier and a restore lossy.
+
+### A cycle is refused on write, with its chain
+
+`blocks` is the one relation where a cycle is expressible and meaningless
+("A waits for B" and "B waits for A" states nothing). `update` runs
+`blockCyclePath` against the graph **with this row's own list removed** — an edge
+can only close a loop by being added, never by being dropped — and throws with
+the path it found: `this would close a cycle: #1 "Alpha" → #2 "Beta" → #3
+"Gamma"`. The alternative, detecting at render time, is exactly the failure this
+refusal exists to prevent: a graph that renders fine and means nothing.
+
+`relatesTo` has no cycle rule, because an undirected adjacency cycle is not a
+defect.
+
+The **merge** cannot refuse: it is a reconciliation, not a new statement, and
+refusing it would leave a duplicate unmergeable because of the shape of its
+neighbourhood. So `reconcileRelations` drops the edge that would close a loop,
+in document order (deterministic), and the merge appends the count to the loser's
+decision note — "1 relation edge could not follow the merge". A refusal with a
+destination would need the human to unlink by hand first; a reported drop is
+one re-add away from correct.
+
+### `delete` drops the edge; it does not tombstone it
+
+A deleted idea's id is stripped from every remaining row's `relatesTo` and
+`blocks` in the same commit. The rejected alternative is a tombstone — keeping
+the id so the statement survives. A tombstone was rejected because it keeps a
+deleted idea's number alive in every surviving card and in every export, pointing
+at nothing a reader can open, with no way to distinguish "blocked by something
+deleted" from "blocked by something you forgot". **Merge re-points where delete
+drops** — one removes an idea, the other reconciles two into one — and that
+asymmetry is the whole argument.
+
+### The invariants, and where they are re-imposed
+
+`reconcileRelations` (host-ledger) runs wherever a document is READ rather than
+written by a verb — at boot (`normalizeParsedDocument`), on a restore, and after
+an `import` merge — and re-imposes, in order: no self edge, no dangling target,
+symmetric `relatesTo`, acyclic `blocks`. Every verb already keeps them, so in
+practice it only touches a hand-edited or imported document, which is exactly the
+case that must not be able to leave the board drawing a broken graph. It returns
+the number of edges it dropped, which is what the merge note reports.
+
+### Where relations ride the wire
+
+**On the `update` patch: `relatesTo?: string[] | null` and
+`blocks?: string[] | null`, with the same contract as `tags`** — absent leaves
+the list alone, an array replaces it, `null` (or an empty array) clears it. No
+new verb and no new envelope key; `parseActionEnvelope` still demands exactly
+`{requestId, action, initiator}`. A new verb was not needed and would have been
+wrong: the envelope is the frozen surface, and a relation is exactly the shape of
+an edit.
+
+`create` deliberately takes **no** relations. A brand-new idea has no id yet, so
+its targets may not exist, and a capture that half-succeeds is worse than a
+capture followed by an `update`. An agent writes `create` then `update`.
+
+`blockedBy` is refused at the wire gate, which is the mechanical guarantee behind
+the direction rule: there is no code path that can write the inverse.
+
+**The mirror is skipped for a relations-only patch** (`mirrorKindOf` in
+host-service). A card does not show an idea's relations, so a relations-only
+edit must not spend a mirror round trip — and must not unfreeze, by attempting a
+content patch, a card that has already run.
+
+### What a poll pays for
+
+`relatesTo` and `blocks` are in `IDEAS_READ_SELECTABLE_FIELDS` and in
+`SUMMARY_READ_FIELDS`, so `view=summary` carries them by default; `view=detail`
+inherits them (it is every field except `body`), and `?view=list` carries them
+because they are record fields. They are **reference-shaped** — a few dozen bytes
+of ids on the rows that have an edge, zero on the rows that do not — and unlike
+`events` a bounded reader cannot answer "what does this wait on?" without them.
+`blockedBy` costs nothing anywhere: it is derived from the `blocks` lists a
+reader already has.
+
+The card line is derived ONCE per paint by `relationIndexOf`, not per card: a
+naive per-card `relationViews` rebuilds the row map and rescans the board once
+per card, which is O(rows²) on every poll. Measured on the 140-card perf fixture
+(which carries no relation), the feature adds **zero DOM nodes** and no
+measurable time — `RelationChips` returns `null` for an idea with no edge, and
+the index is a single pass.
 
 ## Card mirror
 

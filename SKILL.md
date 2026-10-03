@@ -193,7 +193,7 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 | kind | keys | notes |
 |---|---|---|
 | `create` | kind, id, input | input keys: `title`*, `body`*, `summary`, `workspaceId`, `rank`, `value`, `effort`, `rationale`, `tags`. Starts `open`, stamped with the next `ideaNumber`. |
-| `update` | kind, ideaId, patch | patch keys: `title`, `body`, `summary`, `rank`, `value`, `effort`, `rationale`, `tags`, `workspaceId`; `null` tags clears. |
+| `update` | kind, ideaId, patch | patch keys: `title`, `body`, `summary`, `rank`, `value`, `effort`, `rationale`, `tags`, `workspaceId`, `relatesTo`, `blocks`; `null` clears (relations like tags). Relations are **not** accepted by `create`. |
 | `move` | kind, ideaId, status | `open` / `underReview` / `archived` (manual drag; declined only via `decline`). |
 | `triage` | kind, ideaId, patch | record the priority opinion and re-rank transactionally; patch keys: `value`, `effort`, `rationale`, `rank` (open ideas only). |
 | `decline` | kind, ideaId, decision | → `declined` + `archivedAt` + optional `decision` note. |
@@ -211,8 +211,52 @@ Errors: `forbidden` (403), `json-required` (415), `invalid-action` (400),
 (≤200), `body` (≤32 KiB), `summary` (≤300, compact abstract — the TaskBoard
 card description; blank/`null` clears), `status`, optional `rank/value/effort/
 rationale/tags` (≤8, name ≤32, promptPrefix ≤200)/`workspaceId`/`taskBoardId`/
-`deliveredAt`/`decision`, `ideaNumber` (stable capture `#N`), timestamps, and
-`events` (≤50 activity entries).
+`deliveredAt`/`decision`, `relatesTo` and `blocks` (≤20 idea ids each), plus
+`ideaNumber` (stable capture `#N`), timestamps, and `events` (≤50 activity
+entries).
+
+## Relations between ideas
+
+Two stored kinds, both written with the ordinary `update` verb:
+
+| kind | meaning | stored where |
+|---|---|---|
+| `relatesTo` | "adjacent to that, read the other one" | **both** rows — one statement, written once |
+| `blocks` | "this cannot land before that one" | the row that waits, only |
+
+`blockedBy` **is not a field and cannot be written.** Derive it:
+`blockedBy(X) = the ideas whose blocks list contains X`. Both sides are in
+`IDEAS_READ_SELECTABLE_FIELDS` and in the default `view=summary` row, so one
+bounded read over the whole board answers every "what does this wait on?" — that
+is `GET /api/ideas/state?view=summary&fields=id,title,ideaNumber,blocks&limit=200`.
+
+Writing:
+
+- `{"kind":"update","ideaId":"<X>","patch":{"relatesTo":["<Y>"]}}` — replaces X's
+  whole list, and the Host writes the mirrored row for you. Removing works the
+  same way: send the shorter list, or `null` to clear it.
+- `{"kind":"update","ideaId":"<X>","patch":{"blocks":["<Y>"]}}` — `X` waits for
+  `Y`. To express "Y waits for X", send the patch for **Y**.
+- `create` takes no relations (a new idea has no id yet): `create` then `update`.
+- Absent = untouched; an array replaces; `null` clears. Same contract as `tags`.
+
+Refusals (the Host's own sentence comes back in `message`):
+
+- an unknown target id, or a target equal to the idea itself;
+- a `blocks` cycle, refused **with its chain** —
+  `this would close a cycle: #1 "Alpha" → #2 "Beta"`. Never write one; `relatesTo`
+  has no cycle rule.
+
+Housekeeping the Host does for you: `merge` re-points the duplicate's edges at
+the survivor and hands its lists over (a self edge, or one that would close a
+loop, is dropped and the count is appended to the loser's `decision`); `delete`
+**drops** the edges that named the removed idea rather than leaving a dangling
+id; `import` and a restore re-impose the invariants (no self edge, no dangling
+target, symmetric `relatesTo`, acyclic `blocks`) over the merged result.
+
+**A relation is a statement the human makes.** Never infer one from a title, a
+tag overlap or a near-duplicate score — report the candidate and let the human
+write the edge.
 
 ## Snapshots, restore and moving a ledger (issue #95)
 
@@ -315,13 +359,16 @@ document wholesale.
 
 ```
 src/protocol.ts          wire gate (exactKeys, envelope) + the `view=stats` query parser
-src/core/ideas.ts        domain model, tag validation, activity log, near-duplicate signal
+src/core/ideas.ts        domain model, tag validation, activity log, near-duplicate signal,
+                         relation model + the `blocks` cycle check
 src/core/ideas-stats.ts  the ONE definition of every backlog-health number (idea #110)
 src/backup.ts            the snapshot folder (atomic write, list, quarantine, retention)
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind,
                          snapshots + restore (strict validation, displaced-on-restore)
 src/client/backup-panel.tsx  the settings section's Backup tab (snapshots/restore/export/import)
 src/client/find-similar.ts  the Find similar gate + launch input (pure)
+src/client/relations.ts     the relation views / candidates / diff (pure)
+src/client/relations-view.tsx the card's relation line + the editor's Relations section
 src/client/deeplink.ts      the deep-link reference grammar + board-wide resolver (pure)
 src/client/deeplink-service.ts  the published `ideas-manager.board` focus service
 src/agent-tools.ts       the ideas_* agent tools (feature-detected registry)

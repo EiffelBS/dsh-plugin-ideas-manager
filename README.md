@@ -167,9 +167,9 @@ the duplicate into the idea that survives.
 
 - The surviving card keeps its **title, its analysis and its position** in the
   backlog. A duplicate contributes only what it has that the survivor lacks:
-  its **tags**, and its place in a follow-up chain — the survivor inherits that
-  link, and any follow-up that hung off the duplicate now points at the
-  survivor instead.
+  its **tags**, its **relations** (see below), and its place in a follow-up
+  chain — the survivor inherits that link, and any follow-up that hung off the
+  duplicate now points at the survivor instead.
 - The duplicate is **archived** with a note naming the card it was merged into,
   so the reason is still there long after the backlog moved on. Both ideas record
   it in their activity log.
@@ -186,6 +186,41 @@ You do not have to trigger a merge by hand. The **Find similar** action finds th
 candidates and asks the analyst to rule on them; the AI capture flow merges a
 duplicate on its own when it judges one. Both are reversible: a merged card can be
 restored from the archive like any other.
+
+### Relate ideas to each other
+A backlog of a hundred ideas is a list, and a list does not need edges — until
+you know that two of them are the same subject, or that one cannot land before
+another. An idea can now carry two kinds of link, and both of them are things
+**you** state:
+
+- **Related to** — "this is adjacent to that, go and read the other one".
+- **Waits for** — "this cannot land before that one". The other card shows the
+  same edge from its side, as **Waiting for this idea**.
+
+- You add and remove them in the **editor**, under **Relations**: pick an idea
+  from a list, or press the **×** on a chip. A card prints its links as a quiet
+  line of `↔ #12`, `→ #31`, `← #7` — the arrow is the direction, so the links
+  read on the card itself.
+- **You only declare a link once.** *Related to* is one statement about two
+  ideas, so it is true from both sides and cannot disagree with itself. *Waits
+  for* is stored on the card that waits, and the *Waiting for this idea* line on
+  the other card is that same edge seen from there — which is why it is
+  read-only: to remove it, open the card that declares it, and the editor names
+  which card that is.
+- **A wait that loops is refused.** "A waits for B" and "B waits for A" says
+  nothing, so the board will not save it and names the whole chain
+  (`#1 → #2 → #3`). The loop is caught when you write it, not when the graph is
+  drawn.
+- **Links follow the lifecycle.** Deleting an idea takes its links with it rather
+  than leaving a reference to nothing. **Merging** a duplicate re-points them at
+  the surviving idea — exactly like the duplicate's follow-ups — and the
+  survivor inherits the links the duplicate stated. The archived duplicate keeps
+  its own, so restoring it is lossless.
+- They **travel with the board**: the JSON export/import carries them, and a
+  snapshot or a restore brings them back with everything else.
+- **They are never guessed at.** The score of *Find similar* is a computed
+  signal; a relation is not. Nothing here is inferred from titles, tags or
+  content — only you add one.
 
 ### Workspaces
 - A header selector scopes the board to one workspace (or *all* / *none*).
@@ -243,7 +278,8 @@ back — from the **Backup** tab of the settings section (see
 
 - **Take a snapshot** writes a timestamped copy of the **whole** board into your
   ideas backups folder: every idea, its activity log, its scores, its labels,
-  its tags' prompt lines, the run it belongs to and the task card it is bound to.
+  its tags' prompt lines, its relations to other ideas, the run it belongs to and
+  the task card it is bound to.
   The last **ten** snapshots are kept for you; older ones are removed.
 - **Restore** puts one back. It asks first, it says exactly what it is
   replacing, and the board it replaces is **kept as its own snapshot** — so a
@@ -269,8 +305,8 @@ of one very common DSH situation:
 
 An import brings back **every field** the board holds — the activity log, the
 run and session stamps, the task-card binding, the analysis audit, the delivery
-note, the ranks and the stable `#N` numbers, so the next capture on the new
-machine never re-issues a number. You can also drop an exported file straight
+note, the **relations between ideas**, the ranks and the stable `#N` numbers, so
+the next capture on the new machine never re-issues a number. You can also drop an exported file straight
 into the backups folder: it shows up in the list and restores from there, and a
 file the plugin did not write is never deleted by the retention policy.
 

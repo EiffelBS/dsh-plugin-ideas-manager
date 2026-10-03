@@ -33,6 +33,17 @@ export interface IdeaClientPatch {
     tags?: string[] | IdeaTag[];
     /** Present (including an empty string) replaces the workspace; '' = generic. */
     workspaceId?: string;
+    /**
+     * Relations (idea #106), one key per stored kind. Present means "replace this
+     * list", exactly like `tags`, so an empty array CLEARS it (the client turns
+     * that into the wire's `null`). There is deliberately no `blockedBy`: it is
+     * the derived inverse of another row's `blocks` and is never written.
+     *
+     * Callers send only the lists they changed — an untouched relation must not
+     * spend a revision or an activity-log line (see `relationListChanged`).
+     */
+    relatesTo?: string[];
+    blocks?: string[];
 }
 /**
  * What one focus request actually achieved (idea #105).

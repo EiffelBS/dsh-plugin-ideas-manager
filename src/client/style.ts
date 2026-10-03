@@ -755,6 +755,88 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   display: block;
 }
 
+/* --- relations (idea #106) ---
+   The chip is deliberately NEUTRAL: a relation is a statement the human made,
+   so it must not borrow the tag hues, which are a filter the reader clicks. It
+   reads as a quiet reference (#N plus a direction arrow) rather than as a
+   badge claiming importance. */
+.dsh-ideas-relations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 10px;
+}
+
+.dsh-ideas-relation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dsh-ideas-relation-row > .dsh-ideas-select {
+  max-width: 260px;
+  font-size: 12px;
+}
+
+.dsh-ideas-relation-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.dsh-ideas-relation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-3, var(--dsh-ideas-fb-layer3));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 11px;
+}
+
+/* The derived "blocked by" line is not editable here, so it must LOOK
+   uneditable: same chip, no remove button, no pointer. */
+.dsh-ideas-relation-chip-locked {
+  border-style: dashed;
+  cursor: default;
+}
+
+.dsh-ideas-relation-glyph {
+  flex: none;
+  opacity: 0.75;
+}
+
+.dsh-ideas-relation-remove {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+}
+
+.dsh-ideas-relation-remove:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dsh-ideas-relation-empty,
+.dsh-ideas-relation-more {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
 /* Workspace chip on cards (the "All workspaces" view): neutral pill, distinct
    from the hued tag pills; clicking it scopes the whole board to that
    workspace. */
@@ -2505,6 +2587,15 @@ export const classes = {
   healthMore: 'dsh-ideas-health-more',
   scoreIcon: 'dsh-ideas-score-icon',
   fieldHint: 'dsh-ideas-field-hint',
+  relations: 'dsh-ideas-relations',
+  relationRow: 'dsh-ideas-relation-row',
+  relationChips: 'dsh-ideas-relation-chips',
+  relationChip: 'dsh-ideas-relation-chip',
+  relationChipLocked: 'dsh-ideas-relation-chip-locked',
+  relationGlyph: 'dsh-ideas-relation-glyph',
+  relationRemove: 'dsh-ideas-relation-remove',
+  relationEmpty: 'dsh-ideas-relation-empty',
+  relationMore: 'dsh-ideas-relation-more',
   aboutPanel: 'dsh-plugin-about-panel',
   aboutRepoLink: 'dsh-plugin-about-repo-link',
   aboutDetails: 'dsh-plugin-about-details',

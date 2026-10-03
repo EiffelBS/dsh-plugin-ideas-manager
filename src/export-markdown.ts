@@ -43,6 +43,18 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   if (idea.rationale !== undefined) lines.push(bullet('rationale', idea.rationale))
   if (idea.decision !== undefined) lines.push(bullet('decision', idea.decision))
   if (idea.followUpOfId !== undefined) lines.push(bullet('follow-up of', `\`${idea.followUpOfId}\``))
+  // Relations (idea #106), carried like any other stored fact. The stored
+  // direction is printed: `relates to` is symmetric by construction so both
+  // rows carry the edge, and `blocks` is one-directional with its `blocked by`
+  // side living on the other row — so a reader follows the id the same way the
+  // ledger does. The markdown is never parsed back, so this is for the human
+  // reading the archive, exactly like the Activity block below.
+  if (idea.relatesTo !== undefined && idea.relatesTo.length > 0) {
+    lines.push(bullet('relates to', idea.relatesTo.map(id => `\`${id}\``).join(', ')))
+  }
+  if (idea.blocks !== undefined && idea.blocks.length > 0) {
+    lines.push(bullet('blocks', idea.blocks.map(id => `\`${id}\``).join(', ')))
+  }
   lines.push(bullet('created', iso(idea.createdAt)))
   lines.push(bullet('updated', iso(idea.updatedAt)))
   if (idea.deliveredAt !== undefined) lines.push(bullet('delivered', iso(idea.deliveredAt)))

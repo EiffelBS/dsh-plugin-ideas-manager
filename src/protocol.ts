@@ -10,10 +10,12 @@ import {
   createIdea,
   findIdeaSimilar,
   isIdeaMergeMode,
+  isIdeaRelationList,
   isIdeaRunStatus,
   isIdeaStatus,
   isIdeaTagList,
   normalizeIdeaEvents,
+  normalizeRelationIds,
   normalizeTags,
   type IdeaMergeMode,
   type IdeaRecord,
@@ -116,11 +118,19 @@ export const IDEAS_READ_MAX_SELECTORS = 100
  * intentionally unavailable in
  * this projection because it can carry a second full body. The frozen raw
  * single-idea route remains the explicit full-detail escape hatch.
+ *
+ * `relatesTo` and `blocks` are selectable and, unlike `events`, they are part of
+ * BOTH default views: a relation is reference-shaped (ids, not prose), so what
+ * a poll pays for them is a few dozen bytes on the rows that carry one — and
+ * without them a bounded reader cannot answer "what does this wait on?" at all.
+ * The `blockedBy` side is derived from `blocks`, never stored, so it costs
+ * nothing on the wire.
  */
 export const IDEAS_READ_SELECTABLE_FIELDS = [
   'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId',
   'taskBoardId', 'taskBoardStatus', 'runStatus', 'runSessionId', 'deliveryNote',
   'followUpOfId', 'deliveredAt', 'decision', 'archivedAt', 'reanalyzeAt', 'body', 'events',
+  'relatesTo', 'blocks',
 ] as const
 
 /** One optional field accepted by the bounded field selector. */
@@ -207,6 +217,7 @@ export interface IdeasReadSnapshot {
 
 const SUMMARY_READ_FIELDS: IdeasReadField[] = [
   'summary', 'workspaceId', 'tags', 'taskBoardId', 'followUpOfId',
+  'relatesTo', 'blocks',
 ]
 const DETAIL_READ_FIELDS = IDEAS_READ_SELECTABLE_FIELDS.filter(
   (field): field is IdeasReadField => field !== 'body',
@@ -606,6 +617,15 @@ export interface IdeaUpdatePatch {
   rationale?: string
   tags?: IdeaTagListOrNull
   workspaceId?: string
+  /**
+   * Generic relations (idea #106), one key per stored kind: absent leaves the
+   * list alone, an array REPLACES it, null (or an empty array) clears it —
+   * exactly the `tags` contract. `blockedBy` is the DERIVED inverse of `blocks`
+   * and is never accepted: a second spelling of one edge would be a second fact
+   * to keep in step, and the ledger would have no way to tell which is the truth.
+   */
+  relatesTo?: string[] | null
+  blocks?: string[] | null
 }
 
 type IdeaTagListOrNull = IdeaTag[] | null
@@ -706,6 +726,16 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   // refuses it, so only `import` accepts it.
   const events = normalizeIdeaEvents(row.events)
   if (row.events !== undefined && row.events !== null && events === undefined) return undefined
+  // Relations (idea #106): repaired rather than trusted, exactly like the
+  // activity log above, so an export/import round trip is lossless while a
+  // hand-forged document cannot smuggle an unbounded or malformed edge list
+  // past the gate. `blockedBy` is never stored, so it is simply not read here:
+  // a document that carries it is a document from a generation that does not
+  // exist, and its unknown key is dropped like any other.
+  const relatesTo = normalizeRelationIds(row.relatesTo)
+  if (row.relatesTo !== undefined && row.relatesTo !== null && relatesTo === undefined) return undefined
+  const blocks = normalizeRelationIds(row.blocks)
+  if (row.blocks !== undefined && row.blocks !== null && blocks === undefined) return undefined
   return {
     id: row.id,
     title: row.title,
@@ -729,6 +759,8 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
     ...(typeof row.runSessionId === 'string' ? { runSessionId: row.runSessionId } : {}),
     ...(typeof row.deliveryNote === 'string' ? { deliveryNote: row.deliveryNote } : {}),
     ...(typeof row.followUpOfId === 'string' ? { followUpOfId: row.followUpOfId } : {}),
+    ...(relatesTo === undefined ? {} : { relatesTo }),
+    ...(blocks === undefined ? {} : { blocks }),
     ...(typeof row.archivedAt === 'number' ? { archivedAt: row.archivedAt } : {}),
   ...(typeof row.reanalyzeAt === 'number' ? { reanalyzeAt: row.reanalyzeAt } : {}),
   ...(isAnalysisAudit(row.analysisAudit) ? { analysisAudit: row.analysisAudit } : {}),
@@ -749,7 +781,7 @@ function createInput(value: unknown): value is NewIdeaInput {
 
 function updatePatch(value: unknown): value is IdeaUpdatePatch {
   const patch = record(value)
-  if (patch === undefined || !exactKeys(patch, ['title', 'body', 'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId'])) return false
+  if (patch === undefined || !exactKeys(patch, ['title', 'body', 'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId', 'relatesTo', 'blocks'])) return false
   for (const key of ['title', 'body', 'workspaceId', 'rationale'] as const) {
     if (!optionalString(patch[key])) return false
   }
@@ -761,6 +793,12 @@ function updatePatch(value: unknown): value is IdeaUpdatePatch {
   }
   // null clears the label set; a present array must be a well-formed list.
   if (patch.tags !== undefined && patch.tags !== null && !isIdeaTagList(patch.tags)) return false
+  // Relations (idea #106): null clears a list, a present array must be a
+  // well-formed id list. The envelope stays frozen — only the patch's key set
+  // grew, which is the same additive step `summary` took.
+  for (const key of ['relatesTo', 'blocks'] as const) {
+    if (patch[key] !== undefined && patch[key] !== null && !isIdeaRelationList(patch[key])) return false
+  }
   return true
 }
 

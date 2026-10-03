@@ -29,7 +29,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { appendIdeaEvent, createIdea, ideaEvent, ideaEventActor, IDEA_ACTOR_RUN, isIdeaRunStatus, MERGE_DECISION_MAX_LENGTH, mergedIdeaTags, normalizeDeliveryNote, normalizeIdeaEvents, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
+import { appendIdeaEvent, blockCyclePath, blocksGraphOf, createIdea, ideaEvent, ideaEventActor, IDEA_ACTOR_RUN, isIdeaRunStatus, MERGE_DECISION_MAX_LENGTH, mergedIdeaRelations, mergedIdeaTags, normalizeDeliveryNote, normalizeIdeaEvents, normalizeRelationIds, normalizeStatus, normalizeSummary, normalizeTags, rankGroupKey, repointedRelationIds, withStatus, type IdeaRecord, type IdeaRunStatus } from './core/ideas.ts'
 import type { IdeasStatsSource } from './core/ideas-stats.ts'
 import { IdeasBackupStore, IDEAS_BACKUP_DIR_NAME, type SnapshotFile, type SnapshotRead, type SnapshotReason } from './backup.ts'
 import { dshHome } from './dsh-home.ts'
@@ -235,6 +235,15 @@ function readIdeaRow(value: unknown): { ok: true; idea: IdeaRecord } | { ok: fal
   // quarantined.
   const events = normalizeIdeaEvents(row.events)
   if (events !== undefined) idea.events = events
+  // Relations (idea #106), same lazy migration as the log: a document written
+  // before the field has none, and the first write creates it. The row-level
+  // repair bounds and de-duplicates each list; the DOCUMENT-level invariants
+  // (no self edge, no dangling target, symmetric relatesTo, acyclic blocks)
+  // are re-imposed once by `reconcileRelations` on the whole list.
+  const relatesTo = normalizeRelationIds(row.relatesTo)
+  if (relatesTo !== undefined) idea.relatesTo = relatesTo
+  const blocks = normalizeRelationIds(row.blocks)
+  if (blocks !== undefined) idea.blocks = blocks
   return { ok: true, idea }
 }
 
@@ -246,6 +255,94 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
     if (read.ok) ideas.push(read.idea)
   }
   return ideas
+}
+
+/**
+ * Re-impose the document-level relation invariants (idea #106). This is the
+ * schema repair for relations, and it runs where `parseHostIdeas` runs: at boot,
+ * on a restore and after an import. Every write path already keeps the
+ * invariants, so in practice this only touches a hand-edited or imported
+ * document — which is exactly the case that must not be able to leave the board
+ * rendering a broken graph.
+ *
+ *  1. **Every edge points at a live row, and never at itself.** A `delete`
+ *     sweeps the edges that pointed at the removed row, so a dangling id is
+ *     only reachable through a hand edit.
+ *  2. **`relatesTo` is symmetric.** Each edge appears on both endpoints, so
+ *     neither row is "the truth" and the derived reverse read (`ideaRelatedTo`)
+ *     cannot disagree with the stored one.
+ *  3. **`blocks` stays acyclic.** An edge that would close a cycle is dropped in
+ *     document order, which makes the outcome deterministic. A WRITE refuses
+ *     instead (the human is told why); this path has no author to tell, and a
+ *     silently rendered cycle is the failure the refusal exists to prevent.
+ */
+function reconcileRelations(ideas: readonly IdeaRecord[]): { ideas: IdeaRecord[]; dropped: number } {
+  const live = new Set(ideas.map(idea => idea.id))
+  let dropped = 0
+  const cleaned = ideas.map(idea => {
+    const next: IdeaRecord = { ...idea }
+    for (const key of ['relatesTo', 'blocks'] as const) {
+      const current = idea[key]
+      if (current === undefined) continue
+      const kept = normalizeRelationIds(current.filter(id => id !== idea.id && live.has(id)))
+      if (kept?.length === current.length) continue
+      dropped += (current.length - (kept?.length ?? 0))
+      if (kept === undefined) delete next[key]
+      else next[key] = kept
+    }
+    return next
+  })
+
+  // Symmetry: one pass collects what each row must gain, a second applies it.
+  const byId = new Map(cleaned.map(idea => [idea.id, idea]))
+  const incoming = new Map<string, Set<string>>()
+  for (const idea of cleaned) {
+    for (const id of idea.relatesTo ?? []) {
+      if (id === idea.id || !byId.has(id)) continue
+      const set = incoming.get(id) ?? new Set<string>()
+      set.add(idea.id)
+      incoming.set(id, set)
+    }
+  }
+  const symmetric = incoming.size === 0 ? cleaned : cleaned.map(idea => {
+    const gain = incoming.get(idea.id)
+    if (gain === undefined) return idea
+    const merged = normalizeRelationIds([...(idea.relatesTo ?? []), ...gain])
+      ?.filter(id => id !== idea.id)
+    if (merged === undefined || merged.length === (idea.relatesTo?.length ?? 0)) return idea
+    const next = { ...idea, relatesTo: merged }
+    return next
+  })
+
+  // Acyclicity: add every edge one at a time and skip the ones that close a
+  // loop. The row's entry is rewritten even when it ends up EMPTY — leaving the
+  // stale list in the graph would let the NEXT row see an edge that is already
+  // being removed, and prune a second, perfectly good edge with it.
+  const graph = blocksGraphOf(symmetric)
+  let pruned = false
+  const acyclic = symmetric.map(idea => {
+    if (idea.blocks === undefined) return idea
+    const kept: string[] = []
+    for (const target of idea.blocks) {
+      if (blockCyclePath(graph, idea.id, target) !== undefined) {
+        dropped += 1
+        pruned = true
+        continue
+      }
+      kept.push(target)
+      graph.set(idea.id, [...kept])
+    }
+    // Unconditional, even when `kept` is empty: leaving the stale list in the
+    // graph would let the NEXT row see an edge that is already being removed,
+    // and prune a second, perfectly good edge with it.
+    graph.set(idea.id, kept)
+    if (kept.length === idea.blocks.length) return idea
+    const next: IdeaRecord = { ...idea }
+    if (kept.length === 0) delete next.blocks
+    else next.blocks = kept
+    return next
+  })
+  return { ideas: pruned ? acyclic : symmetric, dropped }
 }
 
 /** Structural repair of a persisted prior-analysis snapshot (undefined when unusable). */
@@ -374,7 +471,7 @@ function normalizeParsedDocument(parsed: ParsedLedgerDocument): LedgerDocument {
   return {
     schemaVersion: IDEAS_SCHEMA_VERSION,
     revision: Number.isSafeInteger(parsed.revision) && (parsed.revision ?? -1) >= 0 ? parsed.revision as number : 0,
-    ideas: parseHostIdeas(Array.isArray(parsed.ideas) ? parsed.ideas : []),
+    ideas: reconcileRelations(parseHostIdeas(Array.isArray(parsed.ideas) ? parsed.ideas : [])).ideas,
     ideaSequence: Number.isSafeInteger(parsed.ideaSequence) && (parsed.ideaSequence ?? -1) >= 0
       ? parsed.ideaSequence as number
       : 0,
@@ -850,9 +947,7 @@ export class IdeasHostLedger {
         if (action.patch.title !== undefined && action.patch.title !== null) {
           if (action.patch.title.trim() === '') throw new Error('title is required')
         }
-        this.document.ideas = this.document.ideas.map(item => item.id === action.ideaId
-          ? applyPatch(item, action.patch, this.now())
-          : item)
+        this.document.ideas = applyPatch(this.document.ideas, action.ideaId, action.patch, this.now())
         recorded.push({ ideaId: action.ideaId, verb: 'update', summary: describePatch(action.patch) })
         break
       }
@@ -1026,6 +1121,33 @@ export class IdeasHostLedger {
           return item
         })
 
+        // Relations (idea #106). Exactly the re-pointing the loser's follow-up
+        // children get, extended to the edges: every row that named the loser
+        // now names the survivor, and the survivor INHERITS the edges the loser
+        // stated — a duplicate contributes what it has that the survivor lacks,
+        // the same bargain its labels are given. A merge reconciles rather than
+        // refuses: an edge the re-point would make self-referential or would
+        // close into a cycle is dropped, and the decision note says how many.
+        // The archived loser keeps its own lists, so restoring a merged card is
+        // lossless.
+        this.document.ideas = this.document.ideas.map(item => withRepointedRelations(item, loser.id, survivor.id))
+        const survivorAfter = this.document.ideas.find(item => item.id === survivor.id)
+        const loserAfter = this.document.ideas.find(item => item.id === loser.id)
+        if (survivorAfter !== undefined && loserAfter !== undefined) {
+          const inherited = mergedIdeaRelations(survivorAfter, loserAfter)
+          this.document.ideas = this.document.ideas.map(item => item.id === survivor.id
+            ? { ...item, ...inherited, updatedAt: now }
+            : item)
+        }
+        const reconciled = reconcileRelations(this.document.ideas)
+        this.document.ideas = reconciled.ideas
+        if (reconciled.dropped > 0) {
+          const suffix = ` — ${reconciled.dropped} relation edge${reconciled.dropped === 1 ? '' : 's'} could not follow the merge`
+          this.document.ideas = this.document.ideas.map(item => item.id === loser.id
+            ? { ...item, decision: `${decision}${suffix}`.slice(0, MERGE_DECISION_MAX_LENGTH) }
+            : item)
+        }
+
         // Rank, after the archive: `triageOrderedIds` re-numbers the SURVIVOR's
         // own open workspace group, and the loser has already left that group,
         // so a `takeSourceRank` merge cannot re-admit the idea it just retired.
@@ -1066,7 +1188,14 @@ export class IdeasHostLedger {
       case 'delete': {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
-        this.document.ideas = this.document.ideas.filter(item => item.id !== action.ideaId)
+        // The edges that named this row go with it (idea #106): DROP, not
+        // tombstone. A tombstone would keep a deleted idea's number alive in
+        // every surviving card and in every export, pointing at nothing a
+        // reader can open — while a merge, which is a reconciliation rather
+        // than a removal, re-points instead of dropping.
+        this.document.ideas = this.document.ideas
+          .filter(item => item.id !== action.ideaId)
+          .map(item => withoutRelationTarget(item, action.ideaId))
         // No activity entry: the row that would carry it is the row being
         // removed. A delete is not an edit of an idea's life, it ends it.
         break
@@ -1135,6 +1264,11 @@ export class IdeasHostLedger {
             : idea)
         }
         this.document.ideas = [...merged.values()]
+        // An imported document is repaired like a restored one: the relation
+        // invariants (no self edge, no dangling target, symmetric relatesTo,
+        // acyclic blocks) are re-imposed over the MERGED result, because an
+        // import can introduce an edge to a row that lives in the other half.
+        this.document.ideas = reconcileRelations(this.document.ideas).ideas
         // An import may carry ideaNumbers (storage migration, resync from another
         // host): keep the sequence past the largest imported number so the next
         // create never re-issues a number already in use.
@@ -1327,8 +1461,25 @@ export class IdeasHostLedger {
   }
 }
 
-/** Apply one update patch to an idea (a null `tags` clears the label set). */
-function applyPatch(idea: IdeaRecord, patch: IdeaUpdatePatch, now: number): IdeaRecord {
+/**
+ * Apply one update patch to the document (a null `tags` clears the label set).
+ *
+ * The patch is row-scoped for every text/score field and DOCUMENT-scoped for
+ * the relation keys: `relatesTo` is symmetric and `blocks` is checked against
+ * the whole graph, so neither can be applied to a single row in isolation.
+ */
+function applyPatch(
+  ideas: readonly IdeaRecord[],
+  ideaId: string,
+  patch: IdeaUpdatePatch,
+  now: number,
+): IdeaRecord[] {
+  const patched = ideas.map(item => item.id === ideaId ? patchRow(item, patch, now) : item)
+  return applyRelationPatch(patched, ideaId, patch)
+}
+
+/** Apply one update patch to ONE idea (a null `tags` clears the label set). */
+function patchRow(idea: IdeaRecord, patch: IdeaUpdatePatch, now: number): IdeaRecord {
   const next: IdeaRecord = { ...idea, updatedAt: now }
   if (patch.title !== undefined && patch.title !== null) next.title = patch.title.trim()
   if (patch.body !== undefined && patch.body !== null) next.body = patch.body.trim()
@@ -1356,6 +1507,110 @@ function applyPatch(idea: IdeaRecord, patch: IdeaUpdatePatch, now: number): Idea
   return next
 }
 
+/**
+ * Resolve the target ids of one relation list and refuse what cannot be true:
+ * an unknown id (the edge would be dangling the moment it is written, which is
+ * what would make a later `delete` unable to sweep it) and the row itself.
+ */
+function resolveRelationTargets(
+  ideas: readonly IdeaRecord[],
+  ideaId: string,
+  raw: string[] | null,
+): string[] {
+  const known = new Set(ideas.map(idea => idea.id))
+  const targets = normalizeRelationIds(raw) ?? []
+  for (const target of targets) {
+    if (target === ideaId) throw new Error('a relation cannot point at the idea itself')
+    if (!known.has(target)) throw new Error(`relation target not found: ${target}`)
+  }
+  return targets
+}
+
+/** Set or clear one relation list, leaving the other untouched. */
+function withRelationList(
+  idea: IdeaRecord,
+  key: 'relatesTo' | 'blocks',
+  ids: readonly string[] | undefined,
+): IdeaRecord {
+  const next = { ...idea }
+  if (ids === undefined || ids.length === 0) delete next[key]
+  else next[key] = [...ids]
+  return next
+}
+
+/** Whether two relation lists hold the same ids in the same order. */
+function sameRelationList(a: readonly string[] | undefined, b: string[] | undefined): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+/**
+ * Apply the relation half of an `update` patch across the document (idea #106).
+ *
+ * `relatesTo` is symmetric, so one statement writes TWO rows — the edited idea
+ * and every idea it names — in the same commit. That is what keeps "A relates to
+ * B" a single fact instead of two that can disagree, and it is why the mirror
+ * rows stay silent in the activity log: the author's act happened once, on the
+ * idea they clicked. `blocks` is one-directional, so only the edited row moves.
+ *
+ * @throws when a target does not exist, is the row itself, or would close a
+ *   cycle. The cycle is refused WITH ITS CHAIN, because "invalid relation"
+ *   tells a human nothing while "#12 → #13 → #14" names the edges to undo.
+ */
+function applyRelationPatch(
+  ideas: readonly IdeaRecord[],
+  ideaId: string,
+  patch: IdeaUpdatePatch,
+): IdeaRecord[] {
+  if (patch.relatesTo === undefined && patch.blocks === undefined) return [...ideas]
+  let next = [...ideas]
+  if (patch.relatesTo !== undefined) {
+    const targets = resolveRelationTargets(next, ideaId, patch.relatesTo)
+    next = next.map(item => (item.id === ideaId ? withRelationList(item, 'relatesTo', targets) : item))
+    next = next.map(item => {
+      if (item.id === ideaId) return item
+      const current = item.relatesTo ?? []
+      const kept = current.filter(id => id !== ideaId)
+      const relatesTo = normalizeRelationIds(targets.includes(item.id) ? [...kept, ideaId] : kept)
+      return sameRelationList(current, relatesTo) ? item : withRelationList(item, 'relatesTo', relatesTo)
+    })
+  }
+  if (patch.blocks !== undefined) {
+    const targets = resolveRelationTargets(next, ideaId, patch.blocks)
+    // The cycle walk must see this row's OTHER edges, not the list being
+    // replaced: dropping an edge can never close a loop, only adding one can.
+    const graph = blocksGraphOf(next.map(item => (item.id === ideaId ? withRelationList(item, 'blocks', undefined) : item)))
+    const references = new Map(next.map(item => [item.id, ideaReference(item)]))
+    for (const target of targets) {
+      const path = blockCyclePath(graph, ideaId, target)
+      if (path === undefined) continue
+      throw new Error(`this would close a cycle: ${path.map(id => references.get(id) ?? id).join(' → ')}`)
+    }
+    next = next.map(item => (item.id === ideaId ? withRelationList(item, 'blocks', targets) : item))
+  }
+  return next
+}
+
+/** Re-point every relation edge that named the merge loser at the survivor. */
+function withRepointedRelations(idea: IdeaRecord, loserId: string, survivorId: string): IdeaRecord {
+  return withRelationList(
+    withRelationList(idea, 'relatesTo', repointedRelationIds(idea.relatesTo, idea.id, loserId, survivorId)),
+    'blocks',
+    repointedRelationIds(idea.blocks, idea.id, loserId, survivorId),
+  )
+}
+
+/** Drop one removed idea from every relation list (the `delete` sweep). */
+function withoutRelationTarget(idea: IdeaRecord, targetId: string): IdeaRecord {
+  if (idea.relatesTo?.includes(targetId) !== true && idea.blocks?.includes(targetId) !== true) return idea
+  return withRelationList(
+    withRelationList(idea, 'relatesTo', normalizeRelationIds((idea.relatesTo ?? []).filter(id => id !== targetId))),
+    'blocks',
+    normalizeRelationIds((idea.blocks ?? []).filter(id => id !== targetId)),
+  )
+}
+
 /** Trim to undefined when blank (the wire keeps rationale/decision optional). */
 function blankToUndefined(value: string): string | undefined {
   const trimmed = value.trim()
@@ -1379,6 +1634,14 @@ function describePatch(patch: IdeaUpdatePatch): string {
   if (patch.effort !== undefined) fields.push('effort')
   if (patch.rationale !== undefined) fields.push('rationale')
   if (patch.rank !== undefined) fields.push('rank')
+  // Relations (idea #106): named like every other field the patch touched, and
+  // never valued — the timeline is a breadcrumb back to the idea.
+  if (patch.relatesTo !== undefined) {
+    fields.push(patch.relatesTo === null || patch.relatesTo.length === 0 ? 'relations cleared' : 'related ideas')
+  }
+  if (patch.blocks !== undefined) {
+    fields.push(patch.blocks === null || patch.blocks.length === 0 ? 'blocking cleared' : 'blocking')
+  }
   if (fields.length === 0) return 'Edited (no field changed)'
   return `Edited ${fields.join(', ')}`
 }

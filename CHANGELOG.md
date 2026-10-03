@@ -10,6 +10,36 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **Relate ideas to each other.** An idea can now carry **Related to** links
+  ("this is adjacent to that, read the other one") and **Waits for** links
+  ("this cannot land before that one"). The other card shows the same edge from
+  its side, as **Waiting for this idea** — the same arrow on both cards, in
+  opposite directions, so the links read without opening anything.
+  - You add and remove them in the **editor**, under **Relations**: pick an idea
+    from a list, or press the **×** on a chip. A card prints them as a quiet
+    `↔ #12` / `→ #31` / `← #7` line under its description, and prints **nothing
+    at all** for an idea that has none.
+  - **A link is declared once, never twice.** *Related to* is one statement about
+    two ideas and is true from both sides; *Waits for* is stored on the card that
+    waits and the *Waiting for this idea* line is the same edge seen from the
+    other side. That line is therefore read-only — the editor names the card
+    that declares it, rather than quietly editing a card you never opened.
+  - **A wait that loops is refused when you write it**, not discovered when the
+    graph is drawn — and the refusal names the chain (`#1 → #2 → #3`), so you
+    know which link to undo.
+  - **Links follow the lifecycle.** Deleting an idea drops the links that named
+    it instead of leaving a reference to nothing. Merging a duplicate re-points
+    its links at the surviving idea and hands them over, the same way its
+    follow-ups and its labels are handed over; the archived duplicate keeps its
+    own, so restoring it is lossless.
+  - **Nothing is inferred.** A relation is something you state. The board's
+    *Find similar* score is a computed signal and never becomes an edge.
+  - They are part of the board like everything else: the JSON export/import
+    round-trips them, snapshots and restores carry them, and the markdown export
+    prints them. **No API call, board layout or stored document changes for the
+    rest of your ideas** — a board where nobody used the feature is byte for
+    byte what it was before.
+
 - **A Health tab: is this backlog healthy?** Five questions about the workspace
   you are looking at, answered **by the host** in one small read the board asks
   for on its own — your background refresh is not slowed by a single byte.

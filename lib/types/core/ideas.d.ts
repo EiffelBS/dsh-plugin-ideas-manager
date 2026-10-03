@@ -41,6 +41,15 @@ export declare const IDEA_TITLE_MAX_LENGTH = 200;
 /** Maximum size of an idea body (bytes). */
 export declare const IDEA_BODY_MAX_BYTES: number;
 /**
+ * Maximum number of ids ONE relation kind may hold on one idea (idea #106).
+ * A relation is a statement the human makes; past roughly twenty the edge list
+ * stops being a statement and becomes a second board, which is the failure mode
+ * the near-duplicate flag was careful not to build.
+ */
+export declare const IDEA_RELATION_LIMIT = 20;
+/** Maximum length of one referenced idea id in a relation list. */
+export declare const IDEA_RELATION_ID_MAX_LENGTH = 256;
+/**
  * Maximum length of the compact card summary: the abstract the ideas-analyst
  * produces and the TaskBoard mirror ships as the card description.
  */
@@ -173,6 +182,84 @@ export declare function normalizeSummary(value: string | undefined): string | un
  */
 export declare function normalizeDeliveryNote(value: string | undefined): string | undefined;
 /**
+ * The relation kinds STORED on a record, in the order the board prints them.
+ *
+ * `blockedBy` is deliberately NOT here: it is the inverse of `blocks`, derived
+ * at read time by {@link ideaBlockedBy}. Two spellings of one edge would be two
+ * independent facts that drift — the same reason `followUp` is stored on the
+ * child alone and both directions are presented. See docs/architecture.md.
+ */
+export declare const IDEA_RELATION_KINDS: readonly ["relatesTo", "blocks"];
+/** One stored relation kind. */
+export type IdeaRelationKind = (typeof IDEA_RELATION_KINDS)[number];
+/**
+ * Whether an unknown value is a well-formed relation list (the wire gate).
+ * An EMPTY list is legal here — unlike tags, where an empty array is a
+ * confusing way of saying "clear" — because an empty relation list simply means
+ * "this kind of edge was cleared", and the board never sends one by accident.
+ */
+export declare function isIdeaRelationList(value: unknown): value is string[];
+/**
+ * Repair a persisted relation list: trim, drop blanks and repeats, cap at
+ * {@link IDEA_RELATION_LIMIT}. Returns undefined when nothing usable remains, so
+ * the caller omits the field rather than storing an empty array — which is also
+ * this schema's migration: a document written before relations existed simply
+ * has no `relatesTo` / `blocks` key, and the first write creates it.
+ */
+export declare function normalizeRelationIds(value: unknown): string[] | undefined;
+/**
+ * One relation list rewritten for a row that changed identity in a merge:
+ * `fromId` becomes `toId`, duplicates collapse, and any edge that would point
+ * at the row itself is dropped. That last rule is why a merge can never leave an
+ * idea related to itself — the failure a self-link makes invisible afterwards.
+ *
+ * @param list - the row's stored list (absent = no edge of this kind).
+ * @param rowId - the id of the row the list belongs to.
+ * @param fromId - the id that disappears (the merge loser).
+ * @param toId - the id that inherits it (the merge survivor).
+ */
+export declare function repointedRelationIds(list: readonly string[] | undefined, rowId: string, fromId: string, toId: string): string[] | undefined;
+/** `blocks` adjacency of a whole document, for the cycle check. */
+export declare function blocksGraphOf(ideas: readonly IdeaRecord[]): Map<string, readonly string[]>;
+/**
+ * The `blocks` chain that adding `from blocks to` would close, or undefined
+ * when the edge is safe.
+ *
+ * `blocks` is the one relation where a cycle is expressible and meaningless
+ * ("A waits for B" and "B waits for A" says nothing), so it is refused ON WRITE
+ * rather than discovered at render time. The path is returned so the refusal
+ * can NAME it: "A blocks B, B blocks C, C blocks A" is an answer a human can
+ * act on, where "invalid relation" is not.
+ *
+ * The graph is already acyclic (every write checks), so the walk is bounded by
+ * the number of ideas in the document.
+ */
+export declare function blockCyclePath(blocks: ReadonlyMap<string, readonly string[]>, from: string, to: string): string[] | undefined;
+/**
+ * The ideas that block `ideaId`: the `blockedBy` side of the stored `blocks`
+ * edges. Derived, never stored, so a card can answer "what is this waiting on?"
+ * from a poll that only carries the stored direction.
+ */
+export declare function ideaBlockedBy(ideas: readonly Pick<IdeaRecord, 'id' | 'blocks'>[], ideaId: string): string[];
+/** The `relatesTo` edge set of one row, including the edges other rows state about it. */
+export declare function ideaRelatedTo(ideas: readonly Pick<IdeaRecord, 'id' | 'relatesTo'>[], ideaId: string): string[];
+/**
+ * The relation lists a merge hands to the survivor: its own edges first, then
+ * the loser's. Duplicate ids collapse, the cap holds, and the survivor's own id
+ * is dropped, so the result is always a legal relation list and the union can
+ * never make an idea relate to itself.
+ *
+ * `blocks` unions the same way — a surviving idea cannot both wait for and be
+ * waited on by the same idea, and {@link normalizeRelationIds} keeps the single
+ * edge. The caller is responsible for the acyclicity that a union can break
+ * (re-pointing an edge can close a loop); this function does not check, because
+ * it is a pure list operation and the cycle rule belongs to the write.
+ */
+export declare function mergedIdeaRelations(survivor: IdeaRecord, loser: IdeaRecord): {
+    relatesTo?: string[];
+    blocks?: string[];
+};
+/**
  * Rank group of an idea: its manual rank is a position RELATIVE to the other
  * ideas of the same (status, workspace) pair — the "rank by workspace" model.
  * The workspace-less ideas (workspaceId undefined) share one generic group, so
@@ -242,6 +329,32 @@ export interface IdeaRecord {
     rationale?: string;
     /** Idea labels. */
     tags?: IdeaTag[];
+    /**
+     * Generic relations (idea #106) — "this is adjacent to that, read the other
+     * one". A list of idea ids, capped at {@link IDEA_RELATION_LIMIT}.
+     *
+     * Stored in ONE direction per edge, like `followUpOfId`: the board presents
+     * the reverse side too ({@link ideaRelatedTo} unions the incoming edges), so
+     * a statement is never written twice and the two spellings cannot drift.
+     * The ledger re-imposes the symmetry in the same commit that writes a list,
+     * so each edge appears on both endpoints without either row being the truth.
+     *
+     * Addditive and lazy: `IDEAS_SCHEMA_VERSION` stays 1, a document written
+     * before this field has none, and nothing is back-filled — inventing edges
+     * for old ideas would be worse than admitting there were none.
+     */
+    relatesTo?: string[];
+    /**
+     * "This cannot land before that one" — a list of idea ids, capped at
+     * {@link IDEA_RELATION_LIMIT}. The ONLY direction that is stored: the
+     * `blockedBy` side is derived ({@link ideaBlockedBy}), never written, because
+     * two spellings of one edge would be two independent facts.
+     *
+     * A cycle is refused ON WRITE ({@link blockCyclePath}) rather than detected at
+     * render time, and a `delete` drops the edges that pointed at the removed row
+     * rather than leaving a dangling id.
+     */
+    blocks?: string[];
     /** Workspace this idea belongs to (absent = generic). */
     workspaceId?: string;
     /** Mirror link to the TaskBoard card id when the bridge is active (P2). */

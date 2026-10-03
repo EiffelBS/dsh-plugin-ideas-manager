@@ -12,7 +12,7 @@
  * opening the edit modal.
  */
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
 import type { IdeaListRow, IdeasOpenOrdering } from '../protocol.ts'
@@ -43,6 +43,8 @@ import { ScoreBadge } from './score-badge.tsx'
 import { RunStateBadges, shortDate } from './run-state-badges.tsx'
 import { DeliveryNote } from './delivery-note.tsx'
 import { ActivityTimeline } from './activity-timeline.tsx'
+import { RelationChips, RelationsEditor } from './relations-view.tsx'
+import { relationListChanged, relationIndexOf } from './relations.ts'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
@@ -463,6 +465,13 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   // ('' — the sentinel-mapped "no workspace" state — never counts as a default.)
   const sessionDefaulted = initial === undefined && workspace !== '' && workspace === sessionWorkspace && workspace !== initialWorkspace
   const [rank, setRank] = useState(() => currentOpenRank(initial, client.snapshot?.ideas ?? []))
+  // Relations (idea #106). The editor owns both lists and posts ONLY the ones
+  // that actually changed, so saving an unrelated field never rewrites an edge
+  // (and never spends an activity-log line saying so). A NEW capture starts
+  // empty on purpose: `create` takes no relations, so a brand-new idea has no
+  // edge to a row that may not exist yet.
+  const [relatesTo, setRelatesTo] = useState<string[]>(() => [...(initial?.relatesTo ?? [])])
+  const [blocks, setBlocks] = useState<string[]>(() => [...(initial?.blocks ?? [])])
   const [error, setError] = useState<string | undefined>(undefined)
   // The edit modal opens straight on the rendered markdown view (the raw
   // textarea is one click away); a new capture keeps the raw textarea first
@@ -524,6 +533,15 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
       return
     }
     try {
+      // Relations ride the SAME `update` as the text fields, and only when the
+      // human moved something: the ledger re-imposes the symmetry of
+      // `relatesTo` and refuses a `blocks` cycle with its own sentence.
+      const relationPatch: IdeaClientPatch = initial === undefined
+        ? {}
+        : {
+            ...(relationListChanged(relatesTo, initial.relatesTo) ? { relatesTo } : {}),
+            ...(relationListChanged(blocks, initial.blocks) ? { blocks } : {}),
+          }
       if (aiMode && client.sessionLauncher !== undefined) {
         // Phase 3: NON-BLOCKING AI capture — the modal closes immediately,
         // like the manual Create; nothing stays pending. The fresh session
@@ -574,6 +592,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           body: body.trim(),
           tags: tags.split(','),
           workspaceId: workspace,
+          ...relationPatch,
         })
         await client.triageIdea(initial.id, {
           ...(value === undefined ? {} : { value }),
@@ -593,6 +612,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           rationale,
           tags: tags.split(','),
           workspaceId: workspace,
+          ...relationPatch,
         }
         await client.updateIdea(initial.id, patch)
       }
@@ -753,6 +773,20 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
             onChange={event => { setRationale(event.target.value) }}
           />
         </div>
+        {initial !== undefined && (
+          // Relations (idea #106), between the fields and the history: the two
+          // kinds a human states are editable here, and the derived "waiting for
+          // this idea" line is read-only with the card that declares it named.
+          <RelationsEditor
+            ideas={client.snapshot?.ideas ?? []}
+            ideaId={initial.id}
+            relatesTo={relatesTo}
+            blocks={blocks}
+            disabled={client.pending}
+            onRelatesTo={setRelatesTo}
+            onBlocks={setBlocks}
+          />
+        )}
         {initial !== undefined && (
           // The idea's activity log (idea #92), under the fields and above the
           // verdict buttons: the editor is where a reviewer asks "when was this
@@ -1708,6 +1742,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
+  // Relations (idea #106): every card's relation line is derived HERE, once per
+  // paint, over the WHOLE snapshot — not over the filtered rows, so a link to an
+  // archived card in another workspace still resolves to a name. Deriving per
+  // card would rebuild the row map and rescan the board once per card.
+  const relationIndex = useMemo(() => relationIndexOf(ideas), [ideas])
 
   // Deep search (idea #34): list rows carry excerpts only, so an ACTIVE
   // search loads the full bodies once per revision (client.ensureSearchIndex,
@@ -2564,6 +2603,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               </div>
                             )}
                             <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { openEdit(idea) }} />
+                            {/* Relations (idea #106): a quiet reference line under
+                                the body, and NOTHING at all for an idea that
+                                carries none. Three chips then a counter, so a
+                                heavily linked card cannot eat the board's DOM
+                                budget. */}
+                            <RelationChips views={relationIndex.get(idea.id)} />
                             {/* The delivery note of a finished run (idea #91):
                                 what the reviewer needs to decide on without
                                 leaving the board. Renders nothing for a running

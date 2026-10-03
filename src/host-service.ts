@@ -754,8 +754,18 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
   switch (action.kind) {
     case 'create':
       return 'create'
-    case 'update':
-      return 'update'
+    case 'update': {
+      // A patch that touches ONLY the relations (idea #106) changes nothing the
+      // card shows. Triage-like opinions are ideas-only by design — scores and
+      // relations are a backlog opinion, not a board state — so such an edit
+      // must not spend a mirror round trip or unfreeze a card that already ran.
+      // An EMPTY patch is not a relations-only patch: it is a no-op, and it
+      // keeps the ordinary behaviour rather than becoming a new special case.
+      const keys = Object.keys(action.patch)
+      return keys.length > 0 && keys.every(key => key === 'relatesTo' || key === 'blocks')
+        ? undefined
+        : 'update'
+    }
     case 'move':
       // Only an archived destination mirrors as an archive; moving an idea to
       // underReview mirrors nothing (the card already passed done), and a

@@ -22,6 +22,7 @@ import { IdeasBoard } from '../src/client/board-view.tsx'
 import { IdeasClient } from '../src/client/ideas-client.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
 import { renderMarkdown } from '../src/client/markdown.ts'
+import { BOARD_TABS } from '../src/client/tabs.ts'
 import { orderIdeas, groupedIdOrder, rebuildOrder } from '../src/client/ordering.ts'
 import {
   IDEAS_SCHEMA_VERSION,
@@ -277,7 +278,10 @@ describe.runIf(process.env.IDEAS_PERF === '1')('perf-board: React commit at 140 
 
     // --- tab switches: Priorities (100 ranked rows) + Delivered ----------
     const tabs = Array.from(host.querySelectorAll('[role="tab"]'))
-    expect(tabs).toHaveLength(3)
+    // Counted from the tab MODEL, not hard-coded: the gate used to assert 3 and
+    // started failing the moment a fourth tab shipped, so the perf suite could
+    // no longer be run at all. The order it switches is still positional.
+    expect(tabs).toHaveLength(BOARD_TABS.length)
     const prioritiesMs = await measureAct(() => { (tabs[1] as HTMLButtonElement).click() })
     console.log(`[perf-board] switch to Priorities (${PERF_OPEN_COUNT} ranked rows): ${prioritiesMs.toFixed(2)} ms, ${domNodes()} nodes, ${markdownRegions()} md regions`)
     const deliveredMs = await measureAct(() => { (tabs[2] as HTMLButtonElement).click() })

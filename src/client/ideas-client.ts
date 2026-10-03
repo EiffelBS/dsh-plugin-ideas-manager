@@ -56,6 +56,17 @@ export interface IdeaClientPatch {
   tags?: string[] | IdeaTag[]
   /** Present (including an empty string) replaces the workspace; '' = generic. */
   workspaceId?: string
+  /**
+   * Relations (idea #106), one key per stored kind. Present means "replace this
+   * list", exactly like `tags`, so an empty array CLEARS it (the client turns
+   * that into the wire's `null`). There is deliberately no `blockedBy`: it is
+   * the derived inverse of another row's `blocks` and is never written.
+   *
+   * Callers send only the lists they changed — an untouched relation must not
+   * spend a revision or an activity-log line (see `relationListChanged`).
+   */
+  relatesTo?: string[]
+  blocks?: string[]
 }
 
 /**
@@ -558,6 +569,12 @@ export class IdeasClient {
         // set replaces them, prompt lines included (idea #94 bulk tagging
         // rebuilds the union from the row's own tags).
         ...(tags === undefined ? {} : { tags: tags.length === 0 ? null : tags }),
+        // Relations (idea #106): same contract as tags — an empty list clears,
+        // a non-empty one replaces it. The ledger owns the symmetry of
+        // `relatesTo` and the acyclicity of `blocks`; a refusal comes back as
+        // the Host's own sentence (a cycle names its chain).
+        ...(patch.relatesTo === undefined ? {} : { relatesTo: patch.relatesTo.length === 0 ? null : patch.relatesTo }),
+        ...(patch.blocks === undefined ? {} : { blocks: patch.blocks.length === 0 ? null : patch.blocks }),
       },
     })
   }

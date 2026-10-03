@@ -69,6 +69,7 @@ const IDEA_FIELDS = [
   'deliveryNote', 'effort', 'events', 'followUpOfId', 'id', 'ideaNumber', 'rank',
   'rationale', 'reanalyzeAt', 'runSessionId', 'runStatus', 'status', 'summary',
   'tags', 'taskBoardId', 'taskBoardStatus', 'title', 'updatedAt', 'value', 'workspaceId',
+  'relatesTo', 'blocks',
 ] as const
 
 /** Every distinct key the given rows actually carry, sorted. */
@@ -133,6 +134,11 @@ function fullyPopulated(ledgerRef: IdeasHostLedger): string {
   // cannot carry: it is written by the delivery verb alone.
   ledgerRef.applyRequest('seed-8', create('idea-3', 'Delivered idea', 'ws-1'))
   ledgerRef.applyRequest('seed-9', { kind: 'deliver', ideaId: 'idea-3' })
+  // Relations (idea #106) on the rich row, against a row that exists: both
+  // stored kinds, so the round-trip assertion below would fail if either were
+  // dropped by the snapshot serializer or by `readIdeaRow`.
+  ledgerRef.applyRequest('seed-10', { kind: 'update', ideaId: 'idea-rich', patch: { relatesTo: ['idea-2'] } })
+  ledgerRef.applyRequest('seed-11', { kind: 'update', ideaId: 'idea-rich', patch: { blocks: ['idea-3'] } })
   return 'idea-rich'
 }
 
