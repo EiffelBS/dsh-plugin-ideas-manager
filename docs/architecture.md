@@ -151,6 +151,26 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   already in the backup surface, which is why the widened behaviour needed no
   change to `KNOWN_IDEA_FIELDS`.
 
+- **The command dispatch is a version-skew boundary, and it is extracted.**
+  Raising a fresh session's permission is a Host COMMAND (`/permission <level>`)
+  dispatched through the shell's duck-typed `agents` + `commands` faces, because
+  `session/create` carries no permission field and running fenced is worse than
+  failing. Those faces are not typed against: `commands.execute` grew a
+  **required fourth argument** (an `AbortSignal`) and the three-argument call
+  this plugin still made threw a TypeError from the middle of the host —
+  "session permission failed: Cannot read properties of undefined". The relay
+  worked as designed (the modal shows the Host's own sentence), which is exactly
+  why the skew went unnoticed until a human launched an idea.
+  The call now lives in `src/command-dispatch.ts` as a pure function of the two
+  faces, passes FOUR arguments (compatible both ways: an older host ignores the
+  extra one), and is pinned by `tests/command-dispatch.test.ts` against a fake
+  host that reads `signal.aborted` like the real one — the same shape of defence
+  as the `unknownFields` normalization and `readJson`'s `message` preference.
+  When the faces are absent the dispatcher is `undefined` (a direct launch then
+  keeps the session default), and `index.ts` now **warns**: a launch that
+  silently ran fenced would be the worst possible answer to "I asked for
+  danger-full-access".
+
 ## Per-idea activity log (idea #92)
 
 `IdeaRecord.events[]` is a bounded append-only log: `{ at, verb, actor,

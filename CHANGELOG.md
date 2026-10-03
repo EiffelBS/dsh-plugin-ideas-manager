@@ -241,6 +241,15 @@ Versions before 0.3.0 predate this file.
   itself as an old one. It now reads the version of the package you actually
   installed, and a release cannot ship with it out of step any more.
 
+- **Launching an idea no longer fails with "session permission failed: Cannot
+  read properties of undefined".** Raising a new session's permission goes through
+  the host's own command service, whose call now takes a **fourth** argument — a
+  cancellation signal. The plugin still passed three, so the host threw while
+  reading it and the launch died before your run started. It works again, and the
+  failure mode is covered by a test rather than discovered at the launch button. A
+  deployment that serves no command service at all now says so in the log instead
+  of silently running the idea fenced.
+
 - **Refreshing the page no longer takes the settings section down when the
   running instance is older than the page.** The Backup tab read the list of
   fields a restore could not carry as if the running instance always sent it; a

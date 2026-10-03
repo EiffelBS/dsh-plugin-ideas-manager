@@ -12,6 +12,7 @@ import z from 'schemastery'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { IdeasHostService } from './host-service.ts'
 import { installIdeasAgentTools } from './agent-tools.ts'
+import { createCommandDispatcher } from './command-dispatch.ts'
 import { SessionRunner, type HostCommandDispatcher, type HostSessionGateway } from './session-runner.ts'
 import { installIdeasAnalystSkill } from './skill-install.ts'
 import { HttpTaskBoardTransport, TaskBoardMirror } from './taskboard-bridge.ts'
@@ -136,17 +137,15 @@ function applyImpl(ctx: Context, config?: Config): void {
   // neither service simply leaves direct sessions at its own default.
   let directDispatch: HostCommandDispatcher | undefined
   ctx.inject(['agents', 'commands'], (cmdCtx) => {
-    const agents = (cmdCtx as unknown as { agents?: unknown }).agents
-    const commands = (cmdCtx as unknown as { commands?: unknown }).commands
-    const agentFace = agents as { get?: (sessionId: string) => unknown } | undefined
-    const commandFace = commands as { execute?: (agent: unknown, line: string, args?: unknown[]) => Promise<{ result?: unknown } | undefined> } | undefined
-    const agentGet = agentFace?.get
-    const commandExecute = commandFace?.execute
-    if (typeof agentGet !== 'function' || typeof commandExecute !== 'function') return
-    directDispatch = async (sessionId, line) => {
-      const agent = agentGet.call(agentFace, sessionId)
-      if (agent === undefined) throw new Error('execution session is not available')
-      return (await commandExecute.call(commandFace, agent, line, []))?.result
+    directDispatch = createCommandDispatcher(
+      (cmdCtx as unknown as { agents?: unknown }).agents,
+      (cmdCtx as unknown as { commands?: unknown }).commands,
+    )
+    // Observable on purpose: without these faces a direct launch would run at the
+    // session's default permission SILENTLY, and "I asked for
+    // danger-full-access and got read-only" is the worst possible answer to give.
+    if (directDispatch === undefined) {
+      console.warn('[dsh-plugin-ideas-manager] the host serves no agents/commands service: a direct launch will keep the session default permission')
     }
   })
 
