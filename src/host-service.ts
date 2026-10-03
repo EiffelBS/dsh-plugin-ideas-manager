@@ -273,6 +273,9 @@ export class IdeasHostService {
       ideas: result.ideas,
       source: result.source,
       displaced: snapshotInfoOf(result.displaced),
+      // Carried through verbatim so the panel can say what this build did not
+      // read; a partial restore must never be a silent one.
+      unknownFields: result.unknownFields,
     }
   }
 

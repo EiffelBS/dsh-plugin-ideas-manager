@@ -306,6 +306,7 @@ export declare const fr: {
     'backup.restoreNo': string;
     'backup.restoreDone': string;
     'backup.restoreBusy': string;
+    'backup.restoreUnknownFields': string;
     'backup.item.manual': string;
     'backup.item.export': string;
     'backup.item.preRestore': string;
@@ -679,6 +680,7 @@ export declare const en: {
     'backup.restoreNo': string;
     'backup.restoreDone': string;
     'backup.restoreBusy': string;
+    'backup.restoreUnknownFields': string;
     'backup.item.manual': string;
     'backup.item.export': string;
     'backup.item.preRestore': string;
@@ -1058,6 +1060,7 @@ export declare const zh: {
     'backup.restoreNo': string;
     'backup.restoreDone': string;
     'backup.restoreBusy': string;
+    'backup.restoreUnknownFields': string;
     'backup.item.manual': string;
     'backup.item.export': string;
     'backup.item.preRestore': string;

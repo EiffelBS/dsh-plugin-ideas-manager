@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
-import { IdeasHostLedger } from '../src/host-ledger.ts'
+import { IdeasHostLedger, KNOWN_IDEA_FIELDS } from '../src/host-ledger.ts'
 import { IdeasHostService } from '../src/host-service.ts'
 import { IDEAS_BACKUP_DIR_NAME, IDEAS_SNAPSHOT_RETENTION } from '../src/backup.ts'
 import type { IdeaRecord } from '../src/core/ideas.ts'
@@ -333,7 +333,10 @@ describe('restore refuses a document it cannot adopt', () => {
     store.dispose()
   })
 
-  it('refuses a ledger written by another schema version', () => {
+  it('refuses a ledger written by a NEWER plugin, so no field it carries is dropped', () => {
+    // The record reader is a whitelist rebuild: adopting a file from a newer
+    // build would silently drop whatever it carries that this build does not
+    // know. A refusal keeps the live board intact AND says what to do.
     freshDir()
     const store = withSnapshot(name => {
       writeFileSync(join(backupDir(), name), JSON.stringify({ schemaVersion: 2, revision: 1, ideas: [] }))
@@ -343,9 +346,76 @@ describe('restore refuses a document it cannot adopt', () => {
 
     expect(outcome.ok).toBe(false)
     if (outcome.ok) throw new Error('expected a refusal')
-    expect(outcome.reason).toBe('snapshot-schema')
+    expect(outcome.reason).toBe('snapshot-schema-newer')
     expect(outcome.message).toContain('schema 2')
+    expect(outcome.message).toContain('update the plugin')
     expect(store.snapshot().ideas).toHaveLength(1)
+    store.dispose()
+  })
+
+  it('ACCEPTS a ledger written by an OLDER plugin (a document predates the fields it lacks)', () => {
+    // The other half of the directional rule: an old backup must keep restoring.
+    // A strict equality check would refuse every snapshot ever taken, which is
+    // the one way a backup feature can become useless.
+    freshDir()
+    const store = withSnapshot(name => {
+      writeFileSync(join(backupDir(), name), JSON.stringify({
+        schemaVersion: 0,
+        revision: 3,
+        ideaSequence: 4,
+        ideas: [{ id: 'from-the-past', title: 'Written before the last three features', body: 'b', status: 'open', createdAt: 1, updatedAt: 2 }],
+      }))
+    })
+
+    const outcome = store.restore({ name: snapshotFiles()[0]! })
+
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) throw new Error(`refused: ${outcome.reason}`)
+    expect(outcome.ideas).toBe(1)
+    // Nothing unknown: the file carries only fields this build knows.
+    expect(outcome.unknownFields).toEqual([])
+    store.dispose()
+  })
+
+  it('REPORTS the fields it could not read instead of dropping them in silence', () => {
+    // Same schema, so the directional gate cannot speak; this is the case a
+    // feature added WITHOUT a version bump produces. The restore is complete
+    // and correct, and the report is what makes the gap visible.
+    freshDir()
+    const store = withSnapshot(name => {
+      writeFileSync(join(backupDir(), name), JSON.stringify({
+        schemaVersion: IDEAS_SCHEMA_VERSION,
+        revision: 3,
+        ideaSequence: 1,
+        ideas: [
+          { id: 'a', title: 'Carries a future field', body: '', status: 'open', createdAt: 1, updatedAt: 2, sparkle: 1 },
+          { id: 'b', title: 'Carries another one', body: '', status: 'open', createdAt: 1, updatedAt: 2, widgets: { a: 1 } },
+        ],
+      }))
+    })
+
+    const outcome = store.restore({ name: snapshotFiles()[0]! })
+
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) throw new Error(`refused: ${outcome.reason}`)
+    expect(outcome.ideas).toBe(2)
+    expect(outcome.unknownFields).toEqual(['sparkle', 'widgets'])
+    store.dispose()
+  })
+
+  it('KNOWS every field a fully populated record carries, or the suite fails', () => {
+    // The gate the release step needs: a field added to the record and not to
+    // KNOWN_IDEA_FIELDS breaks THIS, which is what keeps the backup surface
+    // honest when the plugin grows.
+    freshDir()
+    const store = ledger()
+    fullyPopulated(store)
+    const stored = [...new Set(store.snapshot().ideas.flatMap(idea => Object.keys(idea)))].sort()
+    expect(stored.filter(key => !KNOWN_IDEA_FIELDS.has(key))).toEqual([])
+    // And the literal is not allowed to drift the other way: no dead entry.
+    expect([...KNOWN_IDEA_FIELDS].filter(key => !stored.includes(key)).sort()).toEqual([])
+    // The shipped round-trip fixture lists the same surface.
+    expect([...IDEA_FIELDS].sort()).toEqual([...KNOWN_IDEA_FIELDS].sort())
     store.dispose()
   })
 

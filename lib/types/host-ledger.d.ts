@@ -75,6 +75,13 @@ export type LedgerRestoreResult = {
     source: string;
     /** The displaced ledger, kept as a snapshot of its own. */
     displaced: SnapshotFile;
+    /**
+     * Record keys the restored file carried that THIS build does not know
+     * (empty in the normal case). They were not restored: the reader is a
+     * whitelist, and a restore that quietly dropped data would be the one
+     * failure a backup must never produce.
+     */
+    unknownFields: string[];
 } | {
     ok: false;
     /** Stable machine code (the HTTP layer maps it to a status). */
@@ -94,6 +101,35 @@ export interface LedgerSnapshotResult {
     /** How many older snapshots the retention policy removed. */
     pruned: number;
 }
+/**
+ * Structural repair of ONE persisted idea row: `ok: false` carries the reason
+ * it could not be repaired, which is what a strict reader (a restore) reports
+ * instead of silently dropping the row.
+ *
+ * The repair is the same one the boot path has always applied — a hand-edited
+ * document must not brick the board — and it is TOLERANT of unknown keys: a
+ * record written by a later version keeps its extra fields harmless.
+ */
+/**
+ * Every key `readIdeaRow` copies off an incoming record.
+ *
+ * This literal is the forward-compatibility contract. The record reader is a
+ * WHITELIST rebuild (it refuses to trust an arbitrary object), so a field a
+ * build does not know is dropped — correctly, but silently, and that silence is
+ * how a restore would quietly lose data written by a NEWER plugin. Two things
+ * make it non-silent:
+ *
+ *  - anything present on the row and absent from this list is REPORTED (see
+ *    `LedgerValidation.unknownFields`), so a partial restore always says what it
+ *    did not carry; and
+ *  - `tests/idea-95-backup.test.ts` asserts this list equals the key set of a
+ *    fully populated record, so adding a field without naming it here breaks the
+ *    suite instead of quietly surviving a release.
+ *
+ * Keep it in step with the reader, and treat a mismatch as a missing release
+ * step — the ledger's field surface is what a backup is made of.
+ */
+export declare const KNOWN_IDEA_FIELDS: ReadonlySet<string>;
 export declare class IdeasHostLedger {
     private document;
     private readonly requestCache;

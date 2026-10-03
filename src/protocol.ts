@@ -1043,6 +1043,12 @@ export interface IdeasRestoreOutcome {
   source: string
   /** The displaced ledger, kept as a snapshot of its own. */
   displaced: IdeasSnapshotInfo
+  /**
+   * Record keys the file carried that THIS build does not know (empty in the
+   * normal case). They were not restored, and the panel says so: a backup that
+   * quietly dropped data would be worse than no backup.
+   */
+  unknownFields: string[]
 }
 
 /**
@@ -1094,6 +1100,7 @@ export function parseRestoreRequest(value: unknown): IdeasRestoreRequest | undef
 /** Reasons the restore route answers 409 rather than 400: a state, not a bad request. */
 export const IDEAS_RESTORE_CONFLICT = new Set([
   'restore-run-in-flight',
+  'snapshot-schema-newer',
   'ideas plugin is disabled',
 ])
 

@@ -144,6 +144,14 @@ export function BackupPanel({ client }: BackupPanelProps) {
           })}
         </span>
       )}
+      {/* A file written by a NEWER plugin can carry fields this build does not
+          know, and the reader is a whitelist: those were not restored. Say so
+          here rather than let a partial restore look complete. */}
+      {restore !== undefined && restore.unknownFields.length > 0 && (
+        <span className={classes.backupStatusWarn} data-dsh-ideas-backup-unknown="">
+          {t('backup.restoreUnknownFields', { fields: restore.unknownFields.join(', ') })}
+        </span>
+      )}
 
       <div className={classes.settingsCard}>
         <div className={classes.settingsGroup}>{t('backup.groupSnapshots')}</div>

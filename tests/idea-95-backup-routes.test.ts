@@ -217,10 +217,29 @@ describe('POST /api/ideas/backup/restore', () => {
     expect((await missing.json() as { error: string }).error).toBe('snapshot-not-found')
 
     const broken = await post(`${base}${RESTORE}`, { document: '{"schemaVersion": 7, "ideas": []}' })
-    expect(broken.status).toBe(400)
+    // A file from a NEWER plugin is a state, not a bad request: retrying
+    // unchanged fails the same way until the plugin is updated, so 409.
+    expect(broken.status).toBe(409)
     const refusal = await broken.json() as { error: string; message: string }
-    expect(refusal.error).toBe('snapshot-schema')
+    expect(refusal.error).toBe('snapshot-schema-newer')
     expect(refusal.message).toContain('schema 7')
+  })
+
+  it('carries the unreadable fields of a restore back to the caller', async () => {
+    const { base } = await serve()
+    const response = await post(`${base}${RESTORE}`, {
+      document: JSON.stringify({
+        schemaVersion: IDEAS_SCHEMA_VERSION,
+        revision: 1,
+        ideaSequence: 1,
+        ideas: [{ id: 'a', title: 'Future idea', body: '', status: 'open', createdAt: 1, updatedAt: 2, sparkle: true }],
+      }),
+    })
+    expect(response.status).toBe(200)
+    const outcome = await response.json() as { ok: boolean; unknownFields: string[] }
+    // Restored in full, and honest about the one field this build cannot read.
+    expect(outcome.ok).toBe(true)
+    expect(outcome.unknownFields).toEqual(['sparkle'])
   })
 
   it('quarantines a broken snapshot file instead of importing it', async () => {

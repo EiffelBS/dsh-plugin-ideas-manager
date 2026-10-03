@@ -545,6 +545,50 @@ A broken plugin-written snapshot is renamed `<name>.corrupt-<stamp>-<rand>`
 instead of being deleted, and then refuses the restore with that path in the
 message.
 
+### Forward compatibility: the schema gate is DIRECTIONAL
+
+`readIdeaRow` is a **whitelist rebuild** — it starts from a fresh
+`{id, title, body, status, createdAt, updatedAt}` and copies the fields it knows
+— which is the right way to read an arbitrary object and the wrong way to be
+surprised. A file written by a NEWER plugin therefore loses, silently, whatever
+that plugin added. Two rules make that impossible to hit unawares:
+
+- **A file from a newer plugin is REFUSED**, not adopted. `validateLedgerDocument`
+  compares `schemaVersion` **directionally**: `>` the reader refuses
+  (`snapshot-schema-newer`, answered 409 because retrying unchanged fails the
+  same way), `<=` it accepts. The old strict equality was wrong in BOTH
+  directions: it refused every backup ever taken by an earlier release, and it
+  happily adopted a newer file it could only half-read.
+- **Unknown keys are reported, never swallowed.** `KNOWN_IDEA_FIELDS` is the
+  literal of every key the reader copies; anything present on a record and absent
+  from it is collected per restore and returned as `unknownFields`, which the
+  panel prints by name. This covers the case the schema gate cannot: a field
+  added **without** a bump (the established pattern — see `events` #92 and
+  `relatesTo`/`blocks` #106, where an old document simply lacks the key and the
+  first write that needs it creates it).
+
+The trade-off is deliberate and worth restating: **passing unknown keys through
+was rejected.** It would make any file round-trip in both directions, but it
+turns the reader into a garbage pass-through, contradicts the "silently lossy
+for an import" stance the module documents, and a hand-edited typo would then be
+preserved forever instead of repaired away.
+
+**Bump `IDEAS_SCHEMA_VERSION` only when an older build must refuse a newer
+file.** A bump makes a NEW build refuse every OLD backup (the check is
+equality-free but the document is still written by the older version), which is
+the one way a backup feature becomes useless.
+
+### The release step that keeps this honest
+
+The field surface is pinned twice, in literals, because the TypeScript type is
+erased and nothing else can see it: `IDEA_FIELDS` in `idea-95-backup.test.ts`
+(asserts the fully-populated fixture carries exactly that set) and
+`KNOWN_IDEA_FIELDS` in `host-ledger.ts` (asserted equal to the first). Adding a
+persisted field without naming it there **breaks the suite**. `AGENTS.md` turns
+that into a written release step for the next agent, because the failure it
+prevents is invisible in review: the field works, and the backup quietly stops
+carrying it.
+
 ### Routes, not verbs
 
 `GET|POST /api/ideas/backup`, `GET /api/ideas/backup/content`, and

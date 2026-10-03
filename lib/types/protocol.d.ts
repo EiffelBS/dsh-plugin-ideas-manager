@@ -429,6 +429,12 @@ export interface IdeasRestoreOutcome {
     source: string;
     /** The displaced ledger, kept as a snapshot of its own. */
     displaced: IdeasSnapshotInfo;
+    /**
+     * Record keys the file carried that THIS build does not know (empty in the
+     * normal case). They were not restored, and the panel says so: a backup that
+     * quietly dropped data would be worse than no backup.
+     */
+    unknownFields: string[];
 }
 /**
  * A refused restore. `error` is the stable code (the panel localizes the ones it

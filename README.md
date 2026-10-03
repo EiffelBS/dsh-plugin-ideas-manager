@@ -319,9 +319,17 @@ back — from the **Backup** tab of the settings section (see
   before you click: wait for the run, then restore. Your board is left exactly
   as it is.
 - **A file that cannot be read is refused, never half-imported.** A snapshot
-  that is not a ledger, that was written by another version of the plugin, or
-  that holds a record the board cannot read is rejected **with the reason**,
-  moved aside for evidence, and nothing on your board changes.
+  that is not a ledger, or that holds a record the board cannot read, is
+  rejected **with the reason**, moved aside for evidence, and nothing on your
+  board changes.
+- **Your backups keep working as the plugin grows.** Restoring a file taken by an
+  **earlier** version of the plugin is always allowed: whatever that file does not
+  carry is simply filled in the first time the board writes it. Restoring a file
+  taken by a **newer** version is **refused with an explanation** (update the
+  plugin, then restore again) instead of being adopted with the parts this build
+  cannot read quietly dropped. If a restore does leave out data — a file that
+  carries fields your current version has never heard of — the panel **names
+  them**, so a partial restore never looks complete.
 
 ### Move your board to another machine
 The same tab **exports the board as one JSON file** and **imports it back**.
@@ -539,8 +547,11 @@ workspace, blank = the ideas with no workspace), it is a read that consumes no
 **backup routes** are a separate family, not action verbs:
 a snapshot writes a file rather than mutating the ledger, so it never consumes
 the `requestId` cache, and a refused restore answers **409** while a run is in
-flight, **404** for an unknown snapshot and **400** with the reason in `message`
-for a document that cannot be adopted.
+flight or while the file comes from a **newer** plugin (retrying unchanged fails
+the same way), **404** for an unknown snapshot and **400** with the reason in
+`message` for a document that cannot be adopted. A restore that succeeds also
+answers the record keys it could **not** read (`unknownFields`, empty in the
+normal case).
 
 - [`SKILL.md`](SKILL.md) — the full wire contract: verb table, read-query
   fields, mirror mapping, PowerShell gotchas.

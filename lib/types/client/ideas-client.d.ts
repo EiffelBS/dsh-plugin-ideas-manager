@@ -122,11 +122,16 @@ export declare class IdeasClient {
      * The outcome of the last successful restore, so the panel can name the
      * snapshot the displaced board was kept as: a restore must be loud about what
      * it replaced, and that fact is only true for a moment after the click.
+     *
+     * `unknownFields` is the other half of that promise: record keys the file
+     * carried that this build does not know, and therefore did not restore. It is
+     * empty in the normal case and shown as a warning when it is not.
      */
     lastRestore: {
         source: string;
         displaced: IdeasSnapshotInfo;
         ideas: number;
+        unknownFields: string[];
     } | undefined;
     /**
      * Deep-link request awaiting the panel (idea #105). It lives HERE rather than

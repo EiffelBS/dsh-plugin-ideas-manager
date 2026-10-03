@@ -86,6 +86,7 @@ class BackupTransport extends ConfigTransport {
     ideas: 3,
     source: 'snapshot-1800000000000-aaaaaaaa.json',
     displaced: snapshot('displaced-1800000009000-bbbbbbbb.json', { reason: 'pre-restore' }),
+    unknownFields: [],
   }
   counters = { take: 0, restore: 0 }
 
@@ -223,6 +224,37 @@ describe('BackupPanel', () => {
     const status = host.querySelector(`.${classes.backupStatus}`)?.textContent ?? ''
     expect(status).toContain('displaced-1800000009000-bbbbbbbb.json')
     expect(status).toContain('snapshot-1800000000000-aaaaaaaa.json')
+  })
+
+  it('warns which fields of a restore this build could not read', async () => {
+    // The forward-compatibility surface: a file written by a newer plugin (same
+    // schema, a field added without a bump) restores in full, and the panel says
+    // which data did NOT come with it instead of looking complete.
+    const transport = new BackupTransport()
+    transport.restoreAnswer = {
+      ok: true,
+      revision: 7,
+      ideas: 3,
+      source: 'export-1800000000000-cccccccc.json',
+      displaced: snapshot('displaced-1800000009000-bbbbbbbb.json', { reason: 'pre-restore' }),
+      unknownFields: ['sparkle', 'widgets'],
+    }
+    await renderPanel(new IdeasClient(transport, undefined))
+
+    await act(async () => {
+      byLabel(en['backup.restore']).click()
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    await act(async () => {
+      byLabel(en['backup.restoreYes']).click()
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+
+    const warning = host.querySelector('[data-dsh-ideas-backup-unknown]')?.textContent ?? ''
+    expect(warning).toContain('sparkle, widgets')
+    expect(warning).toContain('update the plugin')
+    // The normal case says nothing at all: an empty list is not a warning.
+    expect(transport.restoreAnswer.ok).toBe(true)
   })
 
   it('prints the Host refusal verbatim and changes nothing', async () => {

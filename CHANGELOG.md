@@ -231,6 +231,17 @@ Versions before 0.3.0 predate this file.
   itself as an old one. It now reads the version of the package you actually
   installed, and a release cannot ship with it out of step any more.
 
+- **A backup taken by an older plugin keeps restoring, and a newer one is never
+  adopted by an older plugin.** Restoring a file used to demand the *exact* ledger
+  schema version of the build reading it, so every snapshot taken before an update
+  became unusable — while a file from a **newer** build could be adopted with its
+  extra data quietly dropped. The check is now directional: a file this build
+  reads is accepted (a field it does not carry is simply filled in the first time
+  the board writes it), and a file from a newer plugin is **refused** with an
+  explanation instead of being half-adopted. And when a restore does leave out
+  data this build cannot read, the panel names the exact fields — a partial
+  restore never looks complete.
+
 - **Drag & drop is never switched off by the Open column order any more.** While
   the column was laid out by date (or with the running ideas floated to the top),
   its handle was inert — which also killed the one gesture that has nothing to do

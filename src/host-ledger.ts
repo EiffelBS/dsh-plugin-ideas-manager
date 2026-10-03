@@ -111,6 +111,13 @@ export type LedgerRestoreResult =
       source: string
       /** The displaced ledger, kept as a snapshot of its own. */
       displaced: SnapshotFile
+      /**
+       * Record keys the restored file carried that THIS build does not know
+       * (empty in the normal case). They were not restored: the reader is a
+       * whitelist, and a restore that quietly dropped data would be the one
+       * failure a backup must never produce.
+       */
+      unknownFields: string[]
     }
   | {
       ok: false
@@ -185,7 +192,39 @@ function normalizeRunStatus(value: unknown): IdeaRunStatus | undefined {
  * document must not brick the board — and it is TOLERANT of unknown keys: a
  * record written by a later version keeps its extra fields harmless.
  */
-function readIdeaRow(value: unknown): { ok: true; idea: IdeaRecord } | { ok: false; reason: string } {
+/**
+ * Every key `readIdeaRow` copies off an incoming record.
+ *
+ * This literal is the forward-compatibility contract. The record reader is a
+ * WHITELIST rebuild (it refuses to trust an arbitrary object), so a field a
+ * build does not know is dropped — correctly, but silently, and that silence is
+ * how a restore would quietly lose data written by a NEWER plugin. Two things
+ * make it non-silent:
+ *
+ *  - anything present on the row and absent from this list is REPORTED (see
+ *    `LedgerValidation.unknownFields`), so a partial restore always says what it
+ *    did not carry; and
+ *  - `tests/idea-95-backup.test.ts` asserts this list equals the key set of a
+ *    fully populated record, so adding a field without naming it here breaks the
+ *    suite instead of quietly surviving a release.
+ *
+ * Keep it in step with the reader, and treat a mismatch as a missing release
+ * step — the ledger's field surface is what a backup is made of.
+ */
+export const KNOWN_IDEA_FIELDS: ReadonlySet<string> = new Set([
+  'id', 'title', 'body', 'status', 'createdAt', 'updatedAt',
+  'summary', 'rank', 'value', 'effort', 'rationale', 'decision', 'ideaNumber',
+  'deliveredAt', 'archivedAt', 'workspaceId', 'taskBoardId', 'taskBoardStatus',
+  'runStatus', 'runSessionId', 'deliveryNote', 'followUpOfId', 'tags',
+  'reanalyzeAt', 'analysisAudit', 'events', 'relatesTo', 'blocks',
+])
+
+/** Keys the reader does not know about, sorted and de-duplicated. */
+function unknownIdeaFields(row: Record<string, unknown>): string[] {
+  return Object.keys(row).filter(key => !KNOWN_IDEA_FIELDS.has(key)).sort()
+}
+
+function readIdeaRow(value: unknown): { ok: true; idea: IdeaRecord; unknown: string[] } | { ok: false; reason: string } {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return { ok: false, reason: 'not a JSON object' }
   }
@@ -244,7 +283,7 @@ function readIdeaRow(value: unknown): { ok: true; idea: IdeaRecord } | { ok: fal
   if (relatesTo !== undefined) idea.relatesTo = relatesTo
   const blocks = normalizeRelationIds(row.blocks)
   if (blocks !== undefined) idea.blocks = blocks
-  return { ok: true, idea }
+  return { ok: true, idea, unknown: unknownIdeaFields(row) }
 }
 
 /** Lenient repair of a persisted idea list (mirrors the import repair): unusable rows are dropped. */
@@ -385,7 +424,17 @@ function ideaReference(idea: IdeaRecord): string {
 
 /** Strict validation of a candidate ledger document (the restore path). */
 type LedgerValidation =
-  | { ok: true; document: LedgerDocument }
+  | {
+      ok: true
+      document: LedgerDocument
+      /**
+       * Record keys the file carried that this build does not know, sorted. NOT
+       * a refusal: the board is restored in full, and this is what the caller
+       * reports so a partial carry-over is never silent. Empty is the normal
+       * case (a file from the same plugin, or an older one).
+       */
+      unknownFields: string[]
+    }
   | { ok: false; reason: string; message: string }
 
 /**
@@ -413,13 +462,28 @@ function validateLedgerDocument(parsed: unknown): LedgerValidation {
     return { ok: false, reason: 'snapshot-shape', message: 'the file is not a ledger document (expected a JSON object)' }
   }
   const row = parsed as Record<string, unknown>
-  if (row.schemaVersion !== IDEAS_SCHEMA_VERSION) {
+  // DIRECTIONAL, and that is the whole forward-compatibility contract:
+  //
+  //  - a file from a NEWER plugin is REFUSED. Its records can carry fields this
+  //    build does not know, and the reader is a whitelist rebuild: adopting it
+  //    would drop them without a word. Refusing keeps the board intact and says
+  //    what to do (update the plugin, or restore on the machine that wrote it).
+  //  - a file from an OLDER plugin is accepted. A document written before a
+  //    field existed simply has no such key, and the reader fills it in on the
+  //    first write that needs it (the lazy migration of `events`, idea #92). A
+  //    strict equality check would instead refuse every backup ever taken.
+  if (typeof row.schemaVersion !== 'number' || !Number.isSafeInteger(row.schemaVersion)) {
     return {
       ok: false,
       reason: 'snapshot-schema',
-      message: typeof row.schemaVersion === 'number'
-        ? `the file uses ledger schema ${String(row.schemaVersion)}, this version of the plugin reads schema ${String(IDEAS_SCHEMA_VERSION)}`
-        : 'the file carries no ledger schema version, so it is not an ideas ledger document',
+      message: 'the file carries no ledger schema version, so it is not an ideas ledger document',
+    }
+  }
+  if (row.schemaVersion > IDEAS_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      reason: 'snapshot-schema-newer',
+      message: `the file was written by a newer version of the plugin (ledger schema ${row.schemaVersion}, this build reads ${IDEAS_SCHEMA_VERSION}); update the plugin, or restore it with the version that wrote it, so no field it does not know is dropped`,
     }
   }
   if (!Array.isArray(row.ideas)) {
@@ -440,6 +504,7 @@ function validateLedgerDocument(parsed: unknown): LedgerValidation {
     return { ok: false, reason: 'snapshot-shape', message: 'the ledger document has an unreadable request history' }
   }
   const seen = new Set<string>()
+  const unknown = new Set<string>()
   for (const [index, value] of row.ideas.entries()) {
     const read = readIdeaRow(value)
     if (!read.ok) {
@@ -456,9 +521,10 @@ function validateLedgerDocument(parsed: unknown): LedgerValidation {
         message: `two records share the id ${read.idea.id}, so the whole file was refused`,
       }
     }
+    for (const key of read.unknown) unknown.add(key)
     seen.add(read.idea.id)
   }
-  return { ok: true, document: normalizeParsedDocument(row) }
+  return { ok: true, document: normalizeParsedDocument(row), unknownFields: [...unknown].sort() }
 }
 
 /**
@@ -719,12 +785,20 @@ export class IdeasHostLedger {
 
     this.document = { ...validated.document, revision: this.document.revision }
     this.commit()
+    if (validated.unknownFields.length > 0) {
+      // Loud on purpose: a restore that carried fields this build cannot read is
+      // a partial restore, and the panel only shows what this result carries.
+      console.warn(
+        `[dsh-plugin-ideas-manager] restore kept ${this.document.ideas.length} idea(s) from ${label} but dropped field(s) this build does not know: ${validated.unknownFields.join(', ')}`,
+      )
+    }
     return {
       ok: true,
       revision: this.document.revision,
       ideas: this.document.ideas.length,
       source: label,
       displaced,
+      unknownFields: validated.unknownFields,
     }
   }
 
