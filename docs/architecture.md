@@ -622,6 +622,19 @@ the download is a plain `<a href>` to the content route (the server sets
 `content-disposition`) rather than a Blob — the file the browser stores is then
 exactly the document a restore adopts elsewhere, with no client-side copy of it.
 
+**One write action, not two.** The panel originally offered *Take a snapshot*
+(`reason: 'manual'`) and *Export a copy* (`reason: 'export'`). They called the
+same client method with the same body and the Host wrote the same document; the
+only differences were the file-name stamp and a post-export download link — and
+**every** list entry already had its own Download link, so that link was a
+duplicate of one a row below. The button is now the single **Export the board**
+(reason `export`): the same file is both the restore point you take before a
+risky change and the file that travels to another machine, which is exactly the
+argument for having one. `manual` and `pre-restore` remain valid reasons on the
+wire and in the list labels (a file the user drops in the folder is `manual`), so
+nothing about the stored data or the API changed — only the UI stopped offering
+the same write twice.
+
 ## Column windowing (idea #108)
 
 This is the deferred half of the idea #34 high-card-load work (the other half, a

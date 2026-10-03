@@ -155,24 +155,16 @@ export function BackupPanel({ client }: BackupPanelProps) {
 
       <div className={classes.settingsCard}>
         <div className={classes.settingsGroup}>{t('backup.groupSnapshots')}</div>
-        <SettingsRow
-          title={t('backup.snapshot')}
-          desc={t('backup.snapshotDesc', { retention: view?.retention ?? 0 })}
-          control={(
-            <button
-              type="button"
-              className={classes.primaryButton}
-              disabled={disabled}
-              aria-label={t('backup.snapshotAction')}
-              onClick={() => { void client.takeSnapshot('manual') }}
-            >
-              {pending ? t('backup.pending') : t('backup.snapshotAction')}
-            </button>
-          )}
-        />
+        {/* ONE action, not two. "Take a snapshot" and "Export a copy" wrote the
+            same document through the same call and differed only by the file
+            stamp — and every list entry already carried its own Download link,
+            so the export's extra link was a second way to fetch a file that was
+            one row away. The single action keeps what both were for: a
+            timestamped copy in the folder (which is also the restore point) and
+            the download that lets it travel. */}
         <SettingsRow
           title={t('backup.export')}
-          desc={t('backup.exportDesc')}
+          desc={t('backup.exportDesc', { retention: view?.retention ?? 0 })}
           control={(
             <button
               type="button"

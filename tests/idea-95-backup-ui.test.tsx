@@ -170,23 +170,14 @@ describe('BackupPanel', () => {
     expect(links.map(link => link.getAttribute('href'))).toContain('/api/ideas/backup/content?name=snapshot-1800000000000-aaaaaaaa.json')
   })
 
-  it('takes a snapshot on click and refreshes the list', async () => {
+  it('exports the board on click, refreshes the list and offers the copy it just wrote', async () => {
+    // ONE action, not two: "Take a snapshot" and "Export a copy" wrote the same
+    // document through the same call and differed only by the file stamp. What
+    // the single button must still deliver is both halves — a restorable copy in
+    // the folder AND the download that lets it travel.
     const transport = new BackupTransport()
     await renderPanel(new IdeasClient(transport, undefined))
     const before = host.querySelectorAll('[data-dsh-snapshot]').length
-
-    await act(async () => {
-      byLabel(en['backup.snapshotAction']).click()
-      await new Promise(resolve => { setTimeout(resolve, 0) })
-    })
-
-    expect(transport.taken).toEqual(['manual'])
-    expect(host.querySelectorAll('[data-dsh-snapshot]').length).toBe(before + 1)
-  })
-
-  it('exports a copy and offers the download of the copy it just wrote', async () => {
-    const transport = new BackupTransport()
-    await renderPanel(new IdeasClient(transport, undefined))
 
     await act(async () => {
       byLabel(en['backup.exportAction']).click()
@@ -194,10 +185,21 @@ describe('BackupPanel', () => {
     })
 
     expect(transport.taken).toEqual(['export'])
+    expect(host.querySelectorAll('[data-dsh-snapshot]').length).toBe(before + 1)
     const download = host.querySelector(`.${classes.backupDownload}`) as HTMLAnchorElement
     expect(download.textContent).toContain(en['backup.exported'].replace('{name}', 'snapshot-1800000001-cccccccc.json'))
     expect(download.getAttribute('href')).toBe('/api/ideas/backup/content?name=snapshot-1800000001-cccccccc.json')
     expect(download.getAttribute('download')).toBe('snapshot-1800000001-cccccccc.json')
+  })
+
+  it('offers exactly ONE write action: the retired snapshot button is gone', async () => {
+    const transport = new BackupTransport()
+    await renderPanel(new IdeasClient(transport, undefined))
+    // A single primary button writes the board; the download and restore of an
+    // existing copy are per-entry links in the list below.
+    expect(host.querySelectorAll(`.${classes.primaryButton}`)).toHaveLength(1)
+    expect(host.textContent).toContain(en['backup.export'])
+    expect(host.textContent).toContain(en['backup.exportAction'])
   })
 
   it('says what a restore replaces, asks first, then names the snapshot that kept it', async () => {
@@ -347,10 +349,10 @@ describe('the settings section owns the Backup tab', () => {
     expect(host.querySelectorAll('[data-dsh-snapshot]').length).toBeGreaterThan(0)
 
     await act(async () => {
-      byLabel(en['backup.snapshotAction']).click()
+      byLabel(en['backup.exportAction']).click()
       await new Promise(resolve => { setTimeout(resolve, 0) })
     })
-    expect(transport.taken).toEqual(['manual'])
+    expect(transport.taken).toEqual(['export'])
   })
 
   it('offers the three tabs, Display first', async () => {
@@ -367,10 +369,10 @@ describe('the settings section owns the Backup tab', () => {
 describe('backup copy ships in every locale', () => {
   it('has a key for every string the panel renders', () => {
     const keys = [
-      'backup.intro', 'backup.groupSnapshots', 'backup.snapshot', 'backup.snapshotDesc',
-      'backup.snapshotAction', 'backup.listLabel', 'backup.empty', 'backup.retention',
+      'backup.intro', 'backup.groupSnapshots', 'backup.listLabel', 'backup.empty', 'backup.retention',
       'backup.restore', 'backup.restoreHint', 'backup.restoreConfirm', 'backup.restoreConfirmDesc',
       'backup.restoreYes', 'backup.restoreNo', 'backup.restoreDone', 'backup.restoreBusy',
+      'backup.restoreUnknownFields',
       'backup.item.manual', 'backup.item.export', 'backup.item.preRestore', 'backup.item.foreign',
       'backup.itemMeta', 'backup.groupTransfer', 'backup.export', 'backup.exportDesc',
       'backup.exportAction', 'backup.exported', 'backup.import', 'backup.importDesc',
@@ -383,9 +385,15 @@ describe('backup copy ships in every locale', () => {
         expect(dictionary[key]).not.toBe('')
       }
     }
+    // The retired second button left no copy behind in any dictionary.
+    for (const dictionary of [fr, en, zh]) {
+      expect(Object.keys(dictionary)).not.toContain('backup.snapshot')
+      expect(Object.keys(dictionary)).not.toContain('backup.snapshotAction')
+      expect(Object.keys(dictionary)).not.toContain('backup.snapshotDesc')
+    }
     // Every interpolation the panel passes has a matching placeholder.
     for (const dictionary of [fr, en, zh]) {
-      expect(dictionary['backup.snapshotDesc']).toContain('{retention}')
+      expect(dictionary['backup.exportDesc']).toContain('{retention}')
       expect(dictionary['backup.restoreDone']).toContain('{displaced}')
       expect(dictionary['backup.exported']).toContain('{name}')
       expect(dictionary['backup.itemMeta']).toContain('{size}')

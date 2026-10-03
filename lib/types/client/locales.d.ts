@@ -292,9 +292,6 @@ export declare const fr: {
     'settings.staleAfterDaysDesc': string;
     'backup.intro': string;
     'backup.groupSnapshots': string;
-    'backup.snapshot': string;
-    'backup.snapshotDesc': string;
-    'backup.snapshotAction': string;
     'backup.listLabel': string;
     'backup.empty': string;
     'backup.retention': string;
@@ -666,9 +663,6 @@ export declare const en: {
     'settings.staleAfterDaysDesc': string;
     'backup.intro': string;
     'backup.groupSnapshots': string;
-    'backup.snapshot': string;
-    'backup.snapshotDesc': string;
-    'backup.snapshotAction': string;
     'backup.listLabel': string;
     'backup.empty': string;
     'backup.retention': string;
@@ -1046,9 +1040,6 @@ export declare const zh: {
     'settings.staleAfterDaysDesc': string;
     'backup.intro': string;
     'backup.groupSnapshots': string;
-    'backup.snapshot': string;
-    'backup.snapshotDesc': string;
-    'backup.snapshotAction': string;
     'backup.listLabel': string;
     'backup.empty': string;
     'backup.retention': string;

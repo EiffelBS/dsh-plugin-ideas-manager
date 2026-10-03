@@ -231,6 +231,15 @@ Versions before 0.3.0 predate this file.
   itself as an old one. It now reads the version of the package you actually
   installed, and a release cannot ship with it out of step any more.
 
+- **One button in the Backup tab, not two.** *Take a snapshot* and *Export a
+  copy* wrote the same file through the same call and differed only by a stamp in
+  its name — and every entry in the list already carried its own **Download**
+  link, so the export's extra download was a second way to fetch a file that sat
+  one row away. There is now a single **Export the board**: it writes the
+  timestamped copy into your backups folder (still the restore point you take
+  before a risky change) and hands it to you as a download (still the file you
+  carry to another machine).
+
 - **A backup taken by an older plugin keeps restoring, and a newer one is never
   adopted by an older plugin.** Restoring a file used to demand the *exact* ledger
   schema version of the build reading it, so every snapshot taken before an update

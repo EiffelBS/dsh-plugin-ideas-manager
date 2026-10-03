@@ -306,19 +306,21 @@ Your board is a real file on your machine, so it can be copied, kept and put
 back — from the **Backup** tab of the settings section (see
 [Settings](#settings)).
 
-- **Take a snapshot** writes a timestamped copy of the **whole** board into your
-  ideas backups folder: every idea, its activity log, its scores, its labels,
-  its tags' prompt lines, its relations to other ideas, the run it belongs to and
-  the task card it is bound to.
-  The last **ten** snapshots are kept for you; older ones are removed.
-- **Restore** puts one back. It asks first, it says exactly what it is
-  replacing, and the board it replaces is **kept as its own snapshot** — so a
-  restore is never a one-way door, and the panel names the snapshot you can go
+- **Export the board** writes a timestamped copy of the **whole** board into your
+  ideas backups folder and hands it to you as a download: every idea, its
+  activity log, its scores, its labels, its tags' prompt lines, its relations to
+  other ideas, the run it belongs to and the task card it is bound to.
+  The last **ten** copies are kept for you; older ones are removed. One action
+  covers both jobs — it is the restore point you take before a risky change, and
+  the file you carry to another machine.
+- **Restore** puts any copy back. It asks first, it says exactly what it is
+  replacing, and the board it replaces is **kept as its own copy** — so a
+  restore is never a one-way door, and the panel names the file you can go
   back to.
 - **A restore is refused while an execution is running**, and the panel says so
   before you click: wait for the run, then restore. Your board is left exactly
   as it is.
-- **A file that cannot be read is refused, never half-imported.** A snapshot
+- **A file that cannot be read is refused, never half-imported.** A copy
   that is not a ledger, or that holds a record the board cannot read, is
   rejected **with the reason**, moved aside for evidence, and nothing on your
   board changes.
@@ -529,7 +531,7 @@ read the state and write ideas without any UI:
 | `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` — omit `model` and the run takes the workspace's default launch model, then the session default |
 | `GET /api/ideas/events` | Server-sent change notifications |
 | `GET /api/ideas/backup` | The snapshot folder: `{ ok, dir, retention, snapshots[], running }` |
-| `POST /api/ideas/backup` | Take a snapshot now: `{ reason?: 'manual' \| 'export' }` |
+| `POST /api/ideas/backup` | Export the board now: `{ reason?: 'manual' \| 'export' }` |
 | `GET /api/ideas/backup/content?name=<snapshot>` | One snapshot's raw document, as a download |
 | `POST /api/ideas/backup/restore` | Adopt a snapshot `{ name }` or an imported document `{ document }` |
 
