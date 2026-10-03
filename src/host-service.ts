@@ -43,6 +43,7 @@ import {
   type IdeasSnapshotReason,
   type IdeasSnapshotTaken,
   type IdeasSnapshot,
+  type IdeasSettingsValue,
   type IdeasStats,
 } from './protocol.ts'
 
@@ -82,8 +83,11 @@ export class IdeasHostService {
   private readonly mirror: TaskBoardMirror | undefined
   private readonly autoMirror: boolean
   private sessions: SessionRunner | undefined
-  /** Direct-launch permission reader (settings-backed); see setRunPermission. */
-  private runPermission: (() => string | undefined) | undefined
+  /**
+   * Settings reader (late-bound; see {@link setSettingsReader}). Every launch
+   * decision that depends on a preference reads it AT LAUNCH TIME.
+   */
+  private settings: (() => IdeasSettingsValue | undefined) | undefined
   private readonly pendingMirrors: Promise<void>[] = []
   /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
   private readonly mirrorChains = new Map<string, Promise<void>>()
@@ -316,14 +320,19 @@ export class IdeasHostService {
   }
 
   /**
-   * Read the direct-launch permission at LAUNCH time from the settings port
-   * (late-bound on purpose: the port can appear after the plugin applied, and a
-   * deployment without a settings service yields undefined, which leaves the
-   * fresh session at the Host's own default). Only the direct backend consumes
-   * it — a card carries the task-board's deployment default instead.
+   * Bind the reader the launch path resolves its settings through (idea #66
+   * for the direct-launch permission, idea #107 for the per-workspace default
+   * model).
+   *
+   * One reader for the whole settings VALUE, late-bound on purpose: the port
+   * can appear after the plugin applied, and a deployment with no settings
+   * service yields undefined, which leaves every setting at its documented
+   * default. Reading the value twice (once per launch decision) rather than
+   * caching it at apply time is deliberate — a settings write takes effect on
+   * the very next launch, with no restart and no stale snapshot.
    */
-  setRunPermission(read: () => string | undefined): void {
-    this.runPermission = read
+  setSettingsReader(read: () => IdeasSettingsValue | undefined): void {
+    this.settings = read
   }
 
   /**
@@ -413,6 +422,10 @@ export class IdeasHostService {
    * response contract is identical for both, so the browser and the write
    * channel cannot tell which one ran.
    *
+   * @param model - an explicit `provider/model` for THIS run. Absent is not
+   *   "no model": the workspace default applies, then the backend's own
+   *   default (see {@link workspaceLaunchModel}).
+   *
    * @throws when the plugin is disabled, no backend is available, the idea is
    *   unknown, or the backend refuses the run (the message carries its own
    *   reason: `task is already running or missing`, `workspace not found`,
@@ -448,9 +461,27 @@ export class IdeasHostService {
     if (!viaCard && this.sessions === undefined) throw new TaskBoardMirrorDisabledError()
     const outcome = await this.enqueueChain(ideaId, async (): Promise<{ runId: string; taskId?: string }> => {
       const fresh = this.ledger.idea(ideaId) ?? idea
-      if (!viaCard) return await this.launchInSession(fresh, model)
+      // The FALLBACK ORDER (idea #107), resolved ONCE and here:
+      //   1. the model this request pinned, when it pinned one;
+      //   2. the default launch model of the idea's workspace;
+      //   3. whatever the chosen backend defaults to — the behaviour that
+      //      existed before #107, so a workspace carrying no default is
+      //      byte-for-byte unchanged.
+      // Resolving before the branch is the load-bearing part: the card backend
+      // pins the model with a task patch and the session backend with
+      // `selectModel`, and one default has to reach BOTH or the feature is
+      // half-delivered. A stale default is NOT caught here and must not be:
+      // both backends already refuse a model that no longer resolves, loudly,
+      // and silently retrying without it would run an idea on a model nobody
+      // chose.
+      // A blank model is NO choice, not "pin the empty string": the launch
+      // body parser already drops it, and doing the same here means the order
+      // below holds for every caller (browser, agent tool, in-process).
+      const explicit = model?.trim()
+      const target = explicit === undefined || explicit === '' ? this.workspaceLaunchModel(fresh) : explicit
+      if (!viaCard) return await this.launchInSession(fresh, target)
       try {
-        const taskId = await this.mirror!.launchTask(fresh, model)
+        const taskId = await this.mirror!.launchTask(fresh, target)
         this.ledger.bindTaskBoardId(ideaId, taskId)
         this.ledger.setRunStatus(ideaId, 'running')
         return { runId: taskId, taskId }
@@ -458,7 +489,7 @@ export class IdeasHostService {
         if (this.sessions === undefined || !(error instanceof TaskBoardUnavailableError)) throw error
         // The card could not run; the session can. Same route, same shape, and
         // the human sees a run rather than a 503 on a board that is simply gone.
-        return await this.launchInSession(fresh, model)
+        return await this.launchInSession(fresh, target)
       }
     })
     const result: IdeasLaunchResult = { ok: true, runId: outcome.runId, runStatus: 'running' }
@@ -471,12 +502,34 @@ export class IdeasHostService {
   }
 
   /**
+   * The default launch model of the idea's workspace (idea #107), or
+   * undefined when the workspace carries none — which is what leaves a run on
+   * whatever its backend defaults to, exactly as before the field existed.
+   *
+   * Three cases answer undefined on purpose:
+   *  - an idea with no workspace cannot be launched at all (both backends
+   *    refuse it), so there is nothing to look a default up for;
+   *  - a deployment with no settings service, or one still loading its port,
+   *    has no map to read;
+   *  - a workspace that no longer exists still HOLDS its default (the map is
+   *    keyed by a stable id, and nothing prunes it: a workspace the Host has
+   *    forgotten is not a reason to forget a preference). Ideas re-homed out
+   *    of it simply resolve to another workspace's entry or to none.
+   */
+  private workspaceLaunchModel(idea: IdeaRecord): string | undefined {
+    const workspaceId = idea.workspaceId
+    if (workspaceId === undefined || workspaceId === '') return undefined
+    const target = this.settings?.()?.launchModelByWorkspace[workspaceId]
+    return typeof target === 'string' && target.trim() !== '' ? target.trim() : undefined
+  }
+
+  /**
    * Direct-session launch: create the session, stamp the run, and register it
    * for settling. `runSessionId` is written with the stamp so a restarted Host
    * re-attaches (see {@link pollSessionRuns}).
    */
   private async launchInSession(idea: IdeaRecord, model?: string): Promise<{ runId: string }> {
-    const sessionId = await this.sessions!.launchIdea(idea, model, this.runPermission?.())
+    const sessionId = await this.sessions!.launchIdea(idea, model, this.settings?.()?.directRunPermission)
     this.ledger.setRunStatus(idea.id, 'running')
     this.ledger.setRunSession(idea.id, sessionId)
     this.sessionRuns.set(sessionId, idea.id)

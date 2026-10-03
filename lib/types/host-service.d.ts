@@ -30,7 +30,7 @@ import { SessionRunner } from './session-runner.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts';
 import { type IdeasStatsOptions } from './core/ideas-stats.ts';
-import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot, type IdeasStats } from './protocol.ts';
+import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot, type IdeasSettingsValue, type IdeasStats } from './protocol.ts';
 /** Answer of a launch (idea #66): backend-neutral on purpose, so the card
  *  backend and the direct-session backend serve the same route with the same
  *  shape. */
@@ -57,8 +57,11 @@ export declare class IdeasHostService {
     private readonly mirror;
     private readonly autoMirror;
     private sessions;
-    /** Direct-launch permission reader (settings-backed); see setRunPermission. */
-    private runPermission;
+    /**
+     * Settings reader (late-bound; see {@link setSettingsReader}). Every launch
+     * decision that depends on a preference reads it AT LAUNCH TIME.
+     */
+    private settings;
     private readonly pendingMirrors;
     /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
     private readonly mirrorChains;
@@ -160,13 +163,18 @@ export declare class IdeasHostService {
      */
     attachSessions(sessions: SessionRunner): void;
     /**
-     * Read the direct-launch permission at LAUNCH time from the settings port
-     * (late-bound on purpose: the port can appear after the plugin applied, and a
-     * deployment without a settings service yields undefined, which leaves the
-     * fresh session at the Host's own default). Only the direct backend consumes
-     * it — a card carries the task-board's deployment default instead.
+     * Bind the reader the launch path resolves its settings through (idea #66
+     * for the direct-launch permission, idea #107 for the per-workspace default
+     * model).
+     *
+     * One reader for the whole settings VALUE, late-bound on purpose: the port
+     * can appear after the plugin applied, and a deployment with no settings
+     * service yields undefined, which leaves every setting at its documented
+     * default. Reading the value twice (once per launch decision) rather than
+     * caching it at apply time is deliberate — a settings write takes effect on
+     * the very next launch, with no restart and no stale snapshot.
      */
-    setRunPermission(read: () => string | undefined): void;
+    setSettingsReader(read: () => IdeasSettingsValue | undefined): void;
     /**
      * One poll pass (exposed for tests): each backend settles from its own
      * single read, and a backend that is absent simply does nothing.
@@ -207,12 +215,32 @@ export declare class IdeasHostService {
      * response contract is identical for both, so the browser and the write
      * channel cannot tell which one ran.
      *
+     * @param model - an explicit `provider/model` for THIS run. Absent is not
+     *   "no model": the workspace default applies, then the backend's own
+     *   default (see {@link workspaceLaunchModel}).
+     *
      * @throws when the plugin is disabled, no backend is available, the idea is
      *   unknown, or the backend refuses the run (the message carries its own
      *   reason: `task is already running or missing`, `workspace not found`,
      *   `session selectModel rejected: ...`).
      */
     launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult>;
+    /**
+     * The default launch model of the idea's workspace (idea #107), or
+     * undefined when the workspace carries none — which is what leaves a run on
+     * whatever its backend defaults to, exactly as before the field existed.
+     *
+     * Three cases answer undefined on purpose:
+     *  - an idea with no workspace cannot be launched at all (both backends
+     *    refuse it), so there is nothing to look a default up for;
+     *  - a deployment with no settings service, or one still loading its port,
+     *    has no map to read;
+     *  - a workspace that no longer exists still HOLDS its default (the map is
+     *    keyed by a stable id, and nothing prunes it: a workspace the Host has
+     *    forgotten is not a reason to forget a preference). Ideas re-homed out
+     *    of it simply resolve to another workspace's entry or to none.
+     */
+    private workspaceLaunchModel;
     /**
      * Direct-session launch: create the session, stamp the run, and register it
      * for settling. `runSessionId` is written with the stamp so a restarted Host

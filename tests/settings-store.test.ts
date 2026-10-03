@@ -165,4 +165,41 @@ describe('IdeasSettingsStore writes', () => {
     }), 'utf8')
     expect(new IdeasSettingsStore({ file }).read().value.language).toBe('auto')
   })
+
+  it('persists the per-workspace default launch model (idea #107)', async () => {
+    const file = scratch()
+    await new IdeasSettingsStore({ file }).write(
+      { launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' } },
+      undefined,
+    )
+    expect(new IdeasSettingsStore({ file }).read().value.launchModelByWorkspace)
+      .toEqual({ ws1: 'deepseek/deepseek-chat' })
+  })
+
+  it('applies a map write as a WHOLE-MAP replace, like the legacy port (idea #107)', async () => {
+    const file = scratch()
+    const store = new IdeasSettingsStore({ file })
+    await store.write({ launchModelByWorkspace: { ws1: 'p/one', ws2: 'p/two' } }, undefined)
+
+    // Sending the map without ws1 clears it and keeps ws2: the client holds the
+    // current map and edits it, and the revision fence refuses a stale edit.
+    const replaced = await store.write({ launchModelByWorkspace: { ws2: 'p/two' } }, 1)
+    expect(replaced.value.launchModelByWorkspace).toEqual({ ws2: 'p/two' })
+
+    // A patch that does not mention the map leaves it alone, like every other field.
+    const untouched = await store.write({ tagRows: 2 }, replaced.revision)
+    expect(untouched.value.launchModelByWorkspace).toEqual({ ws2: 'p/two' })
+  })
+
+  it('repairs a hand-edited launch-model map on read (idea #107)', async () => {
+    const file = scratch()
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      revision: 9,
+      value: { launchModelByWorkspace: { ok: 'p/m', broken: 7, '  ': 'p/m', blank: '  ' } },
+    }))
+    const view = new IdeasSettingsStore({ file }).read()
+    expect(view.value.launchModelByWorkspace).toEqual({ ok: 'p/m' })
+    expect(view.revision).toBe(9)
+  })
 })

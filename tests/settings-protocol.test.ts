@@ -9,8 +9,11 @@ import { describe, expect, it } from 'vitest'
 import {
   clampTagRows,
   parseSettingsBody,
+  sanitizeLaunchModelByWorkspace,
   sanitizeSettings,
+  IDEAS_LAUNCH_MODEL_MAX_LENGTH,
   IDEAS_SETTINGS_DEFAULTS,
+  LAUNCH_MODEL_BY_WORKSPACE_MAX,
   TAG_ROWS_MAX,
   TAG_ROWS_MIN,
   WORKSPACE_SCOPE_MAX_LENGTH,
@@ -200,5 +203,88 @@ describe('directRunPermission', () => {
   it('is patchable (an unknown field still rejects)', () => {
     expect(parseSettingsBody({ patch: { directRunPermission: 'workspace-write' } })).toBeDefined()
     expect(parseSettingsBody({ patch: { runPermission: 'workspace-write' } })).toBeUndefined()
+  })
+})
+
+describe('launchModelByWorkspace (idea #107)', () => {
+  it('is empty by default, so an untouched deployment keeps today\'s behaviour', () => {
+    expect(IDEAS_SETTINGS_DEFAULTS.launchModelByWorkspace).toEqual({})
+    // A section written before the field existed has no key at all.
+    expect(sanitizeSettings({ tagRows: 2 }).launchModelByWorkspace).toEqual({})
+  })
+
+  it('keeps a legal map and bounds both halves of every entry', () => {
+    const value = sanitizeSettings({
+      launchModelByWorkspace: {
+        ws1: 'deepseek/deepseek-chat',
+        [`${'w'.repeat(1000)}`]: `deepseek/${'m'.repeat(1000)}`,
+      },
+    })
+    expect(value.launchModelByWorkspace.ws1).toBe('deepseek/deepseek-chat')
+    const longKey = Object.keys(value.launchModelByWorkspace).find(key => key.length === WORKSPACE_SCOPE_MAX_LENGTH) ?? ''
+    expect(longKey).toHaveLength(WORKSPACE_SCOPE_MAX_LENGTH)
+    expect(value.launchModelByWorkspace[longKey]).toHaveLength(IDEAS_LAUNCH_MODEL_MAX_LENGTH)
+  })
+
+  it('drops a malformed ENTRY, never the whole map', () => {
+    const value = sanitizeSettings({
+      launchModelByWorkspace: {
+        keep: 'provider/model',
+        blankKeyIsImpossible: '',
+        ws2: '   ',
+        ws3: 42,
+        ws4: null,
+        ws5: ['a'],
+      },
+    })
+    // One bad value must not cost the human every OTHER workspace's default.
+    expect(value.launchModelByWorkspace).toEqual({ keep: 'provider/model' })
+  })
+
+  it('answers an empty map for anything that is not a plain object', () => {
+    for (const raw of ['junk', 42, null, undefined, [1, 2], true]) {
+      expect(sanitizeLaunchModelByWorkspace(raw)).toEqual({})
+    }
+  })
+
+  it('caps how many workspaces may carry a default', () => {
+    const many: Record<string, string> = {}
+    for (let index = 0; index < LAUNCH_MODEL_BY_WORKSPACE_MAX + 10; index++) {
+      many[`ws${index}`] = `provider/model${index}`
+    }
+    expect(Object.keys(sanitizeLaunchModelByWorkspace(many))).toHaveLength(LAUNCH_MODEL_BY_WORKSPACE_MAX)
+  })
+
+  it('REPLACES the map on a write (the one shape both host generations can apply)', () => {
+    // The client always sends the whole map it holds, so replacing is lossless
+    // for it, and a shallow patch merge — the legacy namespace port's own
+    // semantics — is the only thing a merge would have to be re-implemented on.
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: 'p/m' } } })?.patch.launchModelByWorkspace)
+      .toEqual({ ws1: 'p/m' })
+    // Clearing one workspace is "send the map without it", never a null value.
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: {} } })?.patch.launchModelByWorkspace).toEqual({})
+  })
+
+  it('refuses a malformed write instead of half-storing it', () => {
+    // The write policy is stricter than the read policy on purpose: a refusal
+    // keeps the stored map whole, where a lenient write would silently drop
+    // every other workspace's default.
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: 'p/m' } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: null } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: ['p/m'] } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: null } } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: 7 } } })).toBeUndefined()
+    // Bounded, but not refused: an over-long target is cut, like every other
+    // string field on this wire.
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: 'p/'.concat('m'.repeat(1000)) } } })?.patch.launchModelByWorkspace?.ws1)
+      .toHaveLength(IDEAS_LAUNCH_MODEL_MAX_LENGTH)
+  })
+
+  it('shares ONE bound with the launch route, so neither can store what the other refuses', () => {
+    // The route refuses `model-too-long` at this same length: a default that
+    // the wire could not express would be a setting no launch could honour.
+    expect(IDEAS_LAUNCH_MODEL_MAX_LENGTH).toBe(256)
+    expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: 'p/'.concat('m'.repeat(IDEAS_LAUNCH_MODEL_MAX_LENGTH)) } } })?.patch.launchModelByWorkspace?.ws1)
+      .toHaveLength(IDEAS_LAUNCH_MODEL_MAX_LENGTH)
   })
 })

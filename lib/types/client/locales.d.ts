@@ -252,6 +252,12 @@ export declare const fr: {
     'launch.showCard': string;
     'launch.copyTitle': string;
     'launch.titleCopied': string;
+    'launch.defaultModel': string;
+    'launch.defaultHint': string;
+    'launch.changeDefault': string;
+    'launch.forgetDefault': string;
+    'launch.rememberDefault': string;
+    'launch.saveDefault': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -628,6 +634,12 @@ export declare const en: {
     'launch.showCard': string;
     'launch.copyTitle': string;
     'launch.titleCopied': string;
+    'launch.defaultModel': string;
+    'launch.defaultHint': string;
+    'launch.changeDefault': string;
+    'launch.forgetDefault': string;
+    'launch.rememberDefault': string;
+    'launch.saveDefault': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -990,6 +1002,12 @@ export declare const zh: {
     'launch.showCard': string;
     'launch.copyTitle': string;
     'launch.titleCopied': string;
+    'launch.defaultModel': string;
+    'launch.defaultHint': string;
+    'launch.changeDefault': string;
+    'launch.forgetDefault': string;
+    'launch.rememberDefault': string;
+    'launch.saveDefault': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;

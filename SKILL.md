@@ -340,6 +340,36 @@ document wholesale.
   `update`/`import` (the wire gate rejects them), and a launched idea should not
   be edited "to fix" the running card.
 
+## Default launch model per workspace
+
+A workspace may carry one `provider/model` default, stored in the plugin's
+**display settings** (`GET|POST /api/ideas/config`, field `launchModelByWorkspace`,
+a `{ workspaceId: "provider/model" }` map) — never on the idea, so the board's
+background poll can never write it back over a human's choice. A launch resolves
+it in this order, on the Host, for every caller:
+
+1. the `model` the request pinned;
+2. the idea's **workspace** default;
+3. whatever the backend defaults to (a fresh session's own model) — the
+   behaviour that existed before the setting.
+
+Consequences for an agent:
+
+- **Omit `model`** and the run takes the workspace default, exactly like the
+  board's button does. Only pin one when THIS run must differ.
+- A default that no longer resolves is **refused loudly** on both backends
+  (`unknown model`, or `session run failed: …`) — the launch never silently
+  retries on another model. The human fixes the default (Forget… in the launch
+  modal) or pins a model for the run.
+- Reads and writes go through `GET|POST /api/ideas/config`
+  (`parseSettingsBody`), whose `launchModelByWorkspace` field **replaces** the
+  whole map under the usual `expectedRevision` fence: send every workspace you
+  want to keep. A `null` value is refused — clearing means omitting the key.
+- It is a **profile preference**, so it does not travel with an exported board
+  (neither does `language` or `cardDensity`): the ledger document is unchanged,
+  and `import`/`export` round-trip nothing new because nothing new was added
+  to the ledger.
+
 ## Gotchas (Windows PowerShell, DSH host)
 
 - Prefer `curl.exe` with `--data @file` for JSON bodies: PowerShell 5.1

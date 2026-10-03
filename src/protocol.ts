@@ -1143,6 +1143,23 @@ export type IdeasLanguage = (typeof IDEAS_LANGUAGES)[number]
 export const WORKSPACE_SCOPE_MAX_LENGTH = 256
 
 /**
+ * Bound of a launch model target (`provider/model`, the task-board's own
+ * shape). Spelled here rather than in the route that happened to need it
+ * first, because it now guards TWO inputs: the model a launch request pins
+ * explicitly and the per-workspace default the Host falls back to (idea #107).
+ * One bound, so a hand-edited settings document can never store a target the
+ * launch route would refuse.
+ */
+export const IDEAS_LAUNCH_MODEL_MAX_LENGTH = 256
+
+/**
+ * How many workspaces may carry a default launch model. A board lives in a
+ * handful of workspaces and each entry is two short strings, so the cap is a
+ * backstop against a pathological document, not a budget a user ever meets.
+ */
+export const LAUNCH_MODEL_BY_WORKSPACE_MAX = 64
+
+/**
  * The permission a DIRECT launch — an idea with no runnable card, run in a
  * fresh session — starts that session at.
  *
@@ -1201,6 +1218,22 @@ export interface IdeasSettingsValue {
    * work. 0 turns the badge off entirely (see {@link STALE_AFTER_DAYS_RANGE}).
    */
   staleAfterDays: number
+  /**
+   * Default LAUNCH model per workspace, keyed by the stable workspace id:
+   * `{ "<workspaceId>": "provider/model" }` (idea #107).
+   *
+   * Deliberately a SETTING and never an idea field: the board's 2.5 s poll
+   * adopts whatever the Host serves, so a per-idea copy of this would be
+   * written back over the choice the human just made. It is also the only
+   * per-workspace thing this plugin stores, so it is one flat map rather than
+   * a model manager: one default, one workspace, no per-idea or per-tag
+   * override.
+   *
+   * The fallback order is the run's explicit choice, then this, then the
+   * session default (the behaviour that existed before the field did), so a
+   * workspace that carries none changes nothing at all.
+   */
+  launchModelByWorkspace: Record<string, string>
 }
 
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
@@ -1250,6 +1283,7 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
   directRunPermission: 'workspace-write',
   staleAfterDays: 30,
+  launchModelByWorkspace: {},
 }
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
@@ -1303,6 +1337,38 @@ export function clampStaleAfterDays(value: unknown): number {
   return Math.min(STALE_AFTER_DAYS_RANGE.max, Math.max(STALE_AFTER_DAYS_RANGE.min, Math.round(value)))
 }
 
+/**
+ * Sanitize the per-workspace default launch models into a bounded map of
+ * `workspaceId -> provider/model` (idea #107).
+ *
+ * Read policy, same as every other field: a non-object is no map at all, and
+ * inside a map a key that trims to empty, a value that is not a string and a
+ * target that trims to empty are DROPPED rather than refused — one malformed
+ * entry must not cost the human every other workspace's default. Both halves
+ * are bounded (a workspace id like {@link WORKSPACE_SCOPE_MAX_LENGTH}, a
+ * target like {@link IDEAS_LAUNCH_MODEL_MAX_LENGTH}) and the map itself is
+ * capped, so neither a hand-edited document nor a hand-crafted wire can grow
+ * the settings section without limit.
+ *
+ * An empty result is the honest representation of "no workspace has a
+ * default", which is what makes an untouched deployment behave exactly as it
+ * did before the field existed.
+ */
+export function sanitizeLaunchModelByWorkspace(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
+  const entries = Object.entries(raw as Record<string, unknown>)
+  for (let index = 0; index < entries.length && Object.keys(out).length < LAUNCH_MODEL_BY_WORKSPACE_MAX; index++) {
+    const [key, value] = entries[index] as [string, unknown]
+    if (typeof value !== 'string') continue
+    const workspaceId = key.trim().slice(0, WORKSPACE_SCOPE_MAX_LENGTH)
+    const target = value.trim().slice(0, IDEAS_LAUNCH_MODEL_MAX_LENGTH)
+    if (workspaceId === '' || target === '') continue
+    out[workspaceId] = target
+  }
+  return out
+}
+
 /** Unknown -> one of `allowed`, else the fallback (enum fields). */
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : fallback
@@ -1341,6 +1407,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
     directRunPermission: oneOf(row.directRunPermission, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission),
     staleAfterDays: clampStaleAfterDays(row.staleAfterDays),
+    launchModelByWorkspace: sanitizeLaunchModelByWorkspace(row.launchModelByWorkspace),
   }
 }
 
@@ -1349,7 +1416,7 @@ const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
   'language', 'openOrdering', 'runningFirst', 'columnMinWidth', 'columnMaxWidth',
-  'directRunPermission', 'staleAfterDays',
+  'directRunPermission', 'staleAfterDays', 'launchModelByWorkspace',
 ] as const
 
 /**
@@ -1398,6 +1465,22 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
     } else if (key === 'staleAfterDays') {
       if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
       patch.staleAfterDays = clampStaleAfterDays(field)
+    } else if (key === 'launchModelByWorkspace') {
+      // Write policy (stricter than the read): the value must be a plain
+      // object of real strings, and it REPLACES the whole map rather than
+      // merging into it. Both halves are deliberate — `null` is refused
+      // instead of "clearing", so clearing is the one honest way to spell it
+      // (send the map without the workspace, exactly what the panel does), and
+      // a whole-map replace is the only shape both settings generations can
+      // apply identically (the legacy namespace port shallow-merges a patch,
+      // so a merge would have to be re-implemented per host). The revision
+      // fence is what makes the replace safe: a client that read a stale map is
+      // refused rather than allowed to drop another workspace's default.
+      if (typeof field !== 'object' || field === null || Array.isArray(field)) return undefined
+      for (const entry of Object.values(field as Record<string, unknown>)) {
+        if (typeof entry !== 'string') return undefined
+      }
+      patch.launchModelByWorkspace = sanitizeLaunchModelByWorkspace(field)
     } else {
       patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
     }
@@ -1425,7 +1508,13 @@ export interface IdeasLaunchBody {
   /** Optional initiator label, accepted for envelope parity. */
   initiator?: string
   ideaId: string
-  /** `provider/model` target id; absent = the run keeps the session default. */
+  /**
+   * `provider/model` target id. Absent does NOT mean "no model": the Host
+   * falls back to the workspace's default launch model (idea #107) and then,
+   * for a workspace that carries none, to whatever the chosen backend defaults
+   * to — the behaviour that predates the field. The fallback is HOST-side, so
+   * the browser, an agent tool and a raw HTTP caller all get it.
+   */
   model?: string
 }
 

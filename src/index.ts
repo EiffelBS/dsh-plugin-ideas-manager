@@ -197,12 +197,15 @@ function applyImpl(ctx: Context, config?: Config): void {
     return () => { configPort = undefined }
   })
 
-  // The direct-launch permission, read at launch time (the port can appear
-  // after this line and never does on a Host without a settings service, where
-  // undefined leaves the fresh session at the Host's own default).
-  host.setRunPermission(() => {
+  // The launch-time settings reader: the direct-launch permission and the
+  // per-workspace default launch model are both read AT LAUNCH TIME, so a
+  // settings write takes effect on the next run with no restart. Late-bound
+  // (the port appears when ctx.inject fills the face) and total: a Host with no
+  // settings service yields undefined, which leaves every launch preference at
+  // its documented default — the behaviour before either option existed.
+  host.setSettingsReader(() => {
     try {
-      return configPort?.read().value.directRunPermission
+      return configPort?.read().value
     } catch {
       return undefined
     }

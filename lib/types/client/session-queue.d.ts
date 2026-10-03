@@ -347,6 +347,18 @@ export declare function currentSessionSelectionOf(controller: DshSessionsControl
  */
 export declare function matchSessionSelection(selection: ModelSelection | undefined, choices: readonly ModelChoice[]): ModelChoice | undefined;
 /**
+ * Match a stored `provider/model` launch target against the catalog choices,
+ * so a picker can preselect the option a run would use anyway.
+ *
+ * The inverse of {@link modelTargetIdOf}, and therefore as strict: the target
+ * must be a qualified `provider/model` and must exist in the catalog. A target
+ * the catalog does not know returns undefined rather than guessing — a model
+ * the deployment has dropped is exactly the case where the panel must show the
+ * stored id as it is (and where the launch will refuse loudly) instead of
+ * silently showing some other row.
+ */
+export declare function pickModelTarget(choices: readonly ModelChoice[], target: string | undefined): ModelChoice | undefined;
+/**
  * Defensively resolve the session launcher from a client context. Returns
  * undefined when the "sessions" service is absent or does not expose the
  * create/scope/sessionOf surface — callers then keep the manual Create.

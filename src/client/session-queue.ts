@@ -499,6 +499,27 @@ export function matchSessionSelection(selection: ModelSelection | undefined, cho
 }
 
 /**
+ * Match a stored `provider/model` launch target against the catalog choices,
+ * so a picker can preselect the option a run would use anyway.
+ *
+ * The inverse of {@link modelTargetIdOf}, and therefore as strict: the target
+ * must be a qualified `provider/model` and must exist in the catalog. A target
+ * the catalog does not know returns undefined rather than guessing — a model
+ * the deployment has dropped is exactly the case where the panel must show the
+ * stored id as it is (and where the launch will refuse loudly) instead of
+ * silently showing some other row.
+ */
+export function pickModelTarget(choices: readonly ModelChoice[], target: string | undefined): ModelChoice | undefined {
+  if (target === undefined) return undefined
+  const trimmed = target.trim()
+  const slash = trimmed.indexOf('/')
+  if (slash <= 0) return undefined
+  const provider = trimmed.slice(0, slash)
+  const model = trimmed.slice(slash + 1)
+  return choices.find(choice => choice.provider === provider && choice.model === model)
+}
+
+/**
  * Shared session mechanics of both analyst launches (capture and re-analyze):
  * create the fresh session in the workspace, optionally install the selected
  * model, then queue the prompt. The Agent scope is reached Host-adaptively:

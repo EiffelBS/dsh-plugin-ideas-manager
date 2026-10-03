@@ -10,6 +10,26 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **A workspace can carry its own launch model.** The launch dialog used to ask
+  which model every single run should use. Set one for a workspace and it stops
+  asking: the dialog just tells you which model the run will use, and your click
+  confirms.
+  - **Remember this model for {workspace}** is offered right where you make the
+    choice, in the launch dialog. From then on every idea launched in that
+    workspace runs on it.
+  - **Change…** brings the picker back over the remembered model, so one run can
+    use another model **without** changing what every later run will use.
+    **Save as the workspace default** is what makes a new pick stick.
+  - **Forget this model** removes it, and the dialog goes back to asking.
+  - **A workspace with no default behaves exactly as before**, and so does a
+    deployment whose settings are unavailable. Both ways of running an idea —
+    through the TaskBoard card and in a fresh session — use the same default.
+  - **A model that no longer exists is never quietly replaced.** It is named as
+    stored and the run is refused with the reason, so the fix is yours to make.
+  - It is a preference of the workspace, stored like your other panel options:
+    nothing is written onto the ideas, and it belongs to your DSH profile rather
+    than travelling with an exported board.
+
 - **Relate ideas to each other.** An idea can now carry **Related to** links
   ("this is adjacent to that, read the other one") and **Waits for** links
   ("this cannot land before that one"). The other card shows the same edge from

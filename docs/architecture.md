@@ -18,6 +18,7 @@ src/
                       #   (knows nothing about the document — host-ledger validates that)
   host-routes.ts      # state (+ list / summary / detail), idea?id=, action, launch, events
   host-settings.ts    # the fenced /api/ideas/config route (settings dual-path)
+                       #   + the per-workspace default launch model field (idea #107)
   taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb
   session-runner.ts   # direct-session backend: Host RPCs + the roster the settle reads
   delivery-note.ts    # last-assistant-message extraction + the card `executions` pointer
@@ -83,6 +84,10 @@ reads the roster (`session/list` → per-session `running` bit). A restarted Hos
 re-attaches from the persisted `running` + `runSessionId` pair, which is the
 whole reason that field exists. A settled `done` run opens the review gate on
 both backends, so the gate does not depend on the task-board plugin.
+
+The `model` those two paths take is resolved once, before the branch, from the
+fallback order (an explicit choice, then the workspace's default, then the
+backend's own default) — see *Default launch model per workspace* below.
 
 ### Known divergences, by design
 
@@ -956,6 +961,126 @@ reason that is not only performance: **both list views receive SCOPED rows**
 neither can resolve a `#N` on its own — an edge to a card outside the current
 filter would print a bare id. The board already holds the whole snapshot, and
 only the active tab is mounted, so handing the index down costs one pass.
+
+## Default launch model per workspace (idea #107)
+
+One `provider/model` per workspace, stored as a **display/launch preference**
+(`IdeasSettingsValue.launchModelByWorkspace`, a flat
+`workspaceId -> provider/model` map) and resolved **on the Host** at launch
+time. The value of the feature is a removed repetition, not a removed
+obstacle, so every decision below is deliberately the smallest one that cannot
+lie.
+
+### The fallback order, written down because both halves depend on it
+
+1. **The run's explicit choice.** What `POST /api/ideas/launch` pinned. A blank
+   string is NO choice, not "pin the empty string": `parseLaunchBody` already
+   drops it and `launchIdea` trims it again, so the order holds for a browser,
+   an agent tool and an in-process caller alike.
+2. **The workspace's default** — `IdeasHostService.workspaceLaunchModel`.
+3. **Whatever the chosen backend defaults to.** This is the pre-#107
+   behaviour, so a deployment that never used the feature posts exactly the
+   wire it posted before (`tests/idea-107-launch-model.test.ts` asserts the
+   bare `run`, not merely "no crash").
+
+### Resolved once, before the backend branch
+
+`launchIdea` computes the target inside the mirror chain, **before** choosing
+between the card and the session, and passes that one string to both:
+
+```ts
+const explicit = model?.trim()
+const target = explicit === undefined || explicit === '' ? this.workspaceLaunchModel(fresh) : explicit
+if (!viaCard) return await this.launchInSession(fresh, target)
+try { const taskId = await this.mirror!.launchTask(fresh, target) … }
+catch (error) { … return await this.launchInSession(fresh, target) }
+```
+
+This is the load-bearing part of the whole feature. The two backends take a
+model by completely different routes — a **model-only task patch** then `run`
+on the card, `selectModel` on a fresh session — and a fallback resolved inside
+either branch would be a fallback one backend silently does not honour. The
+third call site (the card-unavailable catch) matters for the same reason: a
+backend fallback must not change the model.
+
+### A dead model fails loudly, and never quietly retries
+
+A stored target that no longer resolves is **not** validated here. Both
+backends already refuse one, visibly — the task-board answers the patch with
+its own `unknown model`, the session backend answers `session run failed: …`
+off the rejected `selectModel` — and the launch route relays that sentence to
+the modal. Adding a pre-flight check, or retrying without the model, would
+turn an actionable refusal into a run on a model nobody chose. The only thing
+that was added is a test on both backends asserting no second attempt is made.
+
+### Where it is stored, and the two alternatives that were rejected
+
+- **Rejected: a field on `IdeaRecord`.** The board's background poll adopts
+  whatever the Host serves, so a per-idea copy would be written straight back
+  over the choice the human just made — the same reason `openOrdering` and the
+  multi-select are view state. It would also put a profile preference in the
+  portable ledger document.
+- **Rejected: a new route family, like the backup tab.** The setting needs the
+  revision fence both settings generations already provide, and it is one more
+  field on a value the config route already round-trips.
+- **Chosen: the settings document.** Consequence, stated because it is a real
+  trade-off: **the default does not travel with an exported board**, exactly
+  like `language`, `cardDensity` and every other panel option — those are
+  per-profile preferences, and the JSON document stays the ledger. `import`
+  and `export` therefore round-trip nothing new *because nothing new was added
+  to the ledger*, which is asserted rather than assumed.
+
+The schema field needed one build-level fix: `z.dict` types its result with
+cosmokit's `Dict`, a transitive package, so an inferred type naming it cannot
+be written to `lib/types` (TS2742 degrades it to a `.pnpm/…` path). The one
+leaking field is pinned (`launchModelByWorkspaceSchema: Schemastery<any, any>`)
+so the enclosing object's inferred type stays both precise and portable.
+
+### One map, replaced whole, fenced by the revision
+
+`parseSettingsBody` **replaces** the map instead of merging into it, and
+refuses `null` rather than reading it as "clear this one". Both halves are
+deliberate: the legacy namespace port applies a patch by shallow overwrite, so a
+merge would have to be re-implemented per host generation to keep the two
+behaving identically, and a whole-map replace is the one thing both can do
+unchanged. The revision fence is what makes it safe — a client holding a stale
+map is refused (409) rather than allowed to drop another workspace's default.
+The client always sends the map it holds (`withWorkspaceLaunchModel` /
+`withoutWorkspaceLaunchModel`, pure and unit-tested), so the replace is lossless
+for the only writer that exists.
+
+### The modal is the surface, and it asks nothing
+
+The rejected alternative is a settings row with its own workspace picker: it
+would make the launch modal the odd one out, and it would ask about models on a
+surface that has to guess which workspace it means. The launch modal is already
+the place the choice is made, and it is reachable from every tab.
+
+- **A default is NAMED, not picked.** The modal hides the picker and shows the
+  model, so the confirmation stays a confirmation.
+- **The request then pins nothing.** The modal deliberately sends `model:
+  undefined` rather than re-sending the id it just displayed: the Host resolves
+  the same default from the same document one step later, and re-sending would
+  claim a choice nobody made. An agent-launched run, or a run from a browser
+  that never opened the modal, therefore lands on an identical model.
+- **Change… defers the picker rather than deleting it**, preselected with the
+  current default, so one run can override the workspace without editing what
+  every later run uses.
+- **Forget is offered even without a model catalog.** It needs no picker, and a
+  default nobody can remove is a setting nobody can undo from the surface that
+  owns it.
+- A target the catalog does not know is displayed **as stored**. Showing some
+  other row would be a lie, and hiding it would make the run unexplainable.
+
+### What a workspace that no longer exists holds
+
+It keeps its default, and nothing prunes the map. The map is keyed by a stable
+workspace id, and a workspace the Host has forgotten is not a reason to forget
+a preference — re-creating it, or re-homing an idea back into it, restores the
+behaviour instead of silently running on something new. The only way the entry
+disappears is the **Forget** gesture. An idea in a workspace with no entry
+resolves to step 3, which is why deleting every idea of a workspace changes
+nothing about the setting.
 
 ## Card mirror
 

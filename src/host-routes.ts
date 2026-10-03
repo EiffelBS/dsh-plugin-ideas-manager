@@ -22,6 +22,7 @@ import {
   parseSettingsBody,
   toListSnapshot,
   IDEAS_API_PREFIX,
+  IDEAS_LAUNCH_MODEL_MAX_LENGTH,
   IDEAS_RESTORE_LIMIT,
   IDEAS_RESTORE_CONFLICT,
   IDEAS_SETTINGS_DEFAULTS,
@@ -33,8 +34,6 @@ import {
 const ACTION_LIMIT = 64 * 1024
 const IMPORT_LIMIT = 2 * 1024 * 1024
 const HEARTBEAT_MS = 15_000
-/** Launch model target cap: `provider/model`, the task-board's own shape. */
-const LAUNCH_MODEL_MAX_LENGTH = 256
 /** Cap of the snapshot-download route (a local file, read once per download). */
 const SNAPSHOT_CONTENT_LIMIT = 64 * 1024 * 1024
 
@@ -322,7 +321,10 @@ export function makeIdeasRoutes(
       if (body.byteLength > ACTION_LIMIT) return deny(413, 'body-too-large')
       const parsed = parseLaunchBody(body.value)
       if (parsed === undefined) return deny(400, 'invalid-launch')
-      if (parsed.model !== undefined && parsed.model.length > LAUNCH_MODEL_MAX_LENGTH) return deny(400, 'model-too-long')
+      // The SAME bound the stored per-workspace default is sanitized with
+      // (IDEAS_LAUNCH_MODEL_MAX_LENGTH): a model this route refuses can never
+      // be stored as a default, and vice versa.
+      if (parsed.model !== undefined && parsed.model.length > IDEAS_LAUNCH_MODEL_MAX_LENGTH) return deny(400, 'model-too-long')
       try {
         const result = await service.launchIdea(parsed.ideaId, parsed.model, parsed.requestId)
         writeJson(res, 200, result, { 'cache-control': 'no-store' })

@@ -66,6 +66,23 @@ interface LegacySettingsFace {
 }
 
 /**
+ * One default launch model per workspace (idea #107), keyed by the stable
+ * workspace id — the schema half of the setting `IdeasHostService` resolves a
+ * launch against.
+ *
+ * Annotated rather than inferred, and that is a BUILD constraint, not
+ * decoration: `z.dict` types its result with cosmokit's `Dict`, a TRANSITIVE
+ * package, so an inferred type naming it cannot be written to `lib/types`
+ * without degrading into a `.pnpm/cosmokit@…` path (TS2742). Pinning the one
+ * leaking field keeps the enclosing object's inferred type precise AND
+ * portable. The shape is not lost by the annotation — it is the same map
+ * `sanitizeLaunchModelByWorkspace` produces on every read, and the bounds
+ * live there (protocol.ts) rather than in a schema range, which would reject
+ * a hand-edited section at REGISTRATION and brick the namespace.
+ */
+const launchModelByWorkspaceSchema: Schemastery<any, any> = z.dict(z.string())
+
+/**
  * Display-settings schema: permissive types (clamped/sanitized at every
  * boundary — a ranged schema would reject a bad stored section AT
  * REGISTRATION and brick the namespace; see sanitizeSettings).
@@ -84,6 +101,9 @@ export const IdeasSettingsSchema = z.object({
   runningFirst: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.runningFirst),
   directRunPermission: z.string().default(IDEAS_SETTINGS_DEFAULTS.directRunPermission),
   staleAfterDays: z.number().default(IDEAS_SETTINGS_DEFAULTS.staleAfterDays),
+  // Idea #107: one default launch model per workspace, keyed by the stable
+  // workspace id (see launchModelByWorkspaceSchema above).
+  launchModelByWorkspace: launchModelByWorkspaceSchema.default(IDEAS_SETTINGS_DEFAULTS.launchModelByWorkspace),
 })
 
 /**
@@ -166,6 +186,13 @@ export class IdeasSettingsStore implements IdeasConfigPort {
     }
     // The route parser already clamped every present field; sanitize the merge
     // anyway so a direct caller can never persist an illegal value.
+    //
+    // The merge is deliberately SHALLOW, and `launchModelByWorkspace` (idea
+    // #107) depends on it: a patch carrying the map replaces it whole rather
+    // than merging entry by entry. That is the one semantic the legacy
+    // namespace port can also honour (its own patch application is a shallow
+    // overwrite), so both host generations behave identically, and the
+    // revision fence above is what makes a whole-map replace safe.
     const value = sanitizeSettings({ ...IDEAS_SETTINGS_DEFAULTS, ...(current?.value ?? {}), ...patch })
     const revision = (currentRevision ?? 0) + 1
     this.persist({ version: STORE_VERSION, revision, value })

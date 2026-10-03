@@ -504,7 +504,7 @@ function buildLaunchTool(host: IdeasToolHost): IdeasToolDefinition {
       type: 'object',
       properties: {
         ideaId: { type: 'string', description: 'Idea id to run.' },
-        model: { type: 'string', description: 'Model target as "provider/model" (omit to keep the session default).' },
+        model: { type: 'string', description: 'Model target as "provider/model" for THIS run. Omit it and the run takes the workspace\'s default launch model, then the session default — the same order the board itself uses.' },
       },
       required: ['ideaId'],
     },

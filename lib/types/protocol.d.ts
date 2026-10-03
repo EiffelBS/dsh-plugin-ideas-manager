@@ -501,6 +501,21 @@ export type IdeasLanguage = (typeof IDEAS_LANGUAGES)[number];
 /** Bound of the remembered workspace scope (aligned on the envelope ids). */
 export declare const WORKSPACE_SCOPE_MAX_LENGTH = 256;
 /**
+ * Bound of a launch model target (`provider/model`, the task-board's own
+ * shape). Spelled here rather than in the route that happened to need it
+ * first, because it now guards TWO inputs: the model a launch request pins
+ * explicitly and the per-workspace default the Host falls back to (idea #107).
+ * One bound, so a hand-edited settings document can never store a target the
+ * launch route would refuse.
+ */
+export declare const IDEAS_LAUNCH_MODEL_MAX_LENGTH = 256;
+/**
+ * How many workspaces may carry a default launch model. A board lives in a
+ * handful of workspaces and each entry is two short strings, so the cap is a
+ * backstop against a pathological document, not a budget a user ever meets.
+ */
+export declare const LAUNCH_MODEL_BY_WORKSPACE_MAX = 64;
+/**
  * The permission a DIRECT launch — an idea with no runnable card, run in a
  * fresh session — starts that session at.
  *
@@ -558,6 +573,22 @@ export interface IdeasSettingsValue {
      * work. 0 turns the badge off entirely (see {@link STALE_AFTER_DAYS_RANGE}).
      */
     staleAfterDays: number;
+    /**
+     * Default LAUNCH model per workspace, keyed by the stable workspace id:
+     * `{ "<workspaceId>": "provider/model" }` (idea #107).
+     *
+     * Deliberately a SETTING and never an idea field: the board's 2.5 s poll
+     * adopts whatever the Host serves, so a per-idea copy of this would be
+     * written back over the choice the human just made. It is also the only
+     * per-workspace thing this plugin stores, so it is one flat map rather than
+     * a model manager: one default, one workspace, no per-idea or per-tag
+     * override.
+     *
+     * The fallback order is the run's explicit choice, then this, then the
+     * session default (the behaviour that existed before the field did), so a
+     * workspace that carries none changes nothing at all.
+     */
+    launchModelByWorkspace: Record<string, string>;
 }
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
 export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;
@@ -628,6 +659,24 @@ export declare function clampColumnMaxWidth(value: unknown): number;
  */
 export declare function clampStaleAfterDays(value: unknown): number;
 /**
+ * Sanitize the per-workspace default launch models into a bounded map of
+ * `workspaceId -> provider/model` (idea #107).
+ *
+ * Read policy, same as every other field: a non-object is no map at all, and
+ * inside a map a key that trims to empty, a value that is not a string and a
+ * target that trims to empty are DROPPED rather than refused — one malformed
+ * entry must not cost the human every other workspace's default. Both halves
+ * are bounded (a workspace id like {@link WORKSPACE_SCOPE_MAX_LENGTH}, a
+ * target like {@link IDEAS_LAUNCH_MODEL_MAX_LENGTH}) and the map itself is
+ * capped, so neither a hand-edited document nor a hand-crafted wire can grow
+ * the settings section without limit.
+ *
+ * An empty result is the honest representation of "no workspace has a
+ * default", which is what makes an untouched deployment behave exactly as it
+ * did before the field existed.
+ */
+export declare function sanitizeLaunchModelByWorkspace(raw: unknown): Record<string, string>;
+/**
  * Sanitize a raw section into a COMPLETE legal value: both read paths (host
  * viewOf, client loadConfig) run every field through its guard, so a
  * hand-edited document or a corrupt wire can never widen what the UI renders.
@@ -665,7 +714,13 @@ export interface IdeasLaunchBody {
     /** Optional initiator label, accepted for envelope parity. */
     initiator?: string;
     ideaId: string;
-    /** `provider/model` target id; absent = the run keeps the session default. */
+    /**
+     * `provider/model` target id. Absent does NOT mean "no model": the Host
+     * falls back to the workspace's default launch model (idea #107) and then,
+     * for a workspace that carries none, to whatever the chosen backend defaults
+     * to — the behaviour that predates the field. The fallback is HOST-side, so
+     * the browser, an agent tool and a raw HTTP caller all get it.
+     */
     model?: string;
 }
 /**

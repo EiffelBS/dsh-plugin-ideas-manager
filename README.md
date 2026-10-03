@@ -114,6 +114,8 @@ have to hunt the card back in the Overview to start a run.
 
 1. Click **Launch execution**, pick a model (or keep the session default) and
    confirm. DSH tells you which of the two ways it will run before you commit.
+   When this workspace already has a **default launch model**, the modal skips
+   the question and just names the model the run will use.
 2. **With the TaskBoard plugin installed**, the run goes through that idea's
    board card. **Without it**, DSH opens a brand-new chat session in the idea's
    workspace instead. Either way you get a real execution, and the board needs no
@@ -138,6 +140,26 @@ have to hunt the card back in the Overview to start a run.
 
 A run takes a while, and the board reflects the result within roughly half a
 minute of the session finishing.
+
+### A workspace can carry its own launch model
+Set one once and the launch modal stops asking, on every later run:
+
+- Pick the model you want in the launch modal, then press **Remember this model
+  for {workspace}**. From then on every idea launched in that workspace runs on
+  it, and the modal simply tells you which one.
+- **Change…** brings the picker back over the remembered model. Choosing another
+  one and launching affects **that run only**, so a single idea never has to
+  borrow — or break — the workspace's default; **Save as the workspace default**
+  is what makes a new pick stick.
+- **Forget this model** removes it, and the modal goes back to asking. An
+  untouched workspace behaves exactly as it always did.
+- **A model that no longer resolves is never quietly replaced.** It is named as
+  stored, and the run is refused with the reason — the same loud refusal a
+  rejected model has always given, so the fix is yours to make rather than a
+  surprise the board decided for you.
+- It is a preference of the workspace, stored like your other panel options:
+  nothing is written onto the ideas themselves, and it belongs to your DSH
+  profile rather than travelling with an exported board.
 
 > A direct session inherits your normal DSH permissions. TaskBoard's own run
 > options (such as a confirmation prompt) are not applied to it.
@@ -489,7 +511,7 @@ read the state and write ideas without any UI:
 | `GET /api/ideas/state?view=stats` | Bounded backlog health: one aggregate, optionally scoped to `workspaceId` |
 | `GET /api/ideas/idea?id=<id>` | One complete idea |
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `merge`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
-| `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` |
+| `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` — omit `model` and the run takes the workspace's default launch model, then the session default |
 | `GET /api/ideas/events` | Server-sent change notifications |
 | `GET /api/ideas/backup` | The snapshot folder: `{ ok, dir, retention, snapshots[], running }` |
 | `POST /api/ideas/backup` | Take a snapshot now: `{ reason?: 'manual' \| 'export' }` |

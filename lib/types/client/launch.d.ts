@@ -79,6 +79,37 @@ export interface LaunchBackend {
  */
 export declare function modelTargetIdOf(model: ModelChoice | undefined): string | undefined;
 /**
+ * The default launch model this workspace carries (idea #107), or undefined
+ * when it carries none.
+ *
+ * The client twin of the Host's own rule (`IdeasHostService.workspaceLaunchModel`)
+ * and deliberately the same shape, so the modal can say what the run will use
+ * without a second source of truth. It is a DISPLAY of the setting, not the
+ * decision: the fallback is resolved Host-side at launch time, so a browser
+ * that never rendered the modal gets exactly the same run.
+ */
+export declare function launchModelForWorkspace(models: Readonly<Record<string, string>> | undefined, workspaceId: string | undefined): string | undefined;
+/**
+ * The next map with `workspaceId`'s default SET to `target` — the "remember
+ * this model for this workspace" gesture. A pure read-modify-write over the map
+ * the client already holds, because the settings write replaces the map whole
+ * (see parseSettingsBody): the client must send every other workspace's
+ * default back, not just its own.
+ *
+ * Keys and targets are TRIMMED, exactly as `sanitizeLaunchModelByWorkspace`
+ * trims them on the way in: the map this plugin writes and the map the Host
+ * reads must agree on the spelling of a workspace id, or a stored default would
+ * silently miss.
+ */
+export declare function withWorkspaceLaunchModel(models: Readonly<Record<string, string>> | undefined, workspaceId: string, target: string): Record<string, string>;
+/**
+ * The next map with `workspaceId`'s default REMOVED — what "forget this
+ * workspace default" writes. Removing the last entry leaves an empty map
+ * rather than an absent one: the setting is always spelled, and a board with
+ * no default anywhere is exactly the board that predates #107.
+ */
+export declare function withoutWorkspaceLaunchModel(models: Readonly<Record<string, string>> | undefined, workspaceId: string): Record<string, string>;
+/**
  * The Host backend: the HOST resolves which execution actually runs (mirrored
  * card, or fresh direct session), and this side only asks. Rejects with the
  * chosen backend's own message (`task is already running or missing`,

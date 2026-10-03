@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createIdeasConfigPort, IDEAS_SETTINGS_NAMESPACE } from '../src/host-settings.ts'
+import { createIdeasConfigPort, IdeasSettingsSchema, IDEAS_SETTINGS_NAMESPACE } from '../src/host-settings.ts'
 import { IDEAS_SETTINGS_DEFAULTS } from '../src/protocol.ts'
 
 let dir = ''
@@ -168,6 +168,48 @@ describe('0.1.7-like host (SettingsForms, no register)', () => {
     const after = port?.read()
     expect(after?.revision).toBe(2)
     expect(after?.value.tagRows).toBe(4)
+  })
+})
+
+describe('the per-workspace default launch model on BOTH generations (idea #107)', () => {
+  // The whole point of the dual-path: one wire, two hosts. The map is stored
+  // and read back IDENTICALLY through the legacy namespace and through the
+  // plugin-owned document, so a board behaves the same whichever Host serves it.
+
+  it('round-trips through the legacy namespace port', async () => {
+    const file = scratch()
+    const stored = { ...IDEAS_SETTINGS_DEFAULTS, launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' } }
+    const host = legacyHost({ ns: IDEAS_SETTINGS_NAMESPACE, value: stored, revision: 4 })
+
+    const port = createIdeasConfigPort(host.settings, { file })
+    expect(port?.read().value.launchModelByWorkspace).toEqual({ ws1: 'deepseek/deepseek-chat' })
+    await port?.write({ launchModelByWorkspace: { ws2: 'p/two' } }, 4)
+    expect(host.updateCalls).toEqual([
+      { ns: 'ideas', patch: { launchModelByWorkspace: { ws2: 'p/two' } }, expectedRevision: 4 },
+    ])
+    // Still no plugin-owned document on this generation.
+    expect(existsSync(file)).toBe(false)
+  })
+
+  it('round-trips through the plugin-owned document port', async () => {
+    const file = scratch()
+    const port = createIdeasConfigPort(refactorHost().settings, { file })
+
+    const written = await port?.write({ launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' } }, undefined)
+    expect(written?.value.launchModelByWorkspace).toEqual({ ws1: 'deepseek/deepseek-chat' })
+    expect(port?.read().value.launchModelByWorkspace).toEqual({ ws1: 'deepseek/deepseek-chat' })
+  })
+
+  it('resolves the schema the legacy host validates against (a dict, defaulted empty)', () => {
+    // A real host runs this schema over the stored section. The field has to
+    // survive that: an empty section defaults to no default at all, and a stored
+    // map comes back as the same map (never a stringified or nested one).
+    expect(IdeasSettingsSchema({} as never).launchModelByWorkspace).toEqual({})
+    const resolved = IdeasSettingsSchema({ launchModelByWorkspace: { ws1: 'p/m' } } as never)
+    expect(resolved.launchModelByWorkspace).toEqual({ ws1: 'p/m' })
+    // Every other field is still spelled by its default: the dict did not
+    // disturb the object schema around it.
+    expect(resolved.tagRows).toBe(IDEAS_SETTINGS_DEFAULTS.tagRows)
   })
 })
 

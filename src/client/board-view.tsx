@@ -27,8 +27,8 @@ import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import type { AiCaptureInput, FindSimilarInput, ModelChoice, ReanalyzeInput, SessionLauncher } from './session-queue.ts'
-import { matchSessionSelection } from './session-queue.ts'
-import { canLaunch, classifyLaunchRefusal, modelTargetIdOf } from './launch.ts'
+import { matchSessionSelection, pickModelTarget } from './session-queue.ts'
+import { canLaunch, classifyLaunchRefusal, launchModelForWorkspace, modelTargetIdOf, withWorkspaceLaunchModel, withoutWorkspaceLaunchModel } from './launch.ts'
 import {
   buildFindSimilarInput,
   canFindSimilar,
@@ -297,8 +297,14 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly RankableI
  *  preselected with the CURRENT host session's model (an untouched picker
  *  matches the session — never the catalog's first row); '' means no model is
  *  forced (the analyst session keeps its own default). Used by both the
- *  capture modal and the re-analyze confirm modal. */
-function useAnalystModelPicker(launcher: SessionLauncher | undefined): {
+ *  capture modal and the re-analyze confirm modal.
+ *
+ *  `initialTarget` (a stored `provider/model`, idea #107) OUTRANKS the session
+ *  model when the launch modal reveals the picker over a workspace default: the
+ *  run would use that model anyway, so showing it selected is honest, and the
+ *  picker then reads as "the current default, which you may change". Held in a
+ *  ref so a later settings write cannot restart the catalog load. */
+function useAnalystModelPicker(launcher: SessionLauncher | undefined, initialTarget?: string): {
   modelChoices: ModelChoice[]
   modelProviders: string[]
   filteredModelChoices: ModelChoice[]
@@ -314,12 +320,21 @@ function useAnalystModelPicker(launcher: SessionLauncher | undefined): {
   const [selProvider, setSelProvider] = useState('')
   const [modelQuery, setModelQuery] = useState('')
   const [selModelKey, setSelModelKey] = useState('')
+  const initialTargetRef = useRef(initialTarget)
   useEffect(() => {
     let cancelled = false
     if (launcher === undefined) return
     void launcher.listModels().then(choices => {
       if (cancelled) return
       setModelChoices(choices)
+      // A workspace default wins over the session's own model (idea #107): it
+      // is the choice this launch would make anyway.
+      const preset = pickModelTarget(choices, initialTargetRef.current)
+      if (preset !== undefined) {
+        setSelProvider(preset.provider)
+        setSelModelKey(preset.label)
+        return
+      }
       // Preselect the CURRENT host session's model when the catalog knows it
       // (see session-queue matchSessionSelection): never roll to the first
       // row — that roll was the cost surprise. Unknown or absent selection
@@ -1233,6 +1248,21 @@ function SimilarModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
  * affordance for one). So the modal does not relay the Host's English sentence
  * bare: it names the card, offers the redirect to the board panel with the
  * filter already set on the idea title, and keeps the raw text for diagnosis.
+ *
+ * The workspace's DEFAULT LAUNCH MODEL (idea #107) is what makes this modal
+ * stop asking: a workspace that carries one shows WHICH model the run will use
+ * instead of the picker, with the two gestures that can change or forget it.
+ * Two decisions are worth stating:
+ *
+ *  - **The default lives in the settings document, not on the idea.** The board
+ *    adopts whatever the Host serves on its 2.5 s poll, so a per-idea copy
+ *    would be written straight back over the choice just made.
+ *  - **The picker is not deleted, it is deferred.** `Change…` reveals it
+ *    preselected with the current default, so a single run can still override
+ *    the workspace (step 1 of the fallback order) without touching what every
+ *    later run will use. Nothing here decides anything: the Host resolves the
+ *    same order at launch time, so a browser that never opened this modal gets
+ *    the identical run.
  */
 function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   client: IdeasClient
@@ -1243,10 +1273,50 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   onLaunch: (idea: ReanalyzeSource, model: ModelChoice | undefined) => Promise<void>
   onClose: () => void
 }) {
-  const picker = useAnalystModelPicker(client.sessionLauncher)
+  // The workspace's default launch model (idea #107). Absent = the board asks,
+  // exactly as it always did; present = the modal NAMES the model instead of
+  // asking, and `changingDefault` is what reveals the picker over it.
+  const workspaceId = idea.workspaceId ?? ''
+  const storedModels = client.config.value.launchModelByWorkspace
+  const workspaceDefault = launchModelForWorkspace(storedModels, workspaceId)
+  const [changingDefault, setChangingDefault] = useState(false)
+  const picker = useAnalystModelPicker(client.sessionLauncher, workspaceDefault)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [copied, setCopied] = useState(false)
+  // The stored default shown by name. The catalog label when it knows the
+  // model, and the raw `provider/model` when it does not — a model the
+  // deployment has dropped is named as it is rather than hidden, and the
+  // launch itself will refuse loudly rather than quietly run on another one.
+  const defaultLabel = workspaceDefault === undefined
+    ? undefined
+    : pickModelTarget(picker.modelChoices, workspaceDefault)?.label ?? workspaceDefault
+  const pickedTarget = modelTargetIdOf(picker.selectedModel)
+  const rememberDefault = (): Promise<void> => {
+    const target = modelTargetIdOf(picker.selectedModel)
+    if (target === undefined) return Promise.resolve()
+    return client.saveConfig({
+      launchModelByWorkspace: withWorkspaceLaunchModel(storedModels, workspaceId, target),
+    })
+  }
+  const forgetDefault = (): void => {
+    setChangingDefault(false)
+    void client.saveConfig({
+      launchModelByWorkspace: withoutWorkspaceLaunchModel(storedModels, workspaceId),
+    })
+  }
+  // Revealing the picker over a default PRESELECTS it, whenever the default
+  // became known after the catalog was read (a modal opened while the settings
+  // load was still in flight is the real case). Keyed on the catalog reference,
+  // so it never fights a selection the human is making: picking another row
+  // changes none of these.
+  useEffect(() => {
+    if (!changingDefault || workspaceDefault === undefined) return
+    const preset = pickModelTarget(picker.modelChoices, workspaceDefault)
+    if (preset === undefined) return
+    picker.setSelProvider(preset.provider)
+    picker.setSelModelKey(preset.label)
+  }, [changingDefault, workspaceDefault, picker.modelChoices])
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
@@ -1260,7 +1330,14 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   const start = (): void => {
     setPending(true)
     setError(undefined)
-    onLaunch(idea, picker.selectedModel).catch((launchError: unknown) => {
+    // The request pins a model ONLY when the human was actually asked for one
+    // (idea #107). With the workspace default on screen the picker is hidden,
+    // and re-sending that same id would claim a choice nobody made — the Host
+    // resolves the very same default, from the very same document, one step
+    // later. It is also why a run launched by an agent, or by a browser that
+    // never opened this modal, lands on an identical model.
+    const chosen = workspaceDefault !== undefined && !changingDefault ? undefined : picker.selectedModel
+    onLaunch(idea, chosen).catch((launchError: unknown) => {
       setPending(false)
       setError(launchError instanceof Error ? launchError.message : String(launchError))
     })
@@ -1289,7 +1366,94 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             <div className={classes.fieldHint}>{t('launch.sessionHint')}</div>
           </div>
         )}
-        {picker.modelChoices.length > 0 && <ModelPickerField picker={picker} disabled={pending} />}
+        {picker.modelChoices.length > 0 && (workspaceDefault === undefined || changingDefault)
+          ? <ModelPickerField picker={picker} disabled={pending} />
+          : null}
+        {/* The remembered default (idea #107). With no catalog the picker is
+            hidden anyway, so this stays visible: the run's model is worth
+            naming even where the panel cannot offer the alternatives. */}
+        {workspaceDefault !== undefined && !changingDefault && (
+          <div className={classes.field}>
+            <span className={classes.fieldLabel}>{t('launch.defaultModel')}</span>
+            <div className={classes.fieldHint} data-dsh-ideas-launch-default="">
+              {defaultLabel}
+            </div>
+            <div className={classes.fieldHint}>{t('launch.defaultHint')}</div>
+            {/* Forget is offered even without a catalog: it needs no picker, and
+                a default nobody can remove is a setting nobody can undo from
+                the surface that owns it. */}
+            <div className={classes.defaultModelActions}>
+              {picker.modelChoices.length > 0 && (
+                <button
+                  type="button"
+                  className={classes.ghostButton}
+                  disabled={pending || client.configPending}
+                  data-dsh-ideas-change-default=""
+                  onClick={() => { setChangingDefault(true) }}
+                >
+                  {t('launch.changeDefault')}
+                </button>
+              )}
+              <button
+                type="button"
+                className={classes.ghostButton}
+                disabled={pending || client.configPending || !client.config.available}
+                data-dsh-ideas-forget-default=""
+                onClick={forgetDefault}
+              >
+                {t('launch.forgetDefault')}
+              </button>
+            </div>
+            {/* Forgetting is a real write; its failure is shown here rather
+                than swallowed, exactly like every other settings row. */}
+            {client.configError !== undefined && (
+              <div className={classes.error}>{`${t('settings.saveFailed')}${client.configError}`}</div>
+            )}
+          </div>
+        )}
+        {/* Setting the default is a gesture of its own, next to the pick it
+            acts on: remembering it needs no launch, and it is the only way to
+            write the map the Host reads. */}
+        {workspaceDefault === undefined && pickedTarget !== undefined && (
+          <div className={classes.field}>
+            <div className={classes.defaultModelActions}>
+              <button
+                type="button"
+                className={classes.ghostButton}
+                disabled={pending || client.configPending || !client.config.available}
+                data-dsh-ideas-remember-default=""
+                onClick={() => { void rememberDefault() }}
+              >
+                {t('launch.rememberDefault', { workspace: workspaceTitle })}
+              </button>
+            </div>
+          </div>
+        )}
+        {changingDefault && (
+          <div className={classes.field}>
+            <div className={classes.defaultModelActions}>
+              <button
+                type="button"
+                className={classes.ghostButton}
+                disabled={pending || client.configPending || !client.config.available || pickedTarget === undefined || pickedTarget === workspaceDefault}
+                data-dsh-ideas-save-default=""
+                onClick={() => {
+                  // Collapse only on a save that LANDED: a refusal keeps the
+                  // picker open with the reason beside the choice being edited,
+                  // so the author can pick again instead of re-opening it.
+                  void rememberDefault().then(() => {
+                    if (client.configError === undefined) setChangingDefault(false)
+                  })
+                }}
+              >
+                {t('launch.saveDefault')}
+              </button>
+            </div>
+            {client.configError !== undefined && (
+              <div className={classes.error}>{`${t('settings.saveFailed')}${client.configError}`}</div>
+            )}
+          </div>
+        )}
         {refusal?.kind === 'plain' && <div className={classes.error}>{refusal.message}</div>}
         {refusal?.kind === 'permission' && (
           <div className={classes.launchGate} data-dsh-ideas-launch-gate="">

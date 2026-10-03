@@ -351,6 +351,16 @@ body[data-ds-dark-theme] {
   gap: 8px;
 }
 
+/* The workspace default launch model's own row of controls (idea #107). Same
+   shape as the gate actions, its own name: the launch modal is the one surface
+   that both SHOWS a stored preference and edits it. */
+.dsh-ideas-default-model-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
 /* --- columns --- */
 
 .dsh-ideas-columns {
@@ -2433,6 +2443,7 @@ export const classes = {
   focusNote: 'dsh-ideas-focus-note',
   launchGate: 'dsh-ideas-launch-gate',
   launchGateActions: 'dsh-ideas-launch-gate-actions',
+  defaultModelActions: 'dsh-ideas-default-model-actions',
   columns: 'dsh-ideas-columns',
   column: 'dsh-ideas-column',
   columnHeader: 'dsh-ideas-column-header',
