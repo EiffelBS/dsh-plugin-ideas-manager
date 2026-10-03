@@ -38,6 +38,13 @@ TaskBoard: **zero hard dependency** on it.
 Open · Under review · Archived · Declined.
 - **Drag & drop** moves cards between columns and reorders them; the columns
   auto-scroll when you drag toward an edge.
+- A **long column keeps up**: once a column holds a few hundred ideas the board
+  draws only the cards you can see and leaves the rest behind its scrollbar.
+  Scrolling, dragging and multi-select keep working on the **whole** column — you
+  can still drop a card before one you have scrolled past, and a shift-click
+  still covers every row the filter shows, drawn or not. The number in the column
+  header is always the size of the column, and a column past **300** ideas says
+  so above the list.
 - **Search** and a **conjunctive tag filter** narrow the whole board — the Overview columns, the Priorities ranking and the Delivered log all share both filters. The **Health** tab is the exception: it is one figure per question, not a list, so it has nothing to narrow and says which workspace it covers.
 - Click a card title or its description to open the **editor** (raw text or
   rendered markdown). It edits the whole body, fetched on demand, and is titled

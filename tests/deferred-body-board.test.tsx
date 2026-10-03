@@ -126,12 +126,14 @@ function mountedIds(): string[] {
 }
 
 /** Card wrappers of the first (open) column, in DOM order. The quick-add
- *  button sits above them, so filter on the idea attribute. */
+ *  button sits above them and, since idea #108, the cards live inside the
+ *  column's scrollable sizer - so this walks the subtree and keeps the wrappers,
+ *  which is what the DOM-reuse assertion is actually about. */
 function openColumnWrappers(): HTMLElement[] {
   const column = host.querySelectorAll('[data-dsh-column-scroll]')[0]!
-  return Array.from(column.children).filter(
-    (el): el is HTMLElement => el instanceof HTMLElement && el.hasAttribute('data-dsh-idea-id'),
-  )
+  return Array.from(column.querySelectorAll('[data-dsh-idea-id]')).filter(
+    el => el.classList.contains('dsh-ideas-card-wrapper'),
+  ) as HTMLElement[]
 }
 
 /** Set an input through the prototype setter (bypasses the React value

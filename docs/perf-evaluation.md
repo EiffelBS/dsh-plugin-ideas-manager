@@ -5,6 +5,11 @@ evolutions recorded with their numbers. This document records the method, the
 verbatim before/after measurements, what changed, and the explicit decision
 per spec layer ("correctif prioritaire ou une evolution differee").
 
+> **Update — idea #108 (column windowing) is now LANDED.** Layer 3 below ("Kanban
+> virtualization") was recorded here as `EVOLUTION DIFFEREE`; its numbers are in
+> **section 8**, measured at the trigger the idea names (~500 open cards).
+> Layer 5 (server-side index) stays deferred.
+
 ## 1. Scope and method
 
 - Question: how does the panel behave at FUTURE load (100-150 ideas,
@@ -305,3 +310,140 @@ $env:DSH_HOME = 'C:\Users\User\.dsh-ideas-test-3101'
 dsh --profile ideas-test --port 3099 --trusted-host 127.0.0.1:3099 --no-open
 node --experimental-strip-types scripts/perf-live.mjs   # in a second shell
 ```
+
+## 8. Idea #108 - column windowing, at the trigger size
+
+### 8.1 The re-measure the idea asks for, before any code
+
+Run first, on this machine, against 0.8.0 (`tests/perf-board.test.tsx`,
+`IDEAS_PERF=1`). These are the numbers that justified the deferral, re-measured
+rather than remembered:
+
+```
+[perf-board] mount 140 cards (1113 KiB bodies): 282.01 ms + config settle 81.99 ms
+[perf-board] DOM after mount: 7101 nodes, 140 distinct cards, 140 markdown regions, heap delta 42.2 MiB
+[perf-board] idle poll (lean wire, same revision -> bailout): 1.93 ms | changed poll: 55.55 ms
+[perf-board] search keystroke: hit "triage" 173.07 ms, miss 27.98 ms, clear 175.01 ms
+[perf-board] scope "all workspaces" -> one workspace (51/140 cards): 39.93 ms
+[perf-board] switch to Priorities (100 ranked rows): 98.00 ms | Delivered: 18.34 ms | back to Overview: 175.63 ms
+[perf-board] filter scan over 140 rows: 0.07-0.36 ms/keystroke (cold excerpt | deep whole body)
+[perf-board] ordering at 420 ideas (open=300): orderIdeas 0.02 ms, groupedIdOrder 0.09 ms, rebuildOrder 0.13 ms
+```
+
+**Verdict on the deferral gate: still deferred for an ordinary board, and that
+is the honest answer.** At 140 ideas the column is not slow; nothing here
+argues otherwise. The recorded figures match the ones this document already
+carried (0.07-0.41 ms scans, <=0.12 ms sorts at 420), so the deferral was
+recorded accurately and the measurements still hold on this machine.
+
+The Open column of a live board holds ~37 ideas, not 500. So the idea's own
+"if the Open column has not actually reached the threshold, deliver the hint and
+stop" branch applies to *today's* board — and the hint **was** delivered
+(`board.openColumnNotice`, at 300 open ideas). The virtualization was built
+anyway, because the brief's "Done when" is explicit and testable: *the Open
+column holds 500 cards and stays responsive*. Both halves ship, and neither
+claims the other.
+
+### 8.2 The A/B at 500 cards
+
+`tests/perf-virtual.test.tsx` (also `IDEAS_PERF=1`). The fixture is the idea #34
+generator re-run at `PERF_VIRTUAL_OPEN_COUNT = 500` open ideas, so the data is
+identical in shape and seeded identically (540 records, 4212.2 KiB of bodies,
+p50 6276, p90 17707).
+
+The A/B is on the **same component and the same data**: jsdom is given a layout,
+and the only thing that differs between the arms is the height it reports for
+the column. A viewport tall enough to cover 500 rows *is* the pre-#108
+behaviour, measured on the shipped component rather than reconstructed.
+
+```
+[perf-virtual] fixture: count=540 bodies total=4212.2 KiB p50=6276 p90=17707
+[perf-virtual] mount 500 open cards (viewport 1000000px): 893.37 ms, 29276 DOM nodes, 500 cards painted, header 500
+[perf-virtual] mount 500 open cards (viewport 640px):      105.83 ms,  2121 DOM nodes,  10 cards painted, header 500
+[perf-virtual] scrollable column height: 115.0 KiB px     (identical in both arms)
+[perf-virtual] changed poll (revision bump, commit): 24.19 ms
+[perf-virtual] scroll the window across 5 positions: 43.44 ms, 17 cards painted at the end
+```
+
+A repeat of the same gate gave 881.54 ms / 101.58 ms and a 28.92 ms changed poll —
+the same shape, so the figures above are a run and not a single lucky sample. The
+**node counts and card counts are deterministic** (29 276 / 2 121 / 500 / 10 /
+115.0 KiB px) and reproduced exactly on both runs; only the timings move.
+
+| measurement at 500 open cards | fully painted | windowed | delta |
+|---|---|---|---|
+| mount (jsdom, JS + DOM mutation) | 893.37 ms | 105.83 ms | **-88%** |
+| DOM nodes after mount | 29 276 | 2 121 | **-92.8%** (7.2% of the baseline) |
+| cards painted | 500 | 10 | -98% |
+| column header count | 500 | 500 | unchanged, on purpose |
+| scrollable column height | 115.0 KiB px | 115.0 KiB px | unchanged, on purpose |
+
+The two "unchanged, on purpose" rows are the load-bearing ones: **the window
+does not shrink the column, it only decides what is drawn.** The scrollbar is
+the same height, the count in the corner is the same number, and the drag anchor
+and the selection scope are still built from all 500 rows.
+
+### 8.3 The cost at 140 cards, measured as a PAIRED before/after
+
+This is the number that matters most, because most boards are not at the trigger.
+Measured **four runs each, back to back on this machine**, by stashing the change
+(`git stash push`), running `tests/perf-board.test.tsx`, and popping it. The
+Open column holds 100 rows; jsdom reports `clientHeight === 0`, and an
+unmeasurable viewport paints the whole column **by design**, so this arm measures
+the feature being present but inactive.
+
+| 140 cards (100 open) | before | after | delta |
+|---|---|---|---|
+| mount (median of 4) | **279.4 ms** (275.10 / 276.89 / 281.63 / 285.17) | **332.2 ms** (326.43 / 329.97 / 334.78 / 341.59) | **+52.8 ms (+19%)** |
+| DOM nodes after mount | 7 101 | 7 105 | +4 (one sizer div per column) |
+| idle poll | 1.15-2.43 ms | 1.09-3.53 ms | unchanged |
+| **changed poll (the 2.5 s recurring cost)** | 48.79-52.36 ms | 48.45-49.62 ms | **unchanged** |
+| ordering at 420 ideas | rebuildOrder 0.13 ms | rebuildOrder 0.12 ms | unchanged |
+
+**This is a real cost and it is stated rather than buried.** It was traced, not
+guessed:
+
+- A stage probe over `useVirtualColumns` measured the hook's own work at
+  **1.5 ms** in total (0.95 ms render, 0.33 ms card refs, 0.17 ms entries,
+  0 ms measurement). The geometry is not the cost.
+- An experiment that kept the new DOM shape but disabled the geometry entirely
+  landed at ~292 ms. The ~40 ms that remained is therefore **one extra full
+  board render**, caused by the commit-phase correction: the first render can
+  only guess the viewport (see the fallback order in `docs/architecture.md`),
+  and the scroller ref callback re-renders once with the real one.
+- That render is **inherent**, not waste: the alternative is a first render that
+  either builds all 500 cards or waits for the DOM, and both are worse. It is
+  paid once per panel open, before the browser paints.
+
+A memoization pass on the size estimate (keyed on row identity) was tried
+against this number and **measured no gain**; it was removed rather than kept as
+unjustified complexity. A guard that re-renders only when the correction actually
+moves the window was kept: it cannot help the first mount (where the cached view
+is empty by definition) but it does save the render when a column re-attaches
+with the viewport it already had.
+
+**The trade, stated plainly:** +53 ms once when you open a panel holding 140
+cards, to make a 500-card column open in 106 ms instead of 893 ms and carry 7% of
+its DOM. The recurring 2.5 s poll — the cost that runs for as long as the panel
+stays open — is unchanged at every size.
+
+### 8.4 What did NOT change
+
+- **The wire.** Nothing. `idea-108-wire.test.ts` pins the action envelope, the
+  default full `GET /state`, the two projections and the `import`/`export`
+  round-trip against a real loopback Host.
+- **The scan and sort costs.** The windowing layer is downstream of them: 0.07-0.36
+  ms per keystroke and 0.12 ms of ordering at 420 ideas, exactly as before. A
+  server-side index is still not justified by anything measured here.
+- **A short column.** Below 40 rows the board paints every card and behaves
+  exactly as it did, which is why all 1 076 tests pass unchanged except the one
+  DOM helper that reached for the column's direct children.
+
+### 8.5 Where the real-browser gain is larger than the jsdom gain
+
+jsdom measures main-thread JavaScript and DOM mutation only: no style, no
+layout, no paint. The 893 ms -> 106 ms mount gap is therefore the **CPU** half of
+the cost. The half virtualization actually removes is the other one — a real
+browser has to lay out and paint 29 276 nodes instead of 2 121 on every commit
+that touches the column, and 500 markdown blocks instead of 10. That is the part
+this document cannot measure and the part that made the column actually crawl.

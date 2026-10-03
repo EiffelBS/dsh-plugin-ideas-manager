@@ -62,6 +62,8 @@ import {
 import { BulkDialog, SelectBox, SelectionBar } from './bulk-bar.tsx'
 import type { BulkOperation } from './bulk.ts'
 import { deliveredRows } from './delivered-view.tsx'
+import { useVirtualColumns } from './virtual-column.ts'
+import { IDEA_OPEN_COLUMN_NOTICE_AT } from './windowing.ts'
 
 const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
   open: 'board.status.open',
@@ -1777,16 +1779,10 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // Bring the focused card into view, ONCE per link. Keyed on the focus and the
   // tab only: re-running it on every 2.5 s poll tick would keep yanking the
   // board back to a card the human has deliberately scrolled away from.
-  useEffect(() => {
-    const id = client.focusedIdeaId
-    if (id === undefined) return
-    const card = ideaCardOf(boardRef.current, id)
-    // Not every DOM implements scrollIntoView (jsdom does not); a link must
-    // never be able to throw in a render effect.
-    if (card !== undefined && typeof card.scrollIntoView === 'function') {
-      card.scrollIntoView({ block: 'center' })
-    }
-  }, [client.focusedIdeaId, activeTab])
+  //
+  // The two phases of that gesture are declared further down, right after the
+  // column windowing: phase one talks to the columns, which do not exist yet here.
+  const [revealTick, setRevealTick] = useState(0)
 
   /* --- per-column widths (idea #53) -------------------------------------
    * Each kanban column can be resized individually by dragging its right
@@ -2000,6 +1996,56 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : grouped ? orderByWorkspaceGroups(rows, workspaceTitle) : orderIdeas(rows)
   }
 
+  // Every column's display order, laid out ONCE per paint (idea #108).
+  //
+  // This map is deliberately the single definition of "what the column
+  // contains": the paint, the drag drop anchor and the multi-select scope all
+  // read it, so windowing a column can never quietly become a second, disagreeing
+  // notion of its contents. It also removed nine `byStatus()` calls per render
+  // (four to paint, four to build the selection scope, one per drop) down to
+  // four.
+  const columnRows = {} as Record<IdeaStatus, IdeaListRow[]>
+  for (const status of IDEA_COLUMNS) columnRows[status] = byStatus(status)
+  // The columns actually painted. Memoized on the one setting that changes it,
+  // because the windowing hook keys its effects on this array's CONTENT.
+  const visibleStatuses = useMemo(
+    () => IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn)),
+    [cfg.hideDeclinedColumn],
+  )
+  // Windowing (idea #108): the columns mount only the cards the reader can
+  // actually see. Everything the window decides is about PAINTING; the row list
+  // it windows over is the full column above.
+  const { columns: virtualColumns, onScroll: onColumnScroll } = useVirtualColumns(columnRows, visibleStatuses)
+
+  /* --- deep-link scroll, in two phases (idea #108) -----------------------
+   * The split is the whole reason a deep-link still works on a windowed column.
+   * A card that is scrolled out of view has no DOM node, so `ideaCardOf` finds
+   * nothing and the link would land silently nowhere: phase one asks each
+   * column to REVEAL the card - which moves that column's scroll and mounts it -
+   * and phase two, re-run by the reveal's own render, does the existing
+   * `scrollIntoView`, still the final authority for the columns that are not
+   * windowed and for the two list tabs. */
+  useEffect(() => {
+    const id = client.focusedIdeaId
+    if (id === undefined || activeTab !== 'overview') return
+    let moved = false
+    for (const column of virtualColumns.values()) {
+      if (column.reveal(id)) moved = true
+    }
+    if (moved) setRevealTick(tick => tick + 1)
+  }, [client.focusedIdeaId, activeTab, virtualColumns])
+
+  useEffect(() => {
+    const id = client.focusedIdeaId
+    if (id === undefined) return
+    const card = ideaCardOf(boardRef.current, id)
+    // Not every DOM implements scrollIntoView (jsdom does not); a link must
+    // never be able to throw in a render effect.
+    if (card !== undefined && typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ block: 'center' })
+    }
+  }, [client.focusedIdeaId, activeTab, revealTick])
+
   /**
    * The rows the multi-select may hold, in DISPLAY order (idea #94): the
    * current tab's filtered rows, laid out exactly as they are painted. The
@@ -2009,8 +2055,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
    * A shift-click range over this list is therefore never an arbitrary order.
    */
   const scopeRows = activeTab === 'overview'
-    ? IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn))
-        .flatMap(status => byStatus(status))
+    ? visibleStatuses.flatMap(status => columnRows[status])
     : activeTab === 'priorities'
       ? groupOpenByWorkspace(scopedOpen)
           .sort((a, b) => compareWorkspaceGroups(a, b, workspaceTitle))
@@ -2125,7 +2170,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     // built from the same list — resolving it in rank space is what used to
     // make a drop in a date-ordered column land on the rank the card already
     // held, which is why the whole grip used to be switched off there.
-    const displayOrder = byStatus(status).map(row => row.id)
+    //
+    // The FULL column, never the painted window (idea #108): a card that is
+    // scrolled out of view is still a legal insertion point, and the anchor a
+    // mounted card hands over is an id of this list either way.
+    const displayOrder = columnRows[status].map(row => row.id)
     try {
       if (source !== status) {
         if (status === 'declined') {
@@ -2549,8 +2598,14 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         {/* Option hideDeclinedColumn: the Declined section leaves the view
             (its cards stay in the ledger and the markdown export; the tab
             count still includes them). */}
-        {IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn)).map(status => {
-          const columnIdeas = byStatus(status)
+        {visibleStatuses.map(status => {
+          const columnIdeas = columnRows[status]
+          // The window decides what is PAINTED; `columnIdeas` above stays the
+          // whole column (idea #108), so the count in the header, the drop
+          // anchor and the selection scope all keep reading the full list.
+          // Always present: the hook builds one entry per `visibleStatuses`
+          // entry, from the very array this loop walks.
+          const vcol = virtualColumns.get(status)!
           // Per-column width (idea #53): a stored width pins the column to that
           // many pixels (flex: 0 0); an absent one keeps the default equal share.
           const storedWidth = columnWidths[status]
@@ -2600,7 +2655,21 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
                 <span className={classes.columnCount}>{columnIdeas.length}</span>
               </div>
-              <div className={classes.columnBody} data-dsh-column-scroll="">
+              {/* Idea #108: the standing notice on a column that has grown past
+                  what a glance covers. It sits OUTSIDE the scrolling body so it
+                  stays readable, and it says what is true - the whole column is
+                  reachable - rather than implying the board is struggling. */}
+              {status === 'open' && columnIdeas.length >= IDEA_OPEN_COLUMN_NOTICE_AT && (
+                <p className={classes.openColumnNotice} data-dsh-ideas-open-notice="">
+                  {t('board.openColumnNotice', { count: columnIdeas.length })}
+                </p>
+              )}
+              <div
+                className={classes.columnBody}
+                data-dsh-column-scroll=""
+                ref={vcol.scrollerRef}
+                onScroll={onColumnScroll}
+              >
                   {status === 'open' && (
                     <button type="button" className={classes.quickAdd} onClick={() => { setShowNew(true) }}>
                       <span aria-hidden="true">＋</span>
@@ -2609,7 +2678,16 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                   )}
                   {columnIdeas.length === 0
                     ? <div className={classes.empty}>{t(filtering ? 'board.emptyFiltered' : 'board.empty')}</div>
-                    : columnIdeas.map((idea, index) => {
+                    : (
+                      /* The scrollable sizer: its height is the whole column,
+                         its children are only the cards in the window (idea
+                         #108). Both are absolute inside it, so a card keeps the
+                         exact position the geometry gave it. */
+                      <div
+                        className={classes.virtualList}
+                        style={{ height: `${vcol.totalHeight}px` }}
+                      >
+                    {vcol.entries.map(({ row: idea, index, top }) => {
                       const confirm = confirmId === idea.id
                       const selected = isSelected(selection, idea.id)
                       // Deep-link (idea #105): the card a link landed on. It is
@@ -2639,6 +2717,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                         <div
                           key={idea.id}
                           className={classes.cardWrapper}
+                          // Windowing (idea #108): the card sits at the exact
+                          // offset the geometry gave it, and the ref feeds its
+                          // real height back so the rows below it stay put.
+                          style={{ position: 'absolute', top: `${top}px`, left: 0, right: 0 }}
+                          ref={vcol.cardRef(idea.id)}
                           data-dsh-idea-id={idea.id}
                           data-dsh-ideas-focused={focused ? '' : undefined}
                           data-drop-before={dropBefore ? '' : undefined}
@@ -2948,6 +3031,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                         </div>
                       )
                     })}
+                      </div>
+                    )}
                 </div>
               {/* Per-column width resizer (idea #53): drag to resize this column,
                   double-click resets it to the default share. */}

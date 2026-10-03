@@ -32,6 +32,8 @@ src/
                       #   (sample floor, calendar-month window, scope, triage gaps)
   client/health-view.tsx  # idea #110: the Health tab, which renders and computes nothing
   client/selection.ts    # the multi-select scope: toggle / range / all / prune (pure)
+  client/windowing.ts    # idea #108: the column size cache, the estimate and the window
+  client/virtual-column.ts # idea #108: the DOM binding (scroll offset, measurements, anchoring)
   client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
   client/deeplink.ts     # idea #105: reference grammar + board-wide resolver (pure)
@@ -575,6 +577,154 @@ reading "Restore" on one row is an accessibility bug as much as a UX one, and
 the download is a plain `<a href>` to the content route (the server sets
 `content-disposition`) rather than a Blob — the file the browser stores is then
 exactly the document a restore adopts elsewhere, with no client-side copy of it.
+
+## Column windowing (idea #108)
+
+This is the deferred half of the idea #34 high-card-load work (the other half, a
+server-side index, stays deferred). The trigger is **~500 cards in the Open
+column**, and the reason it was deferred is still true on every ordinary board:
+the per-poll scans run at 0.07-0.41 ms, the sorts at 0.12 ms or better for 420
+ideas, and `?view=list` already cut the poll payload to 7.8% of the full
+snapshot. Numbers are in `docs/perf-evaluation.md`.
+
+### One definition of "what the column contains"
+
+`byStatus` used to be called nine times per render: four to paint, four to
+build the multi-select scope, one per drop. It is now called four times, and its
+results live in **one** `columnRows` map that the paint, the drop anchor
+(`performDrop`), the header count, the standing notice and the selection scope
+(`scopeRows`) all read.
+
+That collapse is the load-bearing part of this feature, not a tidy-up. Windowing
+creates a second candidate answer to "what is in this column" — the painted
+window — and the three behaviours the idea names are each a place where a
+virtualized list silently lies about what is on screen. Collapsing them onto one
+map means windowing *cannot* become a second definition: the window decides what
+is painted, and nothing else.
+
+### The size cache is seeded from an estimate, not measured lazily
+
+Cards are **not** a fixed height: the title wraps (`overflow-wrap: anywhere`, no
+clamp), the workspace/tag line wraps, and the description is clamped to 2 (raw)
+or 3 (markdown) lines. A virtualizer that starts every row at 0 and measures as
+it scrolls has a wrong scrollbar on the first paint and a scroll position that
+moves under the pointer as rows resolve.
+
+`estimateIdeaCardHeight` is a **pure function of the row**: it counts exactly
+the parts that wrap (title + its `#N` prefix, the tag line, the clamped
+description, relation chips, a delivery note, the score badges) over a fixed
+chrome. Two properties matter more than its accuracy:
+
+- it is **deterministic**, so the same row has the same height in every column
+  and on every render; and
+- it is **correct on the first paint**, which is what makes the scrollbar honest
+  before anything has been laid out.
+
+`charsPerLine` is the one tuned input, and the React half derives it from the
+column's measured width. A width of 0 (jsdom, a `display:none` panel, a
+detached column) keeps the default budget rather than estimating like an
+18-character sliver — a pessimistic estimate on every test and every hidden
+panel would have been a permanent lie in the pessimistic direction.
+
+### The inter-card gap lives in the slot, not in the flex container
+
+`.dsh-ideas-column-body` still carries `gap: 8px`, and the sizer's children are
+absolutely positioned, so that gap would stop applying. `IDEA_CARD_GAP_PX`
+therefore lives in the geometry, and `slotSize` adds it on **both** the measured
+and the estimated path.
+
+This was a real bug, caught by the geometry suite: `slotSize` originally read
+`measuredById.get(id) ?? estimate + GAP`, so the first time a card was measured
+its slot **lost** 8 px and every row below it jumped up under the reader. A
+sub-pixel-churn guard (`|Δ| < 1 px` returns 0) keeps a measure/resize feedback
+loop from re-rendering forever.
+
+### Anchoring is explicit, because the alternative is a lying scrollbar
+
+`measure(id, height, anchorIndex)` returns **the movement of everything above
+the anchored row**, and the caller adds it to `scrollTop`. A change at or below
+the anchor returns 0, because the reader cannot see it move.
+
+This is the whole difference between a windowed column that is usable and one
+that is not: without it, every card that resolves to its real height pushes the
+row being read up under the pointer, a deep-link lands on a row that visibly
+moved, and a drag's insertion line points somewhere the author never saw.
+
+### A viewport that cannot be measured paints everything
+
+`window(scrollTop, 0)` returns the **whole column**. jsdom reports
+`clientHeight === 0`, and so does any DOM without layout. Windowing against an
+unknown viewport would paint a slice of the board and claim it is the board, so
+an unmeasurable viewport is answered with everything — which is also why every
+pre-existing board test keeps passing unchanged.
+
+### The first paint still had to build the column — twice
+
+The first render happens before the column has been laid out, so the window has
+to start from a budget that needs no measurement. Two fallbacks, in order:
+
+1. `lastViewport`, a **module-level** map of the last height each column
+   actually had. It survives the panel being closed and re-opened, which is the
+   common case: without it every re-open would rebuild the whole column and throw
+   it away in the next commit.
+2. `provisionalViewport()` = `window.innerHeight`, readable synchronously with no
+   layout. A column can never usefully be taller than the window it is drawn in,
+   so it is an upper bound that bounds how many cards the FIRST render builds.
+
+The scroller ref callback then replaces both with the real measurement **in the
+commit phase**, before the browser paints.
+
+`rememberViewport` clamps what is *remembered* to four window heights while
+windowing against the *live* value. A panel mounted where it has no height
+(a detached container, a hidden tab) reports a huge `clientHeight`; remembering
+that would pin a useless budget for the rest of the session and rebuild the
+whole column on every later open. Remember conservatively, measure faithfully.
+
+That correction costs **one extra full board render per panel open**, and it is
+the price of not building the column: a stage probe measured the hook's own work
+at **1.5 ms**, so the whole of the ~53 ms the 140-card mount pays is this second
+render and nothing else. It is inherent — the alternatives are a first render
+that builds all 500 cards, or one that waits for the DOM — and it is paid before
+the browser paints, so nobody sees it. `scrollerRef` still re-renders **only when
+the correction actually moves the window**: that cannot help the first mount
+(the cached view is empty by definition) but it does save the render when a
+column re-attaches with the viewport it already had. Numbers and the tracing
+method are in `docs/perf-evaluation.md`.
+
+### Below the floor, nothing changes
+
+`IDEA_WINDOW_MIN_ROWS` (40) is where windowing starts. Under it a column is
+painted whole, so a board that is fine today behaves exactly as it did — which is
+also what keeps the drag, selection and deep-link suites untouched. All four
+columns go through the same code path and the same floor; virtualizing only the
+Open one would have left the other three inconsistent for no gain.
+
+### The three behaviours, and where each is locked
+
+| behaviour | the decision that keeps it | test |
+|---|---|---|
+| **scroll anchoring** | `measure` returns the movement above the anchor; the caller adds it to `scrollTop` | `idea-108-windowing.test.ts` (anchoring group), `idea-108-virtualization.test.tsx` (scroll anchoring) |
+| **the drag drop anchor** | `performDrop` reads `columnRows[status]`, the FULL column; `dropNextId` is `columnIdeas[index + 1]` of that same list | `idea-108-virtualization.test.tsx` ("writes a reorder built from the WHOLE column") |
+| **range selection over a filtered scope** | `scopeIds` is the full scope order, and `pruneSelection` runs on it; windowing never enters the selection path | `idea-108-virtualization.test.tsx` ("bound to the scope, not to the window") |
+| **deep-link reveal** | two phases: `reveal(id)` mounts the card, then the pre-existing `scrollIntoView` still centres it | `idea-108-virtualization.test.tsx` ("never painted") |
+
+The deep-link split is the subtlest of the four. `ideaCardOf` scans the DOM for
+`[data-dsh-idea-id]`, and a card scrolled out of a windowed column has no DOM
+node — so the link would have landed silently nowhere. Phase one moves the
+column's scroll and mounts the card; phase two, re-run by that render's own
+`revealTick`, does the `scrollIntoView` that is still the final authority for the
+non-windowed columns and the two list tabs.
+
+### The frozen wire
+
+Nothing. `windowing.ts` and `virtual-column.ts` are imported by
+`board-view.tsx` alone, `IdeaRecord` gained no field, and there is no new verb,
+route or read query. `idea-108-wire.test.ts` drives a real loopback Host and pins
+it: the default full `GET /state` answers exactly `{schemaVersion, revision,
+ideas}` with whole bodies and no excerpt, the action envelope is still strictly
+three keys, four candidate verbs (`virtualize`, `window`, `viewport`,
+`setWindow`) are still `400`, and `import`/`export` round-trips a record
+carrying every field the ledger holds.
 
 ## Backlog health (idea #110)
 

@@ -27,6 +27,13 @@ export const PERF_OPEN_COUNT = 100
 export const PERF_CLOSED_COUNT = 40
 export const PERF_IDEA_COUNT = PERF_OPEN_COUNT + PERF_CLOSED_COUNT
 
+/**
+ * The open-column size idea #108 names as its trigger: roughly 500 cards.
+ * The fixture is generated, so the same code produces both boards and the
+ * before/after numbers are measured on identical data.
+ */
+export const PERF_VIRTUAL_OPEN_COUNT = 500
+
 /** Fixed wall-clock base so createdAt/updatedAt never drift between runs. */
 const EPOCH_BASE = Date.UTC(2026, 0, 5)
 const DAY_MS = 86_400_000
@@ -165,10 +172,10 @@ const TAG_POOL: readonly string[] = [
 
 const WORKSPACES = ['ws-opentimbre', 'ws-audiocpp', undefined] as const
 
-/** Status schedule: 100 open (spec objective) + varied closed columns. */
-function statusAt(index: number): IdeaStatus {
-  if (index < PERF_OPEN_COUNT) return 'open'
-  const closed = index - PERF_OPEN_COUNT
+/** Status schedule: the open cards first, then the varied closed columns. */
+function statusAt(index: number, openCount: number): IdeaStatus {
+  if (index < openCount) return 'open'
+  const closed = index - openCount
   if (closed < 12) return 'underReview'
   if (closed < 32) return 'archived'
   return 'declined'
@@ -190,10 +197,16 @@ function tagsFor(rand: Rand, status: IdeaStatus): IdeaTag[] | undefined {
 /**
  * The deterministic dataset (import-wire-safe, see module doc).
  * Seed fixed: every run, before or after the optimization work, measures the
- * identical 140-idea board.
+ * identical board.
+ *
+ * `openCount` defaults to the idea #34 objective; idea #108 measures the same
+ * generator at its own trigger of ~500 open cards, which is why the counts are
+ * parameters rather than constants baked into the loop.
  */
-export function makePerfDataset(seed = 0x5eed): IdeaRecord[] {
+export function makePerfDataset(seed = 0x5eed, openCount = PERF_OPEN_COUNT): IdeaRecord[] {
   const rand = mulberry32(seed)
+  const closedCount = PERF_CLOSED_COUNT
+  const total = openCount + closedCount
   const ideas: IdeaRecord[] = []
   // Ranks are relative to a (status, workspace) peer set ("rank by
   // workspace"): one running counter per group, so every column - open AND
@@ -201,9 +214,9 @@ export function makePerfDataset(seed = 0x5eed): IdeaRecord[] {
   // ledger) - carries contiguous 1..n ranks per workspace.
   const groupRank = new Map<string, number>()
 
-  for (let i = 0; i < PERF_IDEA_COUNT; i++) {
+  for (let i = 0; i < total; i++) {
     const id = `perf-idea-${i}`
-    const status = statusAt(i)
+    const status = statusAt(i, openCount)
     const workspaceId = pick(rand, WORKSPACES)
     const createdAt = EPOCH_BASE + int(rand, 0, 200) * DAY_MS
     const updatedAt = Math.min(createdAt + int(rand, 0, 40) * DAY_MS, EPOCH_BASE + 240 * DAY_MS)
@@ -263,8 +276,8 @@ export function makePerfDataset(seed = 0x5eed): IdeaRecord[] {
   // Stable body sentinels prove that bounded analyst reads exclude unrelated
   // bodies while retaining the direct lineage.
   const usedChildren = new Set<string>()
-  for (const parent of ideas.slice(PERF_OPEN_COUNT + 12, PERF_OPEN_COUNT + 32)) {
-    const child = ideas.slice(0, PERF_OPEN_COUNT).find(candidate =>
+  for (const parent of ideas.slice(openCount + 12, openCount + 32)) {
+    const child = ideas.slice(0, openCount).find(candidate =>
       !usedChildren.has(candidate.id)
       && candidate.workspaceId !== undefined
       && candidate.workspaceId === parent.workspaceId)

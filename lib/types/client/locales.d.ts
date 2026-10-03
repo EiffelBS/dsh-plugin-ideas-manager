@@ -19,6 +19,7 @@ export declare const fr: {
     'board.status.declined': string;
     'board.empty': string;
     'board.emptyFiltered': string;
+    'board.openColumnNotice': string;
     'board.hostError': string;
     'board.retryHost': string;
     'board.tagFilter': string;
@@ -391,6 +392,7 @@ export declare const en: {
     'board.status.declined': string;
     'board.empty': string;
     'board.emptyFiltered': string;
+    'board.openColumnNotice': string;
     'board.hostError': string;
     'board.retryHost': string;
     'board.tagFilter': string;
@@ -769,6 +771,7 @@ export declare const zh: {
     'board.status.declined': string;
     'board.empty': string;
     'board.emptyFiltered': string;
+    'board.openColumnNotice': string;
     'board.hostError': string;
     'board.retryHost': string;
     'board.tagFilter': string;

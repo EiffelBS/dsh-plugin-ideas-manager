@@ -10,6 +10,34 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **A long Open column stays responsive.** Once the Open column grows past a few
+  hundred ideas, the board draws only the cards you can actually see and leaves
+  the rest behind the scrollbar, so scrolling, searching and dragging no longer
+  get slower as the backlog fills up. Everything you can do still works on the
+  whole column, not just on the part of it that happens to be on screen.
+  - **Drag & drop still lands where you point.** You can drop a card before one
+    you have scrolled past and one you have not: the written order is built from
+    the entire column, not from the cards that happen to be drawn.
+  - **A shift-click range still covers the whole block.** It selects every row
+    between the two you clicked in the column's own order, including the ones
+    scrolled out of view, and the bar keeps stating the truth — *n selected of
+    m shown*, where *m* is the filter, never the window.
+  - **A card keeps its place while you read.** Cards are not a fixed height, so
+    their real height is measured as they appear — and every measurement is
+    anchored to what you are looking at, so the column never slides under a
+    resting hand.
+  - **"Go to idea" still works on a card you have never scrolled to.** The board
+    brings it into view first, then opens and rings it, exactly as before.
+  - **A standing notice** appears above the Open column once it holds **300 or
+    more** open ideas, naming the number. It tells you the size of what you are
+    looking at before you start scrolling, rather than pretending the board is
+    struggling.
+  - **Short columns are untouched.** Below that size the board draws every card
+    exactly as it did before, so a normal backlog behaves identically.
+  - **Nothing changes for your data.** The board does this entirely on its own:
+    no new stored field, no new API call, and the JSON export/import, the
+    snapshots and the markdown export are byte for byte what they were.
+
 - **A workspace can carry its own launch model.** The launch dialog used to ask
   which model every single run should use. Set one for a workspace and it stops
   asking: the dialog just tells you which model the run will use, and your click

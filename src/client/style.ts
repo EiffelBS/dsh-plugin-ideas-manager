@@ -478,6 +478,27 @@ body[data-ds-dark-theme] {
   flex: 1;
 }
 
+/* Windowed column (idea #108): a sizer as tall as the WHOLE column, with only
+   the cards near the viewport as absolutely-positioned children. The inter-card
+ * gap lives inside each card's slot (see IDEA_CARD_GAP_PX), so the geometry and
+   the painted spacing are the same number rather than two that can drift. */
+.dsh-ideas-virtual-list {
+  position: relative;
+  flex: none;
+}
+
+/* The standing notice on a column past the notice threshold: a quiet line that
+   stays put above the scrolling body, so the reader meets it before scrolling
+   rather than after losing the thread. */
+.dsh-ideas-open-column-notice {
+  flex: none;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+}
+
 .dsh-ideas-empty {
   padding: 18px 10px;
   text-align: center;
@@ -2452,6 +2473,10 @@ export const classes = {
   quickAdd: 'dsh-ideas-quick-add',
   columnBody: 'dsh-ideas-column-body',
   columnResizer: 'dsh-ideas-column-resizer',
+  // Idea #108: the scrollable sizer of a windowed column. Its height is the
+  // whole column; its children are only the cards inside the window.
+  virtualList: 'dsh-ideas-virtual-list',
+  openColumnNotice: 'dsh-ideas-open-column-notice',
   empty: 'dsh-ideas-empty',
   card: 'dsh-ideas-card',
   cardHeader: 'dsh-ideas-card-header',
