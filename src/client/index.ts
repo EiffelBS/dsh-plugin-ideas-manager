@@ -20,6 +20,7 @@ import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 import { resolveSessionLauncher } from './session-queue.ts'
 import { resolveSessionOpener, sessionsServiceOf } from './session-opener.ts'
+import { createIdeasBoardService, IDEAS_BOARD_SERVICE } from './deeplink-service.ts'
 
 /**
  * Cordis services this plugin consumes. Declared so apply runs once the DSH
@@ -42,6 +43,15 @@ export { HttpIdeasHostTransport } from './host-api.ts'
 export type { IdeasHostTransport } from './host-api.ts'
 export { IdeasClient } from './ideas-client.ts'
 export type { IdeaClientPatch } from './ideas-client.ts'
+
+// Deep-link to an idea (idea #105): the reference grammar and the published
+// service name are part of the plugin's client surface, so a caller can feature-
+// detect the board without importing a private module.
+export { IDEAS_BOARD_SERVICE, createIdeasBoardService } from './deeplink-service.ts'
+export type { IdeasBoardService } from './deeplink-service.ts'
+export { parseIdeaRef, resolveIdeaRef, focusReadQuery } from './deeplink.ts'
+export type { IdeaRef, FocusableIdea } from './deeplink.ts'
+export type { IdeaFocusOutcome } from './ideas-client.ts'
 
 // A duplicated client injection (module factory executed twice in one page
 // lifetime) would otherwise register a second sidebar row and board page.
@@ -85,6 +95,16 @@ export function apply(ctx: ClientContext): void {
     } catch (error) {
       // Registration failures degrade the board, never the GUI.
       console.error('[dsh-plugin-ideas-manager] panel registration failed:', error)
+    }
+    // Deep-link surface (idea #105): the one entry point another plugin can
+    // reach this board through. Provided AFTER the panel so a consumer that
+    // focuses immediately already finds the seats registered. The name is ours,
+    // so a collision is a real error — logged, never thrown, because the web
+    // shell fails the whole boot when a plugin apply throws.
+    try {
+      disposers.push(ctx.provide(IDEAS_BOARD_SERVICE, createIdeasBoardService(client)))
+    } catch (error) {
+      console.error('[dsh-plugin-ideas-manager] deep-link service registration failed:', error)
     }
     // Settings glue LAST and isolated: push tagRows onto the document on every
     // config change (the CSS default of 3 covers the gap before the first

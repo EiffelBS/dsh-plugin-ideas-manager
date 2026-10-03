@@ -35,7 +35,6 @@ import {
   FIND_SIMILAR_CANDIDATE_LIMIT,
   similarCandidateViews,
 } from './find-similar.ts'
-import { openTaskBoardFiltered } from './taskboard-focus.ts'
 import { openIdeasSettingsSection } from './settings-navigation.ts'
 import { PrioritiesView } from './priorities-view.tsx'
 import { DeliveredView } from './delivered-view.tsx'
@@ -86,6 +85,26 @@ function matchesFilter(idea: IdeaListRow, filter: string, deepBody: string | und
   // and excerpt keep the search useful before/without the index.
   const haystacks = [idea.title, idea.summary ?? '', deepBody ?? idea.bodyExcerpt, ...(idea.tags ?? []).map(tag => tag.name)]
   return haystacks.some(text => text.toLowerCase().includes(needle))
+}
+
+/**
+ * The card element behind an idea id, for the deep-link scroll (idea #105).
+ *
+ * The attribute is read off every candidate instead of being interpolated into
+ * a selector: idea ids are uuids today, but a selector built from a value that
+ * came from a query string is a CSS-injection surface waiting for the first
+ * importer that hands us something else.
+ *
+ * @param root - the board root, or null before it mounts.
+ * @param ideaId - the idea to find.
+ * @returns the outer card wrapper, or undefined when that card is not painted.
+ */
+function ideaCardOf(root: HTMLElement | null, ideaId: string): HTMLElement | undefined {
+  if (root === null) return undefined
+  for (const node of root.querySelectorAll<HTMLElement>('[data-dsh-idea-id]')) {
+    if (node.getAttribute('data-dsh-idea-id') === ideaId) return node
+  }
+  return undefined
 }
 
 /* --- tiny action icons (feather-style strokes, currentColor) --- */
@@ -1242,11 +1261,30 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             <div className={classes.fieldHint}>{t('launch.permissionHint')}</div>
             <div className={classes.detailMeta}><code>{idea.title}</code></div>
             <div className={classes.launchGateActions}>
+              {/* The deep-link (idea #105): the destination is THIS card, by
+                  its stable number. It is the exact destination rather than a
+                  proxy filter on another plugin's DOM, and it works from a cold
+                  panel load like any other link. */}
               <button
                 type="button"
                 className={classes.primaryButton}
+                data-dsh-ideas-show-card=""
+                onClick={() => {
+                  client.requestFocus(idea.ideaNumber !== undefined ? `#${idea.ideaNumber}` : idea.id)
+                  onClose()
+                }}
+              >
+                {t('launch.showCard')}
+              </button>
+              {/* The permission itself can only be confirmed in the TaskBoard,
+                  by a human. The panel is opened through the shell's own layout
+                  face — no DOM is touched — and the card is filed under the
+                  title printed right above. */}
+              <button
+                type="button"
+                className={classes.ghostButton}
                 data-dsh-ideas-open-taskboard=""
-                onClick={() => { openTaskBoardFiltered(client.panelNavigator, idea.title) }}
+                onClick={() => { client.openTaskBoard() }}
               >
                 {t('launch.openTaskBoard')}
               </button>
@@ -1448,6 +1486,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [openColumnReordered, setOpenColumnReordered] = useState(false)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
+  // Deep-link (idea #105): the reference the human typed into "Go to idea",
+  // kept as text so a typo can be corrected instead of retyped.
+  const [jumpRef, setJumpRef] = useState('')
   // Rendered-markdown view of descriptions (raw text is one click away).
   const [mdMode, setMdMode] = useState(true)
   // Active panel tab (Overview kanban / Priorities ranking), persisted.
@@ -1492,6 +1533,61 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     setMdMode(cfg.renderMarkdown)
     if (cfg.rememberWorkspaceScope) setWorkspaceFilter(cfg.workspaceScope)
   }, [settings, client, cfg.defaultTab, cfg.renderMarkdown, cfg.rememberWorkspaceScope, cfg.workspaceScope])
+
+  /* --- deep-link to an idea (idea #105) ---------------------------------
+   * The board is the CONSUMER of a focus request: it owns the workspace scope,
+   * the filters and the tab, so this is the only place that can make the card
+   * actually visible. The request itself lives on the client, so a link that
+   * arrives while the panel is closed is still waiting here when it mounts. */
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const focusSeq = client.focusRequest?.seq
+  const focusRef = client.focusRequest?.ref
+  useEffect(() => {
+    if (focusSeq === undefined || focusRef === undefined) return
+    // A cold panel has no list yet: stay PENDING rather than answer "not
+    // found". The poll lands a tick later and this effect re-runs on it.
+    if (snapshot === undefined) return
+    let cancelled = false
+    void client.resolveFocus(focusRef).then(found => {
+      if (cancelled) return
+      if (found === undefined) {
+        client.reportFocus(focusSeq, 'unknown')
+        return
+      }
+      // A focused card the filters hide is not a focus: clear the narrowings
+      // (the search box visibly emptying IS the explanation) and scope the board
+      // to the idea's own workspace. The scope is NOT persisted — where the
+      // board opens and where a link pointed are two different preferences.
+      setFilter('')
+      setTagFilter([])
+      setWorkspaceFilter(found.workspaceId ?? NO_WORKSPACE_FILTER)
+      switchTab('overview')
+      if (found.status === 'declined' && cfg.hideDeclinedColumn) {
+        // Every status has a column on the Overview — except this one setting.
+        // Say where the card is instead of pretending the link landed.
+        client.reportFocus(focusSeq, 'hidden')
+        return
+      }
+      client.reportFocus(focusSeq, 'focused', found.id)
+    })
+    return () => { cancelled = true }
+    // The revision is the one thing that can make a previously unknown reference
+    // resolvable without a new request (the poll adopted the capture).
+  }, [client, focusSeq, snapshot?.revision, cfg.hideDeclinedColumn])
+
+  // Bring the focused card into view, ONCE per link. Keyed on the focus and the
+  // tab only: re-running it on every 2.5 s poll tick would keep yanking the
+  // board back to a card the human has deliberately scrolled away from.
+  useEffect(() => {
+    const id = client.focusedIdeaId
+    if (id === undefined) return
+    const card = ideaCardOf(boardRef.current, id)
+    // Not every DOM implements scrollIntoView (jsdom does not); a link must
+    // never be able to throw in a render effect.
+    if (card !== undefined && typeof card.scrollIntoView === 'function') {
+      card.scrollIntoView({ block: 'center' })
+    }
+  }, [client.focusedIdeaId, activeTab])
 
   /* --- per-column widths (idea #53) -------------------------------------
    * Each kanban column can be resized individually by dragging its right
@@ -1756,6 +1852,9 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   const toggleTag = (name: string): void => {
+    // Narrowing by hand means the reader has taken the board over: the deep-link
+    // marker (idea #105) is theirs to drop, exactly like the selection.
+    client.clearFocus()
     setTagFilter(current => current.includes(name)
       ? current.filter(entry => entry !== name)
       : [...current, name])
@@ -1971,6 +2070,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   return (
     <div
+      ref={boardRef}
       className={classes.board}
       data-dsh-ideas-board=""
       data-dsh-plugin="ideas"
@@ -2000,6 +2100,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           aria-label={t('board.workspace')}
           title={t('board.workspaceHint')}
           onChange={event => {
+            client.clearFocus()
             setWorkspaceFilter(event.target.value)
             // Remembered-scope option: persist the pick so the next open
             // restores it. The flag sanitizes to OFF without a settings
@@ -2015,6 +2116,38 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             </option>
           ))}
         </select>
+        {/* Deep-link (idea #105): the reference a human is GIVEN is the number,
+            so the board offers exactly one place to type it. The id form is
+            accepted here too (an agent, a log line or a copied card id carries
+            one) but never advertised — it does not survive a re-import. */}
+        <form
+          className={classes.jump}
+          onSubmit={event => {
+            event.preventDefault()
+            if (jumpRef.trim() === '') return
+            client.requestFocus(jumpRef)
+          }}
+        >
+          <input
+            className={classes.jumpInput}
+            type="text"
+            inputMode="numeric"
+            value={jumpRef}
+            placeholder={t('board.jumpPlaceholder')}
+            aria-label={t('board.jump')}
+            data-dsh-ideas-jump-input=""
+            onChange={event => { setJumpRef(event.target.value) }}
+          />
+          <button
+            type="submit"
+            className={`${classes.ghostButton} ${classes.jumpGo}`}
+            disabled={jumpRef.trim() === ''}
+            title={t('board.jump')}
+            data-dsh-ideas-jump=""
+          >
+            {t('board.jumpGo')}
+          </button>
+        </form>
         {/* The header text search is SHARED by all three tabs (review
             follow-up: it used to be Overview-only) — it narrows the kanban
             columns, the Priorities ranking and the Delivered log alike, like
@@ -2025,7 +2158,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           placeholder={t('board.search')}
           value={filter}
           aria-label={t('board.search')}
-          onChange={event => { setFilter(event.target.value) }}
+          onChange={event => { client.clearFocus(); setFilter(event.target.value) }}
         />
         <div className={classes.mdToggle} role="group" aria-label={t('board.mdToggleLabel')}>
           <button
@@ -2069,7 +2202,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           className={activeTab === 'overview' ? classes.tabActive : classes.tab}
           data-active={activeTab === 'overview' ? '' : undefined}
           aria-selected={activeTab === 'overview'}
-          onClick={() => { switchTab('overview') }}
+          onClick={() => { client.clearFocus(); switchTab('overview') }}
         >
           {t('tab.overview')}
           <span className={classes.tabCount}>{visible.length}</span>
@@ -2080,7 +2213,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           className={activeTab === 'priorities' ? classes.tabActive : classes.tab}
           data-active={activeTab === 'priorities' ? '' : undefined}
           aria-selected={activeTab === 'priorities'}
-          onClick={() => { switchTab('priorities') }}
+          onClick={() => { client.clearFocus(); switchTab('priorities') }}
         >
           {t('tab.priorities')}
           <span className={classes.tabCount}>{scopedOpen.length}</span>
@@ -2091,7 +2224,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           className={activeTab === 'delivered' ? classes.tabActive : classes.tab}
           data-active={activeTab === 'delivered' ? '' : undefined}
           aria-selected={activeTab === 'delivered'}
-          onClick={() => { switchTab('delivered') }}
+          onClick={() => { client.clearFocus(); switchTab('delivered') }}
         >
           {t('tab.delivered')}
           <span className={classes.tabCount}>{archivedIdeas.length}</span>
@@ -2105,6 +2238,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           <button type="button" className={classes.ghostButton} onClick={() => { void client.refresh() }}>
             {t('board.retryHost')}
           </button>
+        </div>
+      )}
+
+      {/* A deep-link that could not land says so, where the reader already is
+          (idea #105). Silence would read as "the board ignored me"; a refusal
+          that names the reference can be retried with a corrected one. */}
+      {client.focusResult !== undefined && client.focusResult.outcome === 'unknown' && (
+        <div className={classes.focusNote} role="status" data-dsh-ideas-focus-note="unknown">
+          {t('board.jumpUnknown', { ref: client.focusResult.ref })}
+        </div>
+      )}
+      {client.focusResult !== undefined && client.focusResult.outcome === 'hidden' && (
+        <div className={classes.focusNote} role="status" data-dsh-ideas-focus-note="hidden">
+          {t('board.jumpHidden', { ref: client.focusResult.ref })}
         </div>
       )}
 
@@ -2217,6 +2364,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                     : columnIdeas.map((idea, index) => {
                       const confirm = confirmId === idea.id
                       const selected = isSelected(selection, idea.id)
+                      // Deep-link (idea #105): the card a link landed on. It is
+                      // the same marker the search box paints for a focused
+                      // field, so "where the link went" never reads as a
+                      // selection the reader made.
+                      const focused = client.focusedIdeaId === idea.id
                       const workspaceId = idea.workspaceId
                       // The grip is always draggable. The Open column only changes the WORDING of
                       // its handle: the `openOrdering` option is the default layout,
@@ -2240,6 +2392,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                           key={idea.id}
                           className={classes.cardWrapper}
                           data-dsh-idea-id={idea.id}
+                          data-dsh-ideas-focused={focused ? '' : undefined}
                           data-drop-before={dropBefore ? '' : undefined}
                           data-drop-after={dropAfter ? '' : undefined}
                           onDragEnter={event => {
@@ -2273,6 +2426,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                             className={selected ? `${classes.card} ${classes.cardSelected}` : classes.card}
                             data-dsh-idea-id={idea.id}
                             data-selected={selected ? '' : undefined}
+                            data-dsh-ideas-card-focused={focused ? '' : undefined}
                           >
                             <div className={classes.cardHeader}>
                               {/* Multi-select (idea #94): the select box is the

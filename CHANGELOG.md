@@ -10,6 +10,20 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **Go straight to an idea.** The board header has a small **Go to idea** box:
+  type an idea's number (`#42`) and the board opens that card, scrolls it into
+  view and rings it. It works from a cold panel load, across workspaces, and on
+  an archived card — so when a conversation ends with "see idea #42", one click
+  takes you there. Anything that would have hidden the card (the search, the tag
+  filter, the workspace scope) is cleared, and a reference that matches nothing
+  says so instead of quietly doing nothing. An internal idea id is accepted
+  too, but the **number** is the reference to hand to a human: it survives
+  moving the board to another machine, an id does not.
+- **A refused launch now has a real destination.** When the TaskBoard refuses
+  to run a card until you confirm its permission, the dialog offers **Show the
+  card**, which brings that exact idea into view on the board — no second board,
+  no filter to re-type.
+
 - **Back up your board, and put it back.** The settings section has a new
   **Backup** tab. **Take a snapshot** writes a timestamped copy of the whole
   board — every idea, its activity log, its scores, its labels, the run it
@@ -94,6 +108,16 @@ Versions before 0.3.0 predate this file.
 - The near-duplicate check is available to any agent and script through the
   board's read channel, and it is **opt-in**: it runs only when asked, so the
   board's own polling costs exactly what it did before.
+
+### Changed
+
+- **The permission gate no longer filters the TaskBoard for you.** When a launch
+  is refused until you confirm a card's permission, **Open the TaskBoard** now
+  opens that board unfiltered instead of pre-typing the idea title into its
+  search box — reaching into another plugin's live form was never a stable thing
+  to depend on. The card is filed under the idea title, printed right next to
+  the button (and **Copy the title** is still there), and **Show the card** takes
+  you straight to the idea on your own board if you want to look at it first.
 
 ### Fixed
 

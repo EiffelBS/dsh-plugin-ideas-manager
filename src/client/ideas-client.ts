@@ -22,7 +22,8 @@ import {
   type IdeasSnapshotReason,
 } from '../protocol.ts'
 import { setLanguageOverride } from './locales.ts'
-import { IDEAS_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
+import { IDEAS_PANEL_ID, TASK_BOARD_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
+import { focusReadQuery, parseIdeaRef, resolveIdeaRef, type FocusableIdea } from './deeplink.ts'
 import type { IdeasHostTransport } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
@@ -53,6 +54,24 @@ export interface IdeaClientPatch {
   tags?: string[] | IdeaTag[]
   /** Present (including an empty string) replaces the workspace; '' = generic. */
   workspaceId?: string
+}
+
+/**
+ * What one focus request actually achieved (idea #105).
+ *
+ * A deep-link has three honest answers, not one: the card was focused, the
+ * card exists but the setting that hides its column is on (`hidden`), or
+ * nothing on this board carries that reference (`unknown` — which also covers a
+ * reference that is not a reference at all, like a lone `#`).
+ */
+export type IdeaFocusOutcome = 'focused' | 'hidden' | 'unknown'
+
+/** One focus request, with the sequence number that makes it one-shot. */
+interface FocusRequest {
+  /** The reference exactly as the caller wrote it, for the outcome message. */
+  ref: string
+  /** Monotonic id: the panel answers a request once, and a repeat is a new one. */
+  seq: number
 }
 
 export class IdeasClient {
@@ -109,6 +128,19 @@ export class IdeasClient {
    * it replaced, and that fact is only true for a moment after the click.
    */
   lastRestore: { source: string; displaced: IdeasSnapshotInfo; ideas: number } | undefined
+  /**
+   * Deep-link request awaiting the panel (idea #105). It lives HERE rather than
+   * in React state on purpose: a request can arrive while the board is CLOSED
+   * (the permission-gate refusal is raised from the board itself, but the
+   * published service is reachable from anywhere in the page), and the panel has
+   * to find it waiting when it mounts — the cold-load case.
+   */
+  focusRequest: FocusRequest | undefined
+  /** What the last request achieved; the board renders the unhappy answers. */
+  focusResult: { ref: string; seq: number; outcome: IdeaFocusOutcome } | undefined
+  /** The card a deep-link landed on, or undefined once the human took over. */
+  focusedIdeaId: string | undefined
+  private focusSeq = 0
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
   private workspaces: WorkspaceViewLite[] = []
@@ -180,6 +212,131 @@ export class IdeasClient {
       return
     }
     navigator.select(null)
+  }
+
+  /**
+   * Bring the board panel to the front WITHOUT toggling it.
+   *
+   * `toggleBoard` is the wrong verb for a deep-link: the destination is the
+   * board, so selecting it again must never close it. Without a layout service
+   * the local flag is all there is, and a deep-link to a closed board is exactly
+   * when the refresh matters most.
+   */
+  openBoard(): void {
+    const navigator = this.panelNavigator
+    if (navigator === undefined) {
+      this.setBoardOpen(true)
+      return
+    }
+    navigator.select(IDEAS_PANEL_ID)
+  }
+
+  /**
+   * Open the TaskBoard panel through the shell's own layout face.
+   *
+   * Deliberately just that. This used to be `client/taskboard-focus.ts`, which
+   * additionally typed the idea title into the TaskBoard's filter field through
+   * the native value setter and a bubbling `input` event — DOM surgery on a
+   * third-party React tree, because that board published no service and no
+   * deeplink to use instead (verified on the installed 0.4.4; see
+   * docs/architecture.md). The mirrored card is filed under the idea title, which
+   * the caller shows next to the button, so the human can find it by eye.
+   */
+  openTaskBoard(): void {
+    this.panelNavigator?.select(TASK_BOARD_PANEL_ID)
+  }
+
+  /* --- deep-link to an idea (idea #105) ------------------------------------ */
+
+  /**
+   * Ask the board to focus one idea, by `#N`, by number or by id.
+   *
+   * The request is stored, the board is brought to the front, and the PANEL
+   * applies it (it owns the scope, the tab and the filters). A request that
+   * arrives before the panel is mounted simply waits — that is what makes a
+   * link work from a cold panel load.
+   *
+   * Fire and forget by design: the outcome is observable on {@link focusResult},
+   * and a caller has no useful way to act on a promise here that the board's own
+   * message does not already say better.
+   *
+   * @param ref - `'#42'`, `'42'`, `'idea-<uuid>'` or an idea id.
+   */
+  requestFocus(ref: string): void {
+    this.focusSeq += 1
+    this.focusRequest = { ref: ref.trim(), seq: this.focusSeq }
+    // The previous answer describes the previous link; keeping it would leave a
+    // stale "not found" on screen under the card the new one just focused.
+    this.focusResult = undefined
+    this.focusedIdeaId = undefined
+    this.emit()
+    this.openBoard()
+  }
+
+  /**
+   * The panel reports what it did with a request.
+   *
+   * Answering CLEARS the request: it is one-shot, so a re-render can never
+   * re-apply it (a second apply would fight the scope the first one set). A
+   * report for a stale sequence is dropped — two links in a row must not let the
+   * older answer overwrite the newer one.
+   *
+   * @param seq - the request's sequence number.
+   * @param outcome - what the panel could do with it.
+   * @param ideaId - the focused card; omitted when nothing could be focused.
+   */
+  reportFocus(seq: number, outcome: IdeaFocusOutcome, ideaId?: string): void {
+    const request = this.focusRequest
+    if (request === undefined || request.seq !== seq) return
+    this.focusRequest = undefined
+    this.focusResult = { ref: request.ref, seq, outcome }
+    this.focusedIdeaId = ideaId
+    this.emit()
+  }
+
+  /**
+   * Drop the focus affordance: the human narrowed the scope, searched, toggled a
+   * tag or changed tab, so the link's destination is no longer what they are
+   * reading. Same discipline as the multi-select (idea #94) — a view marker the
+   * reader owns, never something the 2.5 s poll restores.
+   */
+  clearFocus(): void {
+    if (this.focusedIdeaId === undefined) return
+    this.focusedIdeaId = undefined
+    this.emit()
+  }
+
+  /**
+   * Resolve a reference to the idea it names, across every workspace.
+   *
+   * The snapshot is asked first because it is free and holds the whole board.
+   * On a MISS the board asks the Host once through the existing bounded read and
+   * adopts a fresh list before answering: the poll only runs while the panel is
+   * open, so a board closed since a capture genuinely does not know the idea,
+   * and a card has to exist in the snapshot before anything can focus it.
+   *
+   * Never throws: a failed read is logged and answered as "not found", because a
+   * deep-link that cannot resolve must degrade to a message, not to a broken
+   * panel.
+   *
+   * @param ref - the caller's reference, unparsed.
+   * @returns the idea, or undefined when this board holds no such reference.
+   */
+  async resolveFocus(ref: string): Promise<FocusableIdea | undefined> {
+    const parsed = parseIdeaRef(ref)
+    if (parsed === undefined) return undefined
+    const local = resolveIdeaRef(parsed, this.snapshot?.ideas ?? [])
+    if (local !== undefined) return local
+    if (this.transport.read === undefined) return undefined
+    try {
+      const page = await this.transport.read(focusReadQuery(parsed))
+      if (page.ideas.length === 0) return undefined
+      await this.refresh()
+      return resolveIdeaRef(parsed, this.snapshot?.ideas ?? []) ?? page.ideas[0]
+    } catch (error) {
+      console.warn('[dsh-plugin-ideas-manager] deep-link lookup failed:', error)
+      return undefined
+    }
   }
 
   /**

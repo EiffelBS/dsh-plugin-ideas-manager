@@ -62,6 +62,22 @@ mentions ideas / backlog / idees / notes:
    reaching `done` moves its idea to under review
    automatically (the review gate) — the review verdict stays human-owned.
 
+## Point the human at one idea
+
+The board has a **Go to idea** box in its header: the human types `#N` and lands
+on that card — opened, scrolled into view and ringed, whatever workspace scope,
+search or tag filter was in the way. It works on a board that was closed, and on
+an archived card.
+
+So when your answer ends with "see idea #42":
+
+- **Quote the `#N`.** It is the stable reference: a board exported and imported
+  on another machine keeps its numbers, and an idea **id** does not survive that
+  trip. An id is accepted by the box, but never hand one to a human.
+- One line is enough. The human pastes the number; the board finds the card.
+- If the box reports that nothing matches, the number is not on THIS board —
+  re-read it with `ideas_get` rather than re-typing the title.
+
 ## `ideas_*` agent tools (preferred over hand-building the envelope)
 
 When the deployment serves an agent-tool registry, six `ideas_*` tools drive the
@@ -281,6 +297,8 @@ src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal
                          snapshots + restore (strict validation, displaced-on-restore)
 src/client/backup-panel.tsx  the settings section's Backup tab (snapshots/restore/export/import)
 src/client/find-similar.ts  the Find similar gate + launch input (pure)
+src/client/deeplink.ts      the deep-link reference grammar + board-wide resolver (pure)
+src/client/deeplink-service.ts  the published `ideas-manager.board` focus service
 src/agent-tools.ts       the ideas_* agent tools (feature-detected registry)
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind
 src/host-service.ts      apply + mirror scheduling

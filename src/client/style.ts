@@ -166,6 +166,33 @@ body[data-ds-dark-theme] {
   text-overflow: ellipsis;
 }
 
+/* Deep-link jump (idea #105): "Go to idea" sits in the header's right cluster
+   next to the scope selector. A compact text field — NOT a second search box:
+   it takes a reference (#42) and jumps, it does not narrow. */
+.dsh-ideas-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.dsh-ideas-jump-input {
+  box-sizing: border-box;
+  width: 92px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.dsh-ideas-jump-go {
+  flex: none;
+  white-space: nowrap;
+}
+
 /* Raw/MD description view toggle (segmented pair in the board header). */
 .dsh-ideas-md-toggle {
   display: inline-flex;
@@ -1944,6 +1971,36 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
     0 1px 2px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
 }
 
+/* Deep-link focus (idea #105): the accent ring the board already paints for a
+   focused field, drawn AROUND the card instead of on one control — so "this is
+   where the link landed" reads exactly like keyboard focus and never like a
+   selection the reader made (that keeps its own inset edge above). The ring is
+   drawn on the wrapper because the inner card is clipped by the column's own
+   rounded corners; an outline is not clipped by the scroll container, so the
+   card stays visible at the top and bottom of a full column. */
+.dsh-ideas-card-wrapper[data-dsh-ideas-focused] {
+  outline: 2px solid var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  outline-offset: -1px;
+  border-radius: 10px;
+}
+
+.dsh-ideas-card-wrapper[data-dsh-ideas-focused] .dsh-ideas-card {
+  border-color: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--dsh-ideas-fb-accent)));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--dsw-alias-button-primary-fill, var(--dsh-alias-fb-accent)) 18%, transparent);
+}
+
+/* A deep-link that could not land: a quiet line, not the error box. It is an
+   answer to a request the human made, not a failure of the Host. */
+.dsh-ideas-focus-note {
+  flex: none;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+  font-size: 12px;
+}
+
 /* Selection bar: one quiet row above the tab content, like the tag filter row
    above it. It is the place that states "N selected of M shown, in this scope",
    which is what makes a bulk action auditable before it is posted. */
@@ -2145,6 +2202,9 @@ export const classes = {
   backButton: 'dsh-ideas-back-button',
   detailMeta: 'dsh-ideas-detail-meta',
   search: 'dsh-ideas-search',
+  jump: 'dsh-ideas-jump',
+  jumpInput: 'dsh-ideas-jump-input',
+  jumpGo: 'dsh-ideas-jump-go',
   workspaceSelect: 'dsh-ideas-workspace-select',
   mdToggle: 'dsh-ideas-md-toggle',
   mdToggleButton: 'dsh-ideas-md-toggle-button',
@@ -2153,6 +2213,7 @@ export const classes = {
   ghostButton: 'dsh-ideas-ghost-button',
   settingsGear: 'dsh-ideas-settings-gear',
   error: 'dsh-ideas-error',
+  focusNote: 'dsh-ideas-focus-note',
   launchGate: 'dsh-ideas-launch-gate',
   launchGateActions: 'dsh-ideas-launch-gate-actions',
   columns: 'dsh-ideas-columns',

@@ -1,12 +1,12 @@
 /**
  * Shell contract: the host facts this plugin's cross-panel navigation reads.
  *
- * The gear and the TaskBoard redirect do NOT use a sanctioned API — the shell
- * exposes none — so they read the host's own DOM. That makes them hostage to
- * upstream markup: both regressions in this area (the Desktop account menu
- * replacing the Settings button, a renamed aria-label) are silent, because a
- * selector that stops matching only logs a `console.warn` at click time, in
- * production, on one profile.
+ * The gear does NOT use a sanctioned API — the shell exposes none — so it reads
+ * the host's own DOM. That makes it hostage to upstream markup: both
+ * regressions in this area (the Desktop account menu replacing the Settings
+ * button, a renamed aria-label) are silent, because a selector that stops
+ * matching only logs a `console.warn` at click time, in production, on one
+ * profile.
  *
  * This suite pins the contract to the REAL installed artifacts rather than to
  * hand-written fixtures, so an upstream release that moves any of it fails
@@ -83,15 +83,15 @@ const FACTS: readonly Fact[] = [
     remedy: 'the gear must be taught the new launcher labels/shape',
   },
   {
-    id: 'the TaskBoard sidebar row hook: our primary redirect path',
+    // Idea #105 removed the only DOM dependency this plugin had on the
+    // task-board: the permission-gate redirect is a deep-link to OUR card, and
+    // the TaskBoard panel is selected through the shell's own layout face. The
+    // one assumption left is the panel id that face selects — nothing else of
+    // that package's markup is read.
+    id: 'the TaskBoard panel id our "Open the TaskBoard" selects',
     pkg: TASK_BOARD,
-    needles: [
-      'TASK_BOARD_PANEL_ID = "task-board"',
-      '"data-dsh-panel-entry": TASK_BOARD_PANEL_ID',
-      '"data-dsh-taskboard-view": ""',
-      'type: "search"',
-    ],
-    remedy: 'taskboard-focus.ts must be taught the new panel/row contract',
+    needles: ['TASK_BOARD_PANEL_ID = "task-board"'],
+    remedy: 'IdeasClient.openTaskBoard() selects a panel id the TaskBoard no longer registers',
   },
 ]
 

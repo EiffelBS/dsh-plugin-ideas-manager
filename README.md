@@ -161,6 +161,23 @@ restored from the archive like any other.
 - The New/Edit modal carries a workspace field, so a capture lands in the right
   place and an idea can be moved to another workspace.
 
+### Go straight to an idea
+The board header carries a small **Go to idea** box: type an idea's number
+(`#42`) and it opens that card, scrolls it into view and rings it — even when
+the board was closed, and even when the card belongs to another workspace or is
+archived. That is the point: **the number is the reference**, so a conversation
+that ends with "see idea #42" ends with one click on it.
+
+- It always finds the card. The search box, the tag filter and the workspace
+  selector are cleared whenever they would hide it, and the board switches to
+  the scope the idea actually lives in — the search box visibly emptying is the
+  explanation.
+- **A reference that matches nothing says so**, instead of leaving you wondering
+  whether the board heard the request.
+- The number is the durable reference. An internal idea id also works, but only
+  on this board: a board moved to another machine keeps its `#N` numbers, not
+  its ids. So always quote the number.
+
 ### Many ideas at once
 - Every card — and every row of the Priorities and Delivered tabs — carries a
   **select box**. Click it to pick one idea, **shift-click** to paint a range of

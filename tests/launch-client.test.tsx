@@ -313,28 +313,53 @@ describe('launch permission gate (the one refusal with a destination)', () => {
     await refuseAtTheGate()
     const gate = host.querySelector('[data-dsh-ideas-launch-gate]')
     expect(gate).not.toBeNull()
-    // The title is the text the board's own filter matches on, so it is what
-    // the human has to be able to read and copy.
+    // The title is the text the mirrored card is filed under in the TaskBoard,
+    // so it is what the human has to be able to read and copy.
     expect(gate?.textContent).toContain('Launchable')
     // The raw sentence stays, for diagnosis, but no longer alone.
     expect(gate?.textContent).toContain('confirmation-required')
     expect(host.querySelector('[data-dsh-ideas-copy-title]')).not.toBeNull()
   })
 
-  it('redirects to the task-board panel, filtered on the idea title', async () => {
+  it('offers the card itself as the destination (idea #105: the deep link)', async () => {
+    await refuseAtTheGate()
+    // No TaskBoard DOM at all: the destination is our own card, reached through
+    // the board's own state, so nothing foreign has to be mounted for it to work.
+    const show = host.querySelector('[data-dsh-ideas-show-card]') as HTMLElement
+    expect(show).not.toBeNull()
+    act(() => { show.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+
+    expect(client.focusRequest).toBeUndefined()
+    expect(client.focusResult?.outcome).toBe('focused')
+    expect(client.focusedIdeaId).toBe('launchable')
+    const card = host.querySelector('[data-dsh-ideas-focused]')
+    expect(card?.getAttribute('data-dsh-idea-id')).toBe('launchable')
+    // The refusal's own screen is left behind: the card IS the destination.
+    expect(host.querySelector('[data-dsh-ideas-launch-gate]')).toBeNull()
+  })
+
+  it('opens the task-board panel through the layout face, and writes nothing in it', async () => {
     const selected = await refuseAtTheGate()
-    const board = document.createElement('div')
-    board.setAttribute('data-dsh-taskboard-view', '')
-    const input = document.createElement('input')
-    input.type = 'search'
-    board.appendChild(input)
-    document.body.appendChild(board)
+    // A decoy of the very DOM the old redirect used to drive: a foreign panel
+    // with a search field. Idea #105 deleted that surgery, so the field must
+    // come out untouched whatever the button does.
+    const foreignPanel = document.createElement('div')
+    foreignPanel.setAttribute('data-dsh-taskboard-view', '')
+    const foreignFilter = document.createElement('input')
+    foreignFilter.type = 'search'
+    foreignPanel.appendChild(foreignFilter)
+    document.body.appendChild(foreignPanel)
 
     const open = host.querySelector('[data-dsh-ideas-open-taskboard]') as HTMLElement
     act(() => { open.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+
     expect(selected).toEqual(['task-board'])
-    expect(input.value).toBe('Launchable')
-    board.remove()
+    expect(foreignFilter.value).toBe('')
+    // And the destination is untouched: the TaskBoard panel is the human's to
+    // confirm a permission in, not something this plugin filters for them.
+    expect(client.focusRequest).toBeUndefined()
+    foreignPanel.remove()
   })
 })
 

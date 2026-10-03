@@ -25,6 +25,11 @@ export declare const fr: {
     'board.tagFilterSearch': string;
     'board.tagFilterNoMatch': string;
     'board.tagFilterClear': string;
+    'board.jump': string;
+    'board.jumpPlaceholder': string;
+    'board.jumpGo': string;
+    'board.jumpUnknown': string;
+    'board.jumpHidden': string;
     'settings.nav': string;
     'settings.title': string;
     'settings.intro': string;
@@ -186,6 +191,7 @@ export declare const fr: {
     'launch.cancel': string;
     'launch.permissionHint': string;
     'launch.openTaskBoard': string;
+    'launch.showCard': string;
     'launch.copyTitle': string;
     'launch.titleCopied': string;
     'followUp.title': string;
@@ -327,6 +333,11 @@ export declare const en: {
     'board.tagFilterSearch': string;
     'board.tagFilterNoMatch': string;
     'board.tagFilterClear': string;
+    'board.jump': string;
+    'board.jumpPlaceholder': string;
+    'board.jumpGo': string;
+    'board.jumpUnknown': string;
+    'board.jumpHidden': string;
     'settings.nav': string;
     'settings.title': string;
     'settings.intro': string;
@@ -498,6 +509,7 @@ export declare const en: {
     'launch.cancel': string;
     'launch.permissionHint': string;
     'launch.openTaskBoard': string;
+    'launch.showCard': string;
     'launch.copyTitle': string;
     'launch.titleCopied': string;
     'followUp.title': string;
@@ -635,6 +647,11 @@ export declare const zh: {
     'board.tagFilterSearch': string;
     'board.tagFilterNoMatch': string;
     'board.tagFilterClear': string;
+    'board.jump': string;
+    'board.jumpPlaceholder': string;
+    'board.jumpGo': string;
+    'board.jumpUnknown': string;
+    'board.jumpHidden': string;
     'settings.nav': string;
     'settings.title': string;
     'settings.intro': string;
@@ -796,6 +813,7 @@ export declare const zh: {
     'launch.cancel': string;
     'launch.permissionHint': string;
     'launch.openTaskBoard': string;
+    'launch.showCard': string;
     'launch.copyTitle': string;
     'launch.titleCopied': string;
     'followUp.title': string;

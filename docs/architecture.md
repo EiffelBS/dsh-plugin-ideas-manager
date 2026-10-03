@@ -30,6 +30,8 @@ src/
   client/selection.ts    # the multi-select scope: toggle / range / all / prune (pure)
   client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
+  client/deeplink.ts     # idea #105: reference grammar + board-wide resolver (pure)
+  client/deeplink-service.ts # idea #105: the published `ideas-manager.board` service
   client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
   client/backup-panel.tsx  # the settings section's Backup tab (snapshot / restore / export)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
@@ -564,6 +566,85 @@ the download is a plain `<a href>` to the content route (the server sets
 `content-disposition`) rather than a Blob — the file the browser stores is then
 exactly the document a restore adopts elsewhere, with no client-side copy of it.
 
+## Deep-link to an idea (idea #105)
+
+### The surface decision, taken before the code
+
+The brief asked for the surface to be chosen first and written down, because the
+two candidates were genuinely different and only one of them is ours to build.
+This is that decision, and the reasoning is kept so the next reader does not
+re-open it.
+
+**Chosen surface: a published client service + a selection payload the panel's
+own state carries. No new route, no URL write, and no DOM.**
+
+- **A published service.** `ctx.provide('ideas-manager.board', …)` is the cordis
+  way for another plugin to reach a panel that is not on its dependency list, and
+  it is the same mechanism the shell itself uses for cross-plugin faces. It is
+  feature-detected by the caller (`ctx.get(…)`), so a deployment that never asks
+  for it pays nothing, and this plugin never declares it in `inject` — a missing
+  consumer must not be able to keep the board from booting.
+- **A panel-state payload.** The request lands on `IdeasClient` (framework-free,
+  subscribable) and is consumed by `IdeasBoard`, which owns the scope, the tab and
+  the filters. The payload lives on the client rather than in React state because
+  a deep-link has to survive the panel being **closed** at the moment it is
+  requested — that is the "cold panel load" case.
+- **Not a route.** The board is a page in the layout's keyed `main` slot; a
+  top-level route of our own would compete with the shell's navigation, and the
+  brief says to stop for a decision rather than invent one. Nothing here touches
+  `location`, so we cannot fight whatever the shell does with its own URL.
+- **Not DOM.** Everything is our own React tree and our own cordis context.
+
+### What was verified about the third party
+
+The one refusal with a destination is the TaskBoard **permission gate**: a
+mirrored card whose effective permission sits above the session default can only
+be confirmed by a human, in the TaskBoard. `client/taskboard-focus.ts` used to get
+there by writing the idea title into that board's filter field through the native
+value setter and a bubbling `input` event — pure DOM surgery on someone else's
+React tree.
+
+The installed task-board (0.4.4) was read to see whether a contract exists to
+replace it: `lib/types/client/index.d.ts` exports `apply`, `bindSettingsForm`,
+`servedEntryForm`, `TaskBoardPanel`, `registerTaskBoardPanel` and the panel id —
+there is **no provided service**, no deeplink, and `BoardController.openTask(id)`
+is internal to that plugin's own fiber. So the surgery had no contract to be
+replaced by, and the honest fix is to stop depending on the foreign DOM: the
+refusal now deep-links to **our** card (an exact destination, by number) and opens
+the TaskBoard panel through the shell's own layout face, unfiltered. The module is
+deleted rather than kept as a second way to do one thing; the convenience it
+provided — the TaskBoard pre-filtered on the idea title — is the real cost of that
+decision and is stated in the CHANGELOG rather than hidden.
+
+### The rules that make it a link and not a filter
+
+- **The number is the reference.** `#42`, `42` and a raw id are all accepted, and
+  `idea-<id>` (the deterministic mirrored-card id) parses too, so a card id copied
+  from the TaskBoard still lands on the right card. An id is accepted, never
+  advertised: it does not survive a re-import on another machine, so the copy
+  always shows the number.
+- **Resolution is board-wide, never scoped.** The poll carries every idea of every
+  workspace, so the resolver runs over the whole snapshot: `open idea #42` lands
+  on #42 whatever the workspace selector, the tag chips or the search box say.
+- **Focusing clears the narrowings.** A focused card that the filters hide is not
+  a focus, so the search and the tag filter are reset (the search box visibly
+  empties, which is the explanation) and the workspace scope becomes the idea's
+  own workspace. The scope is *not* persisted: the remembered scope is a
+  preference about how the board opens, not about where a link pointed.
+- **A cold board reads once.** The 2.5 s poll only runs while the board is open,
+  so a request that misses the current snapshot asks the Host through the
+  existing bounded read (`?view=summary&numbers=` / `&ids=`, one row) and adopts a
+  fresh list before answering. The card must exist before it can be focused. This
+  is the same wire the agent tools read; nothing was added to it.
+- **Archived and declined land too.** Every status has a column on the Overview,
+  and the tab always switches there. The single exception is a declined idea
+  while the *hide Declined column* setting is on: there is no card to paint, so
+  the board says exactly that instead of silently doing nothing.
+- **The focus is view state.** It is never written to the Host and never
+  persisted, and it is dropped the moment the human narrows the scope, searches,
+  toggles a tag or changes tab — the same discipline as the multi-select
+  (idea #94), for the same reason: the poll must never fight the reader.
+
 ## Card mirror
 
 Card ids are **deterministic** (`idea-` + the idea id), so re-running any mirror
@@ -609,13 +690,14 @@ Two consequences of this contract are worth knowing without any tooling:
   deployment may not have would keep the whole plugin from booting.
 - A launch refused by the TaskBoard **permission gate** is the one refusal with a
   destination: the card's effective permission sits above the session default, and
-  only a human may confirm that binding. The modal names the card and offers
-  `client/taskboard-focus.ts`, which selects the board panel through the layout
-  and writes the idea title into the board's own filter. The write is DOM
-  surgery on purpose — the board publishes no service, the `main` slot carries no
-  selection payload and there is no deeplink — so it is scoped, bounded and
-  silent on failure. The plugin never confirms a permission itself: `run` is the
-  only launch verb it posts.
+  only a human may confirm that binding. The modal now deep-links to **our own**
+  card for that idea (`Show the card`, by its `#N`) and opens the TaskBoard panel
+  through the shell's layout face. It used to be `client/taskboard-focus.ts`, which
+  typed the idea title into that board's filter field through the native value
+  setter and a bubbling `input` event — DOM surgery on a third-party React tree,
+  for a board that publishes no service to call instead (verified on the installed
+  0.4.4). See *Deep-link to an idea* below for the decision and its cost. The
+  plugin never confirms a permission itself: `run` is the only launch verb it posts.
 - The browser subscribes by **short-polling** (2.5 s) while the board is open
   and the page is visible, not by holding SSE connections: three tabs times SSE
   exhausted the browser's per-origin connection budget and stalled the Host.
