@@ -1015,6 +1015,14 @@ that was added is a test on both backends asserting no second attempt is made.
 
 ### Where it is stored, and the two alternatives that were rejected
 
+The service reads it through **one** settings seam: `setSettingsReader(() =>
+IdeasSettingsValue | undefined)`, the late-bound reader `src/index.ts` binds to
+the config port. It replaced a narrower `setRunPermission(() => string)`, which
+existed to carry the direct-launch permission alone; with two launch preferences
+in play, one reader of the whole value is the shape that cannot drift (and
+`tests/idea-107-launch-model.test.ts` guards BOTH consumers, the permission
+included — it is the pre-existing behaviour this seam had to keep).
+
 - **Rejected: a field on `IdeaRecord`.** The board's background poll adopts
   whatever the Host serves, so a per-idea copy would be written straight back
   over the choice the human just made — the same reason `openOrdering` and the
