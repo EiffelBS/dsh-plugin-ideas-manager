@@ -22,6 +22,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { IdeasHostLedger } from '../src/host-ledger.ts'
 import { IdeasHostService } from '../src/host-service.ts'
 import { IDEAS_BACKUP_DIR_NAME, IDEAS_SNAPSHOT_RETENTION } from '../src/backup.ts'
+import type { IdeaRecord } from '../src/core/ideas.ts'
 import { IDEAS_SCHEMA_VERSION } from '../src/protocol.ts'
 
 let dir = ''
@@ -55,6 +56,24 @@ function backupDir(): string {
 function snapshotFiles(): string[] {
   if (!existsSync(backupDir())) return []
   return readdirSync(backupDir()).sort()
+}
+
+/**
+ * The complete field surface of a persisted idea row. Kept as a literal (not
+ * derived from the type, which is erased) so the round-trip test can assert
+ * that the fixture really carries all of it — that is what turns "nothing is
+ * dropped" from a claim into a check.
+ */
+const IDEA_FIELDS = [
+  'analysisAudit', 'archivedAt', 'body', 'createdAt', 'decision', 'deliveredAt',
+  'deliveryNote', 'effort', 'events', 'followUpOfId', 'id', 'ideaNumber', 'rank',
+  'rationale', 'reanalyzeAt', 'runSessionId', 'runStatus', 'status', 'summary',
+  'tags', 'taskBoardId', 'taskBoardStatus', 'title', 'updatedAt', 'value', 'workspaceId',
+] as const
+
+/** Every distinct key the given rows actually carry, sorted. */
+function storedFields(rows: readonly IdeaRecord[]): string[] {
+  return [...new Set(rows.flatMap(row => Object.keys(row)))].sort()
 }
 
 /** Read a snapshot file back as JSON. */
@@ -110,6 +129,10 @@ function fullyPopulated(ledgerRef: IdeasHostLedger): string {
   })
   ledgerRef.applyRequest('seed-6', create('idea-2', 'Second idea', 'ws-1'))
   ledgerRef.applyRequest('seed-7', { kind: 'decline', ideaId: 'idea-2', decision: 'Not worth it now' })
+  // A DELIVERED idea, because `deliveredAt` is the one field the other rows
+  // cannot carry: it is written by the delivery verb alone.
+  ledgerRef.applyRequest('seed-8', create('idea-3', 'Delivered idea', 'ws-1'))
+  ledgerRef.applyRequest('seed-9', { kind: 'deliver', ideaId: 'idea-3' })
   return 'idea-rich'
 }
 
@@ -408,6 +431,11 @@ describe('portable export / import round trip', () => {
     const taken = source.takeSnapshot('export')
     const exported = readFileSync(taken.snapshot.path, 'utf8')
     const sourceSequence = source.snapshot().ideas.reduce((max, idea) => Math.max(max, idea.ideaNumber ?? 0), 0)
+    // The whole field surface of an IdeaRecord, spelled out. The fixture has to
+    // carry ALL of it for the round-trip assertion below to mean anything, so
+    // this line is the guard that stops a new field from being exercised by
+    // accident and being dropped without anyone noticing.
+    expect(storedFields(sourceIdeas)).toEqual([...IDEA_FIELDS].sort())
     source.dispose()
 
     // Machine B: an empty home. The same document, adopted whole.
@@ -420,8 +448,11 @@ describe('portable export / import round trip', () => {
     if (!outcome.ok) throw new Error('expected a restore')
     expect(outcome.source).toBe('the imported ledger')
     expect(outcome.ideas).toBe(sourceIdeas.length)
-    // Every field, on every row, byte-identical after the round trip.
+    // Every field, on every row, byte-identical after the round trip — and the
+    // very same key set, so a field present in one and absent in the other
+    // fails here instead of reading as an empty value.
     expect(target.snapshot().ideas).toEqual(sourceIdeas)
+    expect(storedFields(target.snapshot().ideas)).toEqual(storedFields(sourceIdeas))
     target.dispose()
 
     // ...and the ledger's own invariants travelled with them: the capture
@@ -465,8 +496,14 @@ describe('portable export / import round trip', () => {
     const child = target.snapshot().ideas.find(idea => idea.followUpOfId === richId)
     expect(child?.title).toBe('Follow-up')
     expect(target.snapshot().ideas.find(idea => idea.id === child!.id)?.events?.[0]).toMatchObject({ verb: 'create' })
-    // A declined idea keeps its decision.
+    // A declined idea keeps its decision, a delivered one keeps its stamp: the
+    // two closed-column states carry fields nothing else writes.
     expect(target.snapshot().ideas.find(idea => idea.id === 'idea-2')?.decision).toBe('Not worth it now')
+    const delivered = target.snapshot().ideas.find(idea => idea.id === 'idea-3')
+    expect(delivered?.status).toBe('archived')
+    expect(delivered?.deliveredAt).toBeTypeOf('number')
+    expect(delivered?.archivedAt).toBeTypeOf('number')
+    expect(delivered?.deliveredAt).toBe(delivered?.archivedAt)
     target.dispose()
   })
 
