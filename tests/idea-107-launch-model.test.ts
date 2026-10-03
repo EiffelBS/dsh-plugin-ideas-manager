@@ -86,9 +86,11 @@ class FakeGateway implements HostSessionGateway {
  */
 async function serve(options: {
   launchModels?: Record<string, string>
+  directRunPermission?: string
   withMirror?: boolean
   autoMirror?: boolean
   boardAbsent?: boolean
+  dispatch?: (sessionId: string, line: string) => Promise<unknown>
 } = {}): Promise<{ service: IdeasHostService; taskBoard: FakeTaskBoard; gateway: FakeGateway }> {
   dir = join(tmpdir(), `ideas-107-${process.pid}-${randomUUID()}`)
   mkdirSync(dir, { recursive: true })
@@ -108,11 +110,12 @@ async function serve(options: {
     dir,
     mirror: options.withMirror === false ? undefined : new TaskBoardMirror({ transport: taskBoard }),
     autoMirror: options.autoMirror ?? true,
-    sessions: new SessionRunner(gateway),
+    sessions: new SessionRunner(gateway, options.dispatch),
   })
   const value: IdeasSettingsValue = sanitizeSettings({
     ...IDEAS_SETTINGS_DEFAULTS,
     ...(options.launchModels === undefined ? {} : { launchModelByWorkspace: options.launchModels }),
+    ...(options.directRunPermission === undefined ? {} : { directRunPermission: options.directRunPermission }),
   })
   service.setSettingsReader(() => value)
   service.apply('create-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws1' } })
@@ -308,6 +311,49 @@ describe('the default is a setting, never idea data', () => {
     live = sanitizeSettings({ launchModelByWorkspace: { ws2: 'p/late' } })
     await service.launchIdea('idea-2')
     expect(pinnedModels(taskBoard)).toEqual(['p/late'])
+  })
+})
+
+describe('the direct-launch permission still reaches the fresh session', () => {
+  // Idea #107 generalized the settings seam: the service used to read ONE
+  // string (`setRunPermission`) and now reads the whole settings VALUE
+  // (`setSettingsReader`) for both preferences. This is the regression guard for
+  // the pre-existing half of that seam — the permission must arrive through the
+  // SAME reader as the model, or a read-only deployment would silently get
+  // workspace-write runs.
+  it('dispatches /permission from the settings value, before the prompt', async () => {
+    const dispatched: Array<[string, string]> = []
+    const { service, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      directRunPermission: 'read-only',
+      withMirror: false,
+      autoMirror: false,
+      dispatch: async (sessionId, line) => { dispatched.push([sessionId, line]) },
+    })
+
+    await service.launchIdea('idea-1')
+
+    expect(dispatched).toEqual([['session-1', '/permission read-only']])
+    // And it is dispatched BEFORE the prompt, while both preferences came out
+    // of the one reader: the model is pinned and the sandbox is already in place.
+    const order = gateway.calls.map(call => call.method)
+    expect(order).toContain('selectModel')
+    expect(order.indexOf('selectModel')).toBeLessThan(order.indexOf('prompt'))
+  })
+
+  it('defaults to workspace-write when the deployment stores nothing', async () => {
+    const dispatched: Array<[string, string]> = []
+    const { service } = await serve({
+      withMirror: false,
+      autoMirror: false,
+      dispatch: async (sessionId, line) => { dispatched.push([sessionId, line]) },
+    })
+
+    await service.launchIdea('idea-1')
+
+    // The documented default, not the Host's own: the run brief asks for
+    // implementation, so a read-only direct run would answer with a plan.
+    expect(dispatched).toEqual([['session-1', '/permission workspace-write']])
   })
 })
 
