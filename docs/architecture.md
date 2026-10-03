@@ -946,6 +946,17 @@ per card, which is O(rows²) on every poll. Measured on the 140-card perf fixtur
 measurable time — `RelationChips` returns `null` for an idea with no edge, and
 the index is a single pass.
 
+**Three surfaces, one index.** The Overview card, the Priorities row and the
+Delivered row all print the same line, because two of them already print the
+labels beside them and a reader who sees `core` on a ranked row would read its
+absence of links as "this idea has none". The index is built by the board and
+passed down as the `relations` prop rather than recomputed by each view, for a
+reason that is not only performance: **both list views receive SCOPED rows**
+(Priorities the open rows of the current scope, Delivered the archived ones), so
+neither can resolve a `#N` on its own — an edge to a card outside the current
+filter would print a bare id. The board already holds the whole snapshot, and
+only the active tab is mounted, so handing the index down costs one pass.
+
 ## Card mirror
 
 Card ids are **deterministic** (`idea-` + the idea id), so re-running any mirror

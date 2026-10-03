@@ -16,9 +16,10 @@ Versions before 0.3.0 predate this file.
   its side, as **Waiting for this idea** — the same arrow on both cards, in
   opposite directions, so the links read without opening anything.
   - You add and remove them in the **editor**, under **Relations**: pick an idea
-    from a list, or press the **×** on a chip. A card prints them as a quiet
-    `↔ #12` / `→ #31` / `← #7` line under its description, and prints **nothing
-    at all** for an idea that has none.
+    from a list, or press the **×** on a chip. The **Overview card** and the
+    **Priorities** and **Delivered** rows all print them as a quiet
+    `↔ #12` / `→ #31` / `← #7` line, and print **nothing at all** for an idea
+    that has none.
   - **A link is declared once, never twice.** *Related to* is one statement about
     two ideas and is true from both sides; *Waits for* is stored on the card that
     waits and the *Waiting for this idea* line is the same edge seen from the

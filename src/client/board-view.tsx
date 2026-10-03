@@ -2820,6 +2820,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               now={renderedAt}
               selectedIds={selectedSet}
               onSelect={toggleRow}
+              relations={relationIndex}
             />
           )
           : activeTab === 'delivered'
@@ -2835,6 +2836,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 parentNumber={parentNumberOf}
                 selectedIds={selectedSet}
                 onSelect={toggleRow}
+                relations={relationIndex}
               />
             )
             : (

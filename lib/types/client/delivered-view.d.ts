@@ -22,6 +22,7 @@
  */
 import type { IdeasClient } from './ideas-client.ts';
 import type { IdeaListRow } from '../protocol.ts';
+import type { RelationView } from './relations.ts';
 export interface DeliveredViewProps {
     client: IdeasClient;
     /** Archived list rows of the current scope, unsorted. */
@@ -45,6 +46,14 @@ export interface DeliveredViewProps {
     selectedIds?: ReadonlySet<string>;
     /** Multi-select (idea #94): toggle this row, or extend a range on shift-click. */
     onSelect?: (ideaId: string, shiftKey: boolean) => void;
+    /**
+     * Relation lines per idea id (idea #106), derived ONCE per paint by the board
+     * over the WHOLE snapshot. Passed in rather than recomputed: this view only
+     * receives the SCOPED rows, so it cannot resolve a `#N` on its own, and a row
+     * that links to a card outside the current filter would print a bare id.
+     * Undefined means "no relations anywhere", which renders no line at all.
+     */
+    relations?: ReadonlyMap<string, readonly RelationView[]>;
 }
 /**
  * The Delivered log's display order, exported so the board's multi-select
@@ -52,4 +61,4 @@ export interface DeliveredViewProps {
  * block must be the block the author sees, in the order they see it.
  */
 export declare function deliveredRows(ideas: readonly IdeaListRow[]): IdeaListRow[];
-export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect }: DeliveredViewProps): import("react").JSX.Element;
+export declare function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect, relations }: DeliveredViewProps): import("react").JSX.Element;

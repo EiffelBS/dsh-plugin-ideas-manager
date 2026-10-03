@@ -31,6 +31,8 @@ import { RunStateBadges } from './run-state-badges.tsx'
 import { DeliveryNote } from './delivery-note.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
+import { RelationChips } from './relations-view.tsx'
+import type { RelationView } from './relations.ts'
 import { tagHue } from './tags.ts'
 import { SelectBox } from './bulk-bar.tsx'
 
@@ -57,6 +59,14 @@ export interface DeliveredViewProps {
   selectedIds?: ReadonlySet<string>
   /** Multi-select (idea #94): toggle this row, or extend a range on shift-click. */
   onSelect?: (ideaId: string, shiftKey: boolean) => void
+  /**
+   * Relation lines per idea id (idea #106), derived ONCE per paint by the board
+   * over the WHOLE snapshot. Passed in rather than recomputed: this view only
+   * receives the SCOPED rows, so it cannot resolve a `#N` on its own, and a row
+   * that links to a card outside the current filter would print a bare id.
+   * Undefined means "no relations anywhere", which renders no line at all.
+   */
+  relations?: ReadonlyMap<string, readonly RelationView[]>
 }
 
 /** Most recent exit first (deliveredAt for delivered, archivedAt otherwise). */
@@ -85,7 +95,7 @@ function isoDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect }: DeliveredViewProps) {
+export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect, relations }: DeliveredViewProps) {
   const rows = mostRecentFirst(archivedIdeas)
   return (
     <div className={classes.priorities} data-dsh-ideas-delivered="">
@@ -151,6 +161,10 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                       </div>
                     )}
                     <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
+                    {/* Relations (idea #106): the same quiet line the Overview
+                        card prints, so a row that links to another idea says so
+                        here too instead of only in the editor. */}
+                    <RelationChips views={relations?.get(idea.id)} />
                     {/* The delivery note of the run that produced this exit
                         (idea #91): what was actually delivered, on the row that
                         records the delivery. Renders nothing for an idea that was

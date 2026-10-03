@@ -26,6 +26,7 @@
  */
 import type { IdeasClient } from './ideas-client.ts';
 import type { IdeaListRow } from '../protocol.ts';
+import type { RelationView } from './relations.ts';
 export interface PrioritiesProps {
     client: IdeasClient;
     /** Open list rows of the current workspace scope, unsorted (ranked below). */
@@ -69,6 +70,14 @@ export interface PrioritiesProps {
      */
     selectedIds?: ReadonlySet<string>;
     onSelect?: (ideaId: string, shiftKey: boolean) => void;
+    /**
+     * Relation lines per idea id (idea #106), derived ONCE per paint by the board
+     * over the WHOLE snapshot and handed down. Passed in rather than recomputed:
+     * this view paints the OPEN rows of the current scope, so a link to a card
+     * outside that scope could not be resolved here, and would print a bare id.
+     * Undefined means "no relations anywhere", which renders no line at all.
+     */
+    relations?: ReadonlyMap<string, readonly RelationView[]>;
 }
 /** Ranked backlog view (see module doc). */
-export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now, selectedIds, onSelect }: PrioritiesProps): import("react").JSX.Element;
+export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now, selectedIds, onSelect, relations }: PrioritiesProps): import("react").JSX.Element;

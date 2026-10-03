@@ -77,9 +77,11 @@ let transport: RelationsTransport
 /**
  * Mount a board over an explicit row set. The board copies the client snapshot
  * into its own state at mount (idea #34's poll), so a different row set means a
- * fresh mount rather than a reassignment.
+ * fresh mount rather than a reassignment. The settings read is settled before
+ * the test continues, exactly like the other board suites: a tab click lands on
+ * a tree whose effects have already run.
  */
-function mount(rowsIn: readonly IdeaRecord[] = rows()): void {
+async function mount(rowsIn: readonly IdeaRecord[] = rows()): Promise<void> {
   act(() => { root?.unmount() })
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -90,11 +92,12 @@ function mount(rowsIn: readonly IdeaRecord[] = rows()): void {
     root = createRoot(host)
     root.render(<IdeasBoard client={client} />)
   })
+  await act(async () => { await client.loadConfig() })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.clear()
-  mount()
+  await mount()
 })
 afterEach(() => {
   act(() => { root?.unmount() })
@@ -157,15 +160,15 @@ describe('the card relation line', () => {
     expect(cardChips('c')).toEqual(['blockedBy:←:#1'])
   })
 
-  it('renders no node at all for an idea that carries no relation', () => {
+  it('renders no node at all for an idea that carries no relation', async () => {
     // `b` still names `a`, but `a` is not on this board: the chip is dropped
     // from the VIEW rather than printed as a bare id nobody can open.
-    mount([rows()[1]])
+    await mount([rows()[1]])
     expect(cardChips('b')).toEqual([])
     expect(host.querySelector('[data-dsh-ideas-relations]')).toBeNull()
   })
 
-  it('folds the overflow into a counter instead of painting a wall of chips', () => {
+  it('folds the overflow into a counter instead of painting a wall of chips', async () => {
     const many: IdeaRecord[] = [
       { id: 'hub', title: 'Hub', body: '', status: 'open', ideaNumber: 1, createdAt: 1, updatedAt: 1, relatesTo: ['b', 'c', 'd', 'e', 'f'] },
       ...['b', 'c', 'd', 'e', 'f'].map((id, index) => ({
@@ -179,7 +182,7 @@ describe('the card relation line', () => {
         relatesTo: ['hub'],
       })),
     ]
-    mount(many)
+    await mount(many)
     expect(cardChips('hub')).toHaveLength(3)
     expect(host.querySelector('[data-dsh-ideas-relations]')!.textContent).toContain('+2')
   })
@@ -245,6 +248,86 @@ describe('the editor relations section', () => {
     // An untouched edge must not spend a revision or an activity-log line.
     expect('relatesTo' in update.patch).toBe(false)
     expect('blocks' in update.patch).toBe(false)
+  })
+})
+
+describe('the relation line on the list tabs', () => {
+  /** Three open ideas plus one delivered, so both list tabs have a row to draw. */
+  function listRows(): IdeaRecord[] {
+    return [
+      ...rows().map((row, index) => index === 0 ? { ...row, tags: [{ name: 'core' }] } : row),
+      {
+        id: 'd',
+        title: 'Delta',
+        body: 'body d',
+        status: 'archived',
+        ideaNumber: 4,
+        createdAt: 4,
+        updatedAt: 100,
+        deliveredAt: 90,
+        tags: [{ name: 'shipped' }],
+      },
+    ]
+  }
+
+  /** Switch to a tab by its position in the fixed tab set. */
+  async function openTab(index: number): Promise<void> {
+    click(Array.from(host.querySelectorAll('[role="tab"]'))[index] as HTMLElement)
+    await settle()
+  }
+
+  /** The relation chips inside one view container, as `kind:glyph:#N`. */
+  function chipsIn(container: string): string[] {
+    const root = host.querySelector(container)
+    if (root === null) return []
+    return [...root.querySelectorAll('[data-dsh-ideas-relation]')].map(node => [
+      node.getAttribute('data-dsh-ideas-relation'),
+      node.querySelector('.dsh-ideas-relation-glyph')?.textContent,
+      node.lastChild?.textContent,
+    ].join(':'))
+  }
+
+  it('draws them on a Priorities row, which shows labels beside them', async () => {
+    await mount(listRows())
+    await openTab(1)
+    expect(host.querySelector('[data-dsh-ideas-priorities]')).not.toBeNull()
+    // The ranked row prints tags AND its relations: a list that shows one
+    // without the other is the inconsistency this closes. Every row carries its
+    // OWN line — Alpha's two, Beta's adjacency, Gamma's derived blocker — in
+    // rank order, so a reader never has to open a card to learn what waits on it.
+    expect(host.querySelector('[data-dsh-ideas-priorities] .dsh-ideas-tag')).not.toBeNull()
+    expect(chipsIn('[data-dsh-ideas-priorities]')).toEqual([
+      'relatesTo:↔:#2', 'blocks:→:#3',
+      'relatesTo:↔:#1',
+      'blockedBy:←:#1',
+    ])
+  })
+
+  it('draws them on a Delivered row too', async () => {
+    // `d` waits for nothing and nothing waits for it, so its row is quiet…
+    await mount(listRows())
+    await openTab(2)
+    expect(host.querySelector('[data-dsh-ideas-delivered]')).not.toBeNull()
+    expect(chipsIn('[data-dsh-ideas-delivered]')).toEqual([])
+
+    // …and an archived row that DOES declare a relation prints it, exactly like
+    // the Overview card would.
+    const linked = listRows()
+    linked[3] = { ...linked[3]!, blocks: ['a'] }
+    await mount(linked)
+    await openTab(2)
+    expect(chipsIn('[data-dsh-ideas-delivered]')).toEqual(['blocks:→:#1'])
+  })
+
+  it('resolves a link to an idea OUTSIDE the current scope, never a bare id', async () => {
+    // The Delivered tab shows only archived rows, so an edge from `d` to the
+    // OPEN idea `a` can only be resolved from the board's whole snapshot. A
+    // view that resolved from its own rows would print a bare id here.
+    const linked = listRows()
+    linked[3] = { ...linked[3]!, relatesTo: ['a'] }
+    await mount(linked)
+    await openTab(2)
+    expect(chipsIn('[data-dsh-ideas-delivered]')).toEqual(['relatesTo:↔:#1'])
   })
 })
 

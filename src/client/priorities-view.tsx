@@ -42,6 +42,8 @@ import { ScoreBadge } from './score-badge.tsx'
 import { RunStateBadges } from './run-state-badges.tsx'
 import { IdeaTitle } from './idea-title.tsx'
 import { IdeaPreview } from './idea-preview.tsx'
+import { RelationChips } from './relations-view.tsx'
+import type { RelationView } from './relations.ts'
 import { beforeHalf, draggedIdFrom } from './drag.ts'
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import { SelectBox } from './bulk-bar.tsx'
@@ -89,6 +91,14 @@ export interface PrioritiesProps {
    */
   selectedIds?: ReadonlySet<string>
   onSelect?: (ideaId: string, shiftKey: boolean) => void
+  /**
+   * Relation lines per idea id (idea #106), derived ONCE per paint by the board
+   * over the WHOLE snapshot and handed down. Passed in rather than recomputed:
+   * this view paints the OPEN rows of the current scope, so a link to a card
+   * outside that scope could not be resolved here, and would print a bare id.
+   * Undefined means "no relations anywhere", which renders no line at all.
+   */
+  relations?: ReadonlyMap<string, readonly RelationView[]>
 }
 
 /** Drop indicator: which row is hovered and whether the drop inserts before
@@ -111,7 +121,7 @@ function groupTitle(group: OpenRankGroup<IdeaListRow>, workspaceTitle: (workspac
 }
 
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now(), selectedIds, onSelect }: PrioritiesProps) {
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now(), selectedIds, onSelect, relations }: PrioritiesProps) {
   // Workspace groups in display order; inside every group ideas are ranked
   // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
   // render a pure function of the props.
@@ -304,6 +314,10 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                           {idea.effort !== undefined && <ScoreBadge axis="effort" value={idea.effort} />}
                         </div>
                         <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
+                        {/* Relations (idea #106): the same quiet line the Overview
+                            card prints, so a ranked row says what it is adjacent
+                            to — and what waits on it — without opening it. */}
+                        <RelationChips views={relations?.get(idea.id)} />
                         {idea.rationale !== undefined && (
                           <div className={classes.prioritiesRationale}>
                             <span className={classes.prioritiesRationaleLabel}>{t('priorities.rationale')}</span>

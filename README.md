@@ -198,9 +198,10 @@ another. An idea can now carry two kinds of link, and both of them are things
   same edge from its side, as **Waiting for this idea**.
 
 - You add and remove them in the **editor**, under **Relations**: pick an idea
-  from a list, or press the **×** on a chip. A card prints its links as a quiet
-  line of `↔ #12`, `→ #31`, `← #7` — the arrow is the direction, so the links
-  read on the card itself.
+  from a list, or press the **×** on a chip. The **Overview card** and the
+  **Priorities** and **Delivered** rows all print their links as a quiet line of
+  `↔ #12`, `→ #31`, `← #7` — the arrow is the direction, so the links read on
+  the row itself, and nothing is printed at all for an idea that has none.
 - **You only declare a link once.** *Related to* is one statement about two
   ideas, so it is true from both sides and cannot disagree with itself. *Waits
   for* is stored on the card that waits, and the *Waiting for this idea* line on
