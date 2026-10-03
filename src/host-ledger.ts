@@ -945,14 +945,17 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Host-internal SESSION id of the latest launched run (idea #66 v2): written
-   * with the `running` stamp by a direct-session launch, cleared when the run
-   * settles. Same system-field discipline as `bindTaskBoardId`.
+   * Host-internal SESSION id of the latest run (idea #66 v2): written with the
+   * `running` stamp by a direct-session launch, stamped from the mirrored card's
+   * own executions by the run poll, and deliberately KEPT when the run settles
+   * so the card keeps a way back into the chat it was worked on. Same
+   * system-field discipline as `bindTaskBoardId`.
    *
-   * Its real job is RESTART SAFETY: the in-memory run tracker is empty after a
+   * Its other job is RESTART SAFETY: the in-memory run tracker is empty after a
    * Host restart, so the poll re-attaches to a run still in flight from the
    * `running` + `runSessionId` pair. Without it a restart mid-run would freeze
-   * the idea on `running` forever.
+   * the idea on `running` forever. That re-attachment also requires the
+   * `running` status, so a retained id is inert there.
    *
    * @returns true when the document changed and was committed.
    */

@@ -121,10 +121,9 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
       )}
       {/* A launch in flight (idea #66), whichever backend runs it: the badge is
           what keeps the card from looking ordinary the second after the button
-          was clicked, and the link is the way back into the execution - a
-          direct run lives in a session the human never saw open. The card
-          status counts too: someone can start the mirrored card from the
-          task-board itself, and the next poll folds that into runStatus. */}
+          was clicked. The card status counts too: someone can start the mirrored
+          card from the task-board itself, and the next poll folds that into
+          runStatus. */}
       {(idea.runStatus === 'running' || idea.taskBoardStatus === 'running') && (
         <span
           className={classes.taskRunningBadge}
@@ -135,7 +134,15 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
           {t('card.taskRunning')}
         </span>
       )}
-      {idea.runStatus === 'running' && sessionId !== undefined && sessionId !== '' && opener !== undefined && (
+      {/* The way back into the execution, in EVERY column (idea #66, widened):
+          a run that is in flight, one that failed, and the finished cards —
+          under review, archived, declined — are exactly the ones whose chat you
+          want to read, so the link keys off the session id alone and never off
+          `runStatus`. The Host keeps that id after a settle and stamps it from
+          the mirrored card too, so a card-backed run is reachable as well. A
+          deployment that serves no sessions service renders no link rather than
+          a broken button. */}
+      {sessionId !== undefined && sessionId !== '' && opener !== undefined && (
         <button
           type="button"
           className={classes.openSession}

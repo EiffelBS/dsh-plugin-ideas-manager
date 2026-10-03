@@ -384,6 +384,21 @@ export class IdeasHostService {
     for (const idea of this.ledger.snapshot().ideas) {
       if (idea.taskBoardId === undefined) continue
       const observed = statuses.get(idea.taskBoardId)
+      // The chat the run happened in belongs on the card, whatever the column
+      // it sits in. The card reports it as soon as its runner has an execution
+      // (running or finished), the snapshot this tick already read carries it,
+      // and `setRunSession` is a no-op when nothing changed — so this is free
+      // for the settled majority and lands the pointer one poll early for a run
+      // in flight. An archived or declined idea keeps its pointer: being off the
+      // backlog is not a reason to forget where the work happened.
+      const cardSession = this.mirror.cardSessionOf(idea.taskBoardId)
+      if (cardSession !== undefined && cardSession !== idea.runSessionId) {
+        try {
+          this.ledger.setRunSession(idea.id, cardSession)
+        } catch (error) {
+          console.error(`[dsh-plugin-ideas-manager] session pointer sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
       const tracking = idea.status === 'open' || idea.runStatus !== undefined
       if (idea.status === 'open' && observed !== undefined && observed !== idea.taskBoardStatus) {
         try {
@@ -588,16 +603,26 @@ export class IdeasHostService {
    * card-less board the idea must still reach `underReview` for the human —
    * otherwise the review gate would silently depend on the task-board plugin.
    *
-   * `sessionId` is the run's own session, resolved by the caller BEFORE the
-   * stamp is written (settling clears `runSessionId`): for the session backend
-   * that is the tracked session, for the card backend it is the id the mirrored
-   * card's last execution recorded. It is passed in rather than re-read so the
-   * harvest never has to guess which run it is describing, and undefined is a
-   * first-class case — it simply means "no note" (see {@link harvestNote}).
+   * `sessionId` is the run's own session, resolved by the caller: for the
+   * session backend that is the tracked session, for the card backend it is the
+   * id the mirrored card's last execution recorded. It is passed in rather than
+   * re-read so the harvest never has to guess which run it is describing, and it
+   * is also stamped on the card so the "Open session" link keeps working after
+   * the run. undefined is a first-class case — it simply means "no note" (see
+   * {@link harvestNote}) and leaves any previous pointer alone.
    */
   private settleRun(ideaId: string, status: 'done' | 'failed', sessionId?: string): void {
     this.ledger.setRunStatus(ideaId, status)
-    this.ledger.setRunSession(ideaId, undefined)
+    // The session id STAYS on the card. It used to be cleared here, which made
+    // the "Open session" link unreachable exactly when it is most wanted — a
+    // finished, under-review or archived card is the one whose chat you want to
+    // read. The settling poll only trusts this field together with a `running`
+    // status (`pollSessionRuns`), so a retained id can never re-attach a settled
+    // run. When the backend is the card, this is the moment the pointer becomes
+    // knowable at all, so it is stamped when it is known (see `pollCardRuns`).
+    if (sessionId !== undefined && sessionId !== '') {
+      this.ledger.setRunSession(ideaId, sessionId)
+    }
     if (status !== 'done') {
       this.recordRunEvent(ideaId, 'The run failed — the idea stays in the backlog')
       return

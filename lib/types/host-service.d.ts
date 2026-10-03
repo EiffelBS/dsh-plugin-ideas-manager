@@ -266,12 +266,13 @@ export declare class IdeasHostService {
      * card-less board the idea must still reach `underReview` for the human —
      * otherwise the review gate would silently depend on the task-board plugin.
      *
-     * `sessionId` is the run's own session, resolved by the caller BEFORE the
-     * stamp is written (settling clears `runSessionId`): for the session backend
-     * that is the tracked session, for the card backend it is the id the mirrored
-     * card's last execution recorded. It is passed in rather than re-read so the
-     * harvest never has to guess which run it is describing, and undefined is a
-     * first-class case — it simply means "no note" (see {@link harvestNote}).
+     * `sessionId` is the run's own session, resolved by the caller: for the
+     * session backend that is the tracked session, for the card backend it is the
+     * id the mirrored card's last execution recorded. It is passed in rather than
+     * re-read so the harvest never has to guess which run it is describing, and it
+     * is also stamped on the card so the "Open session" link keeps working after
+     * the run. undefined is a first-class case — it simply means "no note" (see
+     * {@link harvestNote}) and leaves any previous pointer alone.
      */
     private settleRun;
     /**

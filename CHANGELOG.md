@@ -215,6 +215,16 @@ Versions before 0.3.0 predate this file.
 
 ### Changed
 
+- **An idea keeps the link to the chat it was worked on, in every column.** The
+  **Open session** link only appeared while a run was in flight, and it never
+  appeared at all when the execution went through the TaskBoard — which is the
+  usual case, since the card backend is the default whenever the mirror is up. It
+  now appears on any idea that has been run, whatever its column: **Running** and
+  **Task failed** in the backlog, **Under review**, and the finished **Archived**
+  and **Declined** cards. The conversation is one click away however long ago it
+  happened, an idea that never ran shows no link, and a deployment without a
+  sessions service still shows none rather than a broken button.
+
 - **The permission gate no longer filters the TaskBoard for you.** When a launch
   is refused until you confirm a card's permission, **Open the TaskBoard** now
   opens that board unfiltered instead of pre-typing the idea title into its

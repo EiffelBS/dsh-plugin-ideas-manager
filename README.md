@@ -130,20 +130,26 @@ have to hunt the card back in the Overview to start a run.
 3. The run happens in the **background**: closing the tab, or restarting the web
    instance, does not lose it and DSH keeps watching it for you.
 4. While it runs, the card shows a blue **Running** pill and an
-   **Open session** link — one click lands you in the execution, which is the
-   only way to watch a session DSH started on your behalf. The same pills now
+   **Open session** link — one click lands you in the chat the idea was worked
+   on, the only way to watch a run DSH started on your behalf. The same pills now
    ride the **Priorities** and **Delivered** rows too, in the row's top-right
    corner exactly like on the card, so the "is this one already being worked
    on?" answer is available on the list you actually read, without opening the
    card.
 5. When it finishes, the idea moves to **Under review** for your verdict. If it
    failed, it stays in the backlog behind the **Task failed** badge.
-6. The card shows what the run **delivered**: the closing words of the run, kept
+6. **The link does not expire.** Once an idea has been run at all, its card keeps
+   an **Open session** link to that conversation — in **Under review**, and in
+   **Archived** and **Declined** too, however long ago it was worked on and
+   whichever way it was executed. Nothing to look up, nothing to reconstruct: the
+   chat is one click away from the card, in every column. An idea that has never
+   been run shows no link at all.
+7. The card shows what the run **delivered**: the closing words of the run, kept
    under the description, above the verdict buttons in the editor, and on the
    row in the *Delivered* list. It is the run's own last answer, not a summary
    written for you — and when a run leaves nothing behind, the note says so
-   instead of showing an empty box. **Open session** still remains the way to
-   watch the whole thing; the note is the short version for deciding.
+   instead of showing an empty box. **Open session** remains the way to watch the
+   whole thing; the note is the short version for deciding.
 
 A run takes a while, and the board reflects the result within roughly half a
 minute of the session finishing.

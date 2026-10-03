@@ -160,6 +160,12 @@ function snapshot(): IdeasListSnapshot {
       // the Host is executing it in.
       { id: 'executing', title: 'Executing', status: 'open', rank: 5, bodyExcerpt: 'e', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'running', runSessionId: 'session-7' },
       { id: 'settled', title: 'Settled', status: 'open', rank: 6, bodyExcerpt: 'f', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'done', taskBoardStatus: 'failed' },
+      // Finished cards keep the chat they were worked in, whatever column they
+      // now sit in: the Host keeps `runSessionId` after the settle and stamps it
+      // from the mirrored card, so the link is reachable long after the run.
+      { id: 'review', title: 'Under review', status: 'underReview', rank: 1, bodyExcerpt: 'g', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'done', runSessionId: 'session-review' },
+      { id: 'archived', title: 'Archived', status: 'archived', rank: 1, bodyExcerpt: 'h', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'done', runSessionId: 'session-archived' },
+      { id: 'declined', title: 'Declined', status: 'declined', rank: 1, bodyExcerpt: 'i', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', runStatus: 'done', runSessionId: 'session-declined' },
     ],
   }
 }
@@ -398,14 +404,37 @@ describe('board run visibility (idea #66)', () => {
     expect(opened).toEqual(['session-7'])
   })
 
-  it('renders no link without a sessions service, and never on a settled run', async () => {
+  it('renders no link without a sessions service', async () => {
     await renderBoard()
     // No opener resolved (no shell sessions service): the badge stays, the
     // affordance simply does not exist - never a broken button.
     expect(sessionLinkIn('executing')).toBeNull()
     expect(badgeIn('executing')).not.toBeNull()
-    // A settled run keeps no session link: the run is over, its session is
-    // not the thing the human needs.
+  })
+
+  it('keeps the session link on every finished column, not only on a running run', async () => {
+    // The link keys off the session id alone. A finished card — under review,
+    // archived, declined — is the one whose chat the human wants to open, so
+    // gating it on `runStatus === 'running'` made it unreachable in practice.
+    const opened: string[] = []
+    await renderBoard()
+    client.sessionOpener = { open: (id: string) => { opened.push(id) } }
+    rerender()
+
+    for (const [ideaId, session] of [
+      ['executing', 'session-7'],
+      ['review', 'session-review'],
+      ['archived', 'session-archived'],
+      ['declined', 'session-declined'],
+    ] as const) {
+      const link = sessionLinkIn(ideaId)
+      expect(link).not.toBeNull()
+      click(link as HTMLElement)
+    }
+    expect(opened).toEqual(['session-7', 'session-review', 'session-archived', 'session-declined'])
+    // An idea that never ran has nothing to open: no link, no dead button.
     expect(sessionLinkIn('settled')).toBeNull()
+    expect(sessionLinkIn('launchable')).toBeNull()
+    expect(sessionLinkIn('unbound')).toBeNull()
   })
 })

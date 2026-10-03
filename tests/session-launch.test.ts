@@ -282,8 +282,30 @@ describe('direct-session launch and settle (host service)', () => {
     const settled = service.snapshot().ideas[0]
     expect(settled?.runStatus).toBe('done')
     expect(settled?.status).toBe('underReview')
-    // The session id is released once the run is settled.
-    expect(settled?.runSessionId).toBeUndefined()
+    // The session id is KEPT: a finished card is exactly the one whose chat the
+    // human wants to open. Nothing re-attaches to it (the settling poll only
+    // trusts the field together with a `running` status).
+    expect(settled?.runSessionId).toBe('session-1')
+    service.dispose()
+  })
+
+  it('keeps the session id on a card that left the backlog, archived or declined', async () => {
+    const { service, gateway } = startedService()
+    gateway.roster = [{ sessionId: 'session-1', running: true }]
+    await service.launchIdea('idea-1')
+    gateway.roster = [{ sessionId: 'session-1', running: false }]
+    await service.pollRunTransitions()
+    expect(service.snapshot().ideas[0]?.runSessionId).toBe('session-1')
+
+    // Off the backlog in either direction, the pointer survives: the run is what
+    // the human wants to read, not where the card sits. (An ARCHIVED card is
+    // read-only for every verb, so the two terminal states are reached from
+    // `open`, never from each other.)
+    service.ledger.applyRequest('m1', { kind: 'decline', ideaId: 'idea-1' })
+    expect(service.snapshot().ideas[0]?.runSessionId).toBe('session-1')
+    service.ledger.applyRequest('m2', { kind: 'move', ideaId: 'idea-1', status: 'open' })
+    service.ledger.applyRequest('m3', { kind: 'move', ideaId: 'idea-1', status: 'archived' })
+    expect(service.snapshot().ideas[0]?.runSessionId).toBe('session-1')
     service.dispose()
   })
 

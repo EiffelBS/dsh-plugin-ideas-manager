@@ -383,10 +383,17 @@ export interface IdeaRecord {
      */
     runStatus?: IdeaRunStatus;
     /**
-     * Id of the session a direct launch (v2 backend) created for the current
-     * run, so a `running` state survives a board reload (idea #66 decision D5).
-     * The TaskBoard backend does NOT write it: that session id is owned by the
-     * task-board runner. System field, host-written only.
+     * Id of the session that worked on the LATEST run of this idea, whichever
+     * backend ran it: a direct launch (v2 backend) stamps the session it created,
+     * and the TaskBoard backend stamps the session its runner used (read off the
+     * card's own executions). It is deliberately NOT cleared when the run settles —
+     * a card whose execution is over is exactly the one whose chat you want to
+     * read — and it is overwritten by the next launch.
+     *
+     * While `runStatus` is `running` it is also the live pointer a restarted Host
+     * re-attaches to settle the run (decision D5); the settling poll only ever
+     * trusts it together with a `running` status, so a settled id is inert there.
+     * System field, host-written only.
      */
     runSessionId?: string;
     /**

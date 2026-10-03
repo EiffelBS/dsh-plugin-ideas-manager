@@ -130,6 +130,27 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   the poll already fetched (`TaskBoardMirror.cardSessionOf`, zero extra requests).
   When the board exposes no such pointer the note stays empty and the UI says so.
 
+- **The session id is a POINTER, not a lock (idea #66, revised).** `runSessionId`
+  was a *live* pointer — stamped with the `running` state, **cleared at settle** —
+  and the "Open session" link was gated on `runStatus === 'running'`. Two
+  consequences, both wrong for a human: the link vanished the moment the run
+  ended (exactly when you want to read the chat), and it **never existed at all**
+  on a card-backed run, because only `launchInSession` ever wrote the field and
+  the card backend is the default whenever the mirror is up (`viaCard = mirror
+  && autoMirror`, `autoMirror` defaulting to true). The feature was unreachable
+  in the default configuration — dead UI with a real copy behind it.
+  It is now a *pointer to the last run*: the poll stamps
+  `cardSessionOf(taskBoardId)` on every tick it reads a card (a settled one too,
+  and while the execution is still in flight — `executions[]` carries the running
+  attempt), the settle **keeps** the id and overwrites it with the run's own,
+  and the link keys off the id alone, in every column including archived and
+  declined. `setRunSession` no-ops on an unchanged value, so the steady state
+  costs no revision. Re-attaching after a Host restart still requires the
+  `running` status as well as the id, which is why keeping a settled id is inert
+  for settling. No new persisted field: the field was already on the record and
+  already in the backup surface, which is why the widened behaviour needed no
+  change to `KNOWN_IDEA_FIELDS`.
+
 ## Per-idea activity log (idea #92)
 
 `IdeaRecord.events[]` is a bounded append-only log: `{ at, verb, actor,

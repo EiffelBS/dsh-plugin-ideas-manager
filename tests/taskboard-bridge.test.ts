@@ -46,7 +46,7 @@ class FakeTransport implements TaskBoardTransport {
   getStateCalls = 0
   posts: TaskBoardActionEnvelope[] = []
   /** Optional task rows served by getState (the under-review poll's input). */
-  stateTasks: Array<{ id: string; status: string; permission?: string }> | undefined
+  stateTasks: Array<{ id: string; status: string; permission?: string; executions?: Array<{ sessionId?: string }> }> | undefined
   /** Optional board view served by getState (its session default permission). */
   stateBoardDefaultPermission: string | undefined
   async getState() {
@@ -624,6 +624,40 @@ describe('IdeasHostService mirror integration', () => {
     expect(idea.taskBoardStatus).toBe('failed')
     // No mirror write for a status observation.
     expect(transport.posts).toHaveLength(0)
+    service.dispose()
+  })
+
+  it('stamps the chat a mirrored run happened in, and keeps it once the card settles', async () => {
+    // The card backend is the default whenever the mirror is up, and it used to
+    // leave NO trace of the chat on the idea at all (the session id belonged to
+    // the task-board runner). The card reports its executions in the snapshot the
+    // poll already reads, so the pointer lands with no extra request — while the
+    // run is in flight, and forever after it settles.
+    const transport = new FakeTransport()
+    transport.stateTasks = [{ id: 'task-9', status: 'running', executions: [{ sessionId: 'chat-1' }] }]
+    const mirror = new TaskBoardMirror({ transport })
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('r1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B' } })
+    ledger.bindTaskBoardId('idea-1', 'task-9')
+    const service = new IdeasHostService({ ledger, mirror, autoMirror: true })
+
+    await service.pollRunTransitions()
+    expect(service.snapshot().ideas[0]!.runSessionId).toBe('chat-1')
+
+    // The card finishes: the pointer stays, the review gate opens as usual.
+    transport.stateTasks = [{ id: 'task-9', status: 'done', executions: [{ sessionId: 'chat-1' }] }]
+    await service.pollRunTransitions()
+    const settled = service.snapshot().ideas[0]!
+    expect(settled.status).toBe('underReview')
+    expect(settled.runSessionId).toBe('chat-1')
+
+    // Off the backlog the pointer is still there, and an idle poll with the same
+    // card writes nothing (no revision churn).
+    ledger.applyRequest('r2', { kind: 'move', ideaId: 'idea-1', status: 'archived' })
+    const revision = service.snapshot().revision
+    await service.pollRunTransitions()
+    expect(service.snapshot().ideas[0]!.runSessionId).toBe('chat-1')
+    expect(service.snapshot().revision).toBe(revision)
     service.dispose()
   })
 
