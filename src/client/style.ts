@@ -2294,6 +2294,16 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   color: var(--dsw-alias-label-danger, var(--dsh-ideas-fb-danger));
 }
 
+/* A step the board could not post. Danger ink like a refusal, because the
+   reader has the same problem either way: that idea was not put back. */
+.dsh-ideas-undo-failed {
+  color: var(--dsw-alias-label-danger, var(--dsh-ideas-fb-danger));
+}
+
+.dsh-ideas-undo-failed-note {
+  font-style: italic;
+}
+
 /* Selection bar: one quiet row above the tab content, like the tag filter row
    above it. It is the place that states "N selected of M shown, in this scope",
    which is what makes a bulk action auditable before it is posted. */
@@ -2609,6 +2619,8 @@ export const classes = {
   undoHint: 'dsh-ideas-undo-hint',
   undoResult: 'dsh-ideas-undo-result',
   undoRefused: 'dsh-ideas-undo-refused',
+  undoFailed: 'dsh-ideas-undo-failed',
+  undoFailedNote: 'dsh-ideas-undo-failed-note',
   cardActions: 'dsh-ideas-card-actions',
   actionButton: 'dsh-ideas-action-button',
   dangerButton: 'dsh-ideas-danger-button',

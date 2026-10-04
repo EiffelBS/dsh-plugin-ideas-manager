@@ -770,21 +770,28 @@ function pressUndo(init: KeyboardEventInit & { target?: Element } = {}): Keyboar
   return event
 }
 
-function boardHarness(): { client: IdeasClient; actions: IdeasAction[] } {
+function boardHarness(
+  seed?: IdeaRecord[],
+  refuse?: (action: IdeasAction) => string | undefined,
+): { client: IdeasClient; actions: IdeasAction[] } {
   let revision = 1
-  const ideas = [record({ id: 'i1', status: 'open', title: 'Alpha idea', rank: 1, ideaNumber: 1, tags: [{ name: 'alpha' }] })]
+  const ideas = seed ?? [record({ id: 'i1', status: 'open', title: 'Alpha idea', rank: 1, ideaNumber: 1, tags: [{ name: 'alpha' }] })]
+  let rows = [...ideas]
   const actions: IdeasAction[] = []
   const transport: IdeasHostTransport = {
-    state: async () => toListSnapshot({ schemaVersion: 1, revision, ideas }),
+    state: async () => toListSnapshot({ schemaVersion: 1, revision, ideas: rows }),
     action: async (action) => {
       actions.push(action)
+      const refusal = refuse?.(action)
+      if (refusal !== undefined) throw new Error(refusal)
       revision += 1
-      return toListSnapshot({ schemaVersion: 1, revision, ideas: applyTo(ideas, action, revision) })
+      rows = applyTo(rows, action, revision)
+      return toListSnapshot({ schemaVersion: 1, revision, ideas: rows })
     },
     subscribe: () => () => {},
   }
   const client = new IdeasClient(transport, undefined)
-  client.snapshot = toListSnapshot({ schemaVersion: 1, revision, ideas })
+  client.snapshot = toListSnapshot({ schemaVersion: 1, revision, ideas: rows })
   return { client, actions }
 }
 
@@ -864,6 +871,36 @@ describe('board: the undo row and the shortcut', () => {
     expect(actions).toEqual([])
   })
 
+  it('a step the board could NOT post is never reported as an undo', async () => {
+    // The Host refuses the inverse of the second idea only, after the first has
+    // already been put back. `client.error` cannot carry this: `run()` clears
+    // the error bar on the next successful step, so the receipt has to.
+    let armed = false
+    const { client } = boardHarness([
+      record({ id: 'i1', status: 'open', title: 'First', ideaNumber: 1, tags: [{ name: 'a' }] }),
+      record({ id: 'i2', status: 'open', title: 'Second', ideaNumber: 2, tags: [{ name: 'a' }] }),
+    ], action => armed && action.kind === 'update' && 'ideaId' in action && action.ideaId === 'i2' ? 'card is read-only' : undefined)
+    mount(<IdeasBoard client={client} />)
+
+    await act(async () => {
+      client.beginUndoBatch('tag')
+      await client.updateIdea('i1', { tags: [{ name: 'x' }] })
+      await client.updateIdea('i2', { tags: [{ name: 'x' }] })
+      client.endUndoBatch()
+    })
+    armed = true
+
+    pressUndo()
+    await settle()
+
+    // NOT "done", NOT "all": the receipt names what the board could not do.
+    expect(host.querySelector('[data-dsh-ideas-undo-result="failed"]')).not.toBeNull()
+    expect(host.querySelector('[data-dsh-ideas-undo-failed]')?.textContent)
+      .toBe(t('undo.failedFields', { title: 'Second', reason: 'card is read-only' }))
+    // The one that could be undone was, and it is not hidden by the failure.
+    expect(client.snapshot?.ideas[0]?.tags).toEqual([{ name: 'a' }])
+  })
+
   it('the Undo button and the chord do the same thing', async () => {
     const { client, actions } = boardHarness()
     mount(<IdeasBoard client={client} />)
@@ -939,7 +976,15 @@ describe('undo copy ships in every dictionary', () => {
   })
 
   it('never promises a transaction: the honesty line names what undo does NOT cover', () => {
-    const scope = en['undo.scope']
+    // The five exclusions are the whole point of the line; in EVERY language,
+    // or the reader in that language is promised something the board cannot do.
+    const scopes = [fr, en, zh].map(dictionary => (dictionary as Record<string, string>)['undo.scope'] ?? '')
+    for (const scope of scopes) expect(scope.length).toBeGreaterThan(40)
+    // Each dictionary keeps its own way of saying it: one English line copied
+    // into three places would pass a key-presence check and tell two readers
+    // nothing.
+    expect(new Set(scopes).size).toBe(3)
+    const scope = en['undo.scope']!
     for (const verb of ['delete', 'merge', 'follow-up', 'decline', 'delivery']) {
       expect(scope).toContain(verb)
     }

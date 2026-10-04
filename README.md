@@ -320,6 +320,10 @@ Most of what you do on the board can be taken back.
   - An idea that **changed since** the action is left untouched and **named**,
     with the field that moved. The rest of the batch is still reversed: one card
     an agent touched never cancels the undo of the other fifty-nine.
+  - An idea the board itself **could not put back** — a card the host refuses,
+    a connection that drops — is named too, with the reason. Undo never reports
+    a result you have to take on trust, and the outcome stays on screen until you
+    dismiss it, so you never press the same undo twice.
   - Undo is **not** a transaction log, and the board says which gestures it does
     **not** reverse: **deleting**, **merging**, raising a **follow-up**,
     **declining** and **delivering** an idea. There is no verb that undoes them,

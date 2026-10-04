@@ -1560,6 +1560,34 @@ The entry is dropped **before** the run, never after: an undo that refused
 everything will never succeed on a retry, and one that half-landed is exactly the
 state the human must see and decide about.
 
+### Why the receipt, and not `client.error`
+
+The spec points the drift refusal at the existing error bar
+(`ideas-client.ts:925`), and that was the first implementation. It is the wrong
+widget, for two reasons that are worth stating rather than rediscovering:
+
+- **The error bar is framed as a Host failure.** It renders
+  `t('board.hostError', { error })` and offers a **Retry Host** button. A card
+  that moved between the click and the Ctrl+Z is not a Host failure, and a
+  "Retry Host" button is an action that cannot fix it — it would teach the
+  reader that the button is noise, which is the exact failure mode the risk
+  section warns about ("otherwise the reader thinks undo is broken").
+- **The error bar cannot carry a batch failure anyway.** `run()` sets
+  `this.error = undefined` on every success, so a step refused in the middle of
+  a ten-idea undo is erased by the nine that follow it.
+
+So the receipt carries both refusals and failures, with the reason, and it does
+not time out — an undo whose result nobody saw is an undo they press twice.
+`client.error` still does its real job: a genuine transport failure is a Host
+error and belongs there.
+
+The failure state is a state of its own (`data-dsh-ideas-undo-result="failed"`),
+not a flavour of "partial": "undone on 9 of 10, 1 unchanged" and "undone on 9 of
+10, 1 failed to post" are different problems with different fixes, and collapsing
+them would let a reader believe a card was put back when it was not. A failed
+round trip that left an idea **open** also carries the runner's compensation
+note, which is the one case where the idea is now in a column nobody chose.
+
 Every count the reader sees is an **idea** count (`undoIdeaCount`), never an item
 count: a mirrored chain is captured three times, so an item count would tell the
 reader a one-card undo had put three cards back.

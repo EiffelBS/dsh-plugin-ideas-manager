@@ -391,6 +391,9 @@ export declare const fr: {
     'undo.donePartial': string;
     'undo.refused': string;
     'undo.refusedAll': string;
+    'undo.failed': string;
+    'undo.failedAll': string;
+    'undo.failedFields': string;
     'undo.refusedFields': string;
     'undo.progress': string;
     'undo.dismiss': string;
@@ -780,6 +783,9 @@ export declare const en: {
     'undo.donePartial': string;
     'undo.refused': string;
     'undo.refusedAll': string;
+    'undo.failed': string;
+    'undo.failedAll': string;
+    'undo.failedFields': string;
     'undo.refusedFields': string;
     'undo.progress': string;
     'undo.dismiss': string;
@@ -1175,6 +1181,9 @@ export declare const zh: {
     'undo.donePartial': string;
     'undo.refused': string;
     'undo.refusedAll': string;
+    'undo.failed': string;
+    'undo.failedAll': string;
+    'undo.failedFields': string;
     'undo.refusedFields': string;
     'undo.progress': string;
     'undo.dismiss': string;

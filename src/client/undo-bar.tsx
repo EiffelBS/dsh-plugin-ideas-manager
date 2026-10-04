@@ -98,8 +98,8 @@ export function UndoBar({ client }: { client: IdeasClient }) {
       {outcome !== undefined && (
         <span className={classes.undoResult} data-dsh-ideas-undo-result={outcomeSummary(outcome)} role="status">
           {outcomeSentence(outcome)}
-          {/* The drift refusals are named one by one: "the idea changed since"
-              without saying WHICH one leaves the reader thinking undo is broken. */}
+          {/* A refused idea: "it changed since" without saying WHICH one leaves
+              the reader thinking undo is broken. */}
           {outcome.refused.map(refusal => (
             <span
               key={refusal.id}
@@ -107,6 +107,23 @@ export function UndoBar({ client }: { client: IdeasClient }) {
               data-dsh-ideas-undo-refused=""
             >
               {t('undo.refusedFields', { title: refusal.title, fields: fieldList(refusal.fields) })}
+            </span>
+          ))}
+          {/* A step the board could not post. Named with the Host's own reason,
+              and with the compensation note when a round trip failed halfway —
+              "left open" means the idea is in a column nobody chose. */}
+          {outcome.failed.map(result => (
+            <span
+              key={result.id}
+              className={classes.undoFailed}
+              data-dsh-ideas-undo-failed=""
+            >
+              {t('undo.failedFields', { title: result.title, reason: result.reason ?? '' })}
+              {result.note !== undefined && (
+                <span className={classes.undoFailedNote}>
+                  {result.note === 'rearchived' ? t('bulk.note.rearchived') : t('bulk.note.leftOpen')}
+                </span>
+              )}
             </span>
           ))}
           <button
@@ -123,15 +140,25 @@ export function UndoBar({ client }: { client: IdeasClient }) {
   )
 }
 
-/** Short machine tag for the receipt (what actually happened, for tests/CSS). */
+/**
+ * Short machine tag for the receipt (what actually happened, for tests/CSS).
+ *
+ * `failed` is its own state, not a flavour of `partial`: a step the Host refused
+ * (a read-only mirrored card, a network error) is an outcome the reader MUST
+ * see, and `client.error` cannot be relied on to carry it — `run()` clears the
+ * error bar on the next successful step, so a failure in the middle of a batch
+ * is erased by the steps after it.
+ */
 function outcomeSummary(outcome: UndoOutcome): string {
+  if (outcome.failed.length > 0) return 'failed'
   if (ideaIds(outcome.applied).length === 0) return 'none'
   return outcome.refused.length === 0 ? 'all' : 'partial'
 }
 
 /**
- * The receipt sentence. Three honest answers, never one: it worked, it worked on
- * most of them, or it worked on none of them because everything had moved.
+ * The receipt sentence. Never one answer where three are true: it worked, it
+ * worked on most of them, it worked on none because everything had moved, or a
+ * step the board itself could not post.
  *
  * Every count here is an idea count (see `undoIdeaCount`): a mirrored idea was
  * captured three times, so counting items would tell the reader it had three
@@ -139,8 +166,12 @@ function outcomeSummary(outcome: UndoOutcome): string {
  */
 function outcomeSentence(outcome: UndoOutcome): string {
   const applied = ideaIds(outcome.applied).length
+  const failed = ideaIds(outcome.failed).length
   const total = undoIdeaCount(outcome.entry)
   const refused = ideaIds(outcome.refused).length
+  if (failed > 0) {
+    return t(applied === 0 ? 'undo.failedAll' : 'undo.failed', { applied, failed })
+  }
   if (refused > 0) {
     return t(applied === 0 ? 'undo.refusedAll' : 'undo.refused', { applied, refused })
   }
