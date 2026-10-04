@@ -132,11 +132,13 @@ jobs:
             # A manual dispatch exists precisely for that, and the published
             # npm version is untouched either way.
             if [ -s release-notes.md ]; then
+              # No --generate-notes here: `gh release edit` has no such flag (the
+              # first attempt failed on exactly that). Nothing is lost — the
+              # script already appends the npm and changelog links itself.
               echo "release $TAG exists; re-deriving its body from CHANGELOG.md"
               gh release edit "$TAG" \
                 --title "$TAG" \
-                --notes-file release-notes.md \
-                --generate-notes
+                --notes-file release-notes.md
             else
               echo "release $TAG exists and CHANGELOG.md has no section for it; leaving the body alone"
             fi
