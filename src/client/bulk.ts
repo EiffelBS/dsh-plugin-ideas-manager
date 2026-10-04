@@ -31,22 +31,38 @@
  * the board.
  */
 
-import type { IdeaTag } from '../core/ideas.ts'
+import type { IdeaStatus, IdeaTag } from '../core/ideas.ts'
 import { IDEA_TAG_LIMIT, TAG_NAME_MAX_LENGTH } from '../core/ideas.ts'
-import type { IdeaListRow } from '../protocol.ts'
+import type { IdeaListRow, TriagePatch } from '../protocol.ts'
 import type { IdeaClientPatch } from './ideas-client.ts'
 
 /** The three bulk actions the board offers. */
 export type BulkOperation = 'tag' | 'workspace' | 'archive'
 
 /**
+ * The columns a `move` verb can name. `declined` is absent on purpose: it has
+ * its own verb, and no verb takes an idea back out of it.
+ */
+/**
+ * The columns a `move` can name. Exported because idea #111's undo plans moves
+ * too, and a second copy of this definition would be free to drift.
+ */
+export type ColumnStatus = Extract<IdeaStatus, 'open' | 'underReview' | 'archived'>
+
+/**
  * One ordinary verb a bulk run posts for one idea. Exactly the shapes
  * `IdeasClient` already speaks — no bulk-only verb exists anywhere on this path.
+ *
+ * `move` names any column and `triage` exists because an UNDO (idea #111) posts
+ * through this same vocabulary: the inverse of a triage is a triage, and the
+ * inverse of a column move is a move back. Neither planner below ever emits
+ * them; they exist so one step type covers every write the board makes.
  */
 export type BulkStep =
   | { verb: 'restore' }
   | { verb: 'update'; patch: IdeaClientPatch }
-  | { verb: 'move'; status: 'archived' }
+  | { verb: 'move'; status: ColumnStatus }
+  | { verb: 'triage'; patch: TriagePatch }
 
 /** What a bulk run did (or could not do) to one idea. */
 export type BulkItemState = 'applied' | 'skipped' | 'failed'
@@ -65,7 +81,7 @@ export interface BulkPlanItem {
 }
 
 /** Why a bulk run could not post (or complete) one idea, as a stable code. */
-export type BulkReason = 'declined' | 'already-tagged' | 'tag-limit' | 'already-there' | 'already-archived'
+export type BulkReason = 'declined' | 'already-tagged' | 'tag-limit' | 'already-there' | 'already-archived' | 'drifted'
 
 /** What the runner had to do about a round-trip idea whose patch failed. */
 export type BulkNote = 'rearchived' | 'left-open'
@@ -119,8 +135,12 @@ function needsMirrorRoundTrip(row: PlanRow): boolean {
  * Wrap an update in the mirror round trip when the idea's card is archived.
  * The order matters: the card is read-only until the idea leaves the archive,
  * and the idea must go back to the archive right after the patch lands.
+ *
+ * Exported because it is the rule an UNDO needs just as much as a bulk run
+ * (idea #111): restoring the previous labels of an archived, card-bound idea
+ * must go through the same round trip, or the idea and its card would disagree.
  */
-function updateSteps(row: PlanRow, patch: IdeaClientPatch): { steps: BulkStep[]; roundTrip: boolean } {
+export function updateSteps(row: PlanRow, patch: IdeaClientPatch): { steps: BulkStep[]; roundTrip: boolean } {
   const update: BulkStep = { verb: 'update', patch }
   if (!needsMirrorRoundTrip(row)) return { steps: [update], roundTrip: false }
   return {

@@ -2249,6 +2249,51 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-size: 12px;
 }
 
+/* Undo row (idea #111): one quiet line naming the action an Undo reverses, the
+   button that does it, and — after the click — a receipt that says which ideas
+   went back and which were left alone. It is NOT a timed toast: an undo whose
+   result the reader never saw is an undo they press twice. */
+.dsh-ideas-undo-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: none;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
+  background: var(--dsw-alias-bg-layer-1, var(--dsh-ideas-fb-layer1));
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-undo-label {
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg));
+}
+
+.dsh-ideas-undo-hint {
+  color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* The receipt: the sentence, then one line per idea the drift guard refused. */
+.dsh-ideas-undo-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dsh-ideas-undo-refused {
+  color: var(--dsw-alias-label-danger, var(--dsh-ideas-fb-danger));
+}
+
 /* Selection bar: one quiet row above the tab content, like the tag filter row
    above it. It is the place that states "N selected of M shown, in this scope",
    which is what makes a bulk action auditable before it is posted. */
@@ -2559,6 +2604,11 @@ export const classes = {
   bulkItemNote: 'dsh-ideas-bulk-item-note',
   bulkProgress: 'dsh-ideas-bulk-progress',
   bulkWarning: 'dsh-ideas-bulk-warning',
+  undoBar: 'dsh-ideas-undo-bar',
+  undoLabel: 'dsh-ideas-undo-label',
+  undoHint: 'dsh-ideas-undo-hint',
+  undoResult: 'dsh-ideas-undo-result',
+  undoRefused: 'dsh-ideas-undo-refused',
   cardActions: 'dsh-ideas-card-actions',
   actionButton: 'dsh-ideas-action-button',
   dangerButton: 'dsh-ideas-danger-button',

@@ -6,6 +6,8 @@
  */
 import type { IdeaRecord, IdeaSimilarReport, IdeaStatus, IdeaTag } from '../core/ideas.ts';
 import { type IdeasBackupView, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasSnapshotInfo, type IdeasSnapshotReason, type IdeasStats } from '../protocol.ts';
+import { type BulkItemResult } from './bulk.ts';
+import { type UndoEntry, type UndoKind, type UndoRefusal } from './undo.ts';
 import { type PanelNavigator } from './panel-navigation.ts';
 import { type FocusableIdea } from './deeplink.ts';
 import type { IdeasHostTransport } from './host-api.ts';
@@ -60,6 +62,28 @@ interface FocusRequest {
     ref: string;
     /** Monotonic id: the panel answers a request once, and a repeat is a new one. */
     seq: number;
+}
+/**
+ * What one undo actually did (idea #111).
+ *
+ * Three buckets, and never a single "it failed": the ideas whose inverse landed,
+ * the ideas the DRIFT GUARD refused (their row no longer held what the forward
+ * action wrote, so overwriting them would destroy somebody else's edit), and the
+ * ideas whose verb itself was refused by the Host. The board renders all three,
+ * because "undo" that silently skipped a third of a batch is the failure mode
+ * this shape exists to prevent.
+ */
+export interface UndoOutcome {
+    /** The entry that was reversed (its kind is the label). */
+    entry: UndoEntry;
+    /** Every idea of the entry, with its settled state. */
+    results: BulkItemResult[];
+    /** Ideas restored to their previous value. */
+    applied: BulkItemResult[];
+    /** Ideas the Host refused while posting an inverse verb. */
+    failed: BulkItemResult[];
+    /** Ideas skipped because their fields moved since the action. */
+    refused: UndoRefusal[];
 }
 export declare class IdeasClient {
     private readonly transport;
@@ -169,6 +193,31 @@ export declare class IdeasClient {
     statsError: string | undefined;
     /** Sequence of the newest stats request; older answers are dropped on arrival. */
     private statsRequestSeq;
+    /**
+     * Session-local undo stack. MEMORY ONLY: nothing here is persisted, nothing is
+     * sent to the Host, and a reload starts it empty. The honest promise is
+     * therefore "undo the last action of this session", never "undo anything".
+     */
+    private undoStack;
+    /**
+     * The batch currently collecting inverses, if any (a bulk run, a two-verb
+     * save). Every verb posted while it is open collapses into ONE entry, so
+     * "undo" means the action the human performed rather than one HTTP request.
+     */
+    private undoBatch;
+    /**
+     * Set while an undo is running, so its own posts are not captured as new
+     * undoable actions. Without it the first Ctrl+Z would push an entry that undoes
+     * the undo, and the second would put everything back.
+     */
+    private undoing;
+    /** Outcome of the last undo, so the board can say what happened, per idea. */
+    lastUndo: UndoOutcome | undefined;
+    /** Progress of a running undo, for a batch that takes more than one round trip. */
+    undoProgress: {
+        done: number;
+        total: number;
+    } | undefined;
     private focusSeq;
     private readonly listeners;
     private unsubscribeEvents;
@@ -436,8 +485,96 @@ export declare class IdeasClient {
     reportBackupError(message: string): void;
     /** Republish the DSH registry rows and wake the board (catalog refresh). */
     private syncWorkspaces;
-    /** Post one action, adopt the Host snapshot, and expose errors. */
+    /**
+     * Post one action, adopt the Host snapshot, and expose errors.
+     *
+     * This is the ONE place every client verb goes through (`updateIdea`,
+     * `moveIdea`, `triageIdea`, ... all delegate here), which is why it is also
+     * the one place an undo entry can be captured (idea #111). The capture is
+     * split around the post on purpose:
+     *
+     *  - BEFORE, read the row (and, for a body, the cached full record) and build
+     *    the inverse, because `update` replaces and the previous value does not
+     *    survive the commit;
+     *  - AFTER, and only on success, push it with what the action actually left on
+     *    the row. A refused action changed nothing, so there is nothing to undo and
+     *    an entry for it would be a lie.
+     */
     private run;
+    /**
+     * Build the inverse of an action from the state the client holds RIGHT NOW.
+     *
+     * Reads the pre-action snapshot and the pre-action body cache; both are
+     * replaced by `adopt` the moment the post answers, so this can only be done
+     * here and only before it.
+     */
+    private captureUndo;
+    /**
+     * Push one captured inverse onto the stack — or into the batch that is open.
+     *
+     * `fresh` is the snapshot the action itself returned, so the drift guard is
+     * seeded with the values the action really produced (a triage re-ranks a whole
+     * group, so its resulting rank is only knowable from the Host's answer, never
+     * from the patch).
+     */
+    private commitUndo;
+    /** The entry a Ctrl+Z would reverse, or undefined when there is none. */
+    get undoEntry(): UndoEntry | undefined;
+    /** Whether an undo is available right now (drives the button and the chord). */
+    get canUndo(): boolean;
+    /**
+     * Open an undo batch: every verb posted until {@link endUndoBatch} collapses
+     * into ONE entry.
+     *
+     * A batch is what makes "undo" mean something a human recognises. A bulk tag of
+     * sixty ideas is sixty `update` posts; without this the stack would hold sixty
+     * entries and one Ctrl+Z would reverse one card. A batch therefore binds them
+     * under the label the human saw — the action name — not under the last verb.
+     *
+     * Batches do not nest: a second `begin` inside an open batch is a no-op, so an
+     * inner helper can never fragment the outer one.
+     */
+    beginUndoBatch(kind: UndoKind): void;
+    /**
+     * Close the batch. A batch that changed nothing (every idea skipped, refused,
+     * or the verbs themselves had no inverse) pushes NO entry — an "Undo" that
+     * undoes nothing is worse than no button.
+     *
+     * @returns the key of the entry it pushed, or undefined when there is none.
+     *   It doubles as the DISCARD handle for a caller that undoes the action with
+     *   its own report (the bulk dialog's own restore button).
+     */
+    endUndoBatch(): string | undefined;
+    /**
+     * Drop the entry a batch just pushed, because the caller undid the action with
+     * its own report (the bulk dialog's own restore button). Without this the same
+     * action would be reversible twice, and the second press would undo the FIRST
+     * undo instead of the original action.
+     */
+    discardUndoBatch(key: string): void;
+    /** The key of the batch currently open, if any. */
+    get openUndoBatchKey(): string | undefined;
+    /**
+     * Reverse the newest undoable action.
+     *
+     * The entry is dropped BEFORE the run: an undo that refused every idea (all of
+     * them drifted) must not stay on the stack waiting to be refused again, and
+     * one that half-landed is exactly the state the human must see and decide
+     * about rather than replay.
+     *
+     * Never throws: a per-idea refusal is reported like any other skip, because
+     * the board's answer is a report, not an exception.
+     *
+     * @returns the outcome, or undefined when there was nothing to undo.
+     */
+    undoLast(): Promise<UndoOutcome | undefined>;
+    /**
+     * Post one inverse step. Same ordinary verbs as any other write — the undo
+     * path owns no verb of its own and never touches the ledger document.
+     */
+    private undoStepRunner;
+    /** Forget the last undo outcome (the board's dismissal). */
+    clearLastUndo(): void;
     /**
      * Adopt a fresh snapshot (idea #34): an IDLE refresh - same revision, the
      * Host bumps it on every commit - keeps the SAME reference, so the board's

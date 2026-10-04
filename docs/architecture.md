@@ -36,6 +36,9 @@ src/
   client/virtual-column.ts # idea #108: the DOM binding (scroll offset, measurements, anchoring)
   client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
+  client/undo.ts         # idea #111: the inverse of the board's own actions, the
+                         #   session stack and the drift guard (pure, DOM-free)
+  client/undo-bar.tsx    # idea #111: the undo row, its button and its receipt
   client/deeplink.ts     # idea #105: reference grammar + board-wide resolver (pure)
   client/deeplink-service.ts # idea #105: the published `ideas-manager.board` service
   client/relations.ts    # idea #106: the relation views, candidates and diff (pure)
@@ -521,13 +524,19 @@ labels, executions and schedule survive).
   row's own tags and keeps each prompt line; the capture/edit modals keep
   sending plain strings.
 
-### Undo, scoped to the reversible operation
+### Undo, scoped to the reversible operation (superseded by idea #111)
 
-`summarizeBulk` marks a report `reversible` for a bulk archive only, and
+`summaryBulk` marks a report `reversible` for a bulk archive only, and
 `undoableIds` returns exactly the ideas the run **applied** — restoring a skipped
 idea would resurrect a row that never moved. Tag and re-home reports render the
 explicit "no undo here" line instead of offering a button. This is a batch
 restore, deliberately not a general undo system.
+
+That scoping was the right call *at the time*, because `update` carries no
+previous value: the batch module had `reversible`, `undone` and `planBulkRestore`
+but nothing to invert a tag with. Idea #111 removed the reason for the limit —
+see [Undo](#undo-idea-111) below — and the `bulk.noUndo` sentence, which was
+true only while tagging and re-homing had no previous value to restore.
 
 ### What the select box costs, measured
 
@@ -1415,6 +1424,175 @@ Two consequences of this contract are worth knowing without any tooling:
 - Editing an idea whose card binding is missing self-heals the mirror by
   **creating** its card, whatever the idea status. A bulk edit of many ideas
   therefore also mints cards for closed ideas, in `backlog`.
+
+## Undo (idea #111)
+
+`client/undo.ts` is the inverse of the board's own actions, and it is a **pure
+module**: plain-data plans, array stack helpers, and a keyboard predicate. It
+imports nothing from React and touches no DOM, so every rule is unit-testable
+without mounting the board — the same discipline `bulk.ts` set.
+
+### The inverse is the ordinary verb vocabulary, not a new verb
+
+An entry's `steps` **are** `BulkStep`s, so an undo posts `restore` / `update` /
+`move` / `triage` through `IdeasClient` exactly as the forward action did. The
+frozen `POST /api/ideas/action` envelope gains nothing, the ledger is never
+written directly, and an undo is indistinguishable in the activity log from a
+human having done it by hand. `BulkStep` grew a `triage` variant and a wider
+`move.status` for this: the bulk planners never emit either, but one step type
+now covers every write the board makes, forward or backward.
+
+`updateSteps` was exported from `bulk.ts` rather than reimplemented — the mirror
+round trip is the rule an undo needs just as much as a bulk run, because an
+archived, card-bound idea is read-only for every verb. An undo of a label change
+on such an idea replays `restore` → `update` → `archive`; a bare `update` would
+move the idea while its card silently kept the old labels. `planUndo` re-decides
+that rule at undo time rather than trusting what each verb decided while the idea
+was passing through the archive on its way in (see the guard section below).
+
+### The previous value exists at exactly one moment
+
+`update` **replaces**, so the previous title / body / label set cannot be
+reconstructed from the ledger after the fact. The client can only read it *before*
+the post, from the snapshot it holds — and, for a body, from the `fullRecords`
+cache, because the list projection drops `body`, `analysisAudit` and `events`
+(`toListRow`). That makes `IdeasClient.run()` the one place that can capture
+anything, and it is the goulet every client verb already passes through
+(`updateIdea`, `moveIdea`, `triageIdea`, … all delegate to it).
+
+The capture is split around the post on purpose:
+
+1. **before** — build the inverse from the pre-action row (and the pre-action
+   cached record);
+2. **after, and only on success** — push it, seeding the drift guard from the
+   snapshot the action itself returned.
+
+A refused action changed nothing, so it produces no entry: an undo button for an
+action that never landed would be a lie. Step 2 also explains why a triage's
+expectation can only come from the Host's answer — the re-rank moves a whole
+workspace group, so the resulting rank is not derivable from the patch.
+
+### Absence IS the guarantee
+
+`invertAction` answers `undefined` whenever the inverse cannot be expressed in
+ordinary verbs, and `undefined` means no entry, which means no button. The cases
+are deliberate, not gaps:
+
+| case | why no entry |
+|---|---|
+| `decline`, `deliver` | no verb erases `decision` / `deliveredAt`; a `restore` would bring back a card still stamped as delivered |
+| `delete`, `merge`, `followUp` | out of scope by design (delete leaves no trace, merge is atomic, followUp archives the parent and creates the child in one commit) |
+| `reanalyze`, `reorder`, `create` | a ledger-wide rewrite, a whole-list ordering, and a row that had no "before" |
+| `value` / `effort` that did not exist | the wire patch sets a score but has **no way to clear one**, so an opinion that was never there cannot be taken away |
+| `rank` that did not exist | likewise: the re-rank is transactional and an unranked idea has no position to return to |
+| a `body` whose full record is not cached | nothing to restore — and a *stale* cached record (`full.updatedAt !== row.updatedAt`) is refused rather than trusted, since it would put an older draft over a newer edit |
+
+`restore` is deliberately **not** used as a generic inverse: it forces `open` and
+clears `archivedAt` alone, so it would drop an idea from Under review into Open
+and resurrect a delivery. The inverse of a column move is a `move` back to the
+previous column.
+
+Redo is out of scope on purpose. The inverse of a mis-typed tag is a safety; the
+inverse of an archive is a "do it again" button; and redoing a destructive batch
+without the confirmation its original click carried is a new source of error, not
+a comfort.
+
+### Batches, because "undo" has to mean an action a human recognises
+
+A bulk tag of sixty ideas is sixty `update` posts. Without grouping, the stack
+would hold sixty entries and one Ctrl+Z would reverse one card. `beginUndoBatch` /
+`endUndoBatch` bind every verb posted inside them into one entry under the label
+the human saw; the bulk dialog opens one per run, and the open-idea editor opens
+one around its `update` + `triage` save so a single Ctrl+Z restores the card
+rather than half of it. Batches do not nest, and a batch that changed nothing
+pushes no entry.
+
+The bulk dialog keeps its own restore button for a bulk archive — it reports the
+per-idea outcome better than the generic row can — and calls `discardUndoBatch`
+afterwards, so the same action is never reversible twice and a second press
+cannot undo the first undo.
+
+### The drift guard, and why it protects narrow fields
+
+Each entry records what the action actually wrote for **the fields its inverse is
+about to overwrite**, read off the row the action left behind. At undo time those
+fields are compared against the current row; a mismatch refuses that idea, names
+the field, and **still undoes the rest of the batch**. One card an agent touched
+must not leave the other fifty-nine of a bulk tag standing.
+
+The unit of an undo is the **idea**, not the captured verb, and three details of
+`planUndo` follow from that:
+
+- **The guards of an idea's verbs are merged per field, the last write winning.**
+  A mirrored tag change is three verbs (`restore` -> `update` -> `archive`) and
+  so three captures; at undo time the row holds the result of the LAST write to
+  each field, not the state it passed through in between. Guarding each verb on
+  the snapshot its own post returned refuses the very batch the feature exists to
+  reverse — the `restore` guard reads `status: 'open'` while the row has been
+  archived ever since. (This was the first real bug, caught by the test that
+  replays a three-verb chain and expects no refusal.)
+- **A plan that already round-tripped is replayed verbatim.** Its trailing
+  `archive` is what puts the idea back where the forward action found it, so
+  pruning it as "already archived" would leave the idea in Open.
+- **At most one captured column step survives, the first.** Per-verb column
+  inverses do not compose: that same chain captures `move archived` for its
+  `restore` and `move open` for its `archive`, and replayed in order the second
+  lands last and leaves the idea in the column the action started from. The
+  first one asks for that column, so it wins and the rest — states the action
+  itself passed through — are dropped. Every other `update` step is re-derived
+  through `updateSteps`, the one function that owns the mirror rule, which is
+  what keeps the mirrored card and the idea in agreement.
+
+Two more details are load-bearing:
+
+- **The expectation is read from `after`, never from the inverse's own values.**
+  A `move` back to `open` is guarded on the row still being `archived`; taking the
+  expectation from the plan would make the guard compare the card against itself
+  and always pass. (A second real bug, caught by the test that asserts a move's
+  guard is `status: 'archived'`.)
+- **The guard is narrow on purpose.** An unrelated commit — a launch settle, a
+  task-status observation — must not make a perfectly reversible label edit
+  un-undoable. The one exception is a body, which the list row cannot hold: an
+  update that touched one is guarded on the row's whole `updatedAt` stamp, the
+  only signal a body edit leaves in the projection.
+
+The entry is dropped **before** the run, never after: an undo that refused
+everything will never succeed on a retry, and one that half-landed is exactly the
+state the human must see and decide about.
+
+Every count the reader sees is an **idea** count (`undoIdeaCount`), never an item
+count: a mirrored chain is captured three times, so an item count would tell the
+reader a one-card undo had put three cards back.
+
+### The shortcut, and the filter that is not optional
+
+The board registers `keydown` in the **capture** phase (the model already exists
+for `Escape`). That means the handler runs *before* the browser's own undo on a
+focused field, so `shouldHandleUndo` refuses `input` / `textarea` / `select` /
+`contenteditable` targets — otherwise a single Ctrl+Z in the markdown editor
+would rewrite the ledger instead of the text the caret was in, which is the worst
+possible victim for a global shortcut.
+
+It also refuses an **empty stack without calling `preventDefault`**: a board that
+has nothing to undo must leave the page's native undo working. `Ctrl+Shift+Z` is
+deliberately not bound, since that chord is redo everywhere and this board has
+no redo. The predicate is structural (`tagName` / `isContentEditable`, never
+`instanceof`), so it runs in a test process with no DOM globals.
+
+### Session-local, on purpose
+
+The stack is **memory only**: bounded at 20 entries, expiring after 30 minutes,
+gone on reload, and never written to the ledger or sent to the Host. The honest
+promise is therefore "undo the last action of this session", never "undo
+anything" — so the UI says exactly that, and the bulk report carries the line
+naming what undo does **not** cover (delete, merge, follow-up, decline,
+delivery).
+
+Nothing here touches the backup surface: no persisted field on `IdeaRecord` was
+added, `KNOWN_IDEA_FIELDS` and the two `idea-95` backup tests are unchanged, and
+`IDEAS_SCHEMA_VERSION` stays 1. A persisted journal (an `UndoAudit` bounded field
+in the shape of `AnalysisAudit`) is the deferred follow-up that would let undo
+survive a reload and cover agent writes.
 
 ## Client notes
 

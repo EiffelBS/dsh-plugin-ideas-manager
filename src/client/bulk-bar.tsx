@@ -37,6 +37,7 @@ import {
   type BulkReport,
   type BulkStep,
 } from './bulk.ts'
+import type { UndoKind } from './undo.ts'
 import { NO_WORKSPACE_FILTER } from './ordering.ts'
 
 /**
@@ -167,6 +168,10 @@ const REASON_KEYS: Record<BulkReason, IdeasKey> = {
   'tag-limit': 'bulk.reason.tagLimit',
   'already-there': 'bulk.reason.alreadyThere',
   'already-archived': 'bulk.reason.alreadyArchived',
+  // Idea #111: the undo drift guard, reported in the very same per-idea line as
+  // every other skip — an undo that quietly dropped an idea is the one failure
+  // mode a bulk report must not have.
+  drifted: 'bulk.reason.drifted',
 }
 
 /** Per-state class of a report line (applied / skipped / failed). */
@@ -223,8 +228,20 @@ function stepRunner(client: IdeasClient) {
   return async (ideaId: string, step: BulkStep): Promise<void> => {
     if (step.verb === 'restore') await client.restoreIdea(ideaId)
     else if (step.verb === 'move') await client.moveIdea(ideaId, step.status)
+    else if (step.verb === 'triage') await client.triageIdea(ideaId, step.patch)
     else await client.updateIdea(ideaId, step.patch)
   }
+}
+
+/**
+ * The undo kind a bulk operation maps to (idea #111). The batch binds every verb
+ * the run posts under ONE entry, so a tag of sixty ideas is one Ctrl+Z and not
+ * sixty.
+ */
+const BULK_UNDO_KIND: Record<BulkOperation, UndoKind> = {
+  tag: 'tag',
+  workspace: 'workspace',
+  archive: 'archive',
 }
 
 /**
@@ -249,6 +266,12 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(0)
   const [report, setReport] = useState<BulkReport | undefined>(undefined)
+  /**
+   * The undo entry this run pushed (idea #111). Kept beside the report so the
+   * dialog's OWN restore button can consume it: the same action must not stay
+   * reversible after the report already undid it.
+   */
+  const [undoKey, setUndoKey] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -275,10 +298,18 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
         : planBulkArchive(rows)
     setRunning(true)
     setDone(0)
+    // One undo batch for the whole run: the batch IS the action the human
+    // performed, so the stack binds every verb under one entry (idea #111).
+    client.beginUndoBatch(BULK_UNDO_KIND[operation])
+    let key: string | undefined
     try {
       const results = await runBulkPlan(plan, stepRunner(client), (settled) => { setDone(settled) })
       setReport(summarizeBulk(operation, results))
     } finally {
+      // Read the handle from the close itself: a run that changed nothing pushes
+      // no entry, and then there is nothing for the report to consume.
+      key = client.endUndoBatch()
+      setUndoKey(key)
       setRunning(false)
     }
   }, [client, operation, parsed.names, rows, targetWorkspace])
@@ -293,9 +324,13 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
       const results = await runBulkPlan(plan, stepRunner(client), (settled) => { setDone(settled) })
       setReport(markBulkUndone(summarizeBulk('archive', results)))
     } finally {
+      // This button already restored exactly those ideas, in its own report.
+      // Leaving the generic entry behind would offer the same restoration a
+      // second time — and that second press would undo the first.
+      if (undoKey !== undefined) client.discardUndoBatch(undoKey)
       setRunning(false)
     }
-  }, [client, rows])
+  }, [client, rows, undoKey])
 
   const submit = (event: FormEvent): void => {
     event.preventDefault()
@@ -406,7 +441,14 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
                   ? t('bulk.undoHint')
                   : report.undone
                     ? t('bulk.undoDone', { count: report.applied.length })
-                    : t('bulk.noUndo')}
+                    : t('bulk.undoNote')}
+              </div>
+              {/* Idea #111: the line that keeps the promise honest. Undo reverses
+                  THIS batch and the board's own edits; it is not a transaction
+                  journal, and saying so here is cheaper than a user believing
+                  it is. */}
+              <div className={classes.fieldHint} data-dsh-ideas-bulk-undo-scope="">
+                {t('undo.scope')}
               </div>
             </div>
             <div className={classes.modalActions}>

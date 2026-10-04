@@ -8,6 +8,23 @@ Versions before 0.3.0 predate this file.
 
 ## Unreleased
 
+### Added
+
+- **Undo for your own board actions.** A batch tag, a batch move to another
+  workspace, a bulk archive, an edit, a ranking change — all of them can now be
+  taken back with one click, or with **Ctrl+Z** (**Cmd+Z** on a Mac). A quiet
+  row under the header names the action an *Undo* would reverse, and the shortcut
+  never fires while you are typing in a field: **Ctrl+Z** in the description
+  editor still undoes your text, as it always did.
+  It is honest about its limits, which is the point. An idea that changed since
+  the action is **left alone and named**, so one card an agent touched in between
+  never overwrites the other fifty-nine the batch really did change. And it says
+  plainly what it does **not** reverse: deleting an idea, merging two, raising a
+  follow-up, declining one, and delivering one have no way back, because the
+  board has no verb that undoes them — the interface would rather admit that
+  than offer a promise it cannot keep. Undo lives in this browser session only:
+  the last 20 actions, for 30 minutes, and it forgets on reload.
+
 ### Fixed
 
 - **A delivered idea no longer wears a "Running" tag.** An idea whose work was

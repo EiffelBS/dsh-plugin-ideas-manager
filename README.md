@@ -302,10 +302,34 @@ that ends with "see idea #42" ends with one click on it.
 - Every batch ends with a report: what was applied, what was skipped and why,
   and what failed with the reason — a partial failure is always visible per
   idea, never as one blanket error.
-- **A bulk archive can be undone.** Its report offers to restore exactly the
-  ideas it archived. This is scoped on purpose to the reversible operation:
-  bulk tagging and re-homing carry no previous value, so their report says
-  plainly that there is no undo there.
+- Every batch can be undone — see [Undo what you just did](#undo-what-you-just-did).
+
+### Undo what you just did
+Most of what you do on the board can be taken back.
+
+- **One row, one button, one shortcut.** Under the header, a quiet row names the
+  action an **Undo** would reverse, with the button and the shortcut
+  (**Ctrl+Z**, or **Cmd+Z** on a Mac). It appears only when there is something to
+  reverse, so it costs no space on a board that has not used it.
+- **The shortcut never fights your editor.** **Ctrl+Z** inside a title, a
+  description or any field still undoes *your text*, exactly as it always did —
+  the board only claims the keystroke when you are not typing.
+- **A batch is one undo, not one per idea.** Tagging sixty ideas, re-homing them
+  or archiving them is reversed by a single click.
+- **It is honest, which is the whole point.**
+  - An idea that **changed since** the action is left untouched and **named**,
+    with the field that moved. The rest of the batch is still reversed: one card
+    an agent touched never cancels the undo of the other fifty-nine.
+  - Undo is **not** a transaction log, and the board says which gestures it does
+    **not** reverse: **deleting**, **merging**, raising a **follow-up**,
+    **declining** and **delivering** an idea. There is no verb that undoes them,
+    so the interface admits it rather than offering a promise it cannot keep.
+  - It lives in **this browser session only**: the last **20** actions, for
+    **30 minutes**, and a reload starts it empty. Reverting a wrong tag by hand
+    is always possible; undo makes it one click, not a promise.
+  - Some edits genuinely have no previous value to restore — a score that did not
+    exist before, or a description the board had not loaded. Those produce no
+    undo at all rather than a half-restored card.
 
 ### Keep a copy of your board
 Your board is a real file on your machine, so it can be copied, kept and put

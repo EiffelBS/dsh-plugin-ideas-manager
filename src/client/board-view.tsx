@@ -60,6 +60,8 @@ import {
   type Selection,
 } from './selection.ts'
 import { BulkDialog, SelectBox, SelectionBar } from './bulk-bar.tsx'
+import { UndoBar } from './undo-bar.tsx'
+import { shouldHandleUndo } from './undo.ts'
 import type { BulkOperation } from './bulk.ts'
 import { deliveredRows } from './delivered-view.tsx'
 import { useVirtualColumns } from './virtual-column.ts'
@@ -604,19 +606,28 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
         // through the transactional triage — the only verb that re-ranks the
         // open backlog with a shift (a rank change here must not orphan the
         // old rank, and the workflow wants the backlog re-ranked on change).
-        await client.updateIdea(initial.id, {
-          title: title.trim(),
-          body: body.trim(),
-          tags: tags.split(','),
-          workspaceId: workspace,
-          ...relationPatch,
-        })
-        await client.triageIdea(initial.id, {
-          ...(value === undefined ? {} : { value }),
-          ...(effort === undefined ? {} : { effort }),
-          rationale,
-          ...(parsedRank === undefined ? {} : { rank: parsedRank }),
-        })
+        //
+        // Two verbs, ONE undoable action (idea #111): the batch is what makes a
+        // single Ctrl+Z restore the card the author was looking at, instead of
+        // reversing half of the save and leaving the rest standing.
+        client.beginUndoBatch('edit')
+        try {
+          await client.updateIdea(initial.id, {
+            title: title.trim(),
+            body: body.trim(),
+            tags: tags.split(','),
+            workspaceId: workspace,
+            ...relationPatch,
+          })
+          await client.triageIdea(initial.id, {
+            ...(value === undefined ? {} : { value }),
+            ...(effort === undefined ? {} : { effort }),
+            rationale,
+            ...(parsedRank === undefined ? {} : { rank: parsedRank }),
+          })
+        } finally {
+          client.endUndoBatch()
+        }
       } else {
         // Non-open edit (under review / archived / declined): no open-backlog
         // re-rank (the rank field is hidden), the opinion fields go through
@@ -1712,6 +1723,27 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     [client],
   )
 
+  /* --- undo shortcut (idea #111) -------------------------------------------
+   * Ctrl+Z / Cmd+Z, registered in the CAPTURE phase like every other board
+   * keydown handler — which is exactly why the filter is not optional: from
+   * here the handler runs before the browser's own undo on a focused field.
+   *
+   * Two things keep it honest. `shouldHandleUndo` refuses an editable target,
+   * so the markdown editor's own Ctrl+Z still undoes text; and it refuses an
+   * empty stack WITHOUT calling preventDefault, so a board with nothing to undo
+   * leaves the page's normal undo alone. Both `canUndo` and the stack are read
+   * at event time (never captured in the closure) so the gate is never stale. */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!shouldHandleUndo(event, event.target, client.canUndo)) return
+      event.preventDefault()
+      event.stopPropagation()
+      void client.undoLast()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => { document.removeEventListener('keydown', onKey, true) }
+  }, [client])
+
   // The settings view the board renders from: a load or a save always lands
   // a COMPLETE legal value (sanitized on arrival); the spelled defaults
   // cover the gap before the first answer.
@@ -2537,6 +2569,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           </button>
         </div>
       )}
+
+      {/* Undo row (idea #111): the affordance and its receipt, in the one place
+          the reader already looks for "what just happened". It renders nothing at
+          all when the stack is empty, so a board that never used it pays nothing. */}
+      <UndoBar client={client} />
 
       {/* A deep-link that could not land says so, where the reader already is
           (idea #105). Silence would read as "the board ignored me"; a refusal

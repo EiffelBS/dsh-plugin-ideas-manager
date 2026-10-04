@@ -22,6 +22,21 @@ import {
   type IdeasSnapshotReason,
   type IdeasStats,
 } from '../protocol.ts'
+import { runBulkPlan, type BulkItemResult, type BulkPlanItem, type BulkStepRunner } from './bulk.ts'
+import {
+  dropUndoEntry,
+  invertAction,
+  planUndo,
+  pushUndoEntry,
+  topUndoEntry,
+  undoExpectationOf,
+  undoKindOf,
+  undoTargetId,
+  type UndoEntry,
+  type UndoItem,
+  type UndoKind,
+  type UndoRefusal,
+} from './undo.ts'
 import { setLanguageOverride } from './locales.ts'
 import { IDEAS_PANEL_ID, TASK_BOARD_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
 import { focusReadQuery, parseIdeaRef, resolveIdeaRef, type FocusableIdea } from './deeplink.ts'
@@ -85,6 +100,29 @@ interface FocusRequest {
   ref: string
   /** Monotonic id: the panel answers a request once, and a repeat is a new one. */
   seq: number
+}
+
+/**
+ * What one undo actually did (idea #111).
+ *
+ * Three buckets, and never a single "it failed": the ideas whose inverse landed,
+ * the ideas the DRIFT GUARD refused (their row no longer held what the forward
+ * action wrote, so overwriting them would destroy somebody else's edit), and the
+ * ideas whose verb itself was refused by the Host. The board renders all three,
+ * because "undo" that silently skipped a third of a batch is the failure mode
+ * this shape exists to prevent.
+ */
+export interface UndoOutcome {
+  /** The entry that was reversed (its kind is the label). */
+  entry: UndoEntry
+  /** Every idea of the entry, with its settled state. */
+  results: BulkItemResult[]
+  /** Ideas restored to their previous value. */
+  applied: BulkItemResult[]
+  /** Ideas the Host refused while posting an inverse verb. */
+  failed: BulkItemResult[]
+  /** Ideas skipped because their fields moved since the action. */
+  refused: UndoRefusal[]
 }
 
 export class IdeasClient {
@@ -185,6 +223,29 @@ export class IdeasClient {
   statsError: string | undefined
   /** Sequence of the newest stats request; older answers are dropped on arrival. */
   private statsRequestSeq = 0
+  /* --- undo (idea #111) ------------------------------------------------- */
+  /**
+   * Session-local undo stack. MEMORY ONLY: nothing here is persisted, nothing is
+   * sent to the Host, and a reload starts it empty. The honest promise is
+   * therefore "undo the last action of this session", never "undo anything".
+   */
+  private undoStack: UndoEntry[] = []
+  /**
+   * The batch currently collecting inverses, if any (a bulk run, a two-verb
+   * save). Every verb posted while it is open collapses into ONE entry, so
+   * "undo" means the action the human performed rather than one HTTP request.
+   */
+  private undoBatch: { kind: UndoKind; key: string; items: UndoItem[] } | undefined
+  /**
+   * Set while an undo is running, so its own posts are not captured as new
+   * undoable actions. Without it the first Ctrl+Z would push an entry that undoes
+   * the undo, and the second would put everything back.
+   */
+  private undoing = false
+  /** Outcome of the last undo, so the board can say what happened, per idea. */
+  lastUndo: UndoOutcome | undefined
+  /** Progress of a running undo, for a batch that takes more than one round trip. */
+  undoProgress: { done: number; total: number } | undefined
   private focusSeq = 0
   private readonly listeners = new Set<() => void>()
   private unsubscribeEvents: (() => void) | undefined
@@ -832,13 +893,30 @@ export class IdeasClient {
     this.emit()
   }
 
-  /** Post one action, adopt the Host snapshot, and expose errors. */
+  /**
+   * Post one action, adopt the Host snapshot, and expose errors.
+   *
+   * This is the ONE place every client verb goes through (`updateIdea`,
+   * `moveIdea`, `triageIdea`, ... all delegate here), which is why it is also
+   * the one place an undo entry can be captured (idea #111). The capture is
+   * split around the post on purpose:
+   *
+   *  - BEFORE, read the row (and, for a body, the cached full record) and build
+   *    the inverse, because `update` replaces and the previous value does not
+   *    survive the commit;
+   *  - AFTER, and only on success, push it with what the action actually left on
+   *    the row. A refused action changed nothing, so there is nothing to undo and
+   *    an entry for it would be a lie.
+   */
   private async run(action: IdeasAction): Promise<void> {
     this.pending = true
     this.emit()
+    const inverse = this.captureUndo(action)
     try {
-      this.adopt(await this.transport.action(action))
+      const fresh = await this.transport.action(action)
+      this.adopt(fresh)
       this.error = undefined
+      this.commitUndo(action, inverse, fresh)
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
       throw error
@@ -846,6 +924,183 @@ export class IdeasClient {
       this.pending = false
       this.emit()
     }
+  }
+
+  /**
+   * Build the inverse of an action from the state the client holds RIGHT NOW.
+   *
+   * Reads the pre-action snapshot and the pre-action body cache; both are
+   * replaced by `adopt` the moment the post answers, so this can only be done
+   * here and only before it.
+   */
+  private captureUndo(action: IdeasAction): BulkPlanItem | undefined {
+    if (this.undoing) return undefined
+    const ideaId = undoTargetId(action)
+    if (ideaId === undefined) return undefined
+    const row = this.snapshot?.ideas.find(idea => idea.id === ideaId)
+    if (row === undefined) return undefined
+    const full = this.fullRecords.get(ideaId)
+    return invertAction(action, { row, ...(full === undefined ? {} : { full }) })
+  }
+
+  /**
+   * Push one captured inverse onto the stack — or into the batch that is open.
+   *
+   * `fresh` is the snapshot the action itself returned, so the drift guard is
+   * seeded with the values the action really produced (a triage re-ranks a whole
+   * group, so its resulting rank is only knowable from the Host's answer, never
+   * from the patch).
+   */
+  private commitUndo(action: IdeasAction, plan: BulkPlanItem | undefined, fresh: IdeasListSnapshot): void {
+    if (this.undoing || plan === undefined) return
+    const after = fresh.ideas.find(row => row.id === plan.id)
+    if (after === undefined) return
+    const item: UndoItem = { plan, expect: undoExpectationOf(plan, after) }
+    const batch = this.undoBatch
+    if (batch !== undefined) {
+      batch.items.push(item)
+      return
+    }
+    const now = Date.now()
+    this.undoStack = pushUndoEntry(this.undoStack, {
+      key: uuid(),
+      kind: undoKindOf(action),
+      at: now,
+      items: [item],
+    }, now)
+  }
+
+  /* --- undo (idea #111) ------------------------------------------------- */
+
+  /** The entry a Ctrl+Z would reverse, or undefined when there is none. */
+  get undoEntry(): UndoEntry | undefined {
+    return topUndoEntry(this.undoStack, Date.now())
+  }
+
+  /** Whether an undo is available right now (drives the button and the chord). */
+  get canUndo(): boolean {
+    return this.undoEntry !== undefined
+  }
+
+  /**
+   * Open an undo batch: every verb posted until {@link endUndoBatch} collapses
+   * into ONE entry.
+   *
+   * A batch is what makes "undo" mean something a human recognises. A bulk tag of
+   * sixty ideas is sixty `update` posts; without this the stack would hold sixty
+   * entries and one Ctrl+Z would reverse one card. A batch therefore binds them
+   * under the label the human saw — the action name — not under the last verb.
+   *
+   * Batches do not nest: a second `begin` inside an open batch is a no-op, so an
+   * inner helper can never fragment the outer one.
+   */
+  beginUndoBatch(kind: UndoKind): void {
+    if (this.undoBatch !== undefined) return
+    this.undoBatch = { kind, key: uuid(), items: [] }
+  }
+
+  /**
+   * Close the batch. A batch that changed nothing (every idea skipped, refused,
+   * or the verbs themselves had no inverse) pushes NO entry — an "Undo" that
+   * undoes nothing is worse than no button.
+   *
+   * @returns the key of the entry it pushed, or undefined when there is none.
+   *   It doubles as the DISCARD handle for a caller that undoes the action with
+   *   its own report (the bulk dialog's own restore button).
+   */
+  endUndoBatch(): string | undefined {
+    const batch = this.undoBatch
+    this.undoBatch = undefined
+    if (batch === undefined || batch.items.length === 0) return undefined
+    const now = Date.now()
+    this.undoStack = pushUndoEntry(this.undoStack, {
+      key: batch.key,
+      kind: batch.kind,
+      at: now,
+      items: batch.items,
+    }, now)
+    this.emit()
+    return batch.key
+  }
+
+  /**
+   * Drop the entry a batch just pushed, because the caller undid the action with
+   * its own report (the bulk dialog's own restore button). Without this the same
+   * action would be reversible twice, and the second press would undo the FIRST
+   * undo instead of the original action.
+   */
+  discardUndoBatch(key: string): void {
+    if (this.undoStack.length === 0) return
+    const newest = this.undoStack[this.undoStack.length - 1]
+    if (newest?.key !== key) return
+    this.undoStack = dropUndoEntry(this.undoStack, key)
+    this.emit()
+  }
+
+  /** The key of the batch currently open, if any. */
+  get openUndoBatchKey(): string | undefined {
+    return this.undoBatch?.key
+  }
+
+  /**
+   * Reverse the newest undoable action.
+   *
+   * The entry is dropped BEFORE the run: an undo that refused every idea (all of
+   * them drifted) must not stay on the stack waiting to be refused again, and
+   * one that half-landed is exactly the state the human must see and decide
+   * about rather than replay.
+   *
+   * Never throws: a per-idea refusal is reported like any other skip, because
+   * the board's answer is a report, not an exception.
+   *
+   * @returns the outcome, or undefined when there was nothing to undo.
+   */
+  async undoLast(): Promise<UndoOutcome | undefined> {
+    const entry = this.undoEntry
+    if (entry === undefined) return undefined
+    this.undoStack = dropUndoEntry(this.undoStack, entry.key)
+    const { plan, refused } = planUndo(entry, this.snapshot?.ideas ?? [])
+    this.lastUndo = undefined
+    this.undoing = true
+    this.undoProgress = { done: 0, total: plan.length }
+    try {
+      const results = await runBulkPlan(plan, this.undoStepRunner(), (done) => {
+        this.undoProgress = { done, total: plan.length }
+      })
+      const outcome: UndoOutcome = {
+        entry,
+        results,
+        applied: results.filter(result => result.state === 'applied'),
+        failed: results.filter(result => result.state === 'failed'),
+        refused,
+      }
+      this.lastUndo = outcome
+      return outcome
+    } finally {
+      this.undoing = false
+      this.undoProgress = undefined
+      this.emit()
+    }
+  }
+
+  /**
+   * Post one inverse step. Same ordinary verbs as any other write — the undo
+   * path owns no verb of its own and never touches the ledger document.
+   */
+  private undoStepRunner(): BulkStepRunner {
+    return async (ideaId, step) => {
+      if (step.verb === 'restore') await this.restoreIdea(ideaId)
+      else if (step.verb === 'move') await this.moveIdea(ideaId, step.status)
+      else if (step.verb === 'triage') await this.triageIdea(ideaId, step.patch)
+      else await this.updateIdea(ideaId, step.patch)
+    }
+  }
+
+  /** Forget the last undo outcome (the board's dismissal). */
+  clearLastUndo(): void {
+    if (this.lastUndo === undefined) return
+    this.lastUndo = undefined
+    this.emit()
   }
 
   /**

@@ -526,10 +526,16 @@ describe('board: bulk tag is a batch of ordinary update verbs', () => {
     // Labels are unioned, never replaced.
     expect(actions[0]).toEqual({ kind: 'update', ideaId: 'i2', patch: { tags: [{ name: 'review' }] } })
     expect(actions[1]).toEqual({ kind: 'update', ideaId: 'i3', patch: { tags: [{ name: 'alpha' }, { name: 'review' }] } })
-    // The report answers per idea, and says there is no undo here.
+    // The report answers per idea, and now says the batch IS reversible
+    // (idea #111) — plus the line that keeps the promise honest about what
+    // undo never covers.
     expect(host.querySelector('[data-dsh-ideas-bulk-summary]')?.textContent)
       .toBe(t('bulk.report.summary', { applied: 3, skipped: 0, failed: 0 }))
-    expect(host.querySelector('[data-dsh-ideas-bulk-undo-note]')?.textContent).toBe(t('bulk.noUndo'))
+    expect(host.querySelector('[data-dsh-ideas-bulk-undo-note]')?.textContent).toBe(t('bulk.undoNote'))
+    expect(host.querySelector('[data-dsh-ideas-bulk-undo-scope]')?.textContent).toBe(t('undo.scope'))
+    // The dialog offers no per-report button for a tag batch: the board-level
+    // Undo row and Ctrl+Z are the one affordance for it (an undo of the whole
+    // batch, not of the ideas the report happens to list).
     expect(host.querySelector('[data-dsh-ideas-bulk-undo]')).toBeNull()
   })
 })
