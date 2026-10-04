@@ -241,6 +241,13 @@ Versions before 0.3.0 predate this file.
   itself as an old one. It now reads the version of the package you actually
   installed, and a release cannot ship with it out of step any more.
 
+- **The "Open session" link can now actually appear.** It asked the host to open
+  a session under a name no version of DSH serves, so the link was silently
+  missing everywhere — the conversation was on the card all along, the button was
+  not. It now resolves the navigation face DSH actually offers, tries the known
+  names in order (current first, the older one second) so an older instance keeps
+  working, and says so in the log when neither is there.
+
 - **Launching an idea no longer fails with "session permission failed: Cannot
   read properties of undefined".** Raising a new session's permission goes through
   the host's own command service, whose call now takes a **fourth** argument — a

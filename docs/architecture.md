@@ -171,6 +171,34 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   silently ran fenced would be the worst possible answer to "I asked for
   danger-full-access".
 
+- **A wrong service NAME is a silently dead feature, not a degraded one.** The
+  session link is the worked example: the probe asked the `sessions` store for
+  `open()`, a method that store never had (the real face is
+  `ctx.uiWorkspace.openSession(sessionId)`), so **every** deployment rendered no
+  link — and the suite stayed green, because the fake it was given was the shape
+  the plugin wished for rather than the shape a page has. Three rules now hold
+  for every host-facing call, and they are the same rules the layout resolver
+  already followed:
+
+  1. **Services are read by NAME through `ctx.get(name)`**, never as a property:
+     cordis throws on an undeclared property read, and the resolver kept a
+     property read as a deliberate second chance only (`readServiceFace`).
+  2. **Both names are probed, most current first.** The plugin declares
+     compatibility from DSH 0.1.5-rc.1, and the way to show a session has moved;
+     the settings section already carries this dual-path shape (`register` vs
+     `SettingsForms`). An extra name costs one line; a missing one costs a
+     feature nobody can tell is missing.
+  3. **Nothing resolving WARNS.** Without it, "wrong name" and "unsupported
+     deployment" are indistinguishable from the outside — the second is fine and
+     the first is a bug.
+
+  And the test fake is `get`-shaped, because a plain-object fake cannot catch a
+  wrong accessor — which is precisely the bug. The recipe that settles any of it
+  is in `AGENTS.md`: read the installed packages' `.d.ts`, where every `Context`
+  key and service method is declared. That is how `uiWorkspace.openSession` was
+  found and how the fourth `commands.execute` argument was confirmed; both facts
+  came from the types on disk, not from memory.
+
 ## Per-idea activity log (idea #92)
 
 `IdeaRecord.events[]` is a bounded append-only log: `{ at, verb, actor,

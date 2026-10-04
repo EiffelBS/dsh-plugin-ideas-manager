@@ -22,6 +22,38 @@ repository are written in English**, whatever language the conversation is in.
 - **No bulk-only verb, no ledger edit for a batch.** A batch is a sequence of the
   ordinary per-idea verbs (see `src/client/bulk.ts`).
 
+## Host APIs move: probe by NAME, and never by property
+
+This plugin is compatible from **DSH 0.1.5-rc.1** (`package.json` →
+`dsh.engines.dsh`), so every host face it uses is a moving target. The failure
+mode is specific and nasty: **a wrong NAME is not a feature that degrades, it is
+a feature that is silently dead** — and the test suite stays green, because the
+fake handed to the resolver is the shape you wished for rather than the shape the
+page has. That cost two real bugs: a session link that never appeared (the probe
+asked for `sessions.open()`, a method the host's `sessions` store never had) and
+a property read that cordis refuses.
+
+So, whenever you touch a host-facing call:
+
+1. **Read services with `ctx.get(name)`**, never `ctx[name]` — an undeclared
+   property read THROWS. `panel-navigation.ts` documents the lesson; a property
+   read survives only as a deliberate second chance (`readServiceFace`).
+2. **Probe every name the supported range may serve, most current first** (the
+   settings section already has this dual-path shape: `register` vs
+   `SettingsForms`). Keep the old name when it costs one line.
+3. **Warn when nothing resolves.** An absent face must say so, so a wrong name is
+   distinguishable from an unsupported deployment.
+4. **Make the fake `get`-shaped**, like a real context. A plain-object fake
+   cannot catch a wrong accessor, which is the bug.
+5. **Verify the name against an installed DSH** rather than from memory:
+   `node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/*/lib/types/**/*.d.ts`
+   declares every `Context` key and every service method (`layout.selectPanel`,
+   `uiWorkspace.openSession`, …). Reading those `.d.ts` files is how the session
+   link was found and the `commands.execute` fourth argument was confirmed.
+6. **A host method that grew a REQUIRED argument** is fixed by passing the extra
+   one (older hosts ignore extras), never by narrowing the call — see
+   `src/command-dispatch.ts`.
+
 ## Before you release: does this change the backup surface?
 
 **This plugin grows a feature almost every release, and a backup is only as good
