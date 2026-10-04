@@ -1442,6 +1442,18 @@ human having done it by hand. `BulkStep` grew a `triage` variant and a wider
 `move.status` for this: the bulk planners never emit either, but one step type
 now covers every write the board makes, forward or backward.
 
+Two consequences of routing the inverse back through `run()` — both are risks
+closed by construction rather than by new code:
+
+- **A fresh `requestId` per post.** The Host caches by `requestId`, so a replayed
+  identifier is a silent success that never executes. `undoStepRunner` calls the
+  ordinary client verbs, which reach `transport.action()`, and that mints a
+  `uuid()` per call (`host-api.ts:213`). An undo of a sixty-idea batch therefore
+  cannot inherit a previous action's identity.
+- **No capture of the undo's own posts.** `run()` captures before every post,
+  including the ones an undo makes, which would make the second Ctrl+Z put the
+  change straight back. The `undoing` flag suppresses it for the duration.
+
 `updateSteps` was exported from `bulk.ts` rather than reimplemented — the mirror
 round trip is the rule an undo needs just as much as a bulk run, because an
 archived, card-bound idea is read-only for every verb. An undo of a label change
