@@ -82,6 +82,13 @@ skill.
 
        [ { "name": "subsystem" }, { "name": "windows" } ]
 
+   A tag may also carry "promptPrefix", the line shown to the human before each
+   launch; the summary projection returns it per tag. The patch replaces the
+   WHOLE tag list, so a tag you keep must be sent back with the promptPrefix it
+   already had - dropping it here silently erases an instruction the human wrote.
+   Never invent one, and never rewrite one: copy it verbatim, and send
+   { "name": "..." } only for a tag that has none.
+
 5. VALUE / EFFORT - scale 1 = low, 2 = medium, 3 = high.
 6. RANK - ranks are RELATIVE per workspace: the rank is the 1-based position
    of the idea INSIDE the open backlog of THIS workspace only (1 = highest).
@@ -224,6 +231,14 @@ UPDATE (when merging a capture, and always for re-analysis):
       "summary": "<your at-most-300-char abstract>",
       "tags": [ { "name": "..." } ] } }
 
+RELATIONS (only when an explicit relation is established, see the section below):
+  { "kind": "update", "ideaId": "<id>", "patch": {
+      "relatesTo": [ "<other stable id>" ], "blocks": [ "<blocked id>" ] } }
+  Both lists REPLACE what is stored, so send the COMPLETE list: what the card
+  already had, plus the new entry. An omitted key changes nothing; an empty
+  array clears the list. NEVER send "blockedBy" - it is derived on read from the
+  other cards' "blocks" and is refused by the wire gate.
+
 TRIAGE:
   { "kind": "triage", "ideaId": "<id>", "patch": {
       "value": <1|2|3>, "effort": <1|2|3>, "rank": <position>, "rationale": "<one or two sentences>" } }
@@ -249,6 +264,40 @@ Rules:
 - "runStatus" and "runSessionId" are HOST-WRITTEN system fields: they describe a
   launched execution (idea #66) and the wire gate rejects them in a patch or an
   import. Never send them, and never set them to make a card look launched.
+- "blockedBy" is DERIVED from the other cards' "blocks" and is refused in a
+  patch: write "blocks" with the direction you mean, or write nothing.
+
+## Relations: relatesTo and blocks
+
+A card can name the ideas it is connected to. Two relations exist and they are
+not symmetric:
+
+- "relatesTo": same subsystem, same constraint, same conversation - the other
+  card stays independently valuable.
+- "blocks": THIS card blocks the OTHER one. The direction is the whole point:
+  a card that depends on this one blocks nothing, it is blocked BY it. The board
+  derives "blockedBy" from the other cards' "blocks", so you write "blocks" and
+  NEVER "blockedBy" - the wire gate refuses it.
+
+Rules, in order of importance:
+
+1. **Only EXPLICIT relations.** Write one when the human draft states it, when
+   the analysis proves it from the fetched bodies, or when a card's own text
+   already names the dependency. A relation you infer from two similar titles is
+   speculation, and a wrong edge on a board is worse than a missing one: it
+   misleads every later reader.
+2. **Both endpoints must exist and be resolved.** Use the stable ids from the
+   summary rows you already loaded, never a title, a number or a guessed id. The
+   gate drops ids it cannot resolve, and a silently dropped edge is invisible.
+3. **Same workspace only**, like every other read and write on this channel.
+4. **At most 3 relations per run**, related to the analyzed card.
+5. **Send the complete list** when you add one: the patch replaces the stored
+   list, so the entries already there must be included or they are erased.
+6. **Never on a capture of a fresh idea with no analysed neighbour**, and never
+   invented to look thorough. An empty relation graph is a normal, correct state.
+
+If you add a relation, name it in the final report as one line ("related to #12
+- same permission boundary", "blocks #15 - the mirror cannot land without it").
 
 ## One run, one card (anti-multi-CREATE)
 
@@ -261,6 +310,8 @@ the count is your responsibility, not the channel's:
 - A re-analysis run emits NO create verb at all; it updates the named id.
 - create then triage, or update then triage, is not duplication: both verbs
   target the SAME idea id. Keep it that way.
+- A relations update targets the SAME idea id too, so it is not a fourth card:
+  it is part of writing that card.
 - The follow-up verb stays reserved for a failed run reviewed by a human: it
   requires an underReview parent and archives that parent. It is never the
   way to split a broad subject across cards.

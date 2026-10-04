@@ -63,6 +63,37 @@ describe('buildAnalysisPrompt', () => {
     expect(prompt).not.toContain('at most 4 sentences')
   })
 
+  it('KNOWS every patch field this plugin offers, or the suite fails', () => {
+    // The release step for the skill, and the reason it exists: the skill is a
+    // PROMPT pinned by string assertions, so a field added to the write channel
+    // and never named here is a feature the AI silently does not use - and
+    // nothing else would ever notice. The list is a literal on purpose; extend
+    // the skill and this list in the same commit, or the release stops.
+    const fields = ['title', 'body', 'summary', 'tags', 'value', 'effort', 'rank', 'rationale', 'relatesTo', 'blocks']
+    for (const field of fields) {
+      expect(IDEAS_ANALYST_SKILL_CONTENT).toContain(field)
+    }
+    // The two it must REFUSE: writing them is refused by the wire gate, so the
+    // skill has to say so rather than discover it from a 400.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('blockedBy')
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('runSessionId')
+    // And the tag sub-field whose loss is silent: a kept tag must come back with
+    // its promptPrefix, or a human-written launch instruction disappears.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('promptPrefix')
+  })
+
+  it('keeps the relation rules that make an edge trustworthy', () => {
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Relations: relatesTo and blocks')
+    // Explicit only, resolved ids, bounded, same workspace, whole list.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/Only EXPLICIT relations/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/stable ids from the\s+summary rows/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/At most 3 relations per run/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/Send the complete list/)
+    // The direction rule, and the derived field it must never write.
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/THIS card blocks the OTHER one/)
+    expect(IDEAS_ANALYST_SKILL_CONTENT).toMatch(/NEVER send "blockedBy"/)
+  })
+
   it('the skill is the single home of the methodology AND the write-channel contract', () => {
     // Methodology.
     expect(IDEAS_ANALYST_SKILL_CONTENT).toContain('## Context')

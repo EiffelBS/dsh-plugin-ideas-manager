@@ -10,6 +10,27 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+- **The AI analysis can now relate an idea to its neighbours.** When the analysis
+  establishes a real link, the analyst records it: **relates to** for a shared
+  subsystem or constraint, and **blocks** with the direction that means — the
+  card that depends on another is *blocked by* it, never the reverse. Only
+  explicit relations, using resolved ids, at most three per run, and named in
+  the report. An empty relation graph stays a normal state.
+
+- **A re-analysis no longer erases your tag instructions.** The analysis rewrites
+  the tag list, and a tag also carries the line shown to you before each launch.
+  A tag the analysis keeps now comes back with that line intact.
+
+### Changed
+
+- **An update now upgrades the installed analysis prompt.** The prompt was
+  installed once and never replaced, so an instance that had installed an older
+  version kept using it after every upgrade — the new features simply went
+  unused, with nothing to show for it. The plugin now recognises its own past and
+  replaces it. A prompt **you** edited is still yours and is never touched; the
+  start-up log says which one is in use, and the README says how to adopt the
+  plugin's.
+
 - **A long Open column stays responsive.** Once the Open column grows past a few
   hundred ideas, the board draws only the cards you can actually see and leaves
   the rest behind the scrollbar, so scrolling, searching and dragging no longer

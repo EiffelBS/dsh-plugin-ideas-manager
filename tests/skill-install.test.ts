@@ -1,23 +1,30 @@
 /**
  * Skill-install tests: the Host installs the bundled ideas-analyst skill into
  * the user-dsh skill root (`<home>/skills/ideas-analyst/SKILL.md`) so any
- * analysing session discovers it. Install is first-wins: a missing file is
- * written, a present file (even a hand-edited one) is kept, and a divergent
- * present file is logged without overwrite. Best-effort: failures return a
- * kept-existing outcome instead of throwing.
+ * analysing session discovers it.
+ *
+ * The classification is by DIGEST, and it is the whole policy: a missing file is
+ * written, an older copy THIS PLUGIN shipped is upgraded, a matching copy is
+ * left alone, and a hand-edited one is kept untouched with a warning. The old
+ * rule was first-wins for all of them, which silently stranded every instance on
+ * a months-old analysis prompt. Best-effort: failures return a kept-existing
+ * outcome instead of throwing.
  */
 
 import { tmpdir } from 'node:os'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   installedSkillPath,
   installIdeasAnalystSkill,
+  KNOWN_BUNDLED_DIGESTS,
   skillRoot,
 } from '../src/skill-install.ts'
 import { IDEAS_ANALYST_SKILL_CONTENT, IDEAS_ANALYST_SKILL_NAME } from '../src/skills/ideas-analyst.ts'
+
+const digestOf = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
 
 let home: string
 
@@ -73,7 +80,27 @@ describe('installIdeasAnalystSkill', () => {
     expect(readFileSync(again.path, 'utf8')).toBe(IDEAS_ANALYST_SKILL_CONTENT)
   })
 
-  it('first-wins: a divergent present file is kept and logged, never overwritten', () => {
+  it('UPGRADES a copy this plugin shipped before, instead of stranding it', () => {
+    // The bug this replaces: an instance installed months ago kept running the
+    // old prompt after every upgrade, so the features the plugin advertised went
+    // unused by the analyst with no symptom anywhere.
+    const target = installedSkillPath(home)
+    mkdirSync(join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME), { recursive: true })
+    // An older copy this plugin shipped — recognised by digest through the seam,
+    // the same way the seeded 2026-09 entry works on a real home.
+    const stale = '# an older bundled copy of the skill\n'
+    writeFileSync(target, stale, 'utf8')
+    const logged: string[] = []
+    const outcome = installIdeasAnalystSkill({ home, log: (line) => { logged.push(line) }, knownDigests: [digestOf(stale)] })
+    expect(outcome.status).toBe('upgraded')
+    expect(outcome.synced).toBe(true)
+    expect(readFileSync(target, 'utf8')).toBe(IDEAS_ANALYST_SKILL_CONTENT)
+    expect(logged.some(line => line.includes('upgraded it to this version'))).toBe(true)
+    // And it is idempotent afterwards: the next start sees the current copy.
+    expect(installIdeasAnalystSkill({ home }).status).toBe('matched')
+  })
+
+  it('keeps a HAND-EDITED copy untouched, and says which prompt is in use', () => {
     const target = installedSkillPath(home)
     const edits = '# my hand-edited skill\n'
     mkdirSync(join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME), { recursive: true })
@@ -83,7 +110,25 @@ describe('installIdeasAnalystSkill', () => {
     expect(outcome.status).toBe('kept-existing')
     expect(outcome.synced).toBe(false)
     expect(readFileSync(target, 'utf8')).toBe(edits) // untouched
-    expect(logged.some(line => line.includes('differs from the bundled copy'))).toBe(true)
+    expect(logged.some(line => line.includes('edited by hand'))).toBe(true)
+    // The sentence must name the consequence AND the way out: a kept copy means
+    // the analyst is running the author's prompt, not the plugin's.
+    expect(logged.some(line => line.includes('NOT this plugin version'))).toBe(true)
+    expect(logged.some(line => line.includes('Delete the file and restart'))).toBe(true)
+  })
+
+  it('knows the digest of the copy sitting on a real home, so that one upgrades too', () => {
+    // Guards the seeded list itself: the digest registered for the 2026-09-23
+    // release is the one an untouched installation of it produces. If the skill
+    // text is reflowed, this entry must be re-seeded rather than silently
+    // stranding every machine on the old prompt.
+    expect(KNOWN_BUNDLED_DIGESTS).toContain('a52ebd3ac0de29e5b029070762ff4f05761373e77ab8a9473168950990cf4880')
+    // Every entry is a lowercase sha-256, and none is the current copy's (that
+    // one is compared at runtime).
+    for (const digest of KNOWN_BUNDLED_DIGESTS) {
+      expect(digest).toMatch(/^[0-9a-f]{64}$/)
+      expect(digest).not.toBe(digestOf(IDEAS_ANALYST_SKILL_CONTENT))
+    }
   })
 
   it('never throws: an unreadable/undeletable target degrades to kept-existing', () => {

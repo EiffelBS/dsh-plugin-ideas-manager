@@ -88,6 +88,32 @@ If your change adds a field that only ever exists in memory (a client patch
 type, a view preference, a display mode), nothing above applies — say so in the
 commit body so the next reader does not have to guess.
 
+## Does this change the SKILL's surface?
+
+**The ideas-analyst skill is a prompt pinned by string assertions, and it is
+installed to `~/.dsh/skills/` on first run.** So a field added to the write
+channel is invisible to the AI until the skill text names it — and that gap has
+no symptom except "the AI doesn't use the new feature".
+
+If your change adds, renames or removes a field the skill may **write**
+(`IdeaAction` patches, `create` input, `triage`), then:
+
+1. extend `src/skills/ideas-analyst.ts` — the verb example, the rules, and the
+   derived/refused fields it must never send (`blockedBy`, `runStatus`,
+   `runSessionId`, `taskBoardId`);
+2. extend the field literal in `tests/session-queue.test.ts` ("KNOWS every patch
+   field this plugin offers"), which fails when the skill does not name it;
+3. remember the **tag `promptPrefix`**: the patch replaces the WHOLE tag list, so
+   a tag the skill keeps must come back with its `promptPrefix`, or a
+   human-written launch instruction is erased without a word.
+
+**And append this release's digest to `KNOWN_BUNDLED_DIGESTS`**
+(`src/skill-install.ts`) in the same commit. The install path recognises a file
+on disk by digest: absent → install, matches a shipped digest → **upgrade**, same
+as bundled → nothing to do, anything else → a hand-edited copy, kept. Skipping
+the append is not neutral: it is exactly what stranded existing installations on
+a months-old prompt, which is the silent failure this list exists to prevent.
+
 ## Toolchain
 
 `pnpm run <script>` **wipes `node_modules`** here (pnpm 12.3.4). Call the tools

@@ -583,6 +583,29 @@ The browser half is served at `/plugins/<id>/client.js` (re-resolved per
 request); the host half registers the `/api/ideas` routes at boot. Data lives in
 `~/.dsh/ideas/ledger-v2.json`, and its snapshots in `~/.dsh/ideas/backups/`.
 
+### After an update: the AI analysis prompt follows the plugin
+
+The plugin installs its **ideas-analyst** skill to `~/.dsh/skills/` on first
+run. On every later start it compares what is installed with what it ships:
+
+- **a copy this plugin shipped before is upgraded** to the current prompt, so an
+  instance installed months ago does not keep running an old analysis;
+- **a copy you edited by hand is yours** and is never touched. The start-up log
+  says so plainly, because it means the prompt in use is yours rather than the
+  plugin's:
+
+  ```
+  skill "ideas-analyst" exists at … and was edited by hand …
+  which means the analysis prompt in use is yours, NOT this plugin version.
+  ```
+
+To adopt the plugin's prompt anyway, delete the file and restart the instance —
+it is reinstalled on the next start:
+
+```powershell
+Remove-Item "$env:USERPROFILE\.dsh\skills\ideas-analyst\SKILL.md"
+```
+
 > **Maintainers:** this README describes what an installed user sees — keep it
 > user-facing (no internal issue numbers, no design archaeology) and update it
 > with the user-visible changes on every release. Implementation detail belongs
