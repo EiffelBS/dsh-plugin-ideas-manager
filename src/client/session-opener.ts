@@ -6,19 +6,25 @@
  * whether that was a mirrored card or a fresh direct session), but the human
  * still has to be able to LOOK at it. A row of ideas saying "running" does not
  * show a token stream — it only says a run exists. This resolves the shell's
- * `sessions.open(id)` so a card carrying a `runSessionId` can jump straight to
- * the execution, with no new surface to learn and no tab to open.
+ * navigation face so a card carrying a `runSessionId` can jump straight to the
+ * conversation, with no new surface to learn and no tab to open.
  *
- * Like every other session face in this plugin it is FEATURE-DETECTED and
- * degrades to undefined: a deployment that serves no sessions service simply
- * renders no link, never a broken button.
+ * FEATURE-DETECTED over the faces that have actually carried this name, tried in
+ * order, and degrading to undefined: a deployment that serves none renders no
+ * link, never a broken button. The order matters — `uiWorkspace.openSession` is
+ * the documented navigation face (`@deepseek-ai/dsh-client-ui-workspace`), and
+ * `sessions.open` is kept only because a host may serve it. Asking for the wrong
+ * NAME is not a feature that degrades, it is a feature that is simply dead:
+ * which is why the caller warns when this returns undefined, and why the probe
+ * covers both names rather than the one it used to assume.
  */
 
 import { SESSIONS_SERVICE } from './session-queue.ts'
 
-/** The slice of the shell "sessions" service this uses. */
-interface DshOpenableSessions {
-  open(id: string): void
+/** The slice of a shell navigation face this uses. */
+interface OpenableSessions {
+  openSession(sessionId: string): void
+  open(sessionId: string): void
 }
 
 /** Opens a run's session in the shell. */
@@ -26,25 +32,32 @@ export interface SessionOpener {
   open(sessionId: string): void
 }
 
-/**
- * Resolve the opener from a plugin context, or undefined when the shell serves
- * no usable `sessions` service. Written as a narrow runtime check rather than a
- * type import: the face is optional by contract, not by version.
- */
-export function resolveSessionOpener(service: unknown): SessionOpener | undefined {
-  if (typeof service !== 'object' || service === null) return undefined
-  const open = (service as { open?: unknown }).open
-  if (typeof open !== 'function') return undefined
-  const sessions = service as DshOpenableSessions
-  return {
-    open(sessionId: string): void {
-      if (sessionId === '') return
-      sessions.open(sessionId)
-    },
-  }
-}
+/** The faces that have carried "show this session", most current first. */
+const OPENER_FACES: ReadonlyArray<{ service: string; method: 'openSession' | 'open' }> = [
+  { service: 'uiWorkspace', method: 'openSession' },
+  { service: SESSIONS_SERVICE, method: 'open' },
+]
 
-/** Extract the `sessions` service out of a plugin context, if it is there. */
-export function sessionsServiceOf(ctx: { [key: string]: unknown }): unknown {
-  return ctx[SESSIONS_SERVICE]
+/**
+ * Resolve the opener from a client context, or undefined when the page serves no
+ * usable navigation face. Written as narrow runtime checks rather than a type
+ * import: the face is optional by contract, not by version.
+ */
+export function resolveSessionOpener(ctx: unknown): SessionOpener | undefined {
+  if (typeof ctx !== 'object' || ctx === null) return undefined
+  const host = ctx as Record<string, unknown>
+  for (const { service, method } of OPENER_FACES) {
+    const face = host[service]
+    if (typeof face !== 'object' || face === null) continue
+    const open = (face as Partial<OpenableSessions>)[method]
+    if (typeof open !== 'function') continue
+    const target = face as OpenableSessions
+    return {
+      open(sessionId: string): void {
+        if (sessionId === '') return
+        open.call(target, sessionId)
+      },
+    }
+  }
+  return undefined
 }

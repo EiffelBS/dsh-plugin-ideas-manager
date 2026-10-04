@@ -19,7 +19,7 @@ import { registerIdeasSettingsSection } from './settings-section.tsx'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 import { resolveSessionLauncher } from './session-queue.ts'
-import { resolveSessionOpener, sessionsServiceOf } from './session-opener.ts'
+import { resolveSessionOpener } from './session-opener.ts'
 import { createIdeasBoardService, IDEAS_BOARD_SERVICE } from './deeplink-service.ts'
 
 /**
@@ -76,10 +76,15 @@ export function apply(ctx: ClientContext): void {
     // Phase 3: the AI-capture launcher rides the same "sessions" service;
     // absent/malformed degrades to the plain manual Create.
     client.sessionLauncher = resolveSessionLauncher(ctx)
-    // Idea #66: the jump back into a run the board started. Same optional
-    // "sessions" face as the launcher, so a deployment without it renders no
-    // link instead of a broken one.
-    client.sessionOpener = resolveSessionOpener(sessionsServiceOf(ctx as unknown as Record<string, unknown>))
+    // Idea #66: the jump back into the run a card was worked on. The navigation
+    // face is optional, so the resolver degrades to undefined — and a missing
+    // face is WARNED, never swallowed: a link that is absent because the name is
+    // wrong looks exactly like a link that is absent because the deployment does
+    // not support it, and only one of those is a bug.
+    client.sessionOpener = resolveSessionOpener(ctx)
+    if (client.sessionOpener === undefined) {
+      console.warn('[dsh-plugin-ideas-manager] no session navigation face on this page (uiWorkspace.openSession): the "Open session" link will not be shown')
+    }
     // Panel navigation is read DEFENSIVELY, not declared in `inject`: cordis
     // refuses an undeclared property, and declaring a service a deployment may
     // not have would keep this whole plugin from booting.
