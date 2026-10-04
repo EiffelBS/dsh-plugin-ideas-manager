@@ -142,5 +142,13 @@ for source, and `node scripts/scan-mojibake.mjs` after any scripted rewrite.
   typecheck.
 - Local commits are fine. **Never push, tag or publish** without the user saying
   so in the session.
+- **The release gesture**: write the user-facing `CHANGELOG.md` section, bump
+  `version`, rebuild `lib/`, commit, tag `vX.Y.Z`, push `main` **then** the tag —
+  the tag is what publishes to npm. Never publish npm by hand: it is immutable
+  and provenance comes from the workflow. A changelog corrected after the tag can
+  only reach the **GitHub Release body**, never npm; re-derive it by dispatching
+  the `release` workflow with `tag: vX.Y.Z` (it edits the body and skips npm).
+  Note that npm's registry metadata can lag a successful publish by several
+  minutes: a 404 right after the run is not proof that the publish failed.
 - Never deploy, install or test on the live instance; use `dsh web --port <free>`
   with its own `DSH_HOME`.

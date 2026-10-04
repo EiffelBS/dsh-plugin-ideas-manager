@@ -7,6 +7,12 @@ name: release
 # The tag publishes to npm (with provenance), and the GitHub Release body is the
 # matching CHANGELOG section — curated notes for users, not the commit log.
 #
+# The release BODY is derived text, and a changelog can be corrected after the
+# tag is pushed (folding sections that were never published, say). `workflow_dispatch`
+# re-derives that body WITHOUT touching npm: dispatch it with `tag: vX.Y.Z`. npm is
+# deliberately left alone — a published version is immutable, so a republish would
+# fail with E409 and could only ever make things worse.
+#
 # One-time setup (npmjs.com): package Settings -> Trusted Publisher ->
 # GitHub Actions (user EiffelBS, repo dsh-plugin-ideas-manager,
 # workflow release.yml). No NPM_TOKEN secret needed after that.
@@ -14,6 +20,12 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag whose body should be re-derived from CHANGELOG.md (defaults to the ref you dispatch from)'
+        required: false
+        type: string
 
 # Releases must never overlap: a second tag landing mid-publish would race the
 # registry and the Release body.
@@ -27,6 +39,10 @@ permissions:
 
 jobs:
   publish:
+    # NEVER on a manual dispatch: a published version cannot be republished, so
+    # the only outcome would be a failed run. The dispatch exists to rewrite
+    # release notes, which is the part that is derived text.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +92,11 @@ jobs:
 
   release-notes:
     needs: publish
+    # `needs` alone would SKIP this job when `publish` is skipped — which is
+    # exactly what a manual dispatch does. `!cancelled()` runs the notes job
+    # whenever the publish job was skipped or succeeded, and still respects an
+    # explicit cancellation.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -84,7 +105,7 @@ jobs:
 
       - name: Build the release notes from the changelog
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -99,14 +120,26 @@ jobs:
             rm -f release-notes.md
           fi
 
-      - name: Create GitHub Release (idempotent)
+      - name: Create the GitHub Release, or re-derive an existing body
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG already exists; skipping"
+            # An existing release is NOT skipped: its body is derived from the
+            # changelog, so a changelog corrected after the tag must reach it.
+            # A manual dispatch exists precisely for that, and the published
+            # npm version is untouched either way.
+            if [ -s release-notes.md ]; then
+              echo "release $TAG exists; re-deriving its body from CHANGELOG.md"
+              gh release edit "$TAG" \
+                --title "$TAG" \
+                --notes-file release-notes.md \
+                --generate-notes
+            else
+              echo "release $TAG exists and CHANGELOG.md has no section for it; leaving the body alone"
+            fi
             exit 0
           fi
           if [ -s release-notes.md ]; then
