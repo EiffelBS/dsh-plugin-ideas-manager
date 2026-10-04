@@ -12,6 +12,7 @@ Versions before 0.3.0 predate this file.
 
 ### Added
 
+
 - **The AI analysis can now relate an idea to its neighbours.** When the analysis
   establishes a real link, the analyst records it: **relates to** for a shared
   subsystem or constraint, and **blocks** with the direction that means — the
@@ -23,7 +24,96 @@ Versions before 0.3.0 predate this file.
   the tag list, and a tag also carries the line shown to you before each launch.
   A tag the analysis keeps now comes back with that line intact.
 
+
+
+- **Six agent tools: drive the board from any session.** When your DSH deployment
+  serves agent tools, any chat can now work the ideas board directly — no shell,
+  no hand-written JSON, no browser. `ideas_list` reads a filtered page of your
+  backlog, `ideas_get` reads one idea in full, `ideas_capture` captures an idea
+  together with its priority opinion, `ideas_triage` records value / effort /
+  rationale / rank and re-ranks a workspace group, `ideas_launch` starts the
+  execution, and `ideas_review` settles the review gate with **approve**,
+  **follow-up** or **decline**. They go through exactly the same gate as the web
+  board, so a call that would be refused in the interface is refused the same way
+  here, and an idea written by an agent shows up on your board at once — marked as
+  the agent's work in that idea's history. An agent still cannot write a run state
+  or claim a task card; those stay the host's. If your deployment serves no agent
+  tools, nothing changes: the board keeps every feature and the HTTP channel.
+- **Every idea now remembers what happened to it.** Each idea keeps a short
+  activity log — who did what, and when — and the editor shows it as a compact
+  timeline under the description, right above the Approve / Follow-up / Decline
+  buttons. It is written by the board itself: the capture, the ranking changes,
+  the launch, the run that finished or failed, the approval, the follow-up, the
+  decline with its reason. Entries are attributed, so you can tell your own
+  changes from an agent's and from the run's. The log keeps the **last 50
+  entries** and nothing more, and an idea that has recorded nothing yet shows
+  nothing at all rather than an empty box — so "nothing has happened" is never
+  mistaken for "something is missing".
+- **Your ideas travel with their history.** The JSON export and import carry the
+  activity log, and the markdown export prints it as a short **Activity** block
+  under each idea — so an archived document can still answer *why was this
+  declined?*, which a last-state record never could.
+- **Re-analysis reads the real past.** When you ask for a fresh analysis of an
+  idea, the analyst is now handed what actually happened to it before — the
+  decline, the delivery, the archive-and-restore — and is told to read it before
+  writing. A re-analysis can no longer re-propose something the board already
+  refused.
+
+
+
+- **Every finished run leaves a delivery note.** When a run ends, the board keeps
+  the closing words of the run right under the description of the idea it worked
+  on — on the card in the *To review* column, in the idea editor above the
+  Approve / Follow-up / Decline buttons, and on the row of a delivered idea in the
+  *Delivered* list. It is the last thing the run actually said, not a summary
+  written for you: the board never invents one. When a run leaves nothing behind
+  — it was interrupted before answering, or the workspace it ran in is gone — the
+  note says exactly that, so an empty delivery can never be read as a successful
+  one. The note is short by design (a couple of lines; longer answers are cut) and
+  never changes what the run did: **Open the session** remains the way to watch
+  the whole thing. The note follows the idea through the markdown export too, and
+  nothing you type can overwrite it: it belongs to the run, not to you.
+- **The sidebar entry now tells you what is waiting.** A small amber count sits on
+  the Ideas icon and shows how many ideas of the current workspace scope are in the
+  *To review* column. It reads the board's own list already loaded in the page, so
+  it costs nothing, needs no extra polling, and disappears as soon as the gate is
+  empty. With **Remember the workspace** turned on, the count follows the
+  workspace you last worked in rather than mixing every workspace together.
+- **A quiet *Stale* marker on ideas nobody has touched.** An open idea with no
+  update for a while wears a discreet *Stale* badge next to its state, on the
+  Overview cards and in the Priorities list. How long counts as too long is yours
+  to set under **Stale after (days)**, which ships at 30 days; set it to 0 to turn
+  the marker off entirely. The marker is a display aid only: it is drawn when the
+  board paints and nothing is written to your ideas. It never appears on an idea
+  that is already under review, delivered or declined — those have a state that
+  says more than a date does.
+
+
+
+- **A new idea card carries your TaskBoard's own permission.** Until now every
+  mirrored card was stamped *read-only* whatever your deployment allowed, so an
+  idea could never write anything when its card ran — while a card whose
+  permission sat *above* the TaskBoard's session default refused to start until
+  you walked to the board and confirmed it. A new card now takes the level your
+  TaskBoard is configured with, never more, and launching raises an older card to
+  that same level before the run. On a deployment left at *read-only* nothing
+  changes at all; the plugin follows whatever you set, and never asks for
+  anything above it, so **a launch stays one click** — no detour to the board to
+  confirm a permission. A card you raised yourself is never lowered, and a card
+  whose permission the board did not report is never written to.
+- **A setting for the launches that have no card.** When you launch an idea while
+  the TaskBoard plugin is absent, the run happens in a brand-new session. That
+  session now starts at the level you pick in **Direct-launch permission**
+  (*read-only*, *workspace-write* or *danger-full-access*), applied before the
+  very first turn so the run never starts fenced. The default is
+  *workspace-write*: the run brief asks for an implementation, so a read-only
+  session would answer with a plan and settle the run having written nothing. If
+  the elevation cannot be applied, the launch stops with the reason instead of
+  quietly starting without it. Card-backed ideas ignore this setting.
+
+
 ### Changed
+
 
 - **An update now replaces the installed analysis prompt, and keeps what it
   replaced.** The prompt was installed once and never replaced, so an instance
@@ -237,7 +327,7 @@ Versions before 0.3.0 predate this file.
   board's read channel, and it is **opt-in**: it runs only when asked, so the
   board's own polling costs exactly what it did before.
 
-### Changed
+
 
 - **An idea keeps the link to the chat it was worked on, in every column.** The
   **Open session** link only appeared while a run was in flight, and it never
@@ -257,7 +347,9 @@ Versions before 0.3.0 predate this file.
   the button (and **Copy the title** is still there), and **Show the card** takes
   you straight to the idea on your own board if you want to look at it first.
 
+
 ### Fixed
+
 
 - **The About tab tells the truth about which version you are running.** The
   number it printed was written by hand into the source and left behind at
@@ -318,105 +410,12 @@ Versions before 0.3.0 predate this file.
   column by hand now writes the ranking **you built on screen** and shows it from
   then on (until you pick another order in the settings). Nothing is refused.
 
-## 0.8.0 - 2026-10-03
 
-### Added
-
-- **Six agent tools: drive the board from any session.** When your DSH deployment
-  serves agent tools, any chat can now work the ideas board directly — no shell,
-  no hand-written JSON, no browser. `ideas_list` reads a filtered page of your
-  backlog, `ideas_get` reads one idea in full, `ideas_capture` captures an idea
-  together with its priority opinion, `ideas_triage` records value / effort /
-  rationale / rank and re-ranks a workspace group, `ideas_launch` starts the
-  execution, and `ideas_review` settles the review gate with **approve**,
-  **follow-up** or **decline**. They go through exactly the same gate as the web
-  board, so a call that would be refused in the interface is refused the same way
-  here, and an idea written by an agent shows up on your board at once — marked as
-  the agent's work in that idea's history. An agent still cannot write a run state
-  or claim a task card; those stay the host's. If your deployment serves no agent
-  tools, nothing changes: the board keeps every feature and the HTTP channel.
-- **Every idea now remembers what happened to it.** Each idea keeps a short
-  activity log — who did what, and when — and the editor shows it as a compact
-  timeline under the description, right above the Approve / Follow-up / Decline
-  buttons. It is written by the board itself: the capture, the ranking changes,
-  the launch, the run that finished or failed, the approval, the follow-up, the
-  decline with its reason. Entries are attributed, so you can tell your own
-  changes from an agent's and from the run's. The log keeps the **last 50
-  entries** and nothing more, and an idea that has recorded nothing yet shows
-  nothing at all rather than an empty box — so "nothing has happened" is never
-  mistaken for "something is missing".
-- **Your ideas travel with their history.** The JSON export and import carry the
-  activity log, and the markdown export prints it as a short **Activity** block
-  under each idea — so an archived document can still answer *why was this
-  declined?*, which a last-state record never could.
-- **Re-analysis reads the real past.** When you ask for a fresh analysis of an
-  idea, the analyst is now handed what actually happened to it before — the
-  decline, the delivery, the archive-and-restore — and is told to read it before
-  writing. A re-analysis can no longer re-propose something the board already
-  refused.
-
-### Fixed
 
 - The **initiator** of a write (the label an agent or a tool stamps on its
   action) was being discarded on the way into the Host, so every automated change
   looked like it had been made by you in the board. It is now recorded properly,
   which is what makes the activity log able to tell your changes from an agent's.
-
-## 0.7.8 - 2026-10-02
-
-### Added
-
-- **Every finished run leaves a delivery note.** When a run ends, the board keeps
-  the closing words of the run right under the description of the idea it worked
-  on — on the card in the *To review* column, in the idea editor above the
-  Approve / Follow-up / Decline buttons, and on the row of a delivered idea in the
-  *Delivered* list. It is the last thing the run actually said, not a summary
-  written for you: the board never invents one. When a run leaves nothing behind
-  — it was interrupted before answering, or the workspace it ran in is gone — the
-  note says exactly that, so an empty delivery can never be read as a successful
-  one. The note is short by design (a couple of lines; longer answers are cut) and
-  never changes what the run did: **Open the session** remains the way to watch
-  the whole thing. The note follows the idea through the markdown export too, and
-  nothing you type can overwrite it: it belongs to the run, not to you.
-- **The sidebar entry now tells you what is waiting.** A small amber count sits on
-  the Ideas icon and shows how many ideas of the current workspace scope are in the
-  *To review* column. It reads the board's own list already loaded in the page, so
-  it costs nothing, needs no extra polling, and disappears as soon as the gate is
-  empty. With **Remember the workspace** turned on, the count follows the
-  workspace you last worked in rather than mixing every workspace together.
-- **A quiet *Stale* marker on ideas nobody has touched.** An open idea with no
-  update for a while wears a discreet *Stale* badge next to its state, on the
-  Overview cards and in the Priorities list. How long counts as too long is yours
-  to set under **Stale after (days)**, which ships at 30 days; set it to 0 to turn
-  the marker off entirely. The marker is a display aid only: it is drawn when the
-  board paints and nothing is written to your ideas. It never appears on an idea
-  that is already under review, delivered or declined — those have a state that
-  says more than a date does.
-
-## 0.7.7 - 2026-10-02
-
-### Added
-
-- **A new idea card carries your TaskBoard's own permission.** Until now every
-  mirrored card was stamped *read-only* whatever your deployment allowed, so an
-  idea could never write anything when its card ran — while a card whose
-  permission sat *above* the TaskBoard's session default refused to start until
-  you walked to the board and confirmed it. A new card now takes the level your
-  TaskBoard is configured with, never more, and launching raises an older card to
-  that same level before the run. On a deployment left at *read-only* nothing
-  changes at all; the plugin follows whatever you set, and never asks for
-  anything above it, so **a launch stays one click** — no detour to the board to
-  confirm a permission. A card you raised yourself is never lowered, and a card
-  whose permission the board did not report is never written to.
-- **A setting for the launches that have no card.** When you launch an idea while
-  the TaskBoard plugin is absent, the run happens in a brand-new session. That
-  session now starts at the level you pick in **Direct-launch permission**
-  (*read-only*, *workspace-write* or *danger-full-access*), applied before the
-  very first turn so the run never starts fenced. The default is
-  *workspace-write*: the run brief asks for an implementation, so a read-only
-  session would answer with a plan and settle the run having written nothing. If
-  the elevation cannot be applied, the launch stops with the reason instead of
-  quietly starting without it. Card-backed ideas ignore this setting.
 
 ## 0.7.6 - 2026-10-01
 
