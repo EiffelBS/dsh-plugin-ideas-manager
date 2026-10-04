@@ -199,6 +199,27 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   found and how the fourth `commands.execute` argument was confirmed; both facts
   came from the types on disk, not from memory.
 
+  Two traps this feature alone is enough to teach, both found on a real page:
+
+  - **A one-shot probe at mount is a timing bug wearing a feature's clothes.**
+    `uiWorkspace` is provided when the workspace UI loads, which can be AFTER the
+    plugin's client half mounts; probing once reported the face missing on a page
+    that serves it. The probe is now repeated on every state update (the 2.5 s
+    poll), so the link appears by itself within seconds, and the warning waits a
+    grace period before claiming the face is absent.
+  - **A name can match and still mean something else.** `feedbackUi.openSession`
+    is present on the page, takes a session id, and opens the message-feedback
+    form. It is not navigation, and it is written down as rejected so the next
+    reader does not "fix" the link with it. Likewise `ISessions` documents that
+    navigation belongs to the view owners, so `sessions.open()` is not coming back
+    as a fallback.
+
+  The missing-face warning is the third piece, and it is the one that found all of
+  this: it enumerates the page's own services (through the reflection layer, which
+  is a context *property*, not a service — `ctx.get('reflect')` finds nothing)
+  and prints what the page really offers, filtered and complete. One line, once
+  per page, after the grace.
+
 ## Per-idea activity log (idea #92)
 
 `IdeaRecord.events[]` is a bounded append-only log: `{ at, verb, actor,

@@ -61,6 +61,14 @@ let claimed = false
 const releaseClaim = (): void => { claimed = false }
 /** The missing-navigation warning is emitted once per page, not per state update. */
 let warnedAboutNavigation = false
+/**
+ * How many state updates the navigation probe is given before it is believed.
+ * The shell can provide `uiWorkspace` after this half mounts; two and a half
+ * seconds per update, so this is roughly eight seconds of grace — long enough for
+ * the workspace UI to load, short enough that a truly absent face is reported
+ * while the reader is still looking.
+ */
+const NAVIGATION_GRACE = 3
 
 export function apply(ctx: ClientContext): void {
   if (claimed) return
@@ -84,19 +92,33 @@ export function apply(ctx: ClientContext): void {
     // wrong looks exactly like a link that is absent because the deployment does
     // not support it, and only one of those is a bug.
     client.sessionOpener = resolveSessionOpener(ctx)
-    if (client.sessionOpener === undefined && !warnedAboutNavigation) {
-      // ONE line, ONCE per page: the client effect re-runs on every state update,
-      // and a warning that repeats trains the reader to ignore it. The diagnostic
-      // is the point — a missing link that names what the page DOES offer is
-      // actionable, and "wrong name" stops being indistinguishable from
-      // "unsupported deployment".
+    // The probe is REPEATED on every state update, and that is not belt-and-braces:
+    // the shell provides `uiWorkspace` when the workspace UI loads, which can be
+    // AFTER this half mounts. A one-shot probe at mount therefore reported the
+    // face missing on a page that serves it — a link that appears late on its own
+    // is the difference between "the feature is dead" and "the feature is late".
+    // The warning waits for that grace instead of crying wolf on first sight.
+    let navigationMisses = 0
+    client.subscribe(() => {
+      if (client.sessionOpener !== undefined) return
+      navigationMisses += 1
+      const found = resolveSessionOpener(ctx)
+      if (found !== undefined) {
+        client.sessionOpener = found
+        return
+      }
+      if (navigationMisses < NAVIGATION_GRACE || warnedAboutNavigation) return
+      // ONE line, ONCE per page, after the grace: a warning that repeats (or
+      // fires early) teaches the reader to ignore it. The diagnostic is the point
+      // — a missing link that names what the page DOES offer is actionable, and
+      // "wrong name" stops being indistinguishable from "unsupported deployment".
       warnedAboutNavigation = true
       const faces = navigationFaces(ctx)
       const names = serviceNames(ctx)
       console.warn(
         `[dsh-plugin-ideas-manager] no session navigation face on this page (tried uiWorkspace.openSession, sessions.open): the "Open session" link will not be shown${faces.length === 0 ? '; no navigation face could be enumerated on this context' : `; pages offering one: ${faces.join(', ')}`}${names.length === 0 ? '' : `; page services: ${names.join(', ')}`}`,
       )
-    }
+    })
     // Panel navigation is read DEFENSIVELY, not declared in `inject`: cordis
     // refuses an undeclared property, and declaring a service a deployment may
     // not have would keep this whole plugin from booting.

@@ -41,6 +41,11 @@ export interface SessionOpener {
 /**
  * The faces that have carried "show this session", most current first. Ordered
  * so a host serving both uses the one its own UI navigates with.
+ *
+ * `feedbackUi.openSession(id)` is DELIBERATELY not here, though it exists on the
+ * page and its name matches: it opens the message-feedback form (Like/Dislike)
+ * for a session, not the conversation. A button whose click opens a thumbs-up
+ * dialog is worse than no button.
  */
 const OPENER_FACES: ReadonlyArray<{ service: string; method: 'openSession' | 'open' }> = [
   { service: 'uiWorkspace', method: 'openSession' },
