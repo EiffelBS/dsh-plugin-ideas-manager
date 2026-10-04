@@ -565,8 +565,8 @@ export interface IdeasSettingsValue {
     /** Order of the Open column: creation date (asc/desc) or the human rank. */
     openOrdering: IdeasOpenOrdering;
     /**
-     * Float the ideas whose run is in flight above the selected order (idea
-     * #71). Independent of `openOrdering`: with it ON the running block is laid
+     * Float the ideas whose run is in flight above the selected order.
+     * Independent of `openOrdering`: with it ON the running block is laid
      * out first and every other idea keeps the selected order below it, so it
      * composes with a date order exactly as it does with the rank.
      */

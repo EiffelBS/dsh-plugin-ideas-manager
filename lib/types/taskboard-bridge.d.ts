@@ -227,6 +227,8 @@ export declare class TaskBoardMirror {
     private readonly now;
     private available;
     private lastProbeAt;
+    /** The unavailability already reported to the log; unset while healthy. */
+    private unavailableReport;
     /** Board default read from the last snapshot; unset until one lands. */
     private boardDefaultPermission;
     /** Task rows of the last snapshot, read by the launch-time alignment. */
@@ -235,8 +237,24 @@ export declare class TaskBoardMirror {
     /**
      * Feature-detect the task-board plugin. Positive probes are cached; a
      * failure is retried at most once per backoff window.
+     *
+     * An unavailability is REPORTED, not repeated: the probe keeps its 30 s
+     * cadence (so a task-board installed later is still picked up), but a state
+     * that has not changed says nothing new. On a host without the task-board
+     * plugin the old shape printed the same line every 30 s for the whole life
+     * of the process — about 200 identical lines per 90-minute test session,
+     * which buries every other line the plugin has. Silence is the correct
+     * output for "still down"; a CHANGED status or a return to health is an
+     * event and is logged once.
      */
     availableNow(): Promise<boolean>;
+    /**
+     * Log an unavailability once per STATE rather than once per probe. The key
+     * is the reason, so a status that CHANGES (401 while the workspace
+     * controller boots, then 404 because the plugin is gone) is still reported:
+     * the second is not the same fact as the first.
+     */
+    private reportUnavailable;
     /**
      * Resolve the task id a mirror operation must target; the caller rebinds
      * the idea to the returned id. Decision ladder ("update must
