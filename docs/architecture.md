@@ -1588,6 +1588,30 @@ Two consequences of this contract are worth knowing without any tooling:
   **creating** its card, whatever the idea status. A bulk edit of many ideas
   therefore also mints cards for closed ideas, in `backlog`.
 
+### An unavailable task-board is REPORTED once, not on every probe
+
+Availability is feature-detected: a positive probe is cached forever, and a
+negative one is retried at most once per `PROBE_RETRY_MS` (30 s) so a
+task-board plugin installed later is still picked up without a restart. The
+retry is right; what it did with the *log* was not.
+
+A deployment without the task-board — any profile with no workspace
+controller, which is every test instance — answers 401 on every probe, and
+the mirror logged that identical line once per window. A 90-minute session
+produced roughly 200 copies of `mirror: task-board unavailable …`, the exact
+failure mode a log is supposed to avoid: the repeated line is the one thing
+guaranteed to be read, and it buried the lines that carry a decision.
+
+So the probe reports **state transitions**, not ticks: the first failure is
+logged, an unchanged status says nothing, a status that *changes* (401 while a
+controller boots, then 404 once the plugin is gone) is a new fact and is
+logged once, and the return to health logs that the mirror is active again —
+so the silence is bounded and its end is observable. The alternative
+considered and rejected was a permanent give-up after N consecutive
+failures: quieter still, but a task-board enabled *after* ideas-manager would
+then never be mirrored, leaving the mirror silently dead with nothing to
+report it.
+
 ## Undo
 
 `client/undo.ts` is the inverse of the board's own actions, and it is a **pure

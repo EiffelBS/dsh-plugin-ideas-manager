@@ -72,6 +72,15 @@ Versions before 0.3.0 predate this file.
 
 ### Fixed
 
+- **A quieter log when the task-board is not there.** On a DSH profile without a
+  workspace controller — every test instance, and any host where the task-board
+  plugin is absent or refusing — the mirror repeated the same
+  `task-board unavailable` warning about every 30 seconds, for as long as the
+  host ran. It now says so **once**, stays quiet while nothing changes, says it
+  again if the reason changes, and says so when the mirror comes back. Nothing
+  about the mirroring itself changed: it still keeps watching, so a task-board
+  that appears later is still picked up without a restart.
+
 - **"Back to chat" works again.** The button at the top of the board did nothing
   at all: you clicked it, and the board stayed exactly where it was. The board
   asks the shell to show the conversation, and it was asking for the shell's

@@ -1,8 +1,8 @@
 /**
  * P2 TaskBoard bridge tests: availability feature-detect with backoff, the
  * create->backlog / update / decline->archive / restore mirror mappings, the
- * loopback self-request transport against a real node:http server, the idea
- * #35 duplicate guard (empty/unknown snapshot keeps the binding, deterministic
+ * loopback self-request transport against a real node:http server, the
+ * duplicate guard (empty/unknown snapshot keeps the binding, deterministic
  * card id, get-before-create adoption, per-idea serialization), and the
  * host-service integration (bind taskBoardId, replay never re-mirrors, a
  * failed mirror never rolls the idea back).
@@ -103,6 +103,46 @@ describe('TaskBoardMirror availability', () => {
     transport.stateStatus = 200
     expect(await mirror.availableNow()).toBe(true)
     expect(transport.getStateCalls).toBe(2)
+  })
+
+  it('says the mirror is down ONCE, not once per probe tick', async () => {
+    // A host with no task-board answers 401 forever. The probe cadence stays
+    // put (so a late install is still picked up) but an unchanged state is not
+    // news: this used to print ~200 identical lines in a 90-minute session.
+    const transport = new FakeTransport()
+    transport.stateStatus = 401
+    const logs: string[] = []
+    let now = T0
+    const mirror = new TaskBoardMirror({ transport, now: () => now, log: (m) => { logs.push(m) } })
+    for (let tick = 0; tick < 10; tick += 1) {
+      expect(await mirror.availableNow()).toBe(false)
+      now += 31_000
+    }
+    expect(transport.getStateCalls).toBe(10)
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toContain('401')
+  })
+
+  it('still reports a status that CHANGED, and the return to health', async () => {
+    const transport = new FakeTransport()
+    transport.stateStatus = 401
+    const logs: string[] = []
+    let now = T0
+    const mirror = new TaskBoardMirror({ transport, now: () => now, log: (m) => { logs.push(m) } })
+    expect(await mirror.availableNow()).toBe(false)
+    now += 31_000
+    transport.stateStatus = 404
+    expect(await mirror.availableNow()).toBe(false)
+    expect(logs).toHaveLength(2)
+    expect(logs[0]).toContain('401')
+    expect(logs[1]).toContain('404')
+    // Health returns: the silence ends, and the reader learns the mirror is back.
+    now += 31_000
+    transport.stateStatus = 200
+    expect(await mirror.availableNow()).toBe(true)
+    expect(logs).toHaveLength(3)
+    expect(logs[2]).toContain('available again')
+    expect(logs[2]).toContain('404')
   })
 })
 

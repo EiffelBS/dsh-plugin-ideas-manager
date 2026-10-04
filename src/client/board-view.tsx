@@ -2759,8 +2759,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                     ? <div className={classes.empty}>{t(filtering ? 'board.emptyFiltered' : 'board.empty')}</div>
                     : (
                       /* The scrollable sizer: its height is the whole column,
-                         its children are only the cards in the window (idea
-                         #108). Both are absolute inside it, so a card keeps the
+                         its children are only the cards in the window. Both
+                         are absolute inside it, so a card keeps the
                          exact position the geometry gave it. */
                       <div
                         className={classes.virtualList}

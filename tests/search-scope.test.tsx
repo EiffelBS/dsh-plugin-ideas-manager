@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * Shared header search across all three tabs (follow-up to idea
- * #34): the "Filter ideas..." input used to render on the Overview tab only
+ * Shared header search across all three tabs: the "Filter ideas..." input
+ * used to render on the Overview tab only
  * ("the search box is kanban-only"). It now narrows the kanban columns, the
  * Priorities ranking and the Delivered log alike, like the tag chips always
  * did. This suite locks that scope: the input exists on every tab and the

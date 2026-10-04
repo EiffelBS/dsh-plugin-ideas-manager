@@ -360,6 +360,8 @@ export class TaskBoardMirror {
   private readonly now: () => number
   private available = false
   private lastProbeAt = 0
+  /** The unavailability already reported to the log; unset while healthy. */
+  private unavailableReport: string | undefined
   /** Board default read from the last snapshot; unset until one lands. */
   private boardDefaultPermission: TaskPermission | undefined
   /** Task rows of the last snapshot, read by the launch-time alignment. */
@@ -373,6 +375,15 @@ export class TaskBoardMirror {
   /**
    * Feature-detect the task-board plugin. Positive probes are cached; a
    * failure is retried at most once per backoff window.
+   *
+   * An unavailability is REPORTED, not repeated: the probe keeps its 30 s
+   * cadence (so a task-board installed later is still picked up), but a state
+   * that has not changed says nothing new. On a host without the task-board
+   * plugin the old shape printed the same line every 30 s for the whole life
+   * of the process — about 200 identical lines per 90-minute test session,
+   * which buries every other line the plugin has. Silence is the correct
+   * output for "still down"; a CHANGED status or a return to health is an
+   * event and is logged once.
    */
   async availableNow(): Promise<boolean> {
     if (this.available) return true
@@ -382,15 +393,37 @@ export class TaskBoardMirror {
       const result = await this.options.transport.getState()
       if (result.status === 200) {
         this.available = true
+        if (this.unavailableReport !== undefined) {
+          this.log(`task-board available again after ${this.unavailableReport}; mirror active`)
+          this.unavailableReport = undefined
+        }
         this.rememberSnapshot(result.body)
         return true
       }
-      this.log(`task-board unavailable (GET ${TASK_BOARD_API_PREFIX}/state -> ${result.status}); mirror inactive`)
+      this.reportUnavailable(
+        `status-${result.status}`,
+        `task-board unavailable (GET ${TASK_BOARD_API_PREFIX}/state -> ${result.status}); mirror inactive`,
+      )
       return false
     } catch (error) {
-      this.log(`task-board probe failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.reportUnavailable(
+        'probe-failed',
+        `task-board probe failed: ${error instanceof Error ? error.message : String(error)}`,
+      )
       return false
     }
+  }
+
+  /**
+   * Log an unavailability once per STATE rather than once per probe. The key
+   * is the reason, so a status that CHANGES (401 while the workspace
+   * controller boots, then 404 because the plugin is gone) is still reported:
+   * the second is not the same fact as the first.
+   */
+  private reportUnavailable(reason: string, line: string): void {
+    if (this.unavailableReport === reason) return
+    this.unavailableReport = reason
+    this.log(line)
   }
 
   /**

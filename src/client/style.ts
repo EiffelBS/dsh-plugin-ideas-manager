@@ -1974,8 +1974,8 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
-/* Running badge on a kanban card: blue pill marking a launch in flight (idea
-   #66). The mirror image of the failed badge - it is what keeps a card from
+/* Running badge on a kanban card: blue pill marking a launch in flight.
+   The mirror image of the failed badge - it is what keeps a card from
    looking ordinary the second after the Launch button was clicked, and what the
    session link below hangs from. Card header. */
 .dsh-ideas-task-running-badge {
