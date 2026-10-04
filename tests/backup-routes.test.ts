@@ -1,5 +1,5 @@
 /**
- * The backup route family (idea #95), driven against a real loopback server
+ * The backup route family, driven against a real loopback server
  * like the launch-route suite: the browser-signal fence, the method /
  * content-type discipline, the strict bodies, and — the point of the whole
  * family — the ERROR MAPPING. A refused restore is a normal answer carrying the

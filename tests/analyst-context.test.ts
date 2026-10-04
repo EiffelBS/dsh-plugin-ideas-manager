@@ -23,7 +23,7 @@ function fixtureService(): { service: IdeasHostService; dir: string } {
   return { service, dir }
 }
 
-describe('idea #64 summary-first analyst context', () => {
+describe('summary-first analyst context', () => {
   it('bounds a 140-card reanalysis prompt to metadata and never embeds the target body', () => {
     const ideas = makePerfDataset()
     const target = ideas.find(idea => idea.id === 'perf-idea-112')!

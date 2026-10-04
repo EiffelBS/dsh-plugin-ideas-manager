@@ -1,5 +1,5 @@
 /**
- * Idea #107 — the default launch model per workspace, host side.
+ * The default launch model per workspace, host side.
  *
  * The feature is a FALLBACK ORDER and nothing else: the run's explicit choice,
  * then the workspace's default, then whatever the chosen backend defaults to
@@ -132,7 +132,7 @@ function pinnedModels(taskBoard: FakeTaskBoard): Array<string | undefined> {
     .map(entry => (entry.action as { patch?: { model?: string } }).patch?.model)
 }
 
-describe('the fallback order (idea #107)', () => {
+describe('the fallback order', () => {
   it('1. the run\'s explicit choice outranks the workspace default', async () => {
     const { service, taskBoard } = await serve({ launchModels: { ws1: 'p/default' } })
 
@@ -315,7 +315,7 @@ describe('the default is a setting, never idea data', () => {
 })
 
 describe('the direct-launch permission still reaches the fresh session', () => {
-  // Idea #107 generalized the settings seam: the service used to read ONE
+  // The per-workspace default generalized the settings seam: the service used to read ONE
   // string (`setRunPermission`) and now reads the whole settings VALUE
   // (`setSettingsReader`) for both preferences. This is the regression guard for
   // the pre-existing half of that seam — the permission must arrive through the
@@ -384,7 +384,7 @@ describe('a workspace that no longer exists', () => {
 
 /* --- the frozen wire did not move ---------------------------------------- */
 
-describe('the frozen wire is untouched (idea #107 is additive elsewhere)', () => {
+describe('the frozen wire is untouched (the default is additive elsewhere)', () => {
   it('still accepts exactly {requestId, action, initiator} on the action route', () => {
     const parsed = parseActionEnvelope({
       requestId: 'r1',
@@ -392,7 +392,7 @@ describe('the frozen wire is untouched (idea #107 is additive elsewhere)', () =>
       initiator: 'agent:test',
     })
     expect(parsed?.action).toEqual({ kind: 'update', ideaId: 'a', patch: { title: 'Alpha' } })
-    // The initiator still travels through verbatim (idea #92's rule), and no
+    // The initiator still travels through verbatim, and no
     // fourth envelope key appeared.
     expect(parsed?.initiator).toBe('agent:test')
     expect(parseActionEnvelope({ requestId: 'r1', action: { kind: 'export' }, weight: 1 })).toBeUndefined()

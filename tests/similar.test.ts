@@ -1,6 +1,6 @@
 /**
- * Idea #93, parts 2 and 3 — the near-duplicate FLAG and the Find similar
- * action.
+ * The near-duplicate FLAG and the Find similar action — parts 2 and 3 of the
+ * merge work.
  *
  * Two contracts are under test.
  *

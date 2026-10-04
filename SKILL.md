@@ -178,7 +178,7 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 - `meta` always reports `matched`, `returned`, `rowTruncated`, `nextOffset`,
   `bodyTruncated`, and `omittedFields`. A response never exceeds 512 KiB.
 - `GET /api/ideas/state?view=stats` → the **bounded backlog-health aggregate**
-  (idea #110), a separate contract that is NOT one of the row views and accepts
+  , a separate contract that is NOT one of the row views and accepts
   no row query key. It takes `workspaceId` only: **absent** = every workspace,
   **blank** = the ideas with no workspace, a real id = that workspace; anything
   else is `400 invalid-query`. It is a READ — no `requestId`, no mutation — and
@@ -280,7 +280,7 @@ target, symmetric `relatesTo`, acyclic `blocks`) over the merged result.
 tag overlap or a near-duplicate score — report the candidate and let the human
 write the edge.
 
-## Snapshots, restore and moving a ledger (issue #95)
+## Snapshots, restore and moving a ledger
 
 The ledger is a single-writer file, so backup/restore is a **dedicated route
 family**, not action verbs: a snapshot writes a file instead of mutating the
@@ -413,7 +413,7 @@ Consequences for an agent:
 src/protocol.ts          wire gate (exactKeys, envelope) + the `view=stats` query parser
 src/core/ideas.ts        domain model, tag validation, activity log, near-duplicate signal,
                          relation model + the `blocks` cycle check
-src/core/ideas-stats.ts  the ONE definition of every backlog-health number (idea #110)
+src/core/ideas-stats.ts  the ONE definition of every backlog-health number
 src/backup.ts            the snapshot folder (atomic write, list, quarantine, retention)
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind,
                          snapshots + restore (strict validation, displaced-on-restore)

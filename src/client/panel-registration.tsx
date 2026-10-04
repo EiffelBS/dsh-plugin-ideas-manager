@@ -55,7 +55,7 @@ let panelClient: IdeasClient | undefined
 
 /**
  * The number of ideas waiting in the review gate, read through the client's own
- * subscription (idea #91, part B).
+ * subscription (part B).
  *
  * `useSyncExternalStore` over the client rather than a prop: the sidebar row
  * lives outside the board's React tree, and the shell re-renders this glyph

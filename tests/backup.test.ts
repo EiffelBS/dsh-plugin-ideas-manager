@@ -1,5 +1,5 @@
 /**
- * Snapshots, restore and the portable round trip (idea #95).
+ * Snapshots, restore and the portable round trip.
  *
  * The suite is organized around the three promises the feature makes, plus the
  * failures that must be loud rather than silent:
@@ -134,7 +134,7 @@ function fullyPopulated(ledgerRef: IdeasHostLedger): string {
   // cannot carry: it is written by the delivery verb alone.
   ledgerRef.applyRequest('seed-8', create('idea-3', 'Delivered idea', 'ws-1'))
   ledgerRef.applyRequest('seed-9', { kind: 'deliver', ideaId: 'idea-3' })
-  // Relations (idea #106) on the rich row, against a row that exists: both
+  // Relations on the rich row, against a row that exists: both
   // stored kinds, so the round-trip assertion below would fail if either were
   // dropped by the snapshot serializer or by `readIdeaRow`.
   ledgerRef.applyRequest('seed-10', { kind: 'update', ideaId: 'idea-rich', patch: { relatesTo: ['idea-2'] } })

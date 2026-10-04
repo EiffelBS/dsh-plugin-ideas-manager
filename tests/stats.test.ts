@@ -1,5 +1,5 @@
 /**
- * Idea #110 — the bounded backlog-health aggregate (`view=stats`).
+ * The bounded backlog-health aggregate (`view=stats`).
  *
  * Three contracts are under test, and the third one is the reason the feature
  * exists at all.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Deferred-body board behaviour (idea #34) in jsdom:
+ * Deferred-body board behaviour in jsdom:
  *  - list surfaces render the EXCERPT only (full analyses never mount);
  *  - opening the edit modal fetches the whole record first (and a failed
  *    fetch surfaces in the error bar instead of editing a truncated body);
@@ -126,7 +126,7 @@ function mountedIds(): string[] {
 }
 
 /** Card wrappers of the first (open) column, in DOM order. The quick-add
- *  button sits above them and, since idea #108, the cards live inside the
+ *  button sits above them and the cards live inside the
  *  column's scrollable sizer - so this walks the subtree and keeps the wrappers,
  *  which is what the DOM-reuse assertion is actually about. */
 function openColumnWrappers(): HTMLElement[] {

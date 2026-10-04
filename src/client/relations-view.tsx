@@ -1,5 +1,5 @@
 /**
- * Relations on the board (idea #106): the React half.
+ * Relations on the board: the React half.
  *
  * The pure rules live in `./relations.ts`; this file only paints. Two surfaces,
  * one module:

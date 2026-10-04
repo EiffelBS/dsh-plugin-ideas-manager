@@ -171,7 +171,7 @@ describe('0.1.7-like host (SettingsForms, no register)', () => {
   })
 })
 
-describe('the per-workspace default launch model on BOTH generations (idea #107)', () => {
+describe('the per-workspace default launch model on BOTH generations', () => {
   // The whole point of the dual-path: one wire, two hosts. The map is stored
   // and read back IDENTICALLY through the legacy namespace and through the
   // plugin-owned document, so a board behaves the same whichever Host serves it.

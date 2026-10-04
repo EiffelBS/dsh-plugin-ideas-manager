@@ -1,5 +1,5 @@
 /**
- * Idea #106, part 2 — the relations SURFACES, rendered for real.
+ * The relations SURFACES, rendered for real.
  *
  * The model, the wire and the reconciliation have their own suite. What is
  * proved here is the two things a reader would call broken if they were wrong:
@@ -80,7 +80,7 @@ let transport: RelationsTransport
 
 /**
  * Mount a board over an explicit row set. The board copies the client snapshot
- * into its own state at mount (idea #34's poll), so a different row set means a
+ * into its own state at mount (poll), so a different row set means a
  * fresh mount rather than a reassignment. The settings read is settled before
  * the test continues, exactly like the other board suites: a tab click lands on
  * a tree whose effects have already run.

@@ -1,5 +1,5 @@
 /**
- * Rank/status coherence under repeated transactional triage (idea #34, spec
+ * Rank/status coherence under repeated transactional triage (spec
  * step 8): after EVERY step of a successive-op sequence - not just at the
  * end - assert no duplicate rank, no hole, no cross-group drift, and that
  * closed columns are never re-ranked by a triage. Runs in the normal suite

@@ -3,7 +3,7 @@
  * drag rebuild, the one-step open-backlog move and the Priorities grouping —
  * all under the "rank by workspace" model (ranks are relative inside each
  * (status, workspace) group; the workspace-less ideas form the generic group) —
- * plus the open column's display order (idea #71), whose contract is that it
+ * plus the open column's display order, whose contract is that it
  * is a VIEW: the human rank order is unchanged, and no rank is ever written
  * from a creation date or a run state.
  */
@@ -36,7 +36,7 @@ function ideaW(id: string, status: IdeaStatus, workspaceId?: string, rank?: numb
   }
 }
 
-/** Open idea carrying a run state (idea #66 / #71 fixtures). */
+/** Open idea carrying a run state. */
 function run(id: string, rank: number, runStatus?: IdeaRunStatus, taskBoardStatus?: string): IdeaRecord {
   return {
     ...idea(id, 'open', rank),
@@ -45,7 +45,7 @@ function run(id: string, rank: number, runStatus?: IdeaRunStatus, taskBoardStatu
   }
 }
 
-/** Open idea of a workspace group, stamped with a creation instant (idea #71). */
+/** Open idea of a workspace group, stamped with a creation instant. */
 function datedW(id: string, workspaceId: string | undefined, rank: number, createdAt: number): IdeaRecord {
   return { ...ideaW(id, 'open', workspaceId, rank), createdAt }
 }
@@ -324,7 +324,7 @@ describe('archivedIdeasOf', () => {
   })
 })
 
-/* --- open column display order (idea #71) --- */
+/* --- open column display order --- */
 
 describe('runningBlockOf', () => {
   it('reads the run state from runStatus OR the raw card observation', () => {

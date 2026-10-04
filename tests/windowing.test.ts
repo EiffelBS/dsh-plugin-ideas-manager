@@ -1,5 +1,5 @@
 /**
- * Windowing geometry (idea #108).
+ * Windowing geometry.
  *
  * Pure and DOM-free on purpose: everything a virtualized list can quietly lie
  * about - the scroll height before anything is measured, what "the viewport"
@@ -290,7 +290,7 @@ describe('the short-column floor', () => {
   it('is the number the React binding uses to skip windowing entirely', () => {
     // Asserted here so the constant cannot drift from the intent it encodes:
     // below this many rows a column is painted whole, so a board that is fine
-    // today behaves exactly as it did before idea #108.
+    // today behaves exactly as it did before the windowing.
     expect(IDEA_WINDOW_MIN_ROWS).toBeGreaterThan(0)
     expect(new IdeaWindow(rows(IDEA_WINDOW_MIN_ROWS)).length).toBe(IDEA_WINDOW_MIN_ROWS)
   })

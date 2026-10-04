@@ -1,5 +1,5 @@
 /**
- * The `ideas_*` agent tools (idea #92, part A).
+ * The `ideas_*` agent tools (part A).
  *
  * Three things are under test, in order of importance:
  *  - each tool drives the SAME ledger path as the board, through the same wire

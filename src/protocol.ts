@@ -26,7 +26,7 @@ import {
 } from './core/ideas.ts'
 
 /**
- * The backlog-health aggregate (idea #110) lives in its own module so the
+ * The backlog-health aggregate lives in its own module so the
  * definition of every number it prints has exactly one home. The types are
  * re-exported here because `protocol.ts` is the ONE module both halves share,
  * and the browser bundle must reach the shape without importing the Host half.
@@ -61,7 +61,7 @@ export interface IdeasSnapshot {
   ideas: IdeaRecord[]
 }
 
-/* --- list projection (idea #34: deferred body loading) --- */
+/* --- list projection (deferred body loading) --- */
 
 /**
  * Hard cap of the list-view body excerpt: enough for a readable card
@@ -96,7 +96,7 @@ export interface IdeasListSnapshot {
   ideas: IdeaListRow[]
 }
 
-/* --- bounded filtered reads (idea #65) --- */
+/* --- bounded filtered reads --- */
 
 /** Read projection selected by `GET /api/ideas/state?view=`. */
 export type IdeasReadView = 'summary' | 'detail'
@@ -320,7 +320,7 @@ export function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams {
   return params
 }
 
-/* --- backlog health (idea #110) --- */
+/* --- backlog health --- */
 
 /**
  * Query of the bounded health aggregate, `GET /api/ideas/state?view=stats`.
@@ -618,7 +618,7 @@ export interface IdeaUpdatePatch {
   tags?: IdeaTagListOrNull
   workspaceId?: string
   /**
-   * Generic relations (idea #106), one key per stored kind: absent leaves the
+   * Generic relations, one key per stored kind: absent leaves the
    * list alone, an array REPLACES it, null (or an empty array) clears it —
    * exactly the `tags` contract. `blockedBy` is the DERIVED inverse of `blocks`
    * and is never accepted: a second spelling of one edge would be a second fact
@@ -703,12 +703,12 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   }
   if (row.taskBoardStatus !== undefined && row.taskBoardStatus !== null
       && (typeof row.taskBoardStatus !== 'string' || row.taskBoardStatus.length > 32)) return undefined
-  // Launch lifecycle (idea #66): host-written system fields, importable only as
+  // Launch lifecycle: host-written system fields, importable only as
   // the closed run-status union (lowercased) and a plain bounded session id.
   if (row.runStatus !== undefined && row.runStatus !== null && !isIdeaRunStatus(row.runStatus)) return undefined
   if (row.runSessionId !== undefined && row.runSessionId !== null
       && (typeof row.runSessionId !== 'string' || row.runSessionId.length > 128)) return undefined
-  // Delivery note (idea #91): host-written, but unlike the run stamps it is
+  // Delivery note: host-written, but unlike the run stamps it is
   // plain harvested text, so an export/import round-trip must carry it verbatim
   // (bounded by normalizeDeliveryNote, never authored from the wire). `update`
   // still refuses it — only `import` accepts it, exactly like the other
@@ -719,14 +719,14 @@ function importedIdea(value: unknown): IdeaRecord | undefined {
   if (row.reanalyzeAt !== undefined && row.reanalyzeAt !== null && typeof row.reanalyzeAt !== 'number') return undefined
   if (row.summary !== undefined && row.summary !== null && typeof row.summary !== 'string') return undefined
   if (row.analysisAudit !== undefined && row.analysisAudit !== null && !isAnalysisAudit(row.analysisAudit)) return undefined
-  // Activity log (idea #92): host-appended provenance, carried through an
+  // Activity log: host-appended provenance, carried through an
   // export/import round-trip so an idea keeps its history when a ledger is
   // moved between hosts. The shape is repaired (dropped malformed entries,
   // bounded to the last IDEA_EVENT_LIMIT), never trusted: `update` still
   // refuses it, so only `import` accepts it.
   const events = normalizeIdeaEvents(row.events)
   if (row.events !== undefined && row.events !== null && events === undefined) return undefined
-  // Relations (idea #106): repaired rather than trusted, exactly like the
+  // Relations: repaired rather than trusted, exactly like the
   // activity log above, so an export/import round trip is lossless while a
   // hand-forged document cannot smuggle an unbounded or malformed edge list
   // past the gate. `blockedBy` is never stored, so it is simply not read here:
@@ -793,7 +793,7 @@ function updatePatch(value: unknown): value is IdeaUpdatePatch {
   }
   // null clears the label set; a present array must be a well-formed list.
   if (patch.tags !== undefined && patch.tags !== null && !isIdeaTagList(patch.tags)) return false
-  // Relations (idea #106): null clears a list, a present array must be a
+  // Relations: null clears a list, a present array must be a
   // well-formed id list. The envelope stays frozen — only the patch's key set
   // grew, which is the same additive step `summary` took.
   for (const key of ['relatesTo', 'blocks'] as const) {
@@ -842,7 +842,7 @@ function reorderList(value: unknown): boolean {
  *
  * The action is validated by the same gate the ledger's verbs rely on; the
  * envelope fields are carried through VERBATIM, `initiator` included. That
- * detail is load-bearing (idea #92): the initiator is the activity log's
+ * detail is load-bearing: the initiator is the activity log's
  * provenance — the writer of a mutation is read back from it — so a parse that
  * validated it and then dropped it would silently turn every agent write into
  * "a human did this".
@@ -963,7 +963,7 @@ export function ideaFromInput(id: string, input: NewIdeaInput, now: number): Ide
   return createIdea(input, now, id)
 }
 
-/* --- snapshots, restore and portable transfer (idea #95) --- */
+/* --- snapshots, restore and portable transfer --- */
 
 /**
  * Why a snapshot exists: taken by hand, taken to be exported to another
@@ -1125,7 +1125,7 @@ export const IDEAS_DENSITIES = ['comfortable', 'compact'] as const
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number]
 
 /**
- * Orderings of the OPEN backlog offered by the settings row (idea #71):
+ * Orderings of the OPEN backlog offered by the settings row:
  *  - `createdAt` (the default): oldest idea first. A backlog reads as a diary,
  *    so the default is the order the ideas actually arrived in;
  *  - `createdAtDesc`: newest idea first;
@@ -1158,7 +1158,7 @@ export const WORKSPACE_SCOPE_MAX_LENGTH = 256
  * Bound of a launch model target (`provider/model`, the task-board's own
  * shape). Spelled here rather than in the route that happened to need it
  * first, because it now guards TWO inputs: the model a launch request pins
- * explicitly and the per-workspace default the Host falls back to (idea #107).
+ * explicitly and the per-workspace default the Host falls back to.
  * One bound, so a hand-edited settings document can never store a target the
  * launch route would refuse.
  */
@@ -1217,22 +1217,22 @@ export interface IdeasSettingsValue {
    * composes with a date order exactly as it does with the rank.
    */
   runningFirst: boolean
-  /** Minimum width (px) a kanban column can be dragged to (idea #53). */
+  /** Minimum width (px) a kanban column can be dragged to. */
   columnMinWidth: number
-  /** Maximum width (px) a kanban column can be dragged to (idea #53). */
+  /** Maximum width (px) a kanban column can be dragged to. */
   columnMaxWidth: number
   /** Permission a direct (card-less) launch starts its fresh session at. */
   directRunPermission: IdeasRunPermission
   /**
    * Days without an update after which an OPEN idea wears a quiet *stale*
-   * badge (idea #91). View only: it is computed at render time from the row's
+   * badge. View only: it is computed at render time from the row's
    * own `updatedAt`, so it stores nothing on the idea and costs the Host no
    * work. 0 turns the badge off entirely (see {@link STALE_AFTER_DAYS_RANGE}).
    */
   staleAfterDays: number
   /**
    * Default LAUNCH model per workspace, keyed by the stable workspace id:
-   * `{ "<workspaceId>": "provider/model" }` (idea #107).
+   * `{ "<workspaceId>": "provider/model" }`.
    *
    * Deliberately a SETTING and never an idea field: the board's 2.5 s poll
    * adopts whatever the Host serves, so a per-idea copy of this would be
@@ -1263,7 +1263,7 @@ export interface IdeasSettingsView {
   revision?: number
 }
 
-/** Default bounds of the resizable kanban columns (idea #53), in pixels. */
+/** Default bounds of the resizable kanban columns, in pixels. */
 export const COLUMN_MIN_WIDTH_DEFAULT = 200
 // Max default raised twice by 20% from the original 640 (now 922) so a wide
 // column has room to hold dense cards without wrapping; the option ceiling
@@ -1303,7 +1303,7 @@ export const TAG_ROWS_MIN = 1
 export const TAG_ROWS_MAX = 5
 
 /**
- * Inclusive bounds of the `staleAfterDays` option (idea #91). 0 is a real
+ * Inclusive bounds of the `staleAfterDays` option. 0 is a real
  * value, not "unset": it means "never flag an idea as stale", which is the
  * escape hatch for a backlog the reader watches in another tool. The ceiling
  * keeps a hand-edited value from parking the badge on a decade-old idea.
@@ -1351,7 +1351,7 @@ export function clampStaleAfterDays(value: unknown): number {
 
 /**
  * Sanitize the per-workspace default launch models into a bounded map of
- * `workspaceId -> provider/model` (idea #107).
+ * `workspaceId -> provider/model`.
  *
  * Read policy, same as every other field: a non-object is no map at all, and
  * inside a map a key that trims to empty, a value that is not a string and a
@@ -1500,7 +1500,7 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
   return { patch, expectedRevision: body.expectedRevision as number | undefined }
 }
 
-/* --- launch (idea #66) --- */
+/* --- launch --- */
 
 /** Answer of `POST /api/ideas/launch`, shared by the host route and the client. */
 export interface LaunchResponse {
@@ -1522,7 +1522,7 @@ export interface IdeasLaunchBody {
   ideaId: string
   /**
    * `provider/model` target id. Absent does NOT mean "no model": the Host
-   * falls back to the workspace's default launch model (idea #107) and then,
+   * falls back to the workspace's default launch model and then,
    * for a workspace that carries none, to whatever the chosen backend defaults
    * to — the behaviour that predates the field. The fallback is HOST-side, so
    * the browser, an agent tool and a raw HTTP caller all get it.

@@ -1,5 +1,5 @@
 /**
- * Idea #106 — generic relations between ideas (`relatesTo`, `blocks`, and the
+ * Generic relations between ideas (`relatesTo`, `blocks`, and the
  * DERIVED `blockedBy`).
  *
  * The brief for this idea is mostly about what must NOT change, so the suite is
@@ -113,7 +113,7 @@ describe('the frozen wire', () => {
     })
     expect(parsed?.action).toEqual({ kind: 'update', ideaId: 'a', patch: { relatesTo: ['b'] } })
     // The relations rode an existing verb's PATCH: no new verb, no new envelope
-    // key, and the initiator still travels through verbatim (idea #92's rule).
+    // key, and the initiator still travels through verbatim (rule).
     expect(parsed?.initiator).toBe('agent:test')
     expect(parseActionEnvelope({ requestId: 'r1', action: { kind: 'export' }, weight: 1 })).toBeUndefined()
     expect(parseActionEnvelope({

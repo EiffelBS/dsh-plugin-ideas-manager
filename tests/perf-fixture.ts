@@ -1,5 +1,5 @@
 /**
- * Shared performance fixture (idea #34): one deterministic, realistic dataset
+ * Shared performance fixture: one deterministic, realistic dataset
  * for the high-card-load evaluation, plus the small helper replicas the
  * benchmarks time.
  *
@@ -28,7 +28,7 @@ export const PERF_CLOSED_COUNT = 40
 export const PERF_IDEA_COUNT = PERF_OPEN_COUNT + PERF_CLOSED_COUNT
 
 /**
- * The open-column size idea #108 names as its trigger: roughly 500 cards.
+ * The open-column size that names the trigger: roughly 500 cards.
  * The fixture is generated, so the same code produces both boards and the
  * before/after numbers are measured on identical data.
  */
@@ -199,8 +199,8 @@ function tagsFor(rand: Rand, status: IdeaStatus): IdeaTag[] | undefined {
  * Seed fixed: every run, before or after the optimization work, measures the
  * identical board.
  *
- * `openCount` defaults to the idea #34 objective; idea #108 measures the same
- * generator at its own trigger of ~500 open cards, which is why the counts are
+ * `openCount` defaults to the objective; the same generator is measured at
+ * its own trigger of ~500 open cards, which is why the counts are
  * parameters rather than constants baked into the loop.
  */
 export function makePerfDataset(seed = 0x5eed, openCount = PERF_OPEN_COUNT): IdeaRecord[] {
@@ -303,7 +303,7 @@ export function perfImportAction(ideas: readonly IdeaRecord[]): IdeasAction {
  * Replica of board-view's private matchesFilter (board-view.tsx - kept in
  * sync manually): the benchmark times the exact per-keystroke scan the board
  * runs - title + summary + tag names always, plus either the whole body
- * (deepBody once the idea#34 search index is loaded) or the list excerpt.
+ * (deepBody once the search index is loaded) or the list excerpt.
  */
 export function scanFilter(
   idea: { title: string; summary?: string; bodyExcerpt: string; tags?: IdeaTag[] },

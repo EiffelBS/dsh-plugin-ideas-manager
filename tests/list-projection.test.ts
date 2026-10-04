@@ -1,5 +1,5 @@
 /**
- * List-projection units (idea #34): the body excerpt builder and the
+ * List-projection units: the body excerpt builder and the
  * full->list snapshot projection the host (?view=list) and the client
  * (action responses) share. The projection MUST drop the voluminous fields
  * (body, analysisAudit) while every list field survives byte-identically.

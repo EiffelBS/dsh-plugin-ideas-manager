@@ -1,5 +1,5 @@
 /**
- * Session opener (idea #66): the one way back into the conversation a card was
+ * Session opener: the one way back into the conversation a card was
  * worked on.
  *
  * The Host settles a run on its own (the launch records the session it ran in,

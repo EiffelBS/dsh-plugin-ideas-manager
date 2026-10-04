@@ -1,5 +1,5 @@
 /**
- * The board's undo affordance (idea #111): one quiet row that names the action
+ * The board's undo affordance: one quiet row that names the action
  * an Undo would reverse, offers the button, states the shortcut, and — after the
  * click — says exactly which ideas went back and which ones were left alone.
  *

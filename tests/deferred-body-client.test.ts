@@ -1,5 +1,5 @@
 /**
- * Deferred-body client tests (idea #34):
+ * Deferred-body client tests:
  *  - transport URLs: state() asks the LEAN ?view=list projection, stateFull()
  *    the untouched full snapshot (deep search), idea(id) one full record -
  *    while POST /api/ideas/action keeps its exact frozen wire (same URL,

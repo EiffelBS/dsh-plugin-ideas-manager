@@ -1,5 +1,5 @@
 /**
- * Idea #93, part 1 — the atomic `merge` verb.
+ * Part 1 — the atomic `merge` verb.
  *
  * The merge is what the AI capture button has always promised ("create or
  * merge a duplicate"), so the suite is written around the promises rather than

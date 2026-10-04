@@ -1,5 +1,5 @@
 /**
- * The deep-link service the board publishes (idea #105).
+ * The deep-link service the board publishes.
  *
  * The missing entry point the brief describes: the `main` slot is keyed and
  * carries no selection payload, so there was no way for anything to say "show

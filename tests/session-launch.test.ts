@@ -1,5 +1,5 @@
 /**
- * Idea #66 v2 (direct-session execution) — host-side tests.
+ * Direct-session execution — host-side tests.
  *
  * The card backend is the default; this covers the fallback for a Host that
  * serves no task-board plugin (or a deployment that turned the mirror off):

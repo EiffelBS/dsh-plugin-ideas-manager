@@ -1,5 +1,5 @@
 /**
- * Idea #66 (launch an idea's execution) — host-side tests.
+ * Launch an idea's execution — host-side tests.
  *
  * Covers the three things the launch flow rests on: the bridge's `run` verb
  * (model-only patch first, then the bare `run`, errors relayed from the

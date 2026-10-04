@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #110 — the Health tab as the board renders it.
+ * the Health tab as the board renders it.
  *
  * The aggregate and its wire are pinned in `idea-110-stats.test.ts`. What is
  * under test HERE is the part that can quietly lie: a panel that recomputes, a

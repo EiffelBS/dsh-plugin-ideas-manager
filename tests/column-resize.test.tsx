@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Per-column kanban width resize tests (idea #53): a resizer renders on every
+ * Per-column kanban width resize tests: a resizer renders on every
  * visible column, a pointer drag resizes THAT column within the [min, max]
  * settings bounds and persists it to localStorage, and a double-click resets
  * the column to its default share. Stored widths render as pinned flex-basis;
@@ -112,7 +112,7 @@ async function dragResizer(resizer: HTMLElement, fromX: number, toX: number): Pr
   })
 }
 
-describe('per-column kanban width resize (idea #53)', () => {
+describe('per-column kanban width resize', () => {
   it('renders one resizer per visible column and pins nothing by default', async () => {
     await renderBoard(new ConfigTransport())
     // Four columns (open / under review / archived / declined) -> four resizers.

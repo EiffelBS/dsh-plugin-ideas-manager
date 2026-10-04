@@ -1,7 +1,7 @@
 /**
- * Idea #30 (re-analyze action) tests: the wire verb, the host audit stamp
+ * Re-analyze action tests: the wire verb, the host audit stamp
  * (prior analysis preserved, restart-safe), the import round-trip, and the
- * re-analysis launch prompt + launcher face. Idea #35 adds the mirror-cycle
+ * re-analysis launch prompt + launcher face. The mirror-cycle
  * regression: a re-analyze run's analyst rewrite must UPDATE the bound
  * TaskBoard card — never mint a duplicate.
  */
@@ -152,7 +152,7 @@ describe('host ledger reanalyze stamp', () => {
   })
 })
 
-describe('re-analyze TaskBoard mirror cycle (idea #35)', () => {
+describe('re-analyze TaskBoard mirror cycle', () => {
   it('create -> re-analyze -> analyst rewrite ends with ONE card and the same binding', async () => {
     const transport = new FakeTaskBoardTransport()
     const mirror = new TaskBoardMirror({ transport })

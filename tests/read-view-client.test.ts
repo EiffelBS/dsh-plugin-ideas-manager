@@ -1,4 +1,4 @@
-/** Client surface for bounded reads (idea #65): delegation, URL encoding,
+/** Client surface for bounded reads: delegation, URL encoding,
  * compatibility fallback, and the frozen board snapshot remaining untouched.
  */
 

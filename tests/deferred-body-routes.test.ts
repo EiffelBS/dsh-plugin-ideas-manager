@@ -1,5 +1,5 @@
 /**
- * Read-projection routes (idea #34) driven against a real loopback server,
+ * Read-projection routes driven against a real loopback server,
  * same discipline as the config-route tests:
  *  - GET /api/ideas/state stays the FULL snapshot by default (the frozen
  *    backup/tooling contract - restore and migration scripts read bodies);

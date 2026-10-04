@@ -1,5 +1,5 @@
 /**
- * The session opener (idea #66): the one way back into the conversation a card
+ * The session opener: the one way back into the conversation a card
  * was worked on.
  *
  * Two lessons are pinned here, both paid for:

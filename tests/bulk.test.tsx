@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #94: multi-select and bulk actions on the board.
+ * Multi-select and bulk actions on the board.
  *
  * Three contracts are pinned here, and they are the ones the brief asks for.
  *
@@ -421,7 +421,7 @@ describe('board: the selection bar states its scope', () => {
     // A search that only Gamma matches drops the two it hides from the
     // selection: a bulk action can never reach a row the filter hides.
     type(host.querySelector(`.${classes.search}`) as HTMLInputElement, 'Gamma')
-    // The active search loads the deep index in the background (idea #34).
+    // The active search loads the deep index in the background.
     await settle()
     expect(countText()).toBe(t('bulk.bar.count', { selected: 1, total: 1 }))
   })
@@ -527,7 +527,7 @@ describe('board: bulk tag is a batch of ordinary update verbs', () => {
     expect(actions[0]).toEqual({ kind: 'update', ideaId: 'i2', patch: { tags: [{ name: 'review' }] } })
     expect(actions[1]).toEqual({ kind: 'update', ideaId: 'i3', patch: { tags: [{ name: 'alpha' }, { name: 'review' }] } })
     // The report answers per idea, and now says the batch IS reversible
-    // (idea #111) — plus the line that keeps the promise honest about what
+    // — plus the line that keeps the promise honest about what
     // undo never covers.
     expect(host.querySelector('[data-dsh-ideas-bulk-summary]')?.textContent)
       .toBe(t('bulk.report.summary', { applied: 3, skipped: 0, failed: 0 }))

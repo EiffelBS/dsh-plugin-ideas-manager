@@ -12,7 +12,7 @@
  * appearance order, so each group's order in the wire list is what counts).
  *
  * The one departure from the human ranking is the open column's optional
- * display order (idea #71): orderOpenColumn can lay the column out by creation
+ * display order: orderOpenColumn can lay the column out by creation
  * date instead of rank, and can float the in-flight work above whichever order
  * is selected. Both are views, never a persisted order — every 2.5 s client poll
  * re-derives them from the same snapshot, so they cannot rewrite the human
@@ -256,7 +256,7 @@ export function orderByWorkspaceGroups<T extends RankableIdea>(
  *  system fields (last observation, never an idea verb) and both are optional
  *  on a list row, so the comparator stays a pure function of the row. */
 export interface ActivityRankable {
-  /** Backend-neutral state of the last launched run (idea #66). */
+  /** Backend-neutral state of the last launched run. */
   runStatus?: IdeaRunStatus
   /** Last raw observation of the linked TaskBoard card. */
   taskBoardStatus?: string
@@ -284,7 +284,7 @@ function createdAtKey<T extends { createdAt: number }>(idea: T): number {
 }
 
 /**
- * Creation-date ordering of one block (idea #71). `desc` flips it to newest
+ * Creation-date ordering of one block. `desc` flips it to newest
  * first. Ties — an import can stamp a whole batch with the same instant — fall
  * back to the human rank and then to the input order, so the column is
  * deterministic from one poll to the next instead of reshuffling on every 2.5 s
@@ -310,7 +310,7 @@ function sortByOrdering<T extends RankableIdea & { createdAt: number }>(
 
 /**
  * The presentation order of the Overview **Open column**, combining the three
- * orthogonal decisions (idea #71):
+ * orthogonal decisions:
  *
  *  - grouping: `grouped` lays the column out per workspace group (the board on
  *    "all workspaces"); ungrouped is one flat list;

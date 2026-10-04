@@ -1,5 +1,5 @@
 /**
- * Host-side load profile (idea #34): the exact server path of
+ * Host-side load profile: the exact server path of
  * GET /api/ideas/state (service.snapshot() deep clone + JSON.stringify) and
  * the transactional triage / reorder paths, measured at the 140-idea fixture
  * (100 open cards - the spec's measurable "<1s" objective set).
@@ -107,7 +107,7 @@ describe.runIf(process.env.IDEAS_PERF === '1')('perf-host: state payload + trans
     const parseMs = medianMs(20, () => { JSON.parse(json) })
     console.log(`[perf-host] client JSON.parse of the state payload: ${parseMs.toFixed(2)} ms (median/20)`)
 
-    // --- the idea#34 LEAN poll wire (?view=list) ------------------------
+    // --- the LEAN poll wire (?view=list) ------------------------
     // What GET /api/ideas/state?view=list actually serves: same clone +
     // stringify path, projection drops the bodies before serialization.
     let listJson = ''
@@ -119,7 +119,7 @@ describe.runIf(process.env.IDEAS_PERF === '1')('perf-host: state payload + trans
     console.log(`[perf-host] LEAN ?view=list payload: ${(listBytes / 1024).toFixed(1)} KiB raw (gzip reference: ${(listGzipBytes / 1024).toFixed(1)} KiB), ${(100 * listBytes / bytes).toFixed(1)}% of the full snapshot`)
     console.log(`[perf-host] client JSON.parse of the LEAN payload: ${listParseMs.toFixed(2)} ms (median/20)`)
 
-    // Idea #64 launch-prompt bound: the reanalysis target is addressed by
+    // Launch-prompt bound: the reanalysis target is addressed by
     // metadata and fetched on demand, so card body size cannot inflate the
     // initial browser-to-session prompt. Use the same deterministic target as
     // the large-board context test.

@@ -57,8 +57,8 @@ export interface AiLaunchResult {
 }
 
 /**
- * The existing idea handed back to the analyst for a RE-ANALYZE run (idea #30
- * flow): a fresh DSH session re-reads the stored card and overwrites it with a
+ * The existing idea handed back to the analyst for a RE-ANALYZE run:
+ * a fresh DSH session re-reads the stored card and overwrites it with a
  * new analysis through the same write channel (update + triage on the SAME
  * idea id — never a create, never a recursive re-analysis: every run is
  * triggered by an explicit human click on the board).
@@ -84,7 +84,7 @@ export interface ReanalyzeInput {
   effort?: number
   rationale?: string
   /**
-   * The idea's recorded activity log (idea #92), oldest first. Handed to the
+   * The idea's recorded activity log, oldest first. Handed to the
    * analyst so a re-analysis reads the real past — "declined on 2026-09-20
    * because …" — instead of re-deriving a history it cannot see. Empty when the
    * board has recorded nothing for this idea yet.
@@ -161,7 +161,7 @@ export interface FindSimilarInput {
  */
 export interface SessionLauncher {
   launch(input: AiCaptureInput): Promise<AiLaunchResult>
-  /** Re-run the analyst on an existing idea (idea #30 flow); same session mechanics. */
+  /** Re-run the analyst on an existing idea; same session mechanics. */
   launchReanalyze(input: ReanalyzeInput): Promise<AiLaunchResult>
   /**
    * Ask the analyst to judge a bounded near-duplicate candidate set (Find
@@ -309,7 +309,7 @@ ${opinionFields}`
 }
 
 /**
- * The RE-ANALYZE launch prompt (idea #30 flow). Same split as the capture
+ * The RE-ANALYZE launch prompt. Same split as the capture
  * prompt: the skill carries the methodology and the write-channel contract;
  * this prompt carries only what the skill cannot know — the target idea, the
  * workspace, and the server origin — plus the re-analysis overrides (which
@@ -635,7 +635,7 @@ export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLaunc
         // ranking decision to the human in the session.
         launchAnalystSession(controller, modelSource, input, buildAnalysisPrompt(input, pageOrigin())),
       launchReanalyze: async (input: ReanalyzeInput): Promise<AiLaunchResult> =>
-        // Idea #30 flow: re-run the analyst on an EXISTING idea — same session
+        // re-run the analyst on an EXISTING idea — same session
         // mechanics, dedicated prompt (the overrides carry the no-create /
         // no-recursion rules and the ai-reanalyze initiator).
         launchAnalystSession(controller, modelSource, input, buildReanalysisPrompt(input, pageOrigin())),

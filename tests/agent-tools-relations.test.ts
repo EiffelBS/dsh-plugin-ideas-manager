@@ -1,7 +1,7 @@
 /**
  * The relations on the `ideas_*` agent tool surface.
  *
- * The ledger has carried `relatesTo` and `blocks` since idea #106, but they rode
+ * The ledger has carried `relatesTo` and `blocks`, but they rode
  * only on the HTTP `update` patch — so an agent asked to state one had to
  * hand-build an envelope, or go read the plugin's source to discover the model
  * had the field at all. These tests pin the two halves of the fix:

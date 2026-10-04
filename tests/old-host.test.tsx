@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * A Host that does NOT serve the backup routes (idea #95 follow-up).
+ * A Host that does NOT serve the backup routes (follow-up).
  *
  * The failure this pins is a live one: DSH re-resolves the BROWSER half per
  * request but registers the host half at boot, so a plugin folder updated while

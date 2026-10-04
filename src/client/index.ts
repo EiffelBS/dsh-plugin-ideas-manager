@@ -36,7 +36,7 @@ import { createIdeasBoardService, IDEAS_BOARD_SERVICE } from './deeplink-service
  */
 export const inject = ['slots', WORKSPACES_SERVICE, SESSIONS_SERVICE, 'remote', 'remote.session'] as const
 
-// Programmatic client surface (idea #65): the board consumes these classes,
+// Programmatic client surface: the board consumes these classes,
 // while agents and integrations can use the same bounded read/query contract
 // without reaching into private client modules.
 export { HttpIdeasHostTransport } from './host-api.ts'
@@ -44,7 +44,7 @@ export type { IdeasHostTransport } from './host-api.ts'
 export { IdeasClient } from './ideas-client.ts'
 export type { IdeaClientPatch } from './ideas-client.ts'
 
-// Deep-link to an idea (idea #105): the reference grammar and the published
+// Deep-link to an idea: the reference grammar and the published
 // service name are part of the plugin's client surface, so a caller can feature-
 // detect the board without importing a private module.
 export { IDEAS_BOARD_SERVICE, createIdeasBoardService } from './deeplink-service.ts'
@@ -86,7 +86,7 @@ export function apply(ctx: ClientContext): void {
     // Phase 3: the AI-capture launcher rides the same "sessions" service;
     // absent/malformed degrades to the plain manual Create.
     client.sessionLauncher = resolveSessionLauncher(ctx)
-    // Idea #66: the jump back into the run a card was worked on. The navigation
+    // The jump back into the run a card was worked on. The navigation
     // face is optional, so the resolver degrades to undefined — and a missing
     // face is WARNED, never swallowed: a link that is absent because the name is
     // wrong looks exactly like a link that is absent because the deployment does
@@ -135,7 +135,7 @@ export function apply(ctx: ClientContext): void {
       // Registration failures degrade the board, never the GUI.
       console.error('[dsh-plugin-ideas-manager] panel registration failed:', error)
     }
-    // Deep-link surface (idea #105): the one entry point another plugin can
+    // Deep-link surface: the one entry point another plugin can
     // reach this board through. Provided AFTER the panel so a consumer that
     // focuses immediately already finds the seats registered. The name is ours,
     // so a collision is a real error — logged, never thrown, because the web

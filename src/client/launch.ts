@@ -1,5 +1,5 @@
 /**
- * Launch an idea's execution from the board (idea #66).
+ * Launch an idea's execution from the board.
  *
  * ONE entry point, TWO execution backends, and the choice belongs to the HOST:
  * `POST /api/ideas/launch` runs the mirrored TaskBoard card when the
@@ -98,7 +98,7 @@ export function modelTargetIdOf(model: ModelChoice | undefined): string | undefi
 }
 
 /**
- * The default launch model this workspace carries (idea #107), or undefined
+ * The default launch model this workspace carries, or undefined
  * when it carries none.
  *
  * The client twin of the Host's own rule (`IdeasHostService.workspaceLaunchModel`)

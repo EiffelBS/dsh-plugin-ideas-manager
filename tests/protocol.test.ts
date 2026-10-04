@@ -242,7 +242,7 @@ describe('parseActionEnvelope', () => {
     expect(idea?.analysisAudit?.summary).toBe('Old abstract')
   })
 
-  it('round-trips the delivery note, and update still refuses it (idea #91)', () => {
+  it('round-trips the delivery note, and update still refuses it', () => {
     // import is the ONE path that accepts a host-written delivery note, so an
     // export/import round-trip of a ledger keeps the notes it harvested.
     const parsed = parseActionEnvelope(envelope({

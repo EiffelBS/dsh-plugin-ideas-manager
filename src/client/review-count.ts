@@ -1,5 +1,5 @@
 /**
- * "How many ideas are waiting for me" (idea #91, part B).
+ * "How many ideas are waiting for me" (part B).
  *
  * The review gate is a column on a tab you have to be looking at, so a settled
  * run is invisible until you happen to open the board. This derives the count

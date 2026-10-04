@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #107 — the default launch model per workspace, panel side.
+ * The default launch model per workspace, panel side.
  *
  * The point of the feature is that the modal STOPS ASKING, so the assertions
  * are about what the modal shows and, above all, about what it does NOT send:
@@ -156,7 +156,7 @@ function stored(transport: FakeTransport): Record<string, string> {
   return client.config.value.launchModelByWorkspace
 }
 
-describe('the pure map helpers (idea #107)', () => {
+describe('the pure map helpers', () => {
   it('reads a workspace default and answers undefined for every other case', () => {
     const models = { ws1: 'deepseek/deepseek-chat' }
     expect(launchModelForWorkspace(models, 'ws1')).toBe('deepseek/deepseek-chat')

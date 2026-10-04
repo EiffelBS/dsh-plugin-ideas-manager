@@ -1,5 +1,5 @@
 /**
- * Relations on the board (idea #106): the pure half.
+ * Relations on the board: the pure half.
  *
  * Everything the UI needs to decide — which ideas a relation row may name, what
  * a chip prints, and whether a list actually changed — is here, DOM-free and

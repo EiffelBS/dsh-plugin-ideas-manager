@@ -1,5 +1,5 @@
 /**
- * Multi-select and bulk actions on the board (idea #94): the per-row select
+ * Multi-select and bulk actions on the board: the per-row select
  * box, the selection bar, and the bulk dialog that runs a batch and reports it
  * idea by idea.
  *
@@ -168,7 +168,7 @@ const REASON_KEYS: Record<BulkReason, IdeasKey> = {
   'tag-limit': 'bulk.reason.tagLimit',
   'already-there': 'bulk.reason.alreadyThere',
   'already-archived': 'bulk.reason.alreadyArchived',
-  // Idea #111: the undo drift guard, reported in the very same per-idea line as
+  // The undo drift guard, reported in the very same per-idea line as
   // every other skip — an undo that quietly dropped an idea is the one failure
   // mode a bulk report must not have.
   drifted: 'bulk.reason.drifted',
@@ -234,7 +234,7 @@ function stepRunner(client: IdeasClient) {
 }
 
 /**
- * The undo kind a bulk operation maps to (idea #111). The batch binds every verb
+ * The undo kind a bulk operation maps to. The batch binds every verb
  * the run posts under ONE entry, so a tag of sixty ideas is one Ctrl+Z and not
  * sixty.
  */
@@ -267,7 +267,7 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
   const [done, setDone] = useState(0)
   const [report, setReport] = useState<BulkReport | undefined>(undefined)
   /**
-   * The undo entry this run pushed (idea #111). Kept beside the report so the
+   * The undo entry this run pushed. Kept beside the report so the
    * dialog's OWN restore button can consume it: the same action must not stay
    * reversible after the report already undid it.
    */
@@ -299,7 +299,7 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
     setRunning(true)
     setDone(0)
     // One undo batch for the whole run: the batch IS the action the human
-    // performed, so the stack binds every verb under one entry (idea #111).
+    // performed, so the stack binds every verb under one entry.
     client.beginUndoBatch(BULK_UNDO_KIND[operation])
     let key: string | undefined
     try {
@@ -443,7 +443,7 @@ export function BulkDialog({ client, operation, rows, catalog, scopeLabel, onClo
                     ? t('bulk.undoDone', { count: report.applied.length })
                     : t('bulk.undoNote')}
               </div>
-              {/* Idea #111: the line that keeps the promise honest. Undo reverses
+              {/* The line that keeps the promise honest. Undo reverses
                   THIS batch and the board's own edits; it is not a transaction
                   journal, and saying so here is cheaper than a user believing
                   it is. */}

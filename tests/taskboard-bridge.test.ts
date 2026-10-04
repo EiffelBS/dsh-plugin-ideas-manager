@@ -296,7 +296,7 @@ describe('mirrored card permission follows the deployment default', () => {
   })
 })
 
-describe('TaskBoardMirror duplicate guard (idea #35)', () => {
+describe('TaskBoardMirror duplicate guard', () => {
   it('keeps the binding on an EMPTY snapshot instead of recreating (transient state)', async () => {
     const transport = new FakeTransport()
     transport.stateTasks = []
@@ -416,7 +416,7 @@ describe('TaskBoard card description weight (idea summary)', () => {
   })
 })
 
-describe('IdeasHostService mirror serialization (idea #35)', () => {
+describe('IdeasHostService mirror serialization', () => {
   it('runs create + update for one idea in order: exactly one card, latest content', async () => {
     const transport = new FakeTransport()
     const mirror = new TaskBoardMirror({ transport })

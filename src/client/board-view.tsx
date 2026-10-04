@@ -75,7 +75,7 @@ const STATUS_LABEL: Record<IdeaStatus, IdeasKey> = {
 }
 
 /**
- * Minimum gap between two committed column widths while dragging (idea #53).
+ * Minimum gap between two committed column widths while dragging.
  * A dense column reflows its cards' text on every width change, so committing
  * per pointermove (per frame) is what makes the drag laggy; ~60 ms keeps the
  * feedback feeling live while cutting the reflow rate to a third. The release
@@ -86,7 +86,7 @@ const RESIZE_THROTTLE_MS = 60
 function matchesFilter(idea: IdeaListRow, filter: string, deepBody: string | undefined): boolean {
   if (filter.trim() === '') return true
   const needle = filter.trim().toLowerCase()
-  // The list snapshot carries only an excerpt (idea #34); `deepBody` - the
+  // The list snapshot carries only an excerpt; `deepBody` - the
   // whole body once the deep-search index is loaded - restores the
   // full-body coverage the board had before the projection, while summary
   // and excerpt keep the search useful before/without the index.
@@ -95,7 +95,7 @@ function matchesFilter(idea: IdeaListRow, filter: string, deepBody: string | und
 }
 
 /**
- * The card element behind an idea id, for the deep-link scroll (idea #105).
+ * The card element behind an idea id, for the deep-link scroll.
  *
  * The attribute is read off every candidate instead of being interpolated into
  * a selector: idea ids are uuids today, but a selector built from a value that
@@ -212,7 +212,7 @@ function IconFindSimilar() {
 }
 
 /**
- * Play: the launch affordance of idea #66 (start the idea's execution on its
+ * Play: the launch affordance (start the idea's execution on its
  * TaskBoard card). The only icon painted GREEN in the whole action row — it is
  * the one card action that makes the agent work happen, not just the card
  * move. `currentColor` everywhere else so a skin/dark-mode change still wins;
@@ -303,7 +303,7 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly RankableI
  *  forced (the analyst session keeps its own default). Used by both the
  *  capture modal and the re-analyze confirm modal.
  *
- *  `initialTarget` (a stored `provider/model`, idea #107) OUTRANKS the session
+ *  `initialTarget` (a stored `provider/model`) OUTRANKS the session
  *  model when the launch modal reveals the picker over a workspace default: the
  *  run would use that model anyway, so showing it selected is honest, and the
  *  picker then reads as "the current default, which you may change". Held in a
@@ -331,7 +331,7 @@ function useAnalystModelPicker(launcher: SessionLauncher | undefined, initialTar
     void launcher.listModels().then(choices => {
       if (cancelled) return
       setModelChoices(choices)
-      // A workspace default wins over the session's own model (idea #107): it
+      // A workspace default wins over the session's own model: it
       // is the choice this launch would make anyway.
       const preset = pickModelTarget(choices, initialTargetRef.current)
       if (preset !== undefined) {
@@ -448,7 +448,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   onClose: () => void
   /** Open the follow-up (review rejected) modal for an under-review idea. */
   onFollowUp?: (idea: IdeaRecord) => void
-  /** Idea #30 flow: launch an analyst re-run on this open idea. */
+  /** Re-analyze flow: launch an analyst re-run on this open idea. */
   onReanalyze?: (idea: IdeaRecord) => void
   /** Find similar: ask the analyst to judge this open idea's near-duplicates. */
   onFindSimilar?: (idea: IdeaRecord) => void
@@ -484,7 +484,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
   // ('' — the sentinel-mapped "no workspace" state — never counts as a default.)
   const sessionDefaulted = initial === undefined && workspace !== '' && workspace === sessionWorkspace && workspace !== initialWorkspace
   const [rank, setRank] = useState(() => currentOpenRank(initial, client.snapshot?.ideas ?? []))
-  // Relations (idea #106). The editor owns both lists and posts ONLY the ones
+  // Relations. The editor owns both lists and posts ONLY the ones
   // that actually changed, so saving an unrelated field never rewrites an edge
   // (and never spends an activity-log line saying so). A NEW capture starts
   // empty on purpose: `create` takes no relations, so a brand-new idea has no
@@ -607,7 +607,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
         // open backlog with a shift (a rank change here must not orphan the
         // old rank, and the workflow wants the backlog re-ranked on change).
         //
-        // Two verbs, ONE undoable action (idea #111): the batch is what makes a
+        // Two verbs, ONE undoable action: the batch is what makes a
         // single Ctrl+Z restore the card the author was looking at, instead of
         // reversing half of the save and leaving the rest standing.
         client.beginUndoBatch('edit')
@@ -802,7 +802,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           />
         </div>
         {initial !== undefined && (
-          // Relations (idea #106), between the fields and the history: the two
+          // Relations, between the fields and the history: the two
           // kinds a human states are editable here, and the derived "waiting for
           // this idea" line is read-only with the card that declares it named.
           <RelationsEditor
@@ -816,7 +816,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           />
         )}
         {initial !== undefined && (
-          // The idea's activity log (idea #92), under the fields and above the
+          // The idea's activity log, under the fields and above the
           // verdict buttons: the editor is where a reviewer asks "when was this
           // declined and why", and the timeline answers it without opening a
           // session. Read-only, bounded host-side, and absent for an idea that
@@ -824,7 +824,7 @@ function IdeaModal({ client, initial, initialWorkspace, onClose, onFollowUp, onR
           <ActivityTimeline idea={initial} />
         )}
         {initial !== undefined && (
-          // The delivery note of the last finished run (idea #91), directly
+          // The delivery note of the last finished run, directly
           // above the verdict buttons: the editor is where the review gate is
           // actually decided, so the evidence the verdict rests on has to be in
           // the same eye-line. It is a READ-ONLY field - not an input, not part
@@ -1061,7 +1061,7 @@ function FollowUpModal({ client, parent, onClose }: {
 }
 
 /**
- * Re-analyze confirm modal (idea #30 flow): the human trigger of an analyst
+ * Re-analyze confirm modal: the human trigger of an analyst
  * re-run, WITH the model choice — a fresh session will overwrite the card
  * (update + triage on the same idea id), so the launch is explicit and the
  * analysing model selectable (same cascade picker as the capture; '' keeps
@@ -1244,7 +1244,7 @@ function SimilarModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
 }
 
 /**
- * Launch confirm modal (idea #66): the human starts the idea's execution, WITH
+ * Launch confirm modal: the human starts the idea's execution, WITH
  * the model choice. The run is TaskBoard-owned (the Host patches the card's
  * `model` then posts `run`; the runner pins the model on a fresh session and
  * queues the shared run prompt), so the modal's only real choice is WHICH model
@@ -1262,7 +1262,7 @@ function SimilarModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
  * bare: it names the card, offers the redirect to the board panel with the
  * filter already set on the idea title, and keeps the raw text for diagnosis.
  *
- * The workspace's DEFAULT LAUNCH MODEL (idea #107) is what makes this modal
+ * The workspace's DEFAULT LAUNCH MODEL is what makes this modal
  * stop asking: a workspace that carries one shows WHICH model the run will use
  * instead of the picker, with the two gestures that can change or forget it.
  * Two decisions are worth stating:
@@ -1286,7 +1286,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   onLaunch: (idea: ReanalyzeSource, model: ModelChoice | undefined) => Promise<void>
   onClose: () => void
 }) {
-  // The workspace's default launch model (idea #107). Absent = the board asks,
+  // The workspace's default launch model. Absent = the board asks,
   // exactly as it always did; present = the modal NAMES the model instead of
   // asking, and `changingDefault` is what reveals the picker over it.
   const workspaceId = idea.workspaceId ?? ''
@@ -1352,8 +1352,8 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   const start = (): void => {
     setPending(true)
     setError(undefined)
-    // The request pins a model ONLY when the human was actually asked for one
-    // (idea #107). With the workspace default on screen the picker is hidden,
+    // The request pins a model ONLY when the human was actually asked for one.
+    // With the workspace default on screen the picker is hidden,
     // and re-sending that same id would claim a choice nobody made — the Host
     // resolves the very same default, from the very same document, one step
     // later. It is also why a run launched by an agent, or by a browser that
@@ -1408,7 +1408,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
         {picker.modelChoices.length > 0 && (workspaceDefault === undefined || changingDefault)
           ? <ModelPickerField picker={picker} disabled={pending} />
           : null}
-        {/* The remembered default (idea #107). With no catalog the picker is
+        {/* The remembered default. With no catalog the picker is
             hidden anyway, so this stays visible: the run's model is worth
             naming even where the panel cannot offer the alternatives. */}
         {workspaceDefault !== undefined && !changingDefault && (
@@ -1499,7 +1499,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             <div className={classes.fieldHint}>{t('launch.permissionHint')}</div>
             <div className={classes.detailMeta}><code>{idea.title}</code></div>
             <div className={classes.launchGateActions}>
-              {/* The deep-link (idea #105): the destination is THIS card, by
+              {/* The deep-link: the destination is THIS card, by
                   its stable number. It is the exact destination rather than a
                   proxy filter on another plugin's DOM, and it works from a cold
                   panel load like any other link. */}
@@ -1579,7 +1579,7 @@ type DragTarget = { status: IdeaStatus; beforeId?: string; hoverId?: string; hal
 type ReanalyzeSource = IdeaListRow | IdeaRecord
 
 /**
- * Shared tag-filter row (idea #36): ONE scroll zone with a SINGLE flex-wrap
+ * Shared tag-filter row: ONE scroll zone with a SINGLE flex-wrap
  * container — the filter controls ("Filter:" label, tag search box, clear
  * button) are the FIRST items, immediately followed by every tag: the first
  * tag sits on the SAME line as the clear button (no sub-block competes for
@@ -1697,20 +1697,20 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
   // The under-review parent a review-rejected follow-up is being raised for.
   const [followUp, setFollowUp] = useState<IdeaRecord | undefined>(undefined)
-  // The open idea a Re-analyze confirm modal is raised for (idea #30 flow):
+  // The open idea a Re-analyze confirm modal is raised for:
   // a list row from the card, or the full record from the edit modal.
   const [reanalyzing, setReanalyzing] = useState<ReanalyzeSource | undefined>(undefined)
   // The open idea a Find similar modal is raised for: the near-duplicate flag
   // is a REPORT, so the modal is opened by an explicit click like the others.
   const [findingSimilar, setFindingSimilar] = useState<ReanalyzeSource | undefined>(undefined)
-  // The open idea a Launch confirm modal is raised for (idea #66): a launch is
+  // The open idea a Launch confirm modal is raised for: a launch is
   // an explicit human action, never a side effect of a card mutation.
   const [launching, setLaunching] = useState<ReanalyzeSource | undefined>(undefined)
   const [confirmId, setConfirmId] = useState<string | undefined>(undefined)
   // Lifecycle confirmation (settings option confirmLifecycle): the Deliver /
   // Approve / Decline button armed for an in-place Yes/No confirmation.
   const [confirmVerb, setConfirmVerb] = useState<{ id: string; verb: 'deliver' | 'decline' } | undefined>(undefined)
-  // Idea #94: the multi-select is VIEW state. It is never sent to the Host and
+  // The multi-select is VIEW state. It is never sent to the Host and
   // never persisted, so the 2.5 s poll cannot overwrite it; it is pruned to the
   // active scope (below) whenever the workspace selector, the tag filter, the
   // search or the tab changes, which is what keeps "all" from meaning anything
@@ -1719,12 +1719,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // Which bulk action the dialog is running (undefined = no dialog).
   const [bulk, setBulk] = useState<BulkOperation | undefined>(undefined)
   // The author reordered the Open column by hand this session, so the column
-  // shows THEIR order instead of the `openOrdering` default (idea #71 kept the
+  // shows THEIR order instead of the `openOrdering` default kept the
   // option as the initial layout; a drag is the user having the last word).
   const [openColumnReordered, setOpenColumnReordered] = useState(false)
   const [drag, setDrag] = useState<DragState>(undefined)
   const [dragTarget, setDragTarget] = useState<DragTarget>(undefined)
-  // Deep-link (idea #105): the reference the human typed into "Go to idea",
+  // Deep-link: the reference the human typed into "Go to idea",
   // kept as text so a typo can be corrected instead of retyped.
   const [jumpRef, setJumpRef] = useState('')
   // Rendered-markdown view of descriptions (raw text is one click away).
@@ -1743,13 +1743,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       // Every real emit wakes the board even when the snapshot/config
       // references did not move (pending flips, error transitions from
       // reportError/refresh) - the idle poll no longer emits at all, so a
-      // bump here is always an observable change worth rendering (idea #34).
+      // bump here is always an observable change worth rendering.
       setClientTick(tick => tick + 1)
     }),
     [client],
   )
 
-  /* --- undo shortcut (idea #111) -------------------------------------------
+  /* --- undo shortcut -------------------------------------------
    * Ctrl+Z / Cmd+Z, registered in the CAPTURE phase like every other board
    * keydown handler — which is exactly why the filter is not optional: from
    * here the handler runs before the browser's own undo on a focused field.
@@ -1774,7 +1774,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // a COMPLETE legal value (sanitized on arrival); the spelled defaults
   // cover the gap before the first answer.
   const cfg = settings.value
-  // One instant per render, shared by every staleness badge (idea #91) so the
+  // One instant per render, shared by every staleness badge so the
   // board cannot show two rows disagreeing about "now" mid-paint. Computed at
   // render time on purpose: the marker is a view, so it costs no host work and
   // stores nothing, and it re-evaluates on the poll that redraws the board.
@@ -1793,7 +1793,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     if (cfg.rememberWorkspaceScope) setWorkspaceFilter(cfg.workspaceScope)
   }, [settings, client, cfg.defaultTab, cfg.renderMarkdown, cfg.rememberWorkspaceScope, cfg.workspaceScope])
 
-  /* --- deep-link to an idea (idea #105) ---------------------------------
+  /* --- deep-link to an idea ---------------------------------
    * The board is the CONSUMER of a focus request: it owns the workspace scope,
    * the filters and the tab, so this is the only place that can make the card
    * actually visible. The request itself lives on the client, so a link that
@@ -1842,7 +1842,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // column windowing: phase one talks to the columns, which do not exist yet here.
   const [revealTick, setRevealTick] = useState(0)
 
-  /* --- per-column widths (idea #53) -------------------------------------
+  /* --- per-column widths -------------------------------------
    * Each kanban column can be resized individually by dragging its right
    * edge. The chosen widths are persisted in localStorage (a display
    * preference, like the active tab) and clamped to the [columnMinWidth,
@@ -1960,13 +1960,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const ideas = snapshot?.ideas ?? []
   const revision = snapshot?.revision
-  // Relations (idea #106): every card's relation line is derived HERE, once per
+  // Relations: every card's relation line is derived HERE, once per
   // paint, over the WHOLE snapshot — not over the filtered rows, so a link to an
   // archived card in another workspace still resolves to a name. Deriving per
   // card would rebuild the row map and rescan the board once per card.
   const relationIndex = useMemo(() => relationIndexOf(ideas), [ideas])
 
-  // Deep search (idea #34): list rows carry excerpts only, so an ACTIVE
+  // Deep search: list rows carry excerpts only, so an ACTIVE
   // search loads the full bodies once per revision (client.ensureSearchIndex,
   // fire-and-forget). The generation counter - bumped when the index lands -
   // re-runs the render with the deeper haystacks; it is deliberately read
@@ -1982,11 +1982,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }, [filter, client, revision])
   // id -> idea, to resolve a child's followUpOfId into the parent number.
   const ideaById = new Map(ideas.map(idea => [idea.id, idea]))
-  // The same resolver handed to the Priorities and Delivered rows (idea #71):
+  // The same resolver handed to the Priorities and Delivered rows:
   // they carry followUpOfId but never the parent's number, and one map built
   // here beats every view building its own.
   const parentNumberOf = (ideaId: string): number | undefined => ideaById.get(ideaId)?.ideaNumber
-  // Idea #36: the chip set follows the workspace scope — the plain ledger
+  // The chip set follows the workspace scope — the plain ledger
   // union mixes in labels that belong to other workspaces and drown the ones
   // usable here; a scoped board only offers labels it can actually filter
   // (a selected chip that falls out of scope stays visible, see
@@ -2022,7 +2022,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     .filter(idea =>
       matchesFilter(idea, filter, client.cachedBodyOf(idea.id))
       && matchesTags(idea, tagFilter))
-  // Idea #94 follow-up: `openOrdering` is the column's DEFAULT order, and a
+  // Follow-up: `openOrdering` is the column's DEFAULT order, and a
   // hand-made order takes it over for the session. Reordering the Open column
   // by drag is an explicit statement of order, so it must not be refused — and
   // a view that keeps painting a date order after the author arranged the cards
@@ -2041,7 +2041,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     // board side of the "rank by workspace" presentation. A single-workspace
     // scope has one group, so the plain sort is identical.
     //
-    // The openOrdering / runningFirst options (idea #71) decide how the OPEN
+    // The openOrdering / runningFirst options decide how the OPEN
     // column is laid out inside each group: creation date (asc/desc, the
     // default) or the human rank, with the in-flight work optionally floated
     // above whichever is selected. It applies to the Open column only (a closed
@@ -2054,7 +2054,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       : grouped ? orderByWorkspaceGroups(rows, workspaceTitle) : orderIdeas(rows)
   }
 
-  // Every column's display order, laid out ONCE per paint (idea #108).
+  // Every column's display order, laid out ONCE per paint.
   //
   // This map is deliberately the single definition of "what the column
   // contains": the paint, the drag drop anchor and the multi-select scope all
@@ -2070,12 +2070,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     () => IDEA_COLUMNS.filter(status => !(status === 'declined' && cfg.hideDeclinedColumn)),
     [cfg.hideDeclinedColumn],
   )
-  // Windowing (idea #108): the columns mount only the cards the reader can
+  // Windowing: the columns mount only the cards the reader can
   // actually see. Everything the window decides is about PAINTING; the row list
   // it windows over is the full column above.
   const { columns: virtualColumns, onScroll: onColumnScroll } = useVirtualColumns(columnRows, visibleStatuses)
 
-  /* --- deep-link scroll, in two phases (idea #108) -----------------------
+  /* --- deep-link scroll, in two phases -----------------------
    * The split is the whole reason a deep-link still works on a windowed column.
    * A card that is scrolled out of view has no DOM node, so `ideaCardOf` finds
    * nothing and the link would land silently nowhere: phase one asks each
@@ -2105,7 +2105,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }, [client.focusedIdeaId, activeTab, revealTick])
 
   /**
-   * The rows the multi-select may hold, in DISPLAY order (idea #94): the
+   * The rows the multi-select may hold, in DISPLAY order: the
    * current tab's filtered rows, laid out exactly as they are painted. The
    * Overview concatenates its columns in board order (so a shift-click range
    * reads as the block of cards the author sees), Priorities reuses the same
@@ -2150,7 +2150,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // Set form of the same selection, for the rows that render their own box.
   const selectedSet = new Set(selection.ids)
 
-  /* --- backlog health (idea #110) ---------------------------------------
+  /* --- backlog health ---------------------------------------
    * The aggregate is a SEPARATE bounded read (`?view=stats`), and it is asked
    * for ONLY while its tab is open and ONLY when the ledger revision or the
    * workspace scope actually moved. The board's 2.5 s poll therefore keeps its
@@ -2185,7 +2185,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
 
   const toggleTag = (name: string): void => {
     // Narrowing by hand means the reader has taken the board over: the deep-link
-    // marker (idea #105) is theirs to drop, exactly like the selection.
+    // marker is theirs to drop, exactly like the selection.
     client.clearFocus()
     setTagFilter(current => current.includes(name)
       ? current.filter(entry => entry !== name)
@@ -2229,7 +2229,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     // make a drop in a date-ordered column land on the rank the card already
     // held, which is why the whole grip used to be switched off there.
     //
-    // The FULL column, never the painted window (idea #108): a card that is
+    // The FULL column, never the painted window: a card that is
     // scrolled out of view is still a legal insertion point, and the anchor a
     // mounted card hands over is an id of this list either way.
     const displayOrder = columnRows[status].map(row => row.id)
@@ -2269,7 +2269,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const openEdit = (idea: IdeaListRow): void => {
     setConfirmId(undefined)
     setConfirmVerb(undefined)
-    // Deferred body (idea #34): the list row carries an excerpt only; the
+    // Deferred body: the list row carries an excerpt only; the
     // modal must edit the WHOLE body, so fetch the full record first. A
     // failure never opens the modal (saving a partial body would silently
     // truncate the analysis) and surfaces in the existing error bar.
@@ -2311,7 +2311,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     })
   }
 
-  /** Idea #30 flow: a Re-analyze affordance is offered on an open idea only
+  /** Re-analyze flow: a Re-analyze affordance is offered on an open idea only
    *  when the analyst can actually run there — a session launcher resolved
    *  AND the idea's workspace known to the DSH app (a ledger-only workspace
    *  cannot host a session, exactly like the capture AI mode). */
@@ -2371,7 +2371,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     if (launcher === undefined || idea.workspaceId === undefined) return
     const run = async (): Promise<void> => {
       await client.reanalyzeIdea(idea.id)
-      // The idea's own history (idea #92), so the re-analysis reads the real
+      // The idea's own history, so the re-analysis reads the real
       // past instead of guessing it. A list row carries no `events` field (the
       // list projection drops them on purpose), so the full record is fetched
       // first — the same deferred read the editor uses. A failed fetch is not
@@ -2412,7 +2412,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   /**
-   * Idea #66: hand the launch to the Host, which owns the mirrored card
+   * Launch: hand the launch to the Host, which owns the mirrored card
    * (ensure card -> model-only patch -> run). The picked model becomes the
    * task-board's `provider/model` target; no pick keeps the session default.
    * The modal closes on success; a refusal keeps it open with the message.
@@ -2468,7 +2468,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
             </option>
           ))}
         </select>
-        {/* Deep-link (idea #105): the reference a human is GIVEN is the number,
+        {/* Deep-link: the reference a human is GIVEN is the number,
             so the board offers exactly one place to type it. The id form is
             accepted here too (an agent, a log line or a copied card id carries
             one) but never advertised — it does not survive a re-import. */}
@@ -2586,7 +2586,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           {t('tab.delivered')}
           <span className={classes.tabCount}>{archivedIdeas.length}</span>
         </button>
-        {/* Health (idea #110): no count badge on purpose. The other three tabs
+        {/* Health: no count badge on purpose. The other three tabs
             count rows they are about to paint; this one paints an aggregate
             whose headline number is inside it, and a stale count beside the
             live figure would be the second way to show the same thing. */}
@@ -2612,13 +2612,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
-      {/* Undo row (idea #111): the affordance and its receipt, in the one place
+      {/* Undo row: the affordance and its receipt, in the one place
           the reader already looks for "what just happened". It renders nothing at
           all when the stack is empty, so a board that never used it pays nothing. */}
       <UndoBar client={client} />
 
-      {/* A deep-link that could not land says so, where the reader already is
-          (idea #105). Silence would read as "the board ignored me"; a refusal
+      {/* A deep-link that could not land says so, where the reader already is.
+          Silence would read as "the board ignored me"; a refusal
           that names the reference can be retried with a corrected one. */}
       {client.focusResult !== undefined && client.focusResult.outcome === 'unknown' && (
         <div className={classes.focusNote} role="status" data-dsh-ideas-focus-note="unknown">
@@ -2631,7 +2631,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         </div>
       )}
 
-      {/* Shared tag filter (idea #36): rendered above all three tabs — ONE
+      {/* Shared tag filter: rendered above all three tabs — ONE
           scrollable zone whose sticky header (label + tag search + clear)
           never scrolls away, with the tags capped at the tagRows budget
           below it; a selected tag is never hidden by the search. The same
@@ -2646,7 +2646,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         />
       )}
 
-      {/* Multi-select bar (idea #94): shared by the three tabs, like the tag
+      {/* Multi-select bar: shared by the three tabs, like the tag
           filter above it. It states the count AND the scope that produced it,
           so "select all" never means an invisible set; the three bulk actions
           stay disabled until something is selected. It disappears only on a
@@ -2680,12 +2680,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
         {visibleStatuses.map(status => {
           const columnIdeas = columnRows[status]
           // The window decides what is PAINTED; `columnIdeas` above stays the
-          // whole column (idea #108), so the count in the header, the drop
+          // whole column, so the count in the header, the drop
           // anchor and the selection scope all keep reading the full list.
           // Always present: the hook builds one entry per `visibleStatuses`
           // entry, from the very array this loop walks.
           const vcol = virtualColumns.get(status)!
-          // Per-column width (idea #53): a stored width pins the column to that
+          // Per-column width: a stored width pins the column to that
           // many pixels (flex: 0 0); an absent one keeps the default equal share.
           const storedWidth = columnWidths[status]
           const columnWidth = storedWidth === undefined ? undefined : clampColumnWidth(storedWidth, colLo, colHi)
@@ -2734,7 +2734,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 <span className={classes.columnTitle}>{t(STATUS_LABEL[status])}</span>
                 <span className={classes.columnCount}>{columnIdeas.length}</span>
               </div>
-              {/* Idea #108: the standing notice on a column that has grown past
+              {/* The standing notice on a column that has grown past
                   what a glance covers. It sits OUTSIDE the scrolling body so it
                   stays readable, and it says what is true - the whole column is
                   reachable - rather than implying the board is struggling. */}
@@ -2769,7 +2769,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                     {vcol.entries.map(({ row: idea, index, top }) => {
                       const confirm = confirmId === idea.id
                       const selected = isSelected(selection, idea.id)
-                      // Deep-link (idea #105): the card a link landed on. It is
+                      // Deep-link: the card a link landed on. It is
                       // the same marker the search box paints for a focused
                       // field, so "where the link went" never reads as a
                       // selection the reader made.
@@ -2778,7 +2778,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                       // The grip is always draggable. The Open column only changes the WORDING of
                       // its handle: the `openOrdering` option is the default layout,
                       // and reordering the column by hand takes it over for the
-                      // session (idea #94 follow-up), so nothing is ever refused.
+                      // session (follow-up), so nothing is ever refused.
                       const dragLabel = status === 'open' && !openColumnRanked
                         ? t('card.dragTakesOver')
                         : t('card.drag')
@@ -2796,7 +2796,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                         <div
                           key={idea.id}
                           className={classes.cardWrapper}
-                          // Windowing (idea #108): the card sits at the exact
+                          // Windowing: the card sits at the exact
                           // offset the geometry gave it, and the ref feeds its
                           // real height back so the rows below it stay put.
                           style={{ position: 'absolute', top: `${top}px`, left: 0, right: 0 }}
@@ -2839,7 +2839,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                             data-dsh-ideas-card-focused={focused ? '' : undefined}
                           >
                             <div className={classes.cardHeader}>
-                              {/* Multi-select (idea #94): the select box is the
+                              {/* Multi-select: the select box is the
                                   card's own control, so picking a card never
                                   opens the editor; shift-click paints a range
                                   across the columns in display order. */}
@@ -2863,8 +2863,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               >
                                 <IdeaTitle ideaNumber={idea.ideaNumber} title={idea.title} />
                               </div>
-                              {/* Shared with the Priorities and Delivered rows
-                                  (idea #71): one place owns the run-state tags,
+                              {/* Shared with the Priorities and Delivered rows:
+                                  one place owns the run-state tags,
                                   so a row can never disagree with a card. */}
                               <RunStateBadges
                                 idea={idea}
@@ -2929,13 +2929,13 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                               </div>
                             )}
                             <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { openEdit(idea) }} />
-                            {/* Relations (idea #106): a quiet reference line under
+                            {/* Relations: a quiet reference line under
                                 the body, and NOTHING at all for an idea that
                                 carries none. Three chips then a counter, so a
                                 heavily linked card cannot eat the board's DOM
                                 budget. */}
                             <RelationChips views={relationIndex.get(idea.id)} onOpenIdea={openEditById} />
-                            {/* The delivery note of a finished run (idea #91):
+                            {/* The delivery note of a finished run:
                                 what the reviewer needs to decide on without
                                 leaving the board. Renders nothing for a running
                                 or failed run, and says so when a finished one
@@ -3113,7 +3113,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                       </div>
                     )}
                 </div>
-              {/* Per-column width resizer (idea #53): drag to resize this column,
+              {/* Per-column width resizer: drag to resize this column,
                   double-click resets it to the default share. */}
               <span
                 className={classes.columnResizer}

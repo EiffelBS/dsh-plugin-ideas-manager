@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Delivery note rendering (idea #91) in jsdom.
+ * Delivery note rendering in jsdom.
  *
  * The harvest side is host behaviour (see delivery-note.test.ts); this covers
  * the promise the UI makes about it — a run that left nothing must SAY so, in

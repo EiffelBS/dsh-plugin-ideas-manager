@@ -7,8 +7,9 @@ mutate the ledger programmatically — the same channel the Phase 3 "Start AI
 analysis and create the idea" flow drives, and the one the migration script
 uses.
 
-The base write channel remains the already-shipped REST surface. Idea #65 adds
-an additive bounded read contract without changing the action protocol.
+The base write channel remains the already-shipped REST surface. The bounded
+summary-first reads add an additive bounded read contract without changing the
+action protocol.
 
 ## Endpoints (all under `IDEAS_API_PREFIX = /api/ideas`)
 
@@ -21,7 +22,7 @@ an additive bounded read contract without changing the action protocol.
 | GET    | `/api/ideas/idea?id=<id>` | One full target/follow-up record |
 | POST   | `/api/ideas/action` | Apply ONE action, returns the resulting full snapshot (200)   |
 | GET    | `/api/ideas/events` | Revision-only stream + 15 s heartbeat                        |
-| POST   | `/api/ideas/launch` | Start the idea's execution (idea #66) — dedicated route, not a verb |
+| POST   | `/api/ideas/launch` | Start the idea's execution — dedicated route, not a verb |
 
 ## Bounded read views
 
@@ -115,7 +116,7 @@ is the accepted trust boundary. Content-type must be `application/json`
 | `import`    | `sourceId`, `ideas: IdeaRecord[]`                 | Bulk import (2 MiB limit, migration path) |
 | `export`    | `workspaceId?`                                    | Return generated `IDEAS.generated.md` / `IDEAS-ARCHIVE.generated.md` |
 
-## Launch route (idea #66) — NOT a verb
+## Launch route — NOT a verb
 
 `POST /api/ideas/launch` is a **dedicated route, not an `IdeasAction`**: a launch
 is not a ledger mutation, so it must not consume the persisted action dedupe
@@ -224,7 +225,7 @@ session instead of creating it manually:
    that overrides an older first-wins installed skill. Re-analysis prompts carry compact
    stored metadata plus an exact id selector, never the stored body. The analyst
    then uses filtered `state?view=summary` pages and single-idea reads under the bounded workflow
-   in `docs/idea-64-summary-first-context.md`. The analysis methodology AND the
+   in `docs/summary-first-context.md`. The analysis methodology AND the
    full write-channel contract live in the **`ideas-analyst` skill** the Host
    installs at `<dshHome>/skills/ideas-analyst/SKILL.md` (user-dsh root, rank
    400 — every session sees it, whatever the workspace). The session loads it
@@ -277,7 +278,7 @@ Splitting the analyst prompt into a minimal prompt + an installed skill:
 - **No backticks inside the skill**: the SKILL.md is authored inside a TypeScript
   template literal, so any backtick in its body breaks the build (TS1005). Keep
   code examples on 4-space-indented lines and never use backtick fence/emphasis.
-- **Bounded fan-out, one run = one card** (idea #79): two rules live in the skill
+- **Bounded fan-out, one run = one card**: two rules live in the skill
   as text, because they are methodology and need no protocol change. The
   fan-out section lets the analyst split the analysis of ONE card across at most
   3 read-only sub-agents, only on a numeric threshold (the draft cites >= 2

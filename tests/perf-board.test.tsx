@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Client-side load profile (idea #34): what the MAIN THREAD pays with all
+ * Client-side load profile: what the MAIN THREAD pays with all
  * 140 cards mounted - initial React commit, short-poll emit, search
  * keystroke, workspace scoping (the "limited visible region" comparison),
  * tab switches - plus the pure hot helpers (renderMarkdown, the per-keystroke
@@ -49,7 +49,7 @@ import {
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 /**
- * Transport mirroring the idea#34 wire: `state()` serves the LEAN list
+ * Transport mirroring the wire: `state()` serves the LEAN list
  * projection (fresh JSON round-trip in 'full' mode - what the browser really
  * parses each poll - or an identity clone with a BUMPED revision in
  * 'identity' mode to isolate the change-driven React commit), `stateFull()`
@@ -240,7 +240,7 @@ describe.runIf(process.env.IDEAS_PERF === '1')('perf-board: React commit at 140 
 
     // --- short-poll emit (every 2.5 s while the board is open) -----------
     // full: the real lean wire (parse + adopt) with an UNCHANGED revision -
-    // the idle-tick cost after the idea#34 revision bailout (expected to be
+    // the idle-tick cost after the revision bailout (expected to be
     // near-zero render); identity: a bumped revision with the same row
     // references - the change-driven commit of one real update.
     transport.wireMode = 'full'

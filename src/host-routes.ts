@@ -1,6 +1,6 @@
 /**
  * Ideas host routes: GET /api/ideas/state, POST /api/ideas/action,
- * POST /api/ideas/launch (idea #66), and the SSE /api/ideas/events stream,
+ * POST /api/ideas/launch, and the SSE /api/ideas/events stream,
  * all behind the loopback + browser same-origin fence. Follows the
  * dsh-task-board route discipline (same error ids, same body limits, same
  * guard semantics) without importing any of its code.
@@ -145,17 +145,17 @@ export function makeIdeasRoutes(
     handler: (req, res): void => {
       if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
       if (!guard(req, res)) return
-      // idea #34: ?view=list serves the deferred-body projection (list fields
+      // ?view=list serves the deferred-body projection (list fields
       // + a short excerpt) so a 140-card board poll stays a fraction of the
       // full payload. The DEFAULT stays the full snapshot: backups and
       // tooling (restore-3080-ideas, migration scripts) read GET /state and
       // must keep seeing bodies.
       //
-      // idea #65: view=summary|detail is a separate additive contract with
+      // view=summary|detail is a separate additive contract with
       // workspace/id/number/status filters, field selection, pagination, and
       // explicit truncation metadata. It never mutates or caches the ledger.
       //
-      // idea #110: view=stats is the bounded backlog-health aggregate. It is a
+      // view=stats is the bounded backlog-health aggregate. It is a
       // THIRD, separate contract — it never runs through parseIdeasReadQuery,
       // so it inherits neither that parser's keys nor its row semantics — and
       // the board's 2.5 s poll has no reason to ask for it.
@@ -290,7 +290,7 @@ export function makeIdeasRoutes(
     },
   }
   /**
-   * Launch the idea's execution (idea #66). A DEDICATED route, not an
+   * Launch the idea's execution. A DEDICATED route, not an
    * `IdeasAction` verb (decision D1): a launch is not a ledger mutation — it
    * must not consume the persisted action dedupe cache, and its answer is a
    * small `{ok, runId, runStatus}` instead of a whole board snapshot. The
@@ -360,7 +360,7 @@ function parseSnapshotReason(value: unknown): IdeasSnapshotReason {
 }
 
 /**
-   * The snapshot folder (idea #95). A DEDICATED route family, not action verbs:
+   * The snapshot folder. A DEDICATED route family, not action verbs:
    * a snapshot writes a FILE beside the ledger instead of mutating it, and a
    * restore replaces the whole document — neither may consume the persisted
    * request-id dedupe cache, and neither belongs in the frozen action envelope.

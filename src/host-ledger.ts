@@ -80,7 +80,7 @@ export interface LedgerState {
 }
 
 /**
- * Activity-log provenance of one mutation (idea #92). `actor` is the explicit
+ * Activity-log provenance of one mutation. `actor` is the explicit
  * override for a Host-written transition; when absent, `initiator` decides
  * (`human` with no initiator, `agent:<initiator>` otherwise).
  */
@@ -175,7 +175,7 @@ function normalizeTaskBoardStatus(value: string | undefined): string | undefined
 }
 
 /**
- * Normalize a persisted run status (idea #66): the closed union only — an
+ * Normalize a persisted run status: the closed union only — an
  * unknown persisted value is DROPPED rather than stored, so a hand-edited
  * ledger can never put the board in a state the run poll cannot reason about.
  */
@@ -267,14 +267,14 @@ function readIdeaRow(value: unknown): { ok: true; idea: IdeaRecord; unknown: str
   if (typeof row.reanalyzeAt === 'number') idea.reanalyzeAt = row.reanalyzeAt
   const audit = auditOf(row.analysisAudit)
   if (audit !== undefined) idea.analysisAudit = audit
-  // Activity log (idea #92). This line IS the schema migration: a document
+  // Activity log. This line IS the schema migration: a document
   // written before the field existed simply has no `events` key, and the
   // first recorded verb creates it — no version bump, no rewrite, and a
   // document carrying a hand-edited or over-long log is repaired rather than
   // quarantined.
   const events = normalizeIdeaEvents(row.events)
   if (events !== undefined) idea.events = events
-  // Relations (idea #106), same lazy migration as the log: a document written
+  // Relations, same lazy migration as the log: a document written
   // before the field has none, and the first write creates it. The row-level
   // repair bounds and de-duplicates each list; the DOCUMENT-level invariants
   // (no self edge, no dangling target, symmetric relatesTo, acyclic blocks)
@@ -297,7 +297,7 @@ function parseHostIdeas(rows: readonly unknown[]): IdeaRecord[] {
 }
 
 /**
- * Re-impose the document-level relation invariants (idea #106). This is the
+ * Re-impose the document-level relation invariants. This is the
  * schema repair for relations, and it runs where `parseHostIdeas` runs: at boot,
  * on a restore and after an import. Every write path already keeps the
  * invariants, so in practice this only touches a hand-edited or imported
@@ -470,7 +470,7 @@ function validateLedgerDocument(parsed: unknown): LedgerValidation {
   //    what to do (update the plugin, or restore on the machine that wrote it).
   //  - a file from an OLDER plugin is accepted. A document written before a
   //    field existed simply has no such key, and the reader fills it in on the
-  //    first write that needs it (the lazy migration of `events`, idea #92). A
+  //    first write that needs it (the lazy migration of `events`). A
   //    strict equality check would instead refuse every backup ever taken.
   if (typeof row.schemaVersion !== 'number' || !Number.isSafeInteger(row.schemaVersion)) {
     return {
@@ -615,7 +615,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Read-only view of the current document for a PURE aggregate (idea #110),
+   * Read-only view of the current document for a PURE aggregate,
    * without the deep clone every other reader pays.
    *
    * The one exception to "every reader gets its own copy", and it exists
@@ -637,7 +637,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * One idea, deep-cloned like a snapshot row (idea #34): the deferred-body
+   * One idea, deep-cloned like a snapshot row: the deferred-body
    * read GET /api/ideas/idea?id= clones a SINGLE record instead of paying
    * the whole-ledger snapshot clone for one card.
    */
@@ -647,7 +647,7 @@ export class IdeasHostLedger {
     return cloneIdeas([found])[0]
   }
 
-  // --- snapshots and restore (idea #95) --------------------------------------
+  // --- snapshots and restore ------------------------------------------------
 
   /** Absolute path of the snapshot folder (diagnostics; never a UI string). */
   backupDir(): string {
@@ -831,7 +831,7 @@ export class IdeasHostLedger {
    * the same action returns the current state without mutating. The cache is
    * persisted with every commit, so a Host restart cannot replay a mutation.
    *
-   * `audit` is the activity-log provenance of this mutation (idea #92): the
+   * `audit` is the activity-log provenance of this mutation: the
    * asserted envelope initiator becomes `agent:<initiator>`, its absence means
    * `human`, and the explicit `run` override marks a transition the Host itself
    * writes (the launch settle opening the review gate). It is NOT part of the
@@ -858,7 +858,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Host-internal activity entry (idea #92): the transitions that never pass
+   * Host-internal activity entry: the transitions that never pass
    * through an action verb — a launch accepted, a run settled, a harvested
    * delivery note — are exactly the ones a reader most wants in the timeline.
    * Same system-field discipline as `bindTaskBoardId` and the same
@@ -922,7 +922,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Host-internal LAUNCH-LIFECYCLE stamp (idea #66): `running` is written by
+   * Host-internal LAUNCH-LIFECYCLE stamp: `running` is written by
    * the launch route the moment the execution is accepted, the settled state by
    * the run poll. Same system-field discipline as `bindTaskBoardId` (the
    * protocol gate never accepts `runStatus` from the wire) and the same
@@ -945,7 +945,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Host-internal SESSION id of the latest run (idea #66 v2): written with the
+   * Host-internal SESSION id of the latest run: written with the
    * `running` stamp by a direct-session launch, stamped from the mirrored card's
    * own executions by the run poll, and deliberately KEPT when the run settles
    * so the card keeps a way back into the chat it was worked on. Same
@@ -971,7 +971,7 @@ export class IdeasHostLedger {
   }
 
   /**
-   * Host-internal DELIVERY NOTE of the latest finished run (idea #91): the
+   * Host-internal DELIVERY NOTE of the latest finished run: the
    * text harvested off the run at settle time, bounded to
    * {@link DELIVERY_NOTE_MAX_BYTES}. Same system-field discipline as
    * `bindTaskBoardId` (the wire gate never accepts `deliveryNote` from
@@ -997,7 +997,7 @@ export class IdeasHostLedger {
   private apply(action: IdeasAction, actor: string): LedgerApplyResult {
     const now = this.now()
     const beforeIdeas = this.document.ideas
-    // Activity entries this mutation will append (idea #92). Filled per case
+    // Activity entries this mutation will append. Filled per case
     // and applied ONCE after the switch, so the log and the state change in
     // one commit and a no-op verb records nothing.
     const recorded: Array<{ ideaId: string; verb: string; summary: string }> = []
@@ -1207,7 +1207,7 @@ export class IdeasHostLedger {
           return item
         })
 
-        // Relations (idea #106). Exactly the re-pointing the loser's follow-up
+        // Relations. Exactly the re-pointing the loser's follow-up
         // children get, extended to the edges: every row that named the loser
         // now names the survivor, and the survivor INHERITS the edges the loser
         // stated — a duplicate contributes what it has that the survivor lacks,
@@ -1274,7 +1274,7 @@ export class IdeasHostLedger {
       case 'delete': {
         const idea = this.document.ideas.find(item => item.id === action.ideaId)
         if (idea === undefined) throw new Error('idea not found')
-        // The edges that named this row go with it (idea #106): DROP, not
+        // The edges that named this row go with it: DROP, not
         // tombstone. A tombstone would keep a deleted idea's number alive in
         // every surviving card and in every export, pointing at nothing a
         // reader can open — while a merge, which is a reconciliation rather
@@ -1632,7 +1632,7 @@ function sameRelationList(a: readonly string[] | undefined, b: string[] | undefi
 }
 
 /**
- * Apply the relation half of an `update` patch across the document (idea #106).
+ * Apply the relation half of an `update` patch across the document.
  *
  * `relatesTo` is symmetric, so one statement writes TWO rows — the edited idea
  * and every idea it names — in the same commit. That is what keeps "A relates to
@@ -1720,7 +1720,7 @@ function describePatch(patch: IdeaUpdatePatch): string {
   if (patch.effort !== undefined) fields.push('effort')
   if (patch.rationale !== undefined) fields.push('rationale')
   if (patch.rank !== undefined) fields.push('rank')
-  // Relations (idea #106): named like every other field the patch touched, and
+  // Relations: named like every other field the patch touched, and
   // never valued — the timeline is a breadcrumb back to the idea.
   if (patch.relatesTo !== undefined) {
     fields.push(patch.relatesTo === null || patch.relatesTo.length === 0 ? 'relations cleared' : 'related ideas')

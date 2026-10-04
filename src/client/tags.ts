@@ -6,7 +6,7 @@
 
 import type { IdeaTag } from '../core/ideas.ts'
 
-/** Structural row face the tag helpers read (full records AND list rows, idea #34). */
+/** Structural row face the tag helpers read (full records AND list rows). */
 export type TaggedIdea = { tags?: IdeaTag[] }
 
 /** Conjunctive tag filter: adding a label narrows the board. */
@@ -24,7 +24,7 @@ export function collectKnownTags(ideas: readonly TaggedIdea[]): string[] {
 }
 
 /**
- * Narrow the filter chips with the chip search box (idea #36): a
+ * Narrow the filter chips with the chip search box: a
  * case-insensitive substring match on the label. Matched chips keep their
  * order; SELECTED chips are appended when the query (or nothing at all)
  * hides them, so an active filter never becomes an invisible filter — even

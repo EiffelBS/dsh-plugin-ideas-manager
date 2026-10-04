@@ -83,7 +83,7 @@ const FACTS: readonly Fact[] = [
     remedy: 'the gear must be taught the new launcher labels/shape',
   },
   {
-    // Idea #105 removed the only DOM dependency this plugin had on the
+    // The deep-link feature removed the only DOM dependency this plugin had on
     // task-board: the permission-gate redirect is a deep-link to OUR card, and
     // the TaskBoard panel is selected through the shell's own layout face. The
     // one assumption left is the panel id that face selects — nothing else of

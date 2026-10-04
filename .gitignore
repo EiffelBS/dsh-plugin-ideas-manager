@@ -20,3 +20,10 @@ scripts/*
 !scripts/changelog-notes.mjs
 !scripts/changelog-notes.d.mts
 
+# Hand-written wire payloads kept at the root while iterating on a verb (they
+# are copies of POST /api/ideas/action bodies, so they carry idea titles).
+# Committed once by accident in 2026-09; untracked on 2026-10-04 and never
+# pushed again — a repo is a public surface, a scratch file is not.
+create_idea*.json
+triage_idea.json
+

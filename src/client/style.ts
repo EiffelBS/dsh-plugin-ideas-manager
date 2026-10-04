@@ -32,14 +32,14 @@ body {
   --dsh-ideas-fb-accent: #0f6fbe;
   --dsh-ideas-fb-accent-fg: #ffffff;
   --dsh-ideas-fb-danger: #d04a4a;
-  /* Relation chips (idea #106): one hue per edge KIND, so a glance separates
+  /* Relation chips: one hue per edge KIND, so a glance separates
      "adjacent" from "waits for" from "is waited for". Colour is a second channel
      only — the glyphs (↔ / → / ←) and the editor's labels carry the meaning on
      their own, so the board stays readable without it. */
   --dsh-ideas-relation-related: #16a34a;
   --dsh-ideas-relation-blocks: #b45309;
   --dsh-ideas-relation-blocked: #d04a4a;
-  /* Launch affordance (idea #66): the one GREEN action — it starts the work,
+  /* Launch affordance: the one GREEN action — it starts the work,
      while every other card action only moves the card. A lighter green on the
      dark theme so the triangle keeps its contrast on dark cards. */
   --dsh-ideas-run: #16a34a;
@@ -176,7 +176,7 @@ body[data-ds-dark-theme] {
   text-overflow: ellipsis;
 }
 
-/* Deep-link jump (idea #105): "Go to idea" sits in the header's right cluster
+/* Deep-link jump: "Go to idea" sits in the header's right cluster
    next to the scope selector. A compact text field — NOT a second search box:
    it takes a reference (#42) and jumps, it does not narrow. */
 .dsh-ideas-jump {
@@ -361,7 +361,7 @@ body[data-ds-dark-theme] {
   gap: 8px;
 }
 
-/* The workspace default launch model's own row of controls (idea #107). Same
+/* The workspace default launch model's own row of controls. Same
    shape as the gate actions, its own name: the launch modal is the one surface
    that both SHOWS a stored preference and edits it. */
 .dsh-ideas-default-model-actions {
@@ -383,7 +383,7 @@ body[data-ds-dark-theme] {
 
 .dsh-ideas-column {
   position: relative;
-  /* Scope each column's reflow (idea #53): resizing one column must not
+  /* Scope each column's reflow: resizing one column must not
      invalidate the others' card layout — they only shift position — so a dense
      drag stays fast. "layout" only (not "paint") so the resizer, which sits in
      the inter-column gap, is not clipped. */
@@ -402,7 +402,7 @@ body[data-ds-dark-theme] {
   gap: 8px;
 }
 
-/* Per-column width resizer (idea #53): a thin grip centred on the column's
+/* Per-column width resizer: a thin grip centred on the column's
    right edge (inside the 12px inter-column gap) that drags to resize THAT
    column. Absolutely positioned so it never takes layout space; the hairline
    affordance appears on hover, focus and while dragging ([data-resizing]). */
@@ -488,7 +488,7 @@ body[data-ds-dark-theme] {
   flex: 1;
 }
 
-/* Windowed column (idea #108): a sizer as tall as the WHOLE column, with only
+/* Windowed column: a sizer as tall as the WHOLE column, with only
    the cards near the viewport as absolutely-positioned children. The inter-card
  * gap lives inside each card's slot (see IDEA_CARD_GAP_PX), so the geometry and
    the painted spacing are the same number rather than two that can drift. */
@@ -796,7 +796,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   display: block;
 }
 
-/* --- relations (idea #106) ---
+/* --- relations ---
    The chip is deliberately NEUTRAL: a relation is a statement the human made,
    so it must not borrow the tag hues, which are a filter the reader clicks. It
    reads as a quiet reference (#N plus a direction arrow) rather than as a
@@ -1043,7 +1043,7 @@ body[data-ds-dark-theme] .dsh-ideas-card {
 
 /* --- P1 CRUD: filter chips, card actions, drag affordance --- */
 
-/* Shared tag filter block (idea #36): ONE scroll zone with a SINGLE
+/* Shared tag filter block: ONE scroll zone with a SINGLE
    flex-wrap container — the filter controls (label, tag search, clear) and
    every tag are CONSECUTIVE items of the same row: the first tag immediately
    follows the clear button (no sub-block competes for that first line), the
@@ -1586,7 +1586,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   line-height: 1;
 }
 
-/* Health view (idea #110): the bounded aggregate. Same flex/scroll contract as
+/* Health view: the bounded aggregate. Same flex/scroll contract as
    the Priorities wrapper — the panel owns the height, the view owns its scroll.
    The five figures sit on one wrapping grid so the row never forces a
    horizontal scrollbar on a narrow panel. */
@@ -1865,7 +1865,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   flex: none;
 }
 
-/* Run-state tags on the list rows (idea #71): their own slot in the row's
+/* Run-state tags on the list rows: their own slot in the row's
    top-right corner, mirroring the Overview card header, and deliberately NOT
    part of the meta line. In the meta line they sat between the topic tags and
    the value/effort badges, where a quiet blue pill reads as one more topic
@@ -2012,7 +2012,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   .dsh-ideas-task-running-dot { animation: none; opacity: 0.7; }
 }
 
-/* Stale badge on an OPEN idea (idea #91): a deliberately quiet marker, not an
+/* Stale badge on an OPEN idea: a deliberately quiet marker, not an
    alarm. Neutral ink, no fill, dashed edge - it says "this one has been quiet"
    without competing with the review gate's amber pill for attention. Rendered
    next to the run-state tags of the Overview card header and the Priorities
@@ -2028,7 +2028,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   white-space: nowrap;
 }
 
-/* Delivery note (idea #91): the one block that gives the review gate something
+/* Delivery note: the one block that gives the review gate something
    to decide on. Sits below the description on the Overview card, above the
    verdict buttons in the editor, and under the exit stamp on a Delivered row.
    Left-ruled and recessed so it reads as quoted output from the run rather
@@ -2075,7 +2075,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-style: italic;
 }
 
-/* Activity timeline (idea #92): the editor's read-only record of what this
+/* Activity timeline: the editor's read-only record of what this
    idea has been through. Quieter than the delivery note — it is bookkeeping,
    not evidence — so it sits below the fields and above the verdict buttons and
    stays recessed. The list is capped in CSS only: the host already bounds the
@@ -2134,7 +2134,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   overflow-wrap: anywhere;
 }
 
-/* The "N to review" badge on the sidebar panel row (idea #91) has NO rule here
+/* The "N to review" badge on the sidebar panel row has NO rule here
    on purpose: it is painted inside the plugin's own glyph SVG (see
    panel-registration.tsx), which is the only DOM this plugin owns inside that
    shell-owned row. The panel-row contract has no badge seat and no badge prop,
@@ -2144,7 +2144,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
    clipped its own overflow would silently drop it, which is a cosmetic
    degradation and never a broken row. */
 
-/* "Open the session" affordance on a card whose run is in flight (idea #66):
+/* "Open the session" affordance on a card whose run is in flight:
    the only way back into an execution the board started, whether it ran on a
    mirrored card or in a direct chat session. Renders beside the running
    badge, and degrades to nothing when the shell serves no sessions service. */
@@ -2196,9 +2196,9 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   color: var(--dsw-alias-label-tertiary, var(--dsh-ideas-fb-fg-soft));
 }
 
-/* --- multi-select and bulk actions (idea #94) --- */
+/* --- multi-select and bulk actions --- */
 
-/* Per-row select box (idea #94): a real checkbox-looking control that stays
+/* Per-row select box: a real checkbox-looking control that stays
    readable on a card surface and in both themes. The native appearance is
    dropped so the mark and the checked fill follow the skin tokens like every
    other control. The tick is a PSEUDO-ELEMENT, not a child span: this box
@@ -2257,7 +2257,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
     0 1px 2px var(--dsw-alias-border-l3, var(--dsh-ideas-fb-border));
 }
 
-/* Deep-link focus (idea #105): the accent ring the board already paints for a
+/* Deep-link focus: the accent ring the board already paints for a
    focused field, drawn AROUND the card instead of on one control — so "this is
    where the link landed" reads exactly like keyboard focus and never like a
    selection the reader made (that keeps its own inset edge above). The ring is
@@ -2287,7 +2287,7 @@ body[data-ds-dark-theme] .dsh-ideas-filter-chip-active {
   font-size: 12px;
 }
 
-/* Undo row (idea #111): one quiet line naming the action an Undo reverses, the
+/* Undo row: one quiet line naming the action an Undo reverses, the
    button that does it, and — after the click — a receipt that says which ideas
    went back and which were left alone. It is NOT a timed toast: an undo whose
    result the reader never saw is an undo they press twice. */
@@ -2566,7 +2566,7 @@ export const classes = {
   quickAdd: 'dsh-ideas-quick-add',
   columnBody: 'dsh-ideas-column-body',
   columnResizer: 'dsh-ideas-column-resizer',
-  // Idea #108: the scrollable sizer of a windowed column. Its height is the
+  // the scrollable sizer of a windowed column. Its height is the
   // whole column; its children are only the cards inside the window.
   virtualList: 'dsh-ideas-virtual-list',
   openColumnNotice: 'dsh-ideas-open-column-notice',

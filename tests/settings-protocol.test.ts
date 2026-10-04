@@ -151,7 +151,7 @@ describe('parseSettingsBody (extended option set)', () => {
   })
 })
 
-describe('openOrdering + runningFirst (idea #71)', () => {
+describe('openOrdering + runningFirst', () => {
   it('defaults to oldest-first, with the running float ON', () => {
     expect(IDEAS_SETTINGS_DEFAULTS.openOrdering).toBe('createdAt')
     expect(IDEAS_SETTINGS_DEFAULTS.runningFirst).toBe(true)
@@ -206,7 +206,7 @@ describe('directRunPermission', () => {
   })
 })
 
-describe('launchModelByWorkspace (idea #107)', () => {
+describe('launchModelByWorkspace', () => {
   it('is empty by default, so an untouched deployment keeps today\'s behaviour', () => {
     expect(IDEAS_SETTINGS_DEFAULTS.launchModelByWorkspace).toEqual({})
     // A section written before the field existed has no key at all.

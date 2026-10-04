@@ -152,3 +152,35 @@ for source, and `node scripts/scan-mojibake.mjs` after any scripted rewrite.
   minutes: a 404 right after the run is not proof that the publish failed.
 - Never deploy, install or test on the live instance; use `dsh web --port <free>`
   with its own `DSH_HOME`.
+
+## What must never enter this repository
+
+The feature history of this plugin lives in the author's **own DSH idea board**,
+which no other reader can see. Its numbers mean nothing outside that board — and
+inside a GitHub repository `idea #106` reads as *issue 106*, which sends a
+stranger to something that does not exist. So a board identifier never enters
+anything this repository publishes:
+
+- **No `idea #N` or `issue #N` in any pushed file** — not in `src/`, not in
+  `tests/`, not in `docs/`, not in `SKILL.md`, not in a filename
+  (`relations.test.ts`, never `idea-106-relations.test.ts`).
+- **Name the feature instead**, in words, wherever a comment used to carry the
+  number: `// Launch lifecycle: …` says more to a reader than `// Launch
+  lifecycle (idea #66): …` ever did.
+- **`README.md` and `CHANGELOG.md` are read by the people who install the
+  plugin.** They carry no archaeology at all — the rule above already says so;
+  this is its permanent form.
+- **The test suite is not gitignored.** `.github/workflows/release.yml` runs
+  `pnpm test` before `npm publish`, so the tests ARE the publication gate, and an
+  ignored `tests/` would silently swallow every new test while still passing
+  locally. (Proposed and rejected on 2026-10-04; the numbers, not the tests, were
+  the thing to remove.)
+
+Two deliberate exceptions, both narrow:
+
+- **The deep-link example `see idea #42` / `open idea #42` stays.** That number
+  belongs to the *end user's* own board — it documents the feature, and it is the
+  copy a user types in a chat session.
+- **A commit subject may carry `(idea #N)`.** The history is the author's private
+  trail, it is never rendered into the npm page, and the GitHub Release body is
+  derived from `CHANGELOG.md` rather than the commit log.

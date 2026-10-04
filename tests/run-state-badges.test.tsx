@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Run-state tags on the Priorities and Delivered rows (idea #71).
+ * Run-state tags on the Priorities and Delivered rows.
  *
  * The Overview card header already drew "Running", "Task failed" and
  * "follow-up of #N"; the two list tabs drew nothing, so a ranked row gave no

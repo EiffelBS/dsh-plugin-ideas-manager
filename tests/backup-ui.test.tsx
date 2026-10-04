@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Backup tab of the settings section (idea #95), rendered the way the shell
+ * The Backup tab of the settings section, rendered the way the shell
  * renders it: three promises are asserted at the UI level, because that is where
  * a user meets them.
  *

@@ -434,7 +434,7 @@ the direct path pins nothing, can carry `reasoningEffort`, and guards with
 
 ## 10. Related
 
-- **Idea #66** — *"Lancer l'exécution d'une idée depuis le panneau Ideas (carte
+- **L'exécution d'une idée** — *"Lancer l'exécution d'une idée depuis le panneau Ideas (carte
   TaskBoard d'abord, session directe ensuite)"* — id
   `7f4cff77-6b1c-4a20-bc16-17465dff22f5`, workspace
   `dsh-plugin-ideas-manager`, value 3 / effort 2 / rank 1, tags
@@ -443,11 +443,10 @@ the direct path pins nothing, can carry `reasoningEffort`, and guards with
   the mirror already bound card **`idea-7f4cff77-6b1c-4a20-bc16-17465dff22f5`**
   in **`backlog`** with the board's own permission (then `read-only`) and no
   `model` — i.e. the card is
-  sitting in exactly the state the button's precondition requires, which makes
-  #66 its own end-to-end test fixture.
+  sitting in exactly the state the button's precondition requires, which makes that card its own end-to-end test fixture.
 - `docs/agent-write-channel.md` — the write fence and verb table this plan
   extends.
-- `docs/idea-64-summary-first-context.md` — bounded reads the launch flow should
+- `docs/summary-first-context.md` — bounded reads the launch flow should
   follow.
 - `scripts/reconcile-taskboard-mirror.mjs` / `scripts/validate-mirror-cycle.mjs`
   — existing mirror acceptance tooling to extend with the run cycle. Local

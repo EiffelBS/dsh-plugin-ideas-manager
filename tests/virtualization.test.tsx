@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Kanban virtualization on the board itself (idea #108).
+ * Kanban virtualization on the board itself.
  *
  * jsdom has no layout: every element reports `clientHeight === 0`, which the
  * windowing module answers honestly by painting the whole column. That answer

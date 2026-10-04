@@ -52,7 +52,7 @@ function testSnapshot(): IdeasSnapshot {
 
 /** Transport with the optional config capability; records lifecycle actions.
  *  Serves the LIST projection and the per-idea deferred body like the real
- *  transport (idea #34). */
+ *  transport. */
 class ConfigTransport implements IdeasHostTransport {
   actions: IdeasAction[] = []
   loaded: IdeasSettingsView = { available: true, value: { ...IDEAS_SETTINGS_DEFAULTS }, revision: 1 }

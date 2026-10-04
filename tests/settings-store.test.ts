@@ -166,7 +166,7 @@ describe('IdeasSettingsStore writes', () => {
     expect(new IdeasSettingsStore({ file }).read().value.language).toBe('auto')
   })
 
-  it('persists the per-workspace default launch model (idea #107)', async () => {
+  it('persists the per-workspace default launch model', async () => {
     const file = scratch()
     await new IdeasSettingsStore({ file }).write(
       { launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' } },
@@ -176,7 +176,7 @@ describe('IdeasSettingsStore writes', () => {
       .toEqual({ ws1: 'deepseek/deepseek-chat' })
   })
 
-  it('applies a map write as a WHOLE-MAP replace, like the legacy port (idea #107)', async () => {
+  it('applies a map write as a WHOLE-MAP replace, like the legacy port', async () => {
     const file = scratch()
     const store = new IdeasSettingsStore({ file })
     await store.write({ launchModelByWorkspace: { ws1: 'p/one', ws2: 'p/two' } }, undefined)
@@ -191,7 +191,7 @@ describe('IdeasSettingsStore writes', () => {
     expect(untouched.value.launchModelByWorkspace).toEqual({ ws2: 'p/two' })
   })
 
-  it('repairs a hand-edited launch-model map on read (idea #107)', async () => {
+  it('repairs a hand-edited launch-model map on read', async () => {
     const file = scratch()
     writeFileSync(file, JSON.stringify({
       version: 1,

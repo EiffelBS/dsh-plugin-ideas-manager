@@ -1,11 +1,11 @@
-# Idea #34 - Ideas panel under high card load: performance & scalability evaluation
+# Ideas panel under high card load: performance & scalability evaluation
 
 Status: evaluation DONE, corrective work LANDED (local, not pushed), deferred
 evolutions recorded with their numbers. This document records the method, the
 verbatim before/after measurements, what changed, and the explicit decision
 per spec layer ("correctif prioritaire ou une evolution differee").
 
-> **Update — idea #108 (column windowing) is now LANDED.** Layer 3 below ("Kanban
+> **Update — column windowing is now LANDED.** Layer 3 below ("Kanban
 > virtualization") was recorded here as `EVOLUTION DIFFEREE`; its numbers are in
 > **section 8**, measured at the trigger the idea names (~500 open cards).
 > Layer 5 (server-side index) stays deferred.
@@ -311,7 +311,7 @@ dsh --profile ideas-test --port 3099 --trusted-host 127.0.0.1:3099 --no-open
 node --experimental-strip-types scripts/perf-live.mjs   # in a second shell
 ```
 
-## 8. Idea #108 - column windowing, at the trigger size
+## 8. Column windowing, at the trigger size
 
 ### 8.1 The re-measure the idea asks for, before any code
 
@@ -346,7 +346,7 @@ claims the other.
 
 ### 8.2 The A/B at 500 cards
 
-`tests/perf-virtual.test.tsx` (also `IDEAS_PERF=1`). The fixture is the idea #34
+`tests/perf-virtual.test.tsx` (also `IDEAS_PERF=1`). The fixture is the
 generator re-run at `PERF_VIRTUAL_OPEN_COUNT = 500` open ideas, so the data is
 identical in shape and seeded identically (540 records, 4212.2 KiB of bodies,
 p50 6276, p90 17707).

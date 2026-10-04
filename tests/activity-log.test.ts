@@ -1,5 +1,5 @@
 /**
- * The activity log as the ledger writes it (idea #92, part B): one entry per
+ * The activity log as the ledger writes it (part B): one entry per
  * meaningful verb, the actor vocabulary, the run-driven entries, the schema
  * migration of a document written before the field existed, and the survival of
  * the whole log across a restart.

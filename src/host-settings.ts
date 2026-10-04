@@ -66,7 +66,7 @@ interface LegacySettingsFace {
 }
 
 /**
- * One default launch model per workspace (idea #107), keyed by the stable
+ * One default launch model per workspace, keyed by the stable
  * workspace id — the schema half of the setting `IdeasHostService` resolves a
  * launch against.
  *
@@ -101,7 +101,7 @@ export const IdeasSettingsSchema = z.object({
   runningFirst: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.runningFirst),
   directRunPermission: z.string().default(IDEAS_SETTINGS_DEFAULTS.directRunPermission),
   staleAfterDays: z.number().default(IDEAS_SETTINGS_DEFAULTS.staleAfterDays),
-  // Idea #107: one default launch model per workspace, keyed by the stable
+  // One default launch model per workspace, keyed by the stable
   // workspace id (see launchModelByWorkspaceSchema above).
   launchModelByWorkspace: launchModelByWorkspaceSchema.default(IDEAS_SETTINGS_DEFAULTS.launchModelByWorkspace),
 })

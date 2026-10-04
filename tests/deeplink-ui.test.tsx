@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #105 — deep-link to an idea: the board as the consumer.
+ * Deep-link to an idea: the board as the consumer.
  *
  * The client test pins the handshake; this one pins what the panel actually
  * DOES with it, because that is where a deep-link is either a link or a no-op:

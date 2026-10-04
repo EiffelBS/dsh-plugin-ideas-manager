@@ -40,7 +40,7 @@ TOOLS (when this deployment serves them): prefer the ideas_* tools over hand-bui
  */
 export { IDEAS_SETTINGS_NAMESPACE } from './host-settings.ts'
 
-// Public read-query contract (idea #65). The frozen full state/action protocol
+// Public read-query contract. The frozen full state/action protocol
 // is unchanged; these additive helpers let integrations build bounded reads
 // without depending on a board snapshot or a parallel cache.
 export {
@@ -107,8 +107,8 @@ function applyImpl(ctx: Context, config?: Config): void {
   const host = new IdeasHostService({ mirror, autoMirror: config?.autoMirror ?? true })
   host.setActive(config?.enabled ?? true)
   // The run poll: it settles card-backed runs (mirrored card reaching `done`
-  // moves the linked idea to underReview) and direct-session runs (idea #66
-  // v2). It arms itself only when at least one backend is available, so a
+  // moves the linked idea to underReview) and direct-session runs. It arms
+  // itself only when at least one backend is available, so a
   // deployment with neither runs no timer — and `attachSessions` re-arms it
   // when the session gateway shows up after the plugin applied.
   host.startUnderReviewPoll()
@@ -167,7 +167,7 @@ function applyImpl(ctx: Context, config?: Config): void {
     }
   }, 'ideas: host ledger and routes')
 
-  // Agent tools (idea #92): the `ideas_*` family any session can drive, against
+  // Agent tools: the `ideas_*` family any session can drive, against
   // the very ledger and launch path the browser uses. The tools registry is an
   // OPTIONAL service — feature-detected and followed reactively, never declared
   // in `inject` above — so a Host that serves none simply loses this surface:

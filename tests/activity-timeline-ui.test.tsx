@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The activity timeline in the editor (idea #92, part B) in jsdom.
+ * The activity timeline in the editor (part B) in jsdom.
  *
  * The rule under test is the one that keeps the block honest: an idea with no
  * recorded history renders NOTHING, so a reader never mistakes "nothing has

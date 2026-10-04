@@ -1,5 +1,5 @@
 /**
- * Delivery note harvest (idea #91) — host-side tests.
+ * Delivery note harvest — host-side tests.
  *
  * Three outcomes are the whole contract, and this suite pins each one:
  *  1. HARVEST SUCCESS: a direct run settles and its last assistant message

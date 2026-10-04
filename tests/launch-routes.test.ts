@@ -1,5 +1,5 @@
 /**
- * POST /api/ideas/launch route tests (idea #66), driven against a real
+ * POST /api/ideas/launch route tests, driven against a real
  * loopback server like the config-route suite: the browser-signal + loopback
  * fence, the 405/415/413 discipline, the strict body parser, and — the point of
  * the whole route — the ERROR MAPPING: every run gate refuses visibly

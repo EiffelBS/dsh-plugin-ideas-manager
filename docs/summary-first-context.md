@@ -1,4 +1,4 @@
-# Idea #64 — Summary-first analyst context
+# Summary-first analyst context
 
 ## Goal
 
@@ -56,9 +56,9 @@ selector metadata and instructs a single-idea fetch. This makes prompt growth
 independent of the 140-card total and of unrelated body sizes. Measurements are
 fixture bytes (UTF-8), not model-token estimates.
 
-## Follow-on: idea #65 bounded API
+## Follow-on: bounded API
 
-Idea #65 keeps the workflow above and replaces its unbounded `?view=list`
+The bounded API keeps the workflow above and replaces its unbounded `?view=list`
 metadata fetch with filtered, paginated `?view=summary` reads. Summary rows
 remain body-free; `meta.nextOffset` completes a truncated page and
 `meta.omittedFields` prevents callers from treating projection omissions as

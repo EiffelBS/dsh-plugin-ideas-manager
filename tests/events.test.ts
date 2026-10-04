@@ -1,5 +1,5 @@
 /**
- * The activity-log model (idea #92, part B): the bound, the shape guard, the
+ * The activity-log model (part B): the bound, the shape guard, the
  * append rule, the actor vocabulary and the repair that migrates a document
  * written before the log existed.
  */

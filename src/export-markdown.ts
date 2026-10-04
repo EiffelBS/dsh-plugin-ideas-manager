@@ -6,7 +6,7 @@
  * capture document moves *into* the ledger, never from a markdown file). The
  * format below is pinned by the golden tests — change consciously.
  *
- * The activity log IS carried (idea #92), as a bounded `**Activity**` block
+ * The activity log IS carried, as a bounded `**Activity**` block
  * per idea. Decision and rationale: these two documents are the only portable
  * artefact the plugin produces, and "why was this declined?" is unanswerable
  * from a last-state record. The JSON round-trip (`GET /state` → `import`) also
@@ -43,7 +43,7 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   if (idea.rationale !== undefined) lines.push(bullet('rationale', idea.rationale))
   if (idea.decision !== undefined) lines.push(bullet('decision', idea.decision))
   if (idea.followUpOfId !== undefined) lines.push(bullet('follow-up of', `\`${idea.followUpOfId}\``))
-  // Relations (idea #106), carried like any other stored fact. The stored
+  // Relations, carried like any other stored fact. The stored
   // direction is printed: `relates to` is symmetric by construction so both
   // rows carry the edge, and `blocks` is one-directional with its `blocked by`
   // side living on the other row — so a reader follows the id the same way the
@@ -59,11 +59,11 @@ export function ideaToMarkdown(idea: IdeaRecord): string {
   lines.push(bullet('updated', iso(idea.updatedAt)))
   if (idea.deliveredAt !== undefined) lines.push(bullet('delivered', iso(idea.deliveredAt)))
   if (idea.archivedAt !== undefined) lines.push(bullet('archived', iso(idea.archivedAt)))
-  // Delivery note (idea #91): what the last finished run said, verbatim.
+  // Delivery note: what the last finished run said, verbatim.
   // Carried like any other stored fact because the archive document is read by
   // humans AND by agents deciding whether an idea is still relevant.
   if (idea.deliveryNote !== undefined) lines.push(bullet('delivery note', idea.deliveryNote))
-  // Activity log (idea #92). Decision: the markdown export CARRIES it. The two
+  // Activity log. Decision: the markdown export CARRIES it. The two
   // export documents are the only portable artefact this plugin produces, and
   // the question a re-reader of an archive section actually asks — "declined on
   // 2026-09-20 because …?" — is unanswerable from the last state alone. It costs

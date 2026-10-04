@@ -1,5 +1,5 @@
 /**
- * Bounded read-view contract (idea #65): filters, projections, pagination,
+ * Bounded read-view contract: filters, projections, pagination,
  * revision metadata, explicit omission/truncation flags, and hard response
  * bounds against the deterministic 140-card large-board fixture.
  */
@@ -175,7 +175,7 @@ describe('read query parser and serializer', () => {
     })
   })
 
-  it('puts the delivery note in the detail view, never in the summary one (idea #91)', () => {
+  it('puts the delivery note in the detail view, never in the summary one', () => {
     // The note is a small, bounded string, so it rides the default detail
     // projection (everything selectable but the deferred body). It is NOT part
     // of the summary projection: that one exists to keep the board's list read

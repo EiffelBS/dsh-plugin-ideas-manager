@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #111: undo for the board's own manual actions.
+ * Undo for the board's own manual actions.
  *
  * The contract this suite pins is the one the feature actually promises, and it
  * is deliberately narrower than "you can take anything back":

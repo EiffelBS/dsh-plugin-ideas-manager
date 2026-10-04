@@ -1,5 +1,5 @@
 /**
- * Encoding round-trip tests (idea #55: mojibake in analyst-generated titles /
+ * Encoding round-trip tests (mojibake in analyst-generated titles /
  * descriptions). The ideas-analyst agent is launched through PowerShell 5.1 on
  * Windows, which sends a `-Body <string>` in the system ANSI codepage
  * (windows-1252 on Western/European locales) unless the caller explicitly

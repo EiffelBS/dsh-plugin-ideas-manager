@@ -26,7 +26,7 @@
  *    tag for ever).
  *  - `runSessionId`: the direct-session run, with the button that opens it.
  *  - `deliveredAt`: the exit stamp.
- *  - staleness (idea #91): a view-only marker for an OPEN idea untouched for
+ *  - staleness: a view-only marker for an OPEN idea untouched for
  *    `staleAfterDays` days. Not a host-written field and not a state — it is
  *    read off the row's own `updatedAt` at render time, and the threshold is a
  *    display setting the caller passes in.
@@ -77,7 +77,7 @@ export interface RunStateBadgesProps {
   showDelivered?: boolean
   /**
    * Days without an update before an open idea wears the quiet *stale* badge
-   * (idea #91); 0 or absent = off. Deliberately a prop and not a context: the
+   * 0 or absent = off. Deliberately a prop and not a context: the
    * threshold is one number from the settings, and passing it down keeps this
    * file free of a settings dependency. The Delivered tab omits it — its rows
    * are archived, and `isStaleIdea` only ever judges open ideas.
@@ -125,7 +125,7 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
           {t('card.taskFailed')}
         </span>
       )}
-      {/* A launch in flight (idea #66), whichever backend runs it: the badge is
+      {/* A launch in flight, whichever backend runs it: the badge is
           what keeps the card from looking ordinary the second after the button
           was clicked. The card status counts too — someone can start the mirrored
           card from the task-board itself, and the next poll folds that into
@@ -146,7 +146,7 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
           {t('card.taskRunning')}
         </span>
       )}
-      {/* The way back into the execution, in EVERY column (idea #66, widened):
+      {/* The way back into the execution, in EVERY column (widened):
           a run that is in flight, one that failed, and the finished cards —
           under review, archived, declined — are exactly the ones whose chat you
           want to read, so the link keys off the session id alone and never off
@@ -173,7 +173,7 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
           {t('card.delivered', { date: shortDate(idea.deliveredAt) })}
         </span>
       )}
-      {/* Stale marker (idea #91), last so it never displaces a state tag: an
+      {/* Stale marker, last so it never displaces a state tag: an
           open idea nobody has touched in a month is the quietest thing on the
           card, and it should read that way. Off unless the threshold is set,
           and never on a closed idea (see isStaleIdea). */}

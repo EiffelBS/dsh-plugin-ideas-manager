@@ -13,12 +13,12 @@ src/
   agent-tools.ts      # the six ideas_* tools + the feature-detected registry
   host-service.ts     # apply + mirror scheduling + run dispatch + run poll
   host-ledger.ts      # persisted ledger, dedupe cache, lock, activity log, internal bind
-                      #   + snapshots / restore (idea #95)
+                      #   + snapshots / restore
   backup.ts           # the snapshot FOLDER only: atomic write, list, read, quarantine, retention
                       #   (knows nothing about the document — host-ledger validates that)
   host-routes.ts      # state (+ list / summary / detail), idea?id=, action, launch, events
   host-settings.ts    # the fenced /api/ideas/config route (settings dual-path)
-                       #   + the per-workspace default launch model field (idea #107)
+                       #   + the per-workspace default launch model field
   taskboard-bridge.ts # runtime feature-detect + one-way mirror + the `run` verb
   session-runner.ts   # direct-session backend: Host RPCs + the roster the settle reads
   delivery-note.ts    # last-assistant-message extraction + the card `executions` pointer
@@ -28,21 +28,21 @@ src/
   http.ts / loopback.ts / mount-once.ts   # shared discipline
   core/ideas.ts       # IdeaRecord, statuses, run statuses, tag validation, activity log
                       # + the merge helpers and the pure near-duplicate signal
-  core/ideas-stats.ts # idea #110: the ONE definition of every backlog-health number
+  core/ideas-stats.ts # the ONE definition of every backlog-health number
                       #   (sample floor, calendar-month window, scope, triage gaps)
-  client/health-view.tsx  # idea #110: the Health tab, which renders and computes nothing
+  client/health-view.tsx  # the Health tab, which renders and computes nothing
   client/selection.ts    # the multi-select scope: toggle / range / all / prune (pure)
-  client/windowing.ts    # idea #108: the column size cache, the estimate and the window
-  client/virtual-column.ts # idea #108: the DOM binding (scroll offset, measurements, anchoring)
+  client/windowing.ts    # the column size cache, the estimate and the window
+  client/virtual-column.ts # the DOM binding (scroll offset, measurements, anchoring)
   client/bulk.ts         # bulk plans over the per-idea verbs + the runner + the report
   client/bulk-bar.tsx    # select box, selection bar, bulk dialog and per-idea report
-  client/undo.ts         # idea #111: the inverse of the board's own actions, the
+  client/undo.ts         # the inverse of the board's own actions, the
                          #   session stack and the drift guard (pure, DOM-free)
-  client/undo-bar.tsx    # idea #111: the undo row, its button and its receipt
-  client/deeplink.ts     # idea #105: reference grammar + board-wide resolver (pure)
-  client/deeplink-service.ts # idea #105: the published `ideas-manager.board` service
-  client/relations.ts    # idea #106: the relation views, candidates and diff (pure)
-  client/relations-view.tsx # idea #106: the card's relation line + the editor section
+  client/undo-bar.tsx    # the undo row, its button and its receipt
+  client/deeplink.ts     # reference grammar + board-wide resolver (pure)
+  client/deeplink-service.ts # the published `ideas-manager.board` service
+  client/relations.ts    # the relation views, candidates and diff (pure)
+  client/relations-view.tsx # the card's relation line + the editor section
   client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
   client/backup-panel.tsx  # the settings section's Backup tab (snapshot / restore / export)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
@@ -133,7 +133,7 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   the poll already fetched (`TaskBoardMirror.cardSessionOf`, zero extra requests).
   When the board exposes no such pointer the note stays empty and the UI says so.
 
-- **The session id is a POINTER, not a lock (idea #66, revised).** `runSessionId`
+- **The session id is a POINTER, not a lock (revised).** `runSessionId`
   was a *live* pointer — stamped with the `running` state, **cleared at settle** —
   and the "Open session" link was gated on `runStatus === 'running'`. Two
   consequences, both wrong for a human: the link vanished the moment the run
@@ -223,7 +223,7 @@ on a UTF-8 boundary, `…` appended). Three decisions shape it:
   and prints what the page really offers, filtered and complete. One line, once
   per page, after the grace.
 
-## Per-idea activity log (idea #92)
+## Per-idea activity log
 
 `IdeaRecord.events[]` is a bounded append-only log: `{ at, verb, actor,
 summary }`, the last **50** entries, appended by `IdeasHostLedger.apply` in the
@@ -278,7 +278,7 @@ Decisions worth keeping in mind before touching it:
   log through the JSON path independently, and `importedIdea` repairs rather
   than trusts what arrives.
 
-## Agent tools (idea #92)
+## Agent tools
 
 `src/agent-tools.ts` exposes `ideas_list`, `ideas_get`, `ideas_capture`,
 `ideas_triage`, `ideas_relate`, `ideas_launch` and `ideas_review` to the Host's
@@ -337,7 +337,7 @@ Decisions worth keeping in mind before touching it:
   scoped-injection cleanup, so a replaced registry is re-registered rather than
   short-circuited by a stale disposer, and a disabled board registers nothing.
 
-## Merge verb and the near-duplicate flag (idea #93)
+## Merge verb and the near-duplicate flag
 
 ### `merge` (one commit, two ideas)
 
@@ -430,15 +430,15 @@ the merge verb outright** — the run recommends a pair, the human merges. The
 `ideas-analyst` skill mirrors those rules (`## Find similar runs`) so a session
 that loads the skill obeys them even if the prompt is truncated.
 
-## Multi-select and bulk actions (idea #94)
+## Multi-select and bulk actions
 
 Two pure modules carry every rule, and the React half renders them:
 `client/selection.ts` owns the selection, `client/bulk.ts` owns the plans and
 the run; `client/bulk-bar.tsx` only paints and posts.
 
-### The drag is never locked by a display order (idea #71 revisited)
+### The drag is never locked by a display order (revisited)
 
-Idea #71 shipped with the Open column's grip inert whenever the column painted
+It shipped with the Open column's grip inert whenever the column painted
 something other than the stored rank. The rationale was real but narrower than
 the gate: the drop anchor is read from the **display** order while `rebuildOrder`
 resolved it in **rank** space, so an in-column drop could land on the rank the
@@ -474,8 +474,8 @@ point, and a cross-column drop posts `move` then `reorder`.
 ### The selection is view state, and is bound to the scope
 
 - Nothing about a selection is sent to the Host or persisted, so the 2.5 s
-  poll cannot overwrite it — the same discipline as the `openOrdering` view of
-  idea #71. The selection lives in `IdeasBoard`'s own state.
+  poll cannot overwrite it — the same discipline as the `openOrdering` view.
+  The selection lives in `IdeasBoard`'s own state.
 - **A selection can only hold ids inside the active scope** (the active tab's
   filtered rows: workspace selector + tag filter + search). Every helper that
   grows the set takes the scoped id list and refuses anything outside it, and
@@ -542,7 +542,7 @@ labels, executions and schedule survive).
   row's own tags and keeps each prompt line; the capture/edit modals keep
   sending plain strings.
 
-### Undo, scoped to the reversible operation (superseded by idea #111)
+### Undo, scoped to the reversible operation
 
 `summaryBulk` marks a report `reversible` for a bulk archive only, and
 `undoableIds` returns exactly the ideas the run **applied** — restoring a skipped
@@ -552,8 +552,8 @@ restore, deliberately not a general undo system.
 
 That scoping was the right call *at the time*, because `update` carries no
 previous value: the batch module had `reversible`, `undone` and `planBulkRestore`
-but nothing to invert a tag with. Idea #111 removed the reason for the limit —
-see [Undo](#undo-idea-111) below — and the `bulk.noUndo` sentence, which was
+but nothing to invert a tag with. The undo work removed the reason for the limit —
+see [Undo](#undo) below — and the `bulk.noUndo` sentence, which was
 true only while tagging and re-homing had no previous value to restore.
 
 ### What the select box costs, measured
@@ -589,7 +589,7 @@ Two decisions come out of that profile, and one non-decision:
   because it is the honest "what did this feature add to a full board re-render"
   answer, not because it predicts a dropped frame.
 
-## Snapshots, restore and portable transfer (idea #95)
+## Snapshots, restore and portable transfer
 
 Backup is a first-class surface here, not a script: a ledger has already been
 lost in this project and put back by hand from `GET /api/ideas/state`.
@@ -752,9 +752,9 @@ wire and in the list labels (a file the user drops in the folder is `manual`), s
 nothing about the stored data or the API changed — only the UI stopped offering
 the same write twice.
 
-## Column windowing (idea #108)
+## Column windowing
 
-This is the deferred half of the idea #34 high-card-load work (the other half, a
+This is the deferred half of the high-card-load work (the other half, a
 server-side index, stays deferred). The trigger is **~500 cards in the Open
 column**, and the reason it was deferred is still true on every ordinary board:
 the per-poll scans run at 0.07-0.41 ms, the sorts at 0.12 ms or better for 420
@@ -900,7 +900,7 @@ three keys, four candidate verbs (`virtualize`, `window`, `viewport`,
 `setWindow`) are still `400`, and `import`/`export` round-trips a record
 carrying every field the ledger holds.
 
-## Backlog health (idea #110)
+## Backlog health
 
 `src/core/ideas-stats.ts` is the whole feature on the host side: a pure
 `buildIdeasStats(source, options)` over a `{revision, ideas}` slice, served by
@@ -912,7 +912,7 @@ one is a place where the obvious implementation would have lied.
 
 The board's poll is a 2.5 s `?view=list` fetch and the full snapshot is over a
 megabyte. Re-reducing a second copy of it in the browser on every paint is
-exactly the cost idea #34 removed, so the aggregate is a **separate bounded
+exactly the cost the list projection removed, so the aggregate is a **separate bounded
 read**: two hard-capped arrays and a handful of scalars, ~600 bytes on a
 14-idea board and provably under the 512 KiB wire cap at the 140-card fixture
 (`idea-110-stats.test.ts`). The poll URL, its payload and its cadence are
@@ -1039,7 +1039,7 @@ with numbers the reader is no longer asking for. The stored result also travels
 with the scope it was computed for, and the view renders nothing rather than
 another scope's figures while its own fetch is in flight.
 
-## Deep-link to an idea (idea #105)
+## Deep-link to an idea
 
 ### The surface decision, taken before the code
 
@@ -1115,8 +1115,8 @@ decision and is stated in the CHANGELOG rather than hidden.
   the board says exactly that instead of silently doing nothing.
 - **The focus is view state.** It is never written to the Host and never
   persisted, and it is dropped the moment the human narrows the scope, searches,
-  toggles a tag or changes tab — the same discipline as the multi-select
-  (idea #94), for the same reason: the poll must never fight the reader.
+  toggles a tag or changes tab — the same discipline as the multi-select,
+  for the same reason: the poll must never fight the reader.
 
 ## Ranking: what a triage may move
 
@@ -1154,7 +1154,7 @@ date, so a fresh capture is never buried. And a triage on a CLOSED card re-ranks
 nothing either way, which the closed-column tests already pinned: the residual ranks
 of a delivered column are the author's record of how it was delivered.
 
-## Relations between ideas (idea #106)
+## Relations between ideas
 
 Two new record fields, `relatesTo` and `blocks`, each a list of idea ids capped
 at `IDEA_RELATION_LIMIT` (20). `blockedBy` is **never stored**. Everything below
@@ -1431,7 +1431,7 @@ neither can resolve a `#N` on its own — an edge to a card outside the current
 filter would print a bare id. The board already holds the whole snapshot, and
 only the active tab is mounted, so handing the index down costs one pass.
 
-## Default launch model per workspace (idea #107)
+## Default launch model per workspace
 
 One `provider/model` per workspace, stored as a **display/launch preference**
 (`IdeasSettingsValue.launchModelByWorkspace`, a flat
@@ -1588,7 +1588,7 @@ Two consequences of this contract are worth knowing without any tooling:
   **creating** its card, whatever the idea status. A bulk edit of many ideas
   therefore also mints cards for closed ideas, in `backlog`.
 
-## Undo (idea #111)
+## Undo
 
 `client/undo.ts` is the inverse of the board's own actions, and it is a **pure
 module**: plain-data plans, array stack helpers, and a keyboard predicate. It
@@ -1873,7 +1873,7 @@ Historical decision records, kept for context rather than as guidance:
 
 - `docs/client-transport-short-polling.md` — why the client short-polls.
 - `docs/perf-evaluation.md` — the load evaluation and what was deferred.
-- `docs/idea-64-summary-first-context.md` — why the summary is the first context
+- `docs/summary-first-context.md` — why the summary is the first context
   an agent sees.
 - `docs/internal/run_from_idea/README.md` — the phased plan behind the launch
   feature, including the open decisions and the rejected alternatives.

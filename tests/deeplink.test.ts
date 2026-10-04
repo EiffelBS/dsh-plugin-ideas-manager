@@ -1,5 +1,5 @@
 /**
- * Idea #105 — deep-link to an idea: the pure resolver, the client handshake and
+ * deep-link to an idea: the pure resolver, the client handshake and
  * the published service.
  *
  * Three rules are worth pinning here, because each of them is a way the feature

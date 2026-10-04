@@ -10,12 +10,12 @@
  * actions. Restoring an idea brings it back to the open backlog (the deliver
  * verb is the only way in, restore the only way out).
  *
- * The run-state tags (idea #71) are the shared RunStateBadges of the Overview
+ * The run-state tags are the shared RunStateBadges of the Overview
  * card header: a run started while the idea was already under review or
  * archived stays followed by the host poll until the stamp clears, so the
  * journal must not hide a row whose execution is still in flight.
  *
- * The delivery note (idea #91) rides along on the same rows: this tab is the
+ * The delivery note rides along on the same rows: this tab is the
  * exit log, so "what was delivered" belongs beside "when it was delivered" —
  * and the editor reachable from here is the surface a reader lands on when the
  * journal is not enough.
@@ -53,16 +53,16 @@ export interface DeliveredViewProps {
   /** Render descriptions as markdown (raw text otherwise), like the kanban. */
   mdMode: boolean
   /**
-   * Resolve the parent of a follow-up child into its ledger number (idea #71).
+   * Resolve the parent of a follow-up child into its ledger number.
    * The board owns the id -> idea map and passes the resolver down.
    */
   parentNumber?: (ideaId: string) => number | undefined
-  /** Multi-select (idea #94): ids of the current selection, board-wide. */
+  /** Multi-select: ids of the current selection, board-wide. */
   selectedIds?: ReadonlySet<string>
-  /** Multi-select (idea #94): toggle this row, or extend a range on shift-click. */
+  /** Multi-select: toggle this row, or extend a range on shift-click. */
   onSelect?: (ideaId: string, shiftKey: boolean) => void
   /**
-   * Relation lines per idea id (idea #106), derived ONCE per paint by the board
+   * Relation lines per idea id, derived ONCE per paint by the board
    * over the WHOLE snapshot. Passed in rather than recomputed: this view only
    * receives the SCOPED rows, so it cannot resolve a `#N` on its own, and a row
    * that links to a card outside the current filter would print a bare id.
@@ -78,7 +78,7 @@ function mostRecentFirst(ideas: readonly IdeaListRow[]): IdeaListRow[] {
 
 /**
  * The Delivered log's display order, exported so the board's multi-select
- * (idea #94) ranges over exactly the rows this view paints: a shift-click
+ * ranges over exactly the rows this view paints: a shift-click
  * block must be the block the author sees, in the order they see it.
  */
 export function deliveredRows(ideas: readonly IdeaListRow[]): IdeaListRow[] {
@@ -163,17 +163,17 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                       </div>
                     )}
                     <IdeaPreview excerpt={idea.bodyExcerpt} mdMode={mdMode} onEdit={() => { onEdit(idea) }} />
-                    {/* Relations (idea #106): the same quiet line the Overview
+                    {/* Relations: the same quiet line the Overview
                         card prints, so a row that links to another idea says so
                         here too instead of only in the editor. */}
                     <RelationChips views={relations?.get(idea.id)} onOpenIdea={onOpenIdea} />
-                    {/* The delivery note of the run that produced this exit
-                        (idea #91): what was actually delivered, on the row that
+                    {/* The delivery note of the run that produced this exit:
+                        what was actually delivered, on the row that
                         records the delivery. Renders nothing for an idea that was
                         archived without ever running. */}
                     <DeliveryNote idea={idea} />
                   </div>
-                  {/* Run-state tags (idea #71), same component and same
+                  {/* Run-state tags, same component and same
                       top-right placement as the Overview card header: an idea
                       archived while a run was still in flight keeps that run
                       followed by the host poll, so the journal must say so. The

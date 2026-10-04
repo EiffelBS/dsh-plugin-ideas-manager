@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * Virtualization at the trigger size (idea #108).
+ * Virtualization at the trigger size.
  *
- * The idea names ~500 cards in the Open column as the point where the board
+ * Virtualization names ~500 cards in the Open column as the point where the board
  * stops being responsive, so this gate measures there rather than at the 140-card
- * objective idea #34 used. The A/B is on the SAME component and the SAME data:
+ * objective. The A/B is on the SAME component and the SAME data:
  * `VIEWPORT` is the only thing that differs, and setting it enormous forces the
  * window to cover the whole column, which is exactly what the board did before
  * the feature. That is what makes the two columns comparable.

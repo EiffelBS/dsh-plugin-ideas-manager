@@ -56,7 +56,7 @@ function uuid(): string {
  *
  * `tags` takes either the comma-separated names the modals collect as plain
  * strings, or full {@link IdeaTag} rows. The second form exists for the bulk
- * tag action (idea #94): a name-only array would silently DROP the
+ * tag action: a name-only array would silently DROP the
  * `promptPrefix` line every existing label carries, because the wire patch
  * replaces the whole set. Bulk tagging therefore rebuilds the union from the
  * row's own tags and keeps each one's prompt line.
@@ -72,7 +72,7 @@ export interface IdeaClientPatch {
   /** Present (including an empty string) replaces the workspace; '' = generic. */
   workspaceId?: string
   /**
-   * Relations (idea #106), one key per stored kind. Present means "replace this
+   * Relations, one key per stored kind. Present means "replace this
    * list", exactly like `tags`, so an empty array CLEARS it (the client turns
    * that into the wire's `null`). There is deliberately no `blockedBy`: it is
    * the derived inverse of another row's `blocks` and is never written.
@@ -85,7 +85,7 @@ export interface IdeaClientPatch {
 }
 
 /**
- * What one focus request actually achieved (idea #105).
+ * What one focus request actually achieved.
  *
  * A deep-link has three honest answers, not one: the card was focused, the
  * card exists but the setting that hides its column is on (`hidden`), or
@@ -103,7 +103,7 @@ interface FocusRequest {
 }
 
 /**
- * What one undo actually did (idea #111).
+ * What one undo actually did.
  *
  * Three buckets, and never a single "it failed": the ideas whose inverse landed,
  * the ideas the DRIFT GUARD refused (their row no longer held what the forward
@@ -127,7 +127,7 @@ export interface UndoOutcome {
 
 export class IdeasClient {
   boardOpen = false
-  /** Board state as LIST rows (bodies deferred, idea #34). */
+  /** Board state as LIST rows (bodies deferred). */
   snapshot: IdeasListSnapshot | undefined
   error: string | undefined
   pending = false
@@ -147,7 +147,7 @@ export class IdeasClient {
    */
   sessionLauncher: SessionLauncher | undefined
   /**
-   * Optional jump into a run the board started (idea #66). A run can execute
+   * Optional jump into a run the board started. A run can execute
    * in a session the human never saw open — the direct-session backend always
    * does — so a card carrying a `runSessionId` offers this link. Undefined
    * (no sessions service) simply renders no link.
@@ -161,7 +161,7 @@ export class IdeasClient {
    */
   panelNavigator: PanelNavigator | undefined
   /**
-   * Snapshot folder (idea #95), undefined until the backup panel asks for it.
+   * Snapshot folder, undefined until the backup panel asks for it.
    * A transport without the capability leaves it undefined forever, which the
    * panel reads as "this deployment has no backup surface" — a downgrade, never
    * an error: the board itself does not depend on it.
@@ -172,7 +172,7 @@ export class IdeasClient {
   /** Whether a snapshot/restore request is in flight (the panel disables itself). */
   backupPending = false
   /**
-   * The running Host serves no backup route (idea #95 follow-up): an instance
+   * The running Host serves no backup route (follow-up): an instance
    * that has not been restarted since the plugin was updated answers 404 on
    * `/api/ideas/backup` while serving the NEW panel. Set by `loadBackups`, it
    * turns the capability check into a runtime fact and the panel into one
@@ -192,7 +192,7 @@ export class IdeasClient {
    */
   lastRestore: { source: string; displaced: IdeasSnapshotInfo; ideas: number; unknownFields: string[] } | undefined
   /**
-   * Deep-link request awaiting the panel (idea #105). It lives HERE rather than
+   * Deep-link request awaiting the panel. It lives HERE rather than
    * in React state on purpose: a request can arrive while the board is CLOSED
    * (the permission-gate refusal is raised from the board itself, but the
    * published service is reachable from anywhere in the page), and the panel has
@@ -204,7 +204,7 @@ export class IdeasClient {
   /** The card a deep-link landed on, or undefined once the human took over. */
   focusedIdeaId: string | undefined
   /**
-   * Backlog-health aggregate (idea #110), undefined until the Health tab asks
+   * Backlog-health aggregate, undefined until the Health tab asks
    * for it. It lives here rather than in React state for the same reason the
    * deep-link request does: the tab is opened by the panel, and the fetch it
    * owns must survive the panel being closed and reopened without re-deciding
@@ -223,7 +223,7 @@ export class IdeasClient {
   statsError: string | undefined
   /** Sequence of the newest stats request; older answers are dropped on arrival. */
   private statsRequestSeq = 0
-  /* --- undo (idea #111) ------------------------------------------------- */
+  /* --- undo ------------------------------------------------------ */
   /**
    * Session-local undo stack. MEMORY ONLY: nothing here is persisted, nothing is
    * sent to the Host, and a reload starts it empty. The honest promise is
@@ -254,7 +254,7 @@ export class IdeasClient {
   private readonly activeWorkspaceSource: ActiveWorkspaceSource | undefined
   private unsubscribeWorkspaces: (() => void) | undefined
   private unsubscribeActive: (() => void) | undefined
-  /** Full records fetched on demand (body + audit), keyed by idea id (idea #34). */
+  /** Full records fetched on demand (body + audit), keyed by idea id. */
   private readonly fullRecords = new Map<string, IdeaRecord>()
   /** Highest revision whose full snapshot already filled {@link fullRecords}. */
   private searchIndexedAtRevision = -1
@@ -352,7 +352,7 @@ export class IdeasClient {
     this.panelNavigator?.select(TASK_BOARD_PANEL_ID)
   }
 
-  /* --- deep-link to an idea (idea #105) ------------------------------------ */
+  /* --- deep-link to an idea -------------------------------------------- */
 
   /**
    * Ask the board to focus one idea, by `#N`, by number or by id.
@@ -403,7 +403,7 @@ export class IdeasClient {
   /**
    * Drop the focus affordance: the human narrowed the scope, searched, toggled a
    * tag or changed tab, so the link's destination is no longer what they are
-   * reading. Same discipline as the multi-select (idea #94) — a view marker the
+   * reading. Same discipline as the multi-select — a view marker the
    * reader owns, never something the 2.5 s poll restores.
    */
   clearFocus(): void {
@@ -631,10 +631,10 @@ export class IdeasClient {
         // generic (the Host maps a blank trimmed string to undefined).
         ...(patch.workspaceId === undefined ? {} : { workspaceId: patch.workspaceId }),
         // An empty tag set clears the labels (null on the wire); a non-empty
-        // set replaces them, prompt lines included (idea #94 bulk tagging
+        // set replaces them, prompt lines included (bulk tagging
         // rebuilds the union from the row's own tags).
         ...(tags === undefined ? {} : { tags: tags.length === 0 ? null : tags }),
-        // Relations (idea #106): same contract as tags — an empty list clears,
+        // Relations: same contract as tags — an empty list clears,
         // a non-empty one replaces it. The ledger owns the symmetry of
         // `relatesTo` and the acyclicity of `blocks`; a refusal comes back as
         // the Host's own sentence (a cycle names its chain).
@@ -725,7 +725,7 @@ export class IdeasClient {
   }
 
   /**
-   * Start the idea's execution (idea #66) through the Host, which owns the
+   * Start the idea's execution through the Host, which owns the
    * mirrored card. NOT a ledger mutation: no `pending` banner for the whole
    * board, no revision write here (the host stamps `runStatus` itself) — but a
    * refresh follows so the card status the poll will publish is not the only
@@ -755,7 +755,7 @@ export class IdeasClient {
     await this.run({ kind: 'reorder', orderedIds })
   }
 
-  // --- snapshots, restore and portable transfer (idea #95) -------------------
+  // --- snapshots, restore and portable transfer --------------------
 
   /**
    * Load the snapshot folder. Reads only: opening the backup panel never
@@ -898,7 +898,7 @@ export class IdeasClient {
    *
    * This is the ONE place every client verb goes through (`updateIdea`,
    * `moveIdea`, `triageIdea`, ... all delegate here), which is why it is also
-   * the one place an undo entry can be captured (idea #111). The capture is
+   * the one place an undo entry can be captured. The capture is
    * split around the post on purpose:
    *
    *  - BEFORE, read the row (and, for a body, the cached full record) and build
@@ -970,7 +970,7 @@ export class IdeasClient {
     }, now)
   }
 
-  /* --- undo (idea #111) ------------------------------------------------- */
+  /* --- undo ------------------------------------------------------ */
 
   /** The entry a Ctrl+Z would reverse, or undefined when there is none. */
   get undoEntry(): UndoEntry | undefined {
@@ -1104,7 +1104,7 @@ export class IdeasClient {
   }
 
   /**
-   * Adopt a fresh snapshot (idea #34): an IDLE refresh - same revision, the
+   * Adopt a fresh snapshot: an IDLE refresh - same revision, the
    * Host bumps it on every commit - keeps the SAME reference, so the board's
    * setSnapshot bails out by Object.is and React rebuilds nothing on the
    * 2.5 s short-poll tick that found no change. The revision is the Host's
@@ -1123,7 +1123,7 @@ export class IdeasClient {
   }
 
   /**
-   * Full record behind one list row (idea #34 deferred body): the edit
+   * Full record behind one list row (deferred body): the edit
    * modal, the follow-up composer and the re-analyze input read the WHOLE
    * body here, fetched once per change. Cached until the row's updatedAt
    * moves - every commit stamps updatedAt on changed ideas - so the entry
@@ -1144,7 +1144,7 @@ export class IdeasClient {
   }
 
   /**
-   * Deep-search index (idea #34): the list snapshot carries only excerpts,
+   * Deep-search index: the list snapshot carries only excerpts,
    * so the FIRST active search loads the full snapshot ONCE per revision and
    * fills the record cache; matchesFilter then scans whole bodies exactly
    * like before the projection. Idle boards and clean filters never pay it.
@@ -1182,7 +1182,7 @@ export class IdeasClient {
     this.emit()
   }
 
-  // --- backlog health (idea #110) --------------------------------------------
+  // --- backlog health ------------------------------------------------
 
   /** Whether this deployment serves the health aggregate at all. */
   get statsAvailable(): boolean {
@@ -1254,7 +1254,7 @@ function tagNames(raw: string[] | undefined): string[] {
 }
 
 /**
- * Client-side tag patch normalization (idea #94): plain strings are the
+ * Client-side tag patch normalization: plain strings are the
  * comma-separated modal input and become name-only rows, while {@link IdeaTag}
  * rows travel through untouched so a bulk tag keeps every existing label's
  * `promptPrefix` (the wire patch replaces the whole set, so dropping it would

@@ -1,5 +1,5 @@
 /**
- * The two read-only signals of idea #91:
+ * The two read-only signals:
  *  - the sidebar row's "N to review" badge (part B), derived from the snapshot
  *    already in memory;
  *  - the quiet *stale* badge on open ideas (part C), plus its

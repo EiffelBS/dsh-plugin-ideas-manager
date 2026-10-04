@@ -1,4 +1,4 @@
-# Mojibake in analyst-generated titles / descriptions (idea #55)
+# Mojibake in analyst-generated titles / descriptions
 
 The Ideas board sometimes showed mojibake in the titles and descriptions that
 the `ideas-analyst` session produces. This page records the root cause, the
@@ -88,7 +88,7 @@ It flags every string field carrying a U+FFFD replacement character or a
 double-encoded UTF-8 signature. Exit code 1 when any field is flagged.
 
 Because U+FFD is lossy, the clean path is a controlled re-analysis of each
-affected card (the `reanalyze` verb, idea #30 flow): it snapshots the prior
+affected card (the `reanalyze` flow): it snapshots the prior
 content into the card's `analysisAudit` trail, then rewrites title / body /
 summary / tags / rationale with fresh UTF-8 content. Re-analyzing through the
 board UI is preferred over a manual edit because it preserves history and the

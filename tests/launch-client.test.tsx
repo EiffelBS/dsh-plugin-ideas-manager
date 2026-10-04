@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #66 client tests: the launch VISIBILITY matrix (pure predicate, so the
+ * client tests: the launch VISIBILITY matrix (pure predicate, so the
  * whole status x task-status x workspace x availability grid is checked without
  * a DOM), the backend resolution, and the board flow itself — the green button,
  * the model modal, the wire call carrying `provider/model`, and a refusal that
@@ -378,7 +378,7 @@ describe('launch permission gate (the one refusal with a destination)', () => {
     expect(host.querySelector('[data-dsh-ideas-copy-title]')).not.toBeNull()
   })
 
-  it('offers the card itself as the destination (idea #105: the deep link)', async () => {
+  it('offers the card itself as the destination (the deep link)', async () => {
     await refuseAtTheGate()
     // No TaskBoard DOM at all: the destination is our own card, reached through
     // the board's own state, so nothing foreign has to be mounted for it to work.
@@ -399,7 +399,7 @@ describe('launch permission gate (the one refusal with a destination)', () => {
   it('opens the task-board panel through the layout face, and writes nothing in it', async () => {
     const selected = await refuseAtTheGate()
     // A decoy of the very DOM the old redirect used to drive: a foreign panel
-    // with a search field. Idea #105 deleted that surgery, so the field must
+    // with a search field. Deleted that surgery, so the field must
     // come out untouched whatever the button does.
     const foreignPanel = document.createElement('div')
     foreignPanel.setAttribute('data-dsh-taskboard-view', '')
@@ -420,7 +420,7 @@ describe('launch permission gate (the one refusal with a destination)', () => {
   })
 })
 
-describe('board run visibility (idea #66)', () => {
+describe('board run visibility', () => {
   function badgeIn(ideaId: string): HTMLElement | null {
     return host.querySelector(`[data-dsh-idea-id="${ideaId}"] [data-dsh-ideas-task-running]`)
   }

@@ -243,7 +243,7 @@ describe('IdeasSettingsSection page', () => {
     const client = makeClient(transport)
     await render(client)
     // The two column-width rows are the 2nd and 3rd number inputs (after tagRows);
-    // the 4th is the stale-days threshold (idea #91).
+    // the 4th is the stale-days threshold.
     const numbers = Array.from(host.querySelectorAll(`.${classes.settingsNumber}`)) as HTMLInputElement[]
     expect(numbers).toHaveLength(4)
     const minInput = numbers[1]!

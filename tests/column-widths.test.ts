@@ -1,5 +1,5 @@
 /**
- * Per-column kanban width persistence tests (idea #53): the read/write helpers
+ * Per-column kanban width persistence tests: the read/write helpers
  * with an injectable storage seam — a corrupt or partial entry degrades to a
  * clean map without throwing, only legal status keys survive, and the clamp
  * normalizes unordered bounds so the render is always sane.

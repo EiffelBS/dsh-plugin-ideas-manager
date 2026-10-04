@@ -15,7 +15,7 @@
 export type IdeaStatus = 'open' | 'underReview' | 'archived' | 'declined'
 
 /**
- * Lifecycle of one launched execution (idea #66), backend-neutral: the
+ * Lifecycle of one launched execution, backend-neutral: the
  * TaskBoard card and the planned direct-session launch both settle into one of
  * these three states. `undefined` on the record means "no run observed".
  */
@@ -46,7 +46,7 @@ export const IDEA_TITLE_MAX_LENGTH = 200
 /** Maximum size of an idea body (bytes). */
 export const IDEA_BODY_MAX_BYTES = 32 * 1024
 /**
- * Maximum number of ids ONE relation kind may hold on one idea (idea #106).
+ * Maximum number of ids ONE relation kind may hold on one idea.
  * A relation is a statement the human makes; past roughly twenty the edge list
  * stops being a statement and becomes a second board, which is the failure mode
  * the near-duplicate flag was careful not to build.
@@ -60,7 +60,7 @@ export const IDEA_RELATION_ID_MAX_LENGTH = 256
  */
 export const IDEA_SUMMARY_MAX_LENGTH = 300
 /**
- * Hard byte budget of one delivery note (idea #91): the short note a finished
+ * Hard byte budget of one delivery note: the short note a finished
  * run leaves behind so the review gate has something to decide on. Bounded
  * because it is harvested from a model answer — a 40 KB closing message would
  * otherwise land in the ledger, in every snapshot and in the markdown export.
@@ -68,7 +68,7 @@ export const IDEA_SUMMARY_MAX_LENGTH = 300
  */
 export const DELIVERY_NOTE_MAX_BYTES = 2 * 1024
 
-/* --- per-idea activity log (idea #92) --- */
+/* --- per-idea activity log --- */
 
 /**
  * One line of an idea's own history: what happened, when, and who did it.
@@ -272,7 +272,7 @@ export function normalizeSummary(value: string | undefined): string | undefined 
 }
 
 /**
- * Normalize a harvested delivery note (idea #91): trim, blank collapses to
+ * Normalize a harvested delivery note: trim, blank collapses to
  * undefined (an absent note is honest — the review gate says so in the UI), and
  * the text is cut at DELIVERY_NOTE_MAX_BYTES **UTF-8 bytes**, never mid
  * code point, with a trailing ellipsis marking the cut. Same discipline as
@@ -295,7 +295,7 @@ export function normalizeDeliveryNote(value: string | undefined): string | undef
   return `${trimmed.slice(0, end).trimEnd()}…`
 }
 
-/* --- generic relations between ideas (idea #106) --- */
+/* --- generic relations between ideas --- */
 
 /**
  * The relation kinds STORED on a record, in the order the board prints them.
@@ -548,7 +548,7 @@ export function rankBlockConflicts(ideas: readonly RankConflictRow[]): IdeaRankC
 }
 
 /**
- * Structural subset the ordering helpers read (idea #34): satisfied by both
+ * Structural subset the ordering helpers read: satisfied by both
  * the full IdeaRecord and the deferred-body IdeaListRow, so client sorts and
  * drop rebuilds never need the voluminous `body` field.
  */
@@ -612,7 +612,7 @@ export interface IdeaRecord {
   /** Idea labels. */
   tags?: IdeaTag[]
   /**
-   * Generic relations (idea #106) — "this is adjacent to that, read the other
+   * Generic relations — "this is adjacent to that, read the other
    * one". A list of idea ids, capped at {@link IDEA_RELATION_LIMIT}.
    *
    * Stored in ONE direction per edge, like `followUpOfId`: the board presents
@@ -653,7 +653,7 @@ export interface IdeaRecord {
    */
   taskBoardStatus?: string
   /**
-   * State of the LATEST LAUNCHED EXECUTION of this idea (idea #66), kept
+   * State of the LATEST LAUNCHED EXECUTION of this idea, kept
    * deliberately separate from `taskBoardStatus` (the raw card observation):
    * the launch lifecycle is backend-neutral, so the future direct-session
    * backend can feed the same field without overloading a TaskBoard-shaped
@@ -679,7 +679,7 @@ export interface IdeaRecord {
    */
   runSessionId?: string
   /**
-   * DELIVERY NOTE of the latest finished run (idea #91): the last thing the
+   * DELIVERY NOTE of the latest finished run: the last thing the
    * run said, harvested at settle time, bounded to
    * {@link DELIVERY_NOTE_MAX_BYTES}. Its whole job is to give the review gate
    * something to decide on — today a finished run lands in `underReview` and
@@ -732,7 +732,7 @@ export interface IdeaRecord {
    */
   analysisAudit?: AnalysisAudit
   /**
-   * Bounded, append-only activity log (idea #92): the last
+   * Bounded, append-only activity log: the last
    * {@link IDEA_EVENT_LIMIT} things that happened to this idea — who acted,
    * when, and in one line what changed. The record above keeps only the last
    * state, so without this an idea cannot answer "why was this declined?".

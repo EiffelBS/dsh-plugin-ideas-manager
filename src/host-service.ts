@@ -6,7 +6,7 @@
  * mirrored task cards passing `done` and moves the linked idea to
  * `underReview` (the review gate). No other background work runs.
  *
- * Launch (idea #66): the mirror is also an EXECUTION entry point, but only on
+ * Launch: the mirror is also an EXECUTION entry point, but only on
  * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
  * passivity above is unchanged: no idea mutation ever starts a run, and `done`
  * stays runner-owned. Two execution backends share that one entry point: the
@@ -21,7 +21,7 @@
  * SERIALIZED PER IDEA ID (one promise chain per idea): a create followed by
  * an update runs one at a time in submission order, and each op re-reads the
  * fresh ledger state at execution time, so a queued link can never race its
- * predecessor into seeing "unbound" and minting a second card (idea #35).
+ * predecessor into seeing "unbound" and minting a second card.
  * The bound card id is persisted on the idea through the ledger's internal
  * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
@@ -50,12 +50,12 @@ import {
 /** How often the run poll re-reads the task-board card statuses. */
 const UNDER_REVIEW_POLL_MS = 30_000
 
-/** How long a launch request id replays its first outcome (idea #66). */
+/** How long a launch request id replays its first outcome. */
 const LAUNCH_DEDUPE_TTL_MS = 60_000
 /** Bounded launch replay cache (the ledger action cache is NOT reused: a launch is not a ledger mutation). */
 const MAX_LAUNCH_CACHE = 64
 
-/** Answer of a launch (idea #66): backend-neutral on purpose, so the card
+/** Answer of a launch: backend-neutral on purpose, so the card
  *  backend and the direct-session backend serve the same route with the same
  *  shape. */
 export interface IdeasLaunchResult {
@@ -89,11 +89,11 @@ export class IdeasHostService {
    */
   private settings: (() => IdeasSettingsValue | undefined) | undefined
   private readonly pendingMirrors: Promise<void>[] = []
-  /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
+  /** Per-idea mirror chains: ops for one idea id run in order. */
   private readonly mirrorChains = new Map<string, Promise<void>>()
-  /** Launch replays: requestId -> {at, result} (idea #66, in-memory only). */
+  /** Launch replays: requestId -> {at, result} (in-memory only). */
   private readonly launchCache = new Map<string, { at: number; result: IdeasLaunchResult }>()
-  /** Direct-session runs in flight: sessionId -> ideaId (idea #66 v2). */
+  /** Direct-session runs in flight: sessionId -> ideaId. */
   private readonly sessionRuns = new Map<string, string>()
   /** Set once the poll re-attached to a persisted in-flight run. */
   private sessionRunsReattached = false
@@ -139,7 +139,7 @@ export class IdeasHostService {
     }
   }
 
-  /** One full record for the deferred-body read (idea #34); undefined when absent. */
+  /** One full record for the deferred-body read; undefined when absent. */
   idea(id: string): IdeaRecord | undefined {
     return this.ledger.idea(id)
   }
@@ -150,7 +150,7 @@ export class IdeasHostService {
   }
 
   /**
-   * The bounded backlog-health aggregate (idea #110), served by
+   * The bounded backlog-health aggregate, served by
    * `GET /api/ideas/state?view=stats`.
    *
    * Deliberately NOT built on {@link snapshot}: the aggregate reads counters
@@ -174,7 +174,7 @@ export class IdeasHostService {
 
   apply(requestId: string, action: IdeasAction, initiator?: string): IdeasApplyResponse {
     if (!this.active) throw new Error('ideas plugin is disabled')
-    // The initiator is the activity-log provenance of this mutation (idea #92):
+    // The initiator is the activity-log provenance of this mutation:
     // the browser asserts none (the timeline reads "you"), an agent stamps its
     // own label and the timeline reads which one.
     const result: LedgerApplyResult = this.ledger.applyRequest(
@@ -194,7 +194,7 @@ export class IdeasHostService {
     }
   }
 
-  // --- snapshots, restore and portable transfer (idea #95) ---------------
+  // --- snapshots, restore and portable transfer -----------------------------
 
   /** Snapshot folder view (GET /api/ideas/backup).
    *
@@ -323,9 +323,8 @@ export class IdeasHostService {
   }
 
   /**
-   * Bind the reader the launch path resolves its settings through (idea #66
-   * for the direct-launch permission, idea #107 for the per-workspace default
-   * model).
+   * Bind the reader the launch path resolves its settings through (the
+   * direct-launch permission, the per-workspace default model).
    *
    * One reader for the whole settings VALUE, late-bound on purpose: the port
    * can appear after the plugin applied, and a deployment with no settings
@@ -355,7 +354,7 @@ export class IdeasHostService {
    *    an unchanged observation, so the 30 s poll never churns the revision;
    *    a card missing from one probe keeps its last observation because the
    *    mirror self-heals a dangling link on the next write);
-   *  - feed the backend-neutral `runStatus` (idea #66) from that observation:
+   *  - feed the backend-neutral `runStatus` from that observation:
    *    `running` / `done` / `failed` map straight across, and a card observed
    *    OUTSIDE a run (back in `backlog`/`todo`) clears the stamp. Both setters
    *    are no-ops on an unchanged value, so the idle poll stays free;
@@ -419,7 +418,7 @@ export class IdeasHostService {
         // Same settle helper as the direct-session backend, so the review gate
         // reads identically for a finished run whatever ran it. The card
         // backend has no session of its own: it hands over the session id its
-        // last execution recorded (idea #91), read from the snapshot this very
+        // last execution recorded, read from the snapshot this very
         // poll already holds - one status read, no extra request. undefined
         // when the board exposes no such field, which simply means no note.
         this.settleRun(idea.id, 'done', this.mirror.cardSessionOf(idea.taskBoardId))
@@ -430,7 +429,7 @@ export class IdeasHostService {
   }
 
   /**
-   * Launch the idea's execution (idea #66) through the resolved execution
+   * Launch the idea's execution through the resolved execution
    * backend: the mirrored card whenever the task-board plugin is present (the
    * card is created when the idea has none yet), otherwise a FRESH direct
    * session — the Host-serves-no-task-board case. Both paths are AWAITED,
@@ -455,7 +454,7 @@ export class IdeasHostService {
     if (captured === undefined) throw new Error('idea not found')
     // A replayed request id answers the FIRST outcome without re-posting the
     // run. This is NOT the ledger action cache: a launch is not a ledger
-    // mutation, and the cache is persisted with the document (idea #66 D1).
+    // mutation, and the cache is persisted with the document (decision D1).
     if (requestId !== undefined) {
       const replay = this.launchCache.get(requestId)
       if (replay !== undefined) {
@@ -467,7 +466,7 @@ export class IdeasHostService {
     // launch sees the idea as it is NOW, including a card id a previous op on
     // this chain just bound.
     const idea = this.ledger.idea(ideaId) ?? captured
-    // Backend resolution (idea #66): the card wins whenever the task-board
+    // Backend resolution: the card wins whenever the task-board
     // plugin is present AND the mirror is on — including for an idea that has
     // no card YET, because `launchTask` mints it (that is what lets a freshly
     // captured idea run, and it keeps the card as the single run of record).
@@ -479,7 +478,7 @@ export class IdeasHostService {
     if (!viaCard && this.sessions === undefined) throw new TaskBoardMirrorDisabledError()
     const outcome = await this.enqueueChain(ideaId, async (): Promise<{ runId: string; taskId?: string }> => {
       const fresh = this.ledger.idea(ideaId) ?? idea
-      // The FALLBACK ORDER (idea #107), resolved ONCE and here:
+      // The FALLBACK ORDER, resolved ONCE and here:
       //   1. the model this request pinned, when it pinned one;
       //   2. the default launch model of the idea's workspace;
       //   3. whatever the chosen backend defaults to — the behaviour that
@@ -520,7 +519,7 @@ export class IdeasHostService {
   }
 
   /**
-   * The default launch model of the idea's workspace (idea #107), or
+   * The default launch model of the idea's workspace, or
    * undefined when the workspace carries none — which is what leaves a run on
    * whatever its backend defaults to, exactly as before the field existed.
    *
@@ -643,7 +642,7 @@ export class IdeasHostService {
   }
 
   /**
-   * Append one Host-transition entry to an idea's activity log (idea #92).
+   * Append one Host-transition entry to an idea's activity log.
    * Best-effort like every other mirror/poll write: a ledger that refuses the
    * append must not take the settle down with it.
    */
@@ -656,7 +655,7 @@ export class IdeasHostService {
   }
 
   /**
-   * Harvest the delivery note of a finished run (idea #91) and store it as the
+   * Harvest the delivery note of a finished run and store it as the
    * idea's host-written `deliveryNote`.
    *
    * Strictly AFTER the review gate opens, and deliberately not awaited: the
@@ -747,7 +746,7 @@ export class IdeasHostService {
   }
 
   /**
-   * Queue one mirror op on its idea's chain (idea #35): ops for the SAME idea
+   * Queue one mirror op on its idea's chain: ops for the SAME idea
    * id run strictly in submission order — a create always completes (and
    * binds) before a following update even starts — while ops for different
    * ideas still run concurrently. `runMirror` never rejects, so a failed link
@@ -759,7 +758,7 @@ export class IdeasHostService {
   }
 
   /**
-   * Queue one operation on its idea's chain (idea #35): ops for the SAME idea
+   * Queue one operation on its idea's chain: ops for the SAME idea
    * id run strictly in submission order — a create always completes (and
    * binds) before a following update even starts — while ops for different
    * ideas still run concurrently. Mirror ops never reject (`runMirror`); a
@@ -792,7 +791,7 @@ export class IdeasHostService {
 
   private runMirror(kind: MirrorKind, captured: IdeaRecord): Promise<void> {
     return (async () => {
-      // Fresh read at execution time (idea #35): a queued op mirrors the idea
+      // Fresh read at execution time: a queued op mirrors the idea
       // AS IT IS NOW — including the taskBoardId a previous op on the same
       // chain just bound — so a record captured before that bind can never
       // make two links both see "unbound" and both create a card. Falls back
@@ -836,7 +835,7 @@ function mirrorKindOf(action: IdeasAction): MirrorKind | undefined {
     case 'create':
       return 'create'
     case 'update': {
-      // A patch that touches ONLY the relations (idea #106) changes nothing the
+      // A patch that touches ONLY the relations changes nothing the
       // card shows. Triage-like opinions are ideas-only by design — scores and
       // relations are a backlog opinion, not a board state — so such an edit
       // must not spend a mirror round trip or unfreeze a card that already ran.
@@ -906,7 +905,7 @@ export class TaskBoardMirrorDisabledError extends Error {
 
 /**
  * Map a raw task-board status observation onto the backend-neutral run
- * lifecycle (idea #66). The three RUNNING/DONE/FAILED values map one-to-one; a
+ * lifecycle. The three RUNNING/DONE/FAILED values map one-to-one; a
  * card sitting outside a run (backlog/todo/archived) means "no run in flight",
  * which CLEARS the stamp so a re-armed card does not keep a stale `running`.
  */

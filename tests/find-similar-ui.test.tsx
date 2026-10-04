@@ -1,5 +1,5 @@
 /**
- * Idea #93, part 3 - the Find similar AFFORDANCE, rendered for real.
+ * the Find similar AFFORDANCE, rendered for real.
  *
  * The pure gate (`canFindSimilar`), the launch input and the prompt already
  * have unit coverage. What no suite proved is the wiring between them and the

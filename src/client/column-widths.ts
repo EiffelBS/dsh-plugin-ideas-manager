@@ -1,5 +1,5 @@
 /**
- * Per-column kanban width persistence (idea #53): the user's individual column
+ * Per-column kanban width persistence: the user's individual column
  * widths survive reloads through a storage pair (localStorage on the page, an
  * injectable seam in tests). The map is keyed by idea status and holds pixel
  * widths; anything wrong on the way back — unknown key, non-numeric value,

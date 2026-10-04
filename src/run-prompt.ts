@@ -1,5 +1,5 @@
 /**
- * The SHARED execution prompt of an idea (idea #66).
+ * The SHARED execution prompt of an idea.
  *
  * One function, one prompt, two execution backends: the mirrored TaskBoard
  * card (the runner sends `task.prompt !== '' ? task.prompt : task.title`) and

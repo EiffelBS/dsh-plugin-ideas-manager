@@ -1,5 +1,5 @@
 /**
- * The activity log across the wire (idea #92): the envelope keeps the
+ * The activity log across the wire: the envelope keeps the
  * initiator that decides WHO the log names, the list projection keeps the log
  * off the cards, and `import`/`export` round-trip it.
  */

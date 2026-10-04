@@ -1,5 +1,5 @@
 /**
- * Virtualization changes nothing on the wire (idea #108).
+ * Virtualization changes nothing on the wire.
  *
  * Windowing is a client concern: the board decides which cards to mount, the
  * Host never hears about it. The strongest proof is not a timing measurement
@@ -13,7 +13,7 @@
  *    action, initiator}` and still speaks the documented verbs only - no
  *    `virtualize`, no `window`, no `viewport`;
  *  - `import` / `export` round-trip every field the ledger holds, which is
- *    asserted rather than assumed: idea #108 added nothing to `IdeaRecord`, and
+ *    asserted rather than assumed: windowing added nothing to `IdeaRecord`, and
  *    a future field that forgot the round trip would have to break THIS.
  */
 

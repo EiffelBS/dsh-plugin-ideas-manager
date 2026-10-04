@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Idea #36: bounded, searchable shared tag filter.
+ * The bounded, searchable shared tag filter.
  *
  * Pins the whole contract of the reworked row:
  *  - the chip zone is CSS-capped at ~3 rows with its own scrollbar, while the
@@ -150,7 +150,7 @@ function boardSnapshot(): IdeasSnapshot {
 }
 
 /** Client over a static snapshot (no polling, no workspace registry). The
- *  transport serves the LIST projection like the real one (idea #34). */
+ *  transport serves the LIST projection like the real one. */
 function makeClient(snapshot: IdeasSnapshot): IdeasClient {
   const list = toListSnapshot(snapshot)
   const transport: IdeasHostTransport = {

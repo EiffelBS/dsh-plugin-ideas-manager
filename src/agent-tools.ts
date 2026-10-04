@@ -1,5 +1,5 @@
 /**
- * Agent tools for the Ideas board (idea #92).
+ * Agent tools for the Ideas board.
  *
  * Until now an agent that wanted to write an idea had to hand-build the
  * `{requestId, action, initiator}` envelope, survive the PowerShell/BOM traps
@@ -27,8 +27,8 @@
  * rather than as thrown errors, and every read is bounded.
  *
  * The relations (`relatesTo`, `blocks`, and the DERIVED `blockedBy`) are the
- * reason this surface grew a seventh tool: the ledger has carried them since
- * idea #106, but they rode only on the HTTP patch, so an agent asked to state
+ * reason this surface grew a seventh tool: the ledger has carried them, but
+ * they rode only on the HTTP patch, so an agent asked to state
  * one had to hand-build an envelope — or go read the plugin's source to find out
  * the model had one at all. Two rules keep that surface honest:
  *
