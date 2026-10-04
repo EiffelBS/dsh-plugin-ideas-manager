@@ -44,7 +44,7 @@ import { RunStateBadges, shortDate } from './run-state-badges.tsx'
 import { DeliveryNote } from './delivery-note.tsx'
 import { ActivityTimeline } from './activity-timeline.tsx'
 import { RelationChips, RelationsEditor } from './relations-view.tsx'
-import { relationListChanged, relationIndexOf } from './relations.ts'
+import { openBlockersOf, relationListChanged, relationIndexOf } from './relations.ts'
 import { IdeaTitle } from './idea-title.tsx'
 import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
@@ -1305,6 +1305,15 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
     ? undefined
     : pickModelTarget(picker.modelChoices, workspaceDefault)?.label ?? workspaceDefault
   const pickedTarget = modelTargetIdOf(picker.selectedModel)
+  // The declared dependencies of THIS idea, named where the human decides to
+  // spend the run. A blocker that is no longer open (delivered, archived) is not
+  // a blocker in practice, and a warning that survives its own resolution teaches
+  // the reader to dismiss the line — so only OPEN blockers are named, and the
+  // stronger copy is for the one case that is worse than a dependency: a blocker
+  // the ranking schedules BELOW the card that needs it.
+  const launchBlockers = openBlockersOf(client.snapshot?.ideas ?? [], idea.id)
+  const blockersBelow = launchBlockers.contradicted
+  const blockersPending = launchBlockers.pending
   const rememberDefault = (): Promise<void> => {
     const target = modelTargetIdOf(picker.selectedModel)
     if (target === undefined) return Promise.resolve()
@@ -1377,6 +1386,23 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
         {(idea.taskBoardId === undefined || idea.taskBoardId === '') && (
           <div className={classes.field}>
             <div className={classes.fieldHint}>{t('launch.sessionHint')}</div>
+          </div>
+        )}
+        {/* A declared dependency the run may or may not respect. It is a LINE,
+            never a gate: the button below stays the launch button, because the
+            order — and the decision to start work anyway — is the author's. */}
+        {blockersBelow.length > 0 && (
+          <div className={classes.field}>
+            <div className={classes.fieldHint} data-dsh-ideas-launch-blocked="contradicted">
+              {t('launch.blockedBelowHint', { blockers: blockersBelow.join(', ') })}
+            </div>
+          </div>
+        )}
+        {blockersPending.length > 0 && (
+          <div className={classes.field}>
+            <div className={classes.fieldHint} data-dsh-ideas-launch-blocked="pending">
+              {t('launch.blockedHint', { blockers: blockersPending.join(', ') })}
+            </div>
           </div>
         )}
         {picker.modelChoices.length > 0 && (workspaceDefault === undefined || changingDefault)
@@ -2255,6 +2281,22 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     })
   }
 
+  /**
+   * Open ANOTHER idea's editor from a relation chip. The chip shows a number the
+   * board has never offered a way out of; this is that way out, and it resolves
+   * the id through the SNAPSHOT (the row may be outside the current filter, which
+   * is exactly why the chip could name it) before the same deferred-body fetch the
+   * title click uses — never a partial record.
+   */
+  const openEditById = (id: string): void => {
+    const row = (client.snapshot?.ideas ?? []).find(entry => entry.id === id)
+    if (row === undefined) {
+      client.reportError(t('relations.targetGone', { id }))
+      return
+    }
+    openEdit(row)
+  }
+
   /** Follow-up (review rejected) from the card: same deferred-body fetch (the
    *  composer quotes the parent's whole summary). The edit modal passes its
    *  already-full record straight through. */
@@ -2892,7 +2934,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                 carries none. Three chips then a counter, so a
                                 heavily linked card cannot eat the board's DOM
                                 budget. */}
-                            <RelationChips views={relationIndex.get(idea.id)} />
+                            <RelationChips views={relationIndex.get(idea.id)} onOpenIdea={openEditById} />
                             {/* The delivery note of a finished run (idea #91):
                                 what the reviewer needs to decide on without
                                 leaving the board. Renders nothing for a running
@@ -3097,6 +3139,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
               allIdeas={ideas}
               workspaceTitle={workspaceTitle}
               onEdit={openEdit}
+              onOpenIdea={openEditById}
               onToggleTag={toggleTag}
               activeTags={tagFilter}
               mdMode={mdMode}
@@ -3116,6 +3159,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 archivedIdeas={archivedIdeas}
                 workspaceTitle={workspaceTitle}
                 onEdit={openEdit}
+                onOpenIdea={openEditById}
                 onToggleTag={toggleTag}
                 activeTags={tagFilter}
                 mdMode={mdMode}
@@ -3137,6 +3181,12 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
       {showNew && <IdeaModal client={client} initialWorkspace={workspaceFilter} onClose={() => { setShowNew(false) }} />}
       {editing !== undefined && (
         <IdeaModal
+          // Keyed by the idea, NOT by the record: the editor's fields are
+          // `useState`, so a modal that merely receives a new `initial` keeps
+          // the PREVIOUS card's title and body. Opening another idea from a
+          // relation chip therefore has to remount the form — and remounting on
+          // the same id would throw away unsaved edits, so the id is the whole key.
+          key={editing.id}
           client={client}
           initial={editing}
           onClose={() => { setEditing(undefined) }}

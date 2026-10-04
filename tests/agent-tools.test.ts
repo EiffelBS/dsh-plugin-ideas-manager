@@ -339,6 +339,37 @@ describe('ideas_launch', () => {
     })
     expect((await call(toolsOf(host), 'ideas_launch', {})).code).toBe('invalid-arguments')
   })
+
+  it('names the ideas it is about to run despite, without refusing', async () => {
+    // The launch answers for a card that waits: the dependency is context for
+    // the human, never a gate. An agent must be able to read it here rather than
+    // compare ranks by hand — and must be able to launch anyway.
+    const host = new FakeHost()
+    host.seed(openIdea('a', { blocks: ['b'], rank: 2, ideaNumber: 12 }))
+    host.seed(openIdea('b', { rank: 1, ideaNumber: 7 }))
+    const result = await call(toolsOf(host), 'ideas_launch', { ideaId: 'b' })
+    expect(result.ok).toBe(true)
+    expect(host.launches).toHaveLength(1)
+    expect(result.blockedBy).toEqual([{ id: 'a', number: '#12', title: 'Idea a' }])
+    // And the contradiction is named separately: the blocker is scheduled BELOW
+    // the card that waits, which is the case worth repeating to the human.
+    expect(result.rankConflicts).toEqual([{
+      role: 'blocked',
+      blocked: { id: 'b', number: '#7', title: 'Idea b' },
+      blocker: { id: 'a', number: '#12', title: 'Idea a' },
+    }])
+  })
+
+  it('names no blocker once IT is no longer open', async () => {
+    const host = new FakeHost()
+    // The BLOCKER is what must stop being named, not the card that waits: a
+    // delivered blocker is satisfied in practice, and a report that keeps naming
+    // it teaches the model to skip the field.
+    host.seed(openIdea('a', { blocks: ['b'], status: 'archived' }))
+    host.seed(openIdea('b'))
+    const result = await call(toolsOf(host), 'ideas_launch', { ideaId: 'b' })
+    expect(result.blockedBy).toEqual([])
+  })
 })
 
 describe('ideas_review', () => {

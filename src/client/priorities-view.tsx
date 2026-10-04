@@ -58,6 +58,8 @@ export interface PrioritiesProps {
   workspaceTitle: (workspaceId: string) => string
   /** Open the shared edit modal on the given row (fetches the full body first). */
   onEdit: (idea: IdeaListRow) => void
+  /** Open ANOTHER idea's editor from a relation chip (the id it names). */
+  onOpenIdea?: (ideaId: string) => void
   /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
   onToggleTag: (name: string) => void
   /** Currently selected filter tags (highlighted pills + row meta). */
@@ -121,7 +123,7 @@ function groupTitle(group: OpenRankGroup<IdeaListRow>, workspaceTitle: (workspac
 }
 
 /** Ranked backlog view (see module doc). */
-export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now(), selectedIds, onSelect, relations }: PrioritiesProps) {
+export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onOpenIdea, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays = 0, now = Date.now(), selectedIds, onSelect, relations }: PrioritiesProps) {
   // Workspace groups in display order; inside every group ideas are ranked
   // relatively. Re-grouping is cheap (a handful of open ideas) and keeps the
   // render a pure function of the props.
@@ -317,7 +319,7 @@ export function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, on
                         {/* Relations (idea #106): the same quiet line the Overview
                             card prints, so a ranked row says what it is adjacent
                             to — and what waits on it — without opening it. */}
-                        <RelationChips views={relations?.get(idea.id)} />
+                        <RelationChips views={relations?.get(idea.id)} onOpenIdea={onOpenIdea} />
                         {idea.rationale !== undefined && (
                           <div className={classes.prioritiesRationale}>
                             <span className={classes.prioritiesRationaleLabel}>{t('priorities.rationale')}</span>

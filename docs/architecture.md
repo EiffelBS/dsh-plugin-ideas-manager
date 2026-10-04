@@ -1351,6 +1351,57 @@ compared. A cross-workspace dependency is legitimate and common, and the two ran
 numbers come from two different sequences — "6 < 7" would be a fiction. An
 unranked card states no order at all, so it contradicts nothing.
 
+### Where the contradiction is surfaced, and where it deliberately is not
+
+Three surfaces, all reads: the derived `blockedBy` chip (ring + tooltip), the
+`ideas_triage` / `ideas_relate` answers, and the `ideas_launch` answer with its
+`blockedBy` list. **Not the run prompt**, and the reason is mechanical rather than
+taste: `task.prompt` is a CONTENT field, and the task-board refuses content
+patches on a card that already ran (`task has already been executed`). A blocker
+line is therefore a snapshot frozen into an immutable artifact — the day the edge
+is dropped or the blocker delivered, the card keeps asserting it and the board
+cannot repair it. It would also undo a decision already taken (a relations-only
+patch skips the mirror precisely so a link never triggers a card write), and the
+instruction would be unactionable for the runner: "blocked by #47", without knowing
+whether #47 landed, invites it either to refuse work the human launched or to
+ignore the line.
+
+**A client dialog was the rejected alternative**, for a reason that has nothing to
+do with taste: `launchIdea` has three entry points (the browser modal, the
+`ideas_launch` tool, the HTTP route) and a modal covers one of them, so the board
+would behave differently depending on who clicked. The line therefore lives in the
+launch confirmation the board ALREADY shows (`LaunchModal`) — where the human
+decides to spend the run — and it is a line, not a gate: the button stays the
+launch button. A gate, if one is ever wanted, belongs on the verb as an optional
+`force` flag, which every entry point would have to honour.
+
+**Only OPEN blockers are named**, in the modal and in the answer alike. A delivered
+or archived blocker is satisfied in practice, and a warning that outlives its own
+resolution teaches the reader to dismiss the line that matters next time.
+
+### The chip is a colour AND a door
+
+Each edge kind gets one hue (related green, blocks amber, blocked by red), on the
+cards and in the editor, carried by the border so the chip's text keeps the panel's
+own contrast. Colour is a **second channel**: the glyphs (`↔` / `→` / `←`) and the
+editor's labels already say which edge it is, which is what keeps the board
+readable for a reader who cannot separate these hues. The contradiction is
+therefore a **ring** and never a recolour — the hue keeps meaning "which edge"
+while the ring means "the order disagrees".
+
+A chip is also the only way out of a number the board prints, so it opens the
+editor of the idea it **names** — resolved through the snapshot, which is what lets
+it reach an idea outside the current filter, and through the same deferred-body
+fetch a title click uses, never a partial record. The click stops propagation: it
+belongs to the target idea, not to the card under the cursor. The editor's own
+chips stay inert, because a chip inside a form that opened another modal would
+throw away the edits in progress.
+
+That path exposed a latent defect worth naming: `IdeaModal`'s fields are
+`useState`, so handing the same component a different `initial` left every field
+showing the PREVIOUS card. The modal is now keyed by the idea id — the id alone,
+never the record, so a refreshed record cannot discard unsaved edits.
+
 ### What a poll pays for
 
 `relatesTo` and `blocks` are in `IDEAS_READ_SELECTABLE_FIELDS` and in

@@ -68,31 +68,74 @@ function relationHint(kind: IdeaRelationViewKind, label: string, conflict = fals
  * handed down: computing them per card would rebuild the row map and rescan the
  * whole board for every one of them.
  */
-export function RelationChips({ views }: { views: readonly RelationView[] | undefined }) {
+/** The kind's hue, so a glance separates the three edges on a busy card. */
+function chipKindClass(kind: IdeaRelationViewKind): string {
+  if (kind === 'blocks') return classes.relationChipBlocks
+  if (kind === 'blockedBy') return classes.relationChipBlockedBy
+  return classes.relationChipRelatesTo
+}
+
+/**
+ * The read-only relation line of a card: up to {@link CARD_RELATION_CHIP_LIMIT}
+ * chips, then a counter. Returns null when there is nothing to say, so a card
+ * without relations pays zero DOM nodes.
+ *
+ * `onOpenIdea` turns each chip into the way out of an id the board only shows as
+ * a number: it opens THAT idea's editor, not the one under the chip. Absent (the
+ * editor's own section), the chips stay inert spans.
+ *
+ * The views are DERIVED ONCE per paint by the board (`relationIndexOf`) and
+ * handed down: computing them per card would rebuild the row map and rescan the
+ * whole board for every one of them.
+ */
+export function RelationChips({ views, onOpenIdea }: {
+  views: readonly RelationView[] | undefined
+  onOpenIdea?: (ideaId: string) => void
+}) {
   if (views === undefined || views.length === 0) return null
   const shown = views.slice(0, CARD_RELATION_CHIP_LIMIT)
   const rest = views.length - shown.length
   return (
     <span className={classes.cardMeta} data-dsh-ideas-relations="">
-      {shown.map(view => (
-        <span
-          key={`${view.kind}:${view.id}`}
-          className={`${classes.relationChip}${view.conflict === true ? ` ${classes.relationChipConflict}` : ''}`}
-          data-dsh-ideas-relation={view.kind}
-          {...(view.conflict === true ? { 'data-dsh-ideas-relation-conflict': view.id } : {})}
-          title={relationHint(view.kind, view.label, view.conflict)}
-        >
+      {shown.map(view => {
+        const chipClass = `${classes.relationChip} ${chipKindClass(view.kind)}${view.conflict === true ? ` ${classes.relationChipConflict}` : ''}`
+        const hint = relationHint(view.kind, view.label, view.conflict)
+        const marked = {
+          'data-dsh-ideas-relation': view.kind,
+          ...(view.conflict === true ? { 'data-dsh-ideas-relation-conflict': view.id } : {}),
+        }
+        const body = <>
           <span className={classes.relationGlyph} aria-hidden="true">{relationGlyph(view.kind)}</span>
           {view.short}
-        </span>
-      ))}
+        </>
+        if (onOpenIdea === undefined) {
+          return <span key={`${view.kind}:${view.id}`} className={chipClass} {...marked} title={hint}>{body}</span>
+        }
+        return (
+          <button
+            key={`${view.kind}:${view.id}`}
+            type="button"
+            className={chipClass}
+            {...marked}
+            data-dsh-ideas-relation-open={view.id}
+            title={hint}
+            // The chip is INSIDE the card it points away from: the click belongs
+            // to the target idea, never to the card the human is reading.
+            onClick={event => { event.stopPropagation(); onOpenIdea(view.id) }}
+          >
+            {body}
+          </button>
+        )
+      })}
       {rest > 0 && <span className={classes.relationMore}>{t('relations.more', { count: rest })}</span>}
     </span>
   )
 }
 
 /** One editable line: its label, its chips, and the picker that adds one. */
-function RelationLine({ label, list, ideas, ideaId, exclude, placeholder, disabled, onChange, removeTitle }: {
+function RelationLine({ kind, label, list, ideas, ideaId, exclude, placeholder, disabled, onChange, removeTitle }: {
+  /** Which edge this line writes: it is also the chip's hue. */
+  kind: IdeaRelationViewKind
   label: string
   list: readonly string[]
   ideas: readonly RelationRow[]
@@ -117,7 +160,7 @@ function RelationLine({ label, list, ideas, ideaId, exclude, placeholder, disabl
       <span className={classes.fieldLabel}>{label}</span>
       <span className={classes.relationChips}>
         {list.map(id => (
-          <span key={id} className={classes.relationChip} data-dsh-ideas-relation-edit={id}>
+          <span key={id} className={`${classes.relationChip} ${chipKindClass(kind)}`} data-dsh-ideas-relation-edit={id}>
             {labelFor(id)}
             <button
               type="button"
@@ -175,6 +218,7 @@ export function RelationsEditor({ ideas, ideaId, relatesTo, blocks, disabled, on
       <span className={classes.fieldLabel}>{t('relations.title')}</span>
       <div className={classes.fieldHint}>{t('relations.hint')}</div>
       <RelationLine
+        kind="relatesTo"
         label={t('relations.relatesTo')}
         list={relatesTo}
         ideas={ideas}
@@ -186,6 +230,7 @@ export function RelationsEditor({ ideas, ideaId, relatesTo, blocks, disabled, on
         removeTitle={target => t('relations.removeRelated', { target })}
       />
       <RelationLine
+        kind="blocks"
         label={t('relations.blocks')}
         list={blocks}
         ideas={ideas}
@@ -204,7 +249,7 @@ export function RelationsEditor({ ideas, ideaId, relatesTo, blocks, disabled, on
             : blockers.map(view => (
               <span
                 key={view.id}
-                className={`${classes.relationChip} ${classes.relationChipLocked}${view.conflict === true ? ` ${classes.relationChipConflict}` : ''}`}
+                className={`${classes.relationChip} ${chipKindClass('blockedBy')} ${classes.relationChipLocked}${view.conflict === true ? ` ${classes.relationChipConflict}` : ''}`}
                 data-dsh-ideas-relation-locked={view.id}
                 {...(view.conflict === true ? { 'data-dsh-ideas-relation-conflict': view.id } : {})}
                 title={relationHint('blockedBy', view.label, view.conflict)}

@@ -32,6 +32,13 @@ body {
   --dsh-ideas-fb-accent: #0f6fbe;
   --dsh-ideas-fb-accent-fg: #ffffff;
   --dsh-ideas-fb-danger: #d04a4a;
+  /* Relation chips (idea #106): one hue per edge KIND, so a glance separates
+     "adjacent" from "waits for" from "is waited for". Colour is a second channel
+     only — the glyphs (↔ / → / ←) and the editor's labels carry the meaning on
+     their own, so the board stays readable without it. */
+  --dsh-ideas-relation-related: #16a34a;
+  --dsh-ideas-relation-blocks: #b45309;
+  --dsh-ideas-relation-blocked: #d04a4a;
   /* Launch affordance (idea #66): the one GREEN action — it starts the work,
      while every other card action only moves the card. A lighter green on the
      dark theme so the triangle keeps its contrast on dark cards. */
@@ -49,6 +56,9 @@ body[data-ds-dark-theme] {
   --dsh-ideas-fb-accent: #3b82f6;
   --dsh-ideas-fb-accent-fg: #0f1115;
   --dsh-ideas-fb-danger: #e5484d;
+  --dsh-ideas-relation-related: #34d399;
+  --dsh-ideas-relation-blocks: #fbbf24;
+  --dsh-ideas-relation-blocked: #f87171;
   --dsh-ideas-run: #34d399;
 }
 
@@ -834,6 +844,24 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   font-size: 11px;
 }
 
+/* One hue per edge KIND. The border carries the kind, the text stays the
+   panel's own foreground: a saturated background on a small chip costs more
+   contrast than it buys. Related = green, blocks = amber (this card is the
+   gate), blocked by = red (this card waits) — a second channel behind the
+   glyph, never the only one. */
+.dsh-ideas-relation-chip-relates-to {
+  border-color: var(--dsw-alias-state-success-primary, var(--dsh-ideas-relation-related));
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
+.dsh-ideas-relation-chip-blocks {
+  border-color: var(--dsw-alias-state-warn-primary, var(--dsh-ideas-relation-blocks));
+}
+
+.dsh-ideas-relation-chip-blocked-by {
+  border-color: var(--dsw-alias-state-error-primary, var(--dsh-ideas-relation-blocked));
+}
+
 /* The derived "blocked by" line is not editable here, so it must LOOK
    uneditable: same chip, no remove button, no pointer. */
 .dsh-ideas-relation-chip-locked {
@@ -841,13 +869,14 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   cursor: default;
 }
 
-/* A declared blocker the RANKING schedules BELOW the card it blocks. Still
-   neutral in shape — a relation is a statement — but it borrows the warn tone
-   the panel already uses for a launch the permission gate refused: advisory, not
-   an error. The board never refuses the order; it just stops hiding it. */
+/* A declared blocker the RANKING schedules BELOW the card it blocks: a ring in
+   the warn tone, because the chip's own hue already says "this card waits" and
+   the thing being reported is the ORDER. A flag that is on permanently teaches
+   the reader to ignore it, so it is a ring plus a tooltip sentence, never a
+   recolour. The board never refuses the order; it just stops hiding it. */
 .dsh-ideas-relation-chip-conflict {
-  border-color: var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent));
-  color: var(--dsw-alias-warn-fg, var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg)));
+  box-shadow: 0 0 0 1px var(--dsw-alias-state-warn-primary, var(--dsh-ideas-relation-blocks));
+  font-weight: 600;
 }
 
 .dsh-ideas-relation-glyph {
@@ -2700,6 +2729,9 @@ export const classes = {
   relationChip: 'dsh-ideas-relation-chip',
   relationChipLocked: 'dsh-ideas-relation-chip-locked',
   relationChipConflict: 'dsh-ideas-relation-chip-conflict',
+  relationChipRelatesTo: 'dsh-ideas-relation-chip-relates-to',
+  relationChipBlocks: 'dsh-ideas-relation-chip-blocks',
+  relationChipBlockedBy: 'dsh-ideas-relation-chip-blocked-by',
   relationGlyph: 'dsh-ideas-relation-glyph',
   relationRemove: 'dsh-ideas-relation-remove',
   relationEmpty: 'dsh-ideas-relation-empty',

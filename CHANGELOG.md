@@ -34,6 +34,25 @@ Versions before 0.3.0 predate this file.
   that would change nothing writes nothing at all (no revision, no card round
   trip, no misleading line in the activity log). It answers with the three lines
   a human reads on a card, each target resolved to its `#N` and title.
+- **The launch window now tells you what it is about to ignore.** Open *Run* on an
+  idea that still waits for another one and the dialog names it — *"This idea is
+  still waiting for #47 Exports"* — with a louder line when that blocker sits
+  *lower* in the backlog than the card you are about to run. It is a line, not a
+  lock: the button is still the launch button, because the order, and the
+  decision to start work anyway, are yours. A blocker that is no longer open
+  stops being named, so the line cannot outlive its own reason. Agents read the
+  same thing in the answer to `ideas_launch`.
+- **A link is a way out of a number.** The chips a card prints used to be labels:
+  `#47` told you an idea was related, blocking or blocked, and offered nothing
+  else. Clicking one now opens *that* idea's editor — the chip points away from
+  the card you are reading, on the Overview card and on the Priorities and
+  Delivered rows alike.
+- **The three links are three colours.** *Related* is green, *blocks* amber,
+  *blocked by* red, on the cards and in the editor. Colour is the second channel,
+  never the only one: the arrows (`↔` / `→` / `←`) and the editor's labels already
+  say which link it is. A dependency the ranking contradicts is shown as a
+  **ring** rather than a different colour, so the chip's hue keeps meaning "which
+  edge" while the ring means "the order disagrees".
 - **Reads now answer "what is this idea blocked by?" directly.** Every row a
   list returns, and every full read, carries the stored `relatesTo` and `blocks`
   **and** the derived `blockedBy` — the inverse side, which exists on no card and
@@ -53,6 +72,12 @@ Versions before 0.3.0 predate this file.
 
 ### Fixed
 
+- **Opening another idea from a link no longer shows the previous card.** The
+  *Run* window now says what it is about to ignore, the link chips are a way out
+  of a number, and the three links are three colours — details below, in
+  *Added*. The first of them is a fix in its own right: switching the editor to
+  another idea left every field showing the card you were reading before, because
+  the form keeps its state unless it is told to start over.
 - **Writing a reason for a ranking no longer demotes the idea to the bottom of
   the backlog.** Saving Value, Effort or the rationale *without* touching the rank
   used to send the idea to the last position of its workspace — on a live board, a

@@ -50,6 +50,8 @@ function listSnapshot(rowsIn: readonly IdeaRecord[]): IdeasListSnapshot {
 
 class RelationsTransport implements IdeasHostTransport {
   actions: IdeasAction[] = []
+  /** Ids whose FULL record was fetched (the deferred-body path). */
+  ideaReads: string[] = []
   constructor(readonly rows: readonly IdeaRecord[]) {}
   async state(): Promise<IdeasListSnapshot> { return listSnapshot(this.rows) }
   async action(action: IdeasAction): Promise<IdeasListSnapshot> {
@@ -57,6 +59,7 @@ class RelationsTransport implements IdeasHostTransport {
     return listSnapshot(this.rows)
   }
   async idea(id: string): Promise<IdeaRecord> {
+    this.ideaReads.push(id)
     const found = this.rows.find(row => row.id === id)
     if (found === undefined) throw new Error('not found')
     return found
@@ -453,6 +456,55 @@ describe('a dependency the ranking contradicts', () => {
     const locked = host.querySelector('[data-dsh-ideas-relation-locked="a"]')!
     expect(locked.getAttribute('title')).toBe(t('relations.blockedByRankConflict', { target: '#1 Alpha' }))
     expect(locked.className).toContain('dsh-ideas-relation-chip-conflict')
+  })
+
+  it('gives each kind its own hue, so a busy card separates at a glance', async () => {
+    // Colour is a SECOND channel: the glyphs (↔ / → / ←) and the editor's
+    // labels already carry the meaning, which is what keeps the board readable
+    // for a reader who cannot separate these hues at all.
+    await mount()
+    const hueOf = (kind: string): string | undefined =>
+      host.querySelector(`[data-dsh-ideas-relation="${kind}"]`)?.className
+    expect(hueOf('relatesTo')).toContain('dsh-ideas-relation-chip-relates-to')
+    expect(hueOf('blocks')).toContain('dsh-ideas-relation-chip-blocks')
+    expect(hueOf('blockedBy')).toContain('dsh-ideas-relation-chip-blocked-by')
+    // The three are genuinely different classes, not one default hue.
+    const classes = ['relates-to', 'blocks', 'blocked-by'].map(suffix => `dsh-ideas-relation-chip-${suffix}`)
+    expect(new Set(classes).size).toBe(3)
+
+    // The contradiction is a RING, not a recolour: the chip's hue already says
+    // which edge this is, and what is being reported is the order.
+    await mount(contradicted())
+    const flagged = host.querySelector('[data-dsh-ideas-relation-conflict]')!
+    expect(flagged.className).toContain('dsh-ideas-relation-chip-conflict')
+    expect(flagged.className).toContain('dsh-ideas-relation-chip-blocked-by')
+  })
+
+  it('opens the idea a chip names, not the card the chip sits on', async () => {
+    await openEditor('c')
+    // `c` waits for `a`. Clicking that chip must open A's editor: the chip is the
+    // only way out of a number the board prints, and it must point away from the
+    // card being read. Queried AFTER the modal opened — a node captured before a
+    // re-render is detached, and a detached node proves nothing when clicked.
+    const chip = host.querySelector('[data-dsh-idea-id="c"] [data-dsh-ideas-relation-open="a"]')
+    expect(chip).not.toBeNull()
+    expect(chip!.tagName).toBe('BUTTON')
+    await act(async () => { click(chip as HTMLElement); await settle() })
+
+    const title = (host.querySelector('#dsh-ideas-title') as HTMLInputElement | null)?.value
+    expect(title).toBe('Alpha')
+    // And it is a real fetch, not a half record: the editor's fields are the
+    // full ones (transport.idea answers a per-id record).
+    expect(transport.ideaReads).toContain('a')
+  })
+
+  it('leaves the editor\'s own chips inert', async () => {
+    // Inside the editor the chips belong to a form: a click there that opened
+    // another modal would throw away the edits in progress. Scoped to the editor
+    // on purpose — the board keeps painting behind the overlay, so an unscoped
+    // query would find the CARDS' chips and prove nothing.
+    await openEditor('a')
+    expect(host.querySelector('[data-dsh-ideas-relations-editor] [data-dsh-ideas-relation-open]')).toBeNull()
   })
 
   it('says the same thing in the three shipped languages', () => {

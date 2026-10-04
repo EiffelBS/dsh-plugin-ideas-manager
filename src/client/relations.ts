@@ -159,6 +159,43 @@ export function relationCandidates(
 }
 
 /**
+ * The OPEN ideas that block `ideaId`, labelled, split by what the ranking says.
+ *
+ * This is what the launch confirmation reads, because that modal is where the
+ * human decides to spend a run — not the card, which they have already read.
+ * Three rules, each load-bearing:
+ *
+ *  - only `open` blockers are named. A delivered or archived blocker is
+ *    satisfied in practice, and a warning that outlives its own resolution
+ *    teaches the reader to dismiss the line — then it is there when it matters;
+ *  - `contradicted` is the subset the ranking schedules BELOW the card that waits,
+ *    which is the case worth the stronger sentence;
+ *  - a cross-workspace blocker is never `contradicted`: two rank numbers from two
+ *    different sequences cannot be compared (see `rankBlockConflicts`).
+ *
+ * @param ideas - the whole snapshot; a blocker may sit outside the current scope.
+ * @param ideaId - the idea about to be launched.
+ * @returns label lists, ready to interpolate into a sentence.
+ */
+export function openBlockersOf(
+  ideas: readonly RelationRow[],
+  ideaId: string,
+): { pending: string[]; contradicted: string[] } {
+  const contradicted = new Set(
+    rankBlockConflicts(ideas).filter(pair => pair.blockedId === ideaId).map(pair => pair.blockerId),
+  )
+  const byId = new Map(ideas.map(idea => [idea.id, idea] as const))
+  const pending: string[] = []
+  const below: string[] = []
+  for (const view of relationViews(ideas, ideaId)) {
+    if (view.kind !== 'blockedBy') continue
+    if (byId.get(view.id)?.status !== 'open') continue
+    ;(contradicted.has(view.id) ? below : pending).push(view.label)
+  }
+  return { pending, contradicted: below }
+}
+
+/**
  * Whether an edited list actually differs from the stored one. The editor sends
  * only what changed: an untouched relation must not spend a revision, a mirror
  * round trip and an activity-log line saying "Edited related ideas".

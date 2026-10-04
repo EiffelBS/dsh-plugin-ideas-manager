@@ -241,6 +241,9 @@ another. An idea can now carry two kinds of link, and both of them are things
   **Priorities** and **Delivered** rows all print their links as a quiet line of
   `↔ #12`, `→ #31`, `← #7` — the arrow is the direction, so the links read on
   the row itself, and nothing is printed at all for an idea that has none.
+  **Each colour is one kind** (green related, amber blocks, red blocked by), and
+  **clicking a chip opens that idea's editor** — the link is the way to get there
+  from a number.
 - **You only declare a link once.** *Related to* is one statement about two
   ideas, so it is true from both sides and cannot disagree with itself. *Blocks*
   is stored on the card that blocks, and the *Waiting for this idea* line on the
@@ -248,10 +251,15 @@ another. An idea can now carry two kinds of link, and both of them are things
   remove it, open the card that declares it, and the editor names which card that
   is.
 - **A blocked card that is scheduled too early is marked.** If the backlog puts a
-  card above the card that blocks it, the *Waiting for this idea* chip is
-  highlighted and says so when you hover it. That is a warning, not a lock: the
-  order stays yours, and the board will not silently move a card for you — a card
-  can be worth doing first even when something else has to land before it.
+  card above the card that blocks it, the *Waiting for this idea* chip gets a
+  ring around it and says so when you hover it. That is a warning, not a lock:
+  the order stays as the author left it, and the board will not silently move a
+  card for you — a card can be worth doing first even when something else has to
+  land before it.
+- **Starting the run says so too.** The *Run* window names the ideas this one
+  still waits for, and says more when one of them is scheduled lower than the
+  card you are about to run. It is a line and not a lock: the button is still the
+  launch button.
 - **A wait that loops is refused.** "A waits for B" and "B waits for A" says
   nothing, so the board will not save it and names the whole chain
   (`#1 → #2 → #3`). The loop is caught when you write it, not when the graph is

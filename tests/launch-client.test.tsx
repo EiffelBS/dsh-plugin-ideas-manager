@@ -121,6 +121,57 @@ describe('launch backend resolution', () => {
   })
 })
 
+describe('the launch modal names a dependency it is about to ignore', () => {
+  /** `blocked` waits for `gate`, which is scheduled BELOW it. */
+  function blockedSnapshot(): IdeasListSnapshot {
+    return {
+      schemaVersion: IDEAS_SCHEMA_VERSION,
+      revision: 1,
+      ideas: [
+        { id: 'blocked', title: 'ASR', status: 'open', rank: 1, bodyExcerpt: 'a', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', taskBoardId: 'task-1', taskBoardStatus: 'backlog', ideaNumber: 7 },
+        { id: 'gate', title: 'Exports', status: 'open', rank: 2, bodyExcerpt: 'b', createdAt: 1, updatedAt: 100, workspaceId: 'ws1', blocks: ['blocked'], ideaNumber: 3 },
+      ],
+    }
+  }
+
+  async function openLaunchModal(rows: IdeasListSnapshot): Promise<void> {
+    client = new IdeasClient(new FakeTransport(), undefined)
+    client.snapshot = rows
+    act(() => {
+      root = createRoot(host)
+      root.render(<IdeasBoard client={client} />)
+    })
+    await act(async () => { await client.loadConfig() })
+    await act(async () => { click(host.querySelector('[data-dsh-idea-id="blocked"] [data-dsh-ideas-launch]') as HTMLElement) })
+  }
+
+  it('says which open idea it waits for, and that it will not stop the run', async () => {
+    await openLaunchModal(blockedSnapshot())
+    const line = host.querySelector('[data-dsh-ideas-launch-blocked="contradicted"]')
+    expect(line).not.toBeNull()
+    expect(line!.textContent).toContain('#3 Exports')
+    // The button is still the launch button. The order is the author's, so the
+    // warning informs; it never gates — a gate the reader learns to click
+    // through is not a gate.
+    expect(host.querySelector('[data-dsh-ideas-launch-submit]')).not.toBeNull()
+  })
+
+  it('stays silent once the blocker is no longer open', async () => {
+    const rows = blockedSnapshot()
+    rows.ideas[1] = { ...rows.ideas[1]!, status: 'archived' }
+    await openLaunchModal(rows)
+    // A delivered blocker is satisfied in practice: naming it here would train
+    // the reader to dismiss a line that has outlived its own reason.
+    expect(host.querySelector('[data-dsh-ideas-launch-blocked]')).toBeNull()
+  })
+
+  it('says nothing for an idea nothing blocks', async () => {
+    await renderBoard()
+    await act(async () => { click(launchButtonIn('launchable') as HTMLElement) })
+    expect(host.querySelector('[data-dsh-ideas-launch-blocked]')).toBeNull()
+  })
+})
+
 describe('IdeasClient.launchIdea', () => {
   it('surfaces the host refusal on the error bar and rethrows it', async () => {
     const client = new IdeasClient({

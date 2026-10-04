@@ -93,7 +93,7 @@ up in the idea's activity log under `agent:plugin:ideas-manager:agent-tool`.
 | `ideas_capture` | write | Title + markdown body; optional `summary`, `workspaceId`, `tags` (names only), `value`, `effort`, `rationale`, `rank`. |
 | `ideas_triage` | write | Record `value` / `effort` / `rationale` / `rank` on an open idea in one transaction; answers with the resulting group ordering and any `rankConflicts`. **Omit `rank` to keep the card where it is.** |
 | `ideas_relate` | write | Declare or drop relations: `addRelatesTo` / `removeRelatesTo`, `addBlocks` / `removeBlocks`. Edits by add and remove, so an unnamed edge survives; answers with the three resolved relation lines and any `rankConflicts`. |
-| `ideas_launch` | write | Start the execution (mirrored card or fresh session, resolved by the Host). |
+| `ideas_launch` | write | Start the execution (mirrored card or fresh session, resolved by the Host). The answer carries the ideas this one still waits for (`blockedBy`, open blockers only) and any `rankConflicts`. |
 | `ideas_review` | write | Settle the review gate: `approve` (deliver), `followUp` (linked child + archived parent), `decline` (+ `decision`). |
 
 Discipline the tools keep, and so must you:
@@ -116,6 +116,14 @@ Discipline the tools keep, and so must you:
   (`role` is `blocked` or `blocker`, relative to the card you wrote). The board
   never reorders and never refuses on that ground — the order is the author's —
   so treat the list as something to tell the human, not as an error to retry.
+- **A launch is never refused for a dependency.** `ideas_launch` answers with the
+  ideas the card still waits for (`blockedBy`: open blockers only, since a
+  delivered one is satisfied in practice) plus `rankConflicts`. The run starts
+  either way — the board reports, the human decides. Launching anyway is correct
+  behaviour, so mention the blockers in your answer rather than withholding a run
+  the human asked for. The run **prompt** is never rewritten with them: the
+  mirrored card's prompt is an immutable content field after its first
+  execution, so a snapshot written into it would outlive the dependency it names.
 
 ## Per-idea activity log
 

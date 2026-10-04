@@ -44,6 +44,8 @@ export interface DeliveredViewProps {
   workspaceTitle: (workspaceId: string) => string
   /** Open the shared edit modal on the given row (fetches the full body first). */
   onEdit: (idea: IdeaListRow) => void
+  /** Open ANOTHER idea's editor from a relation chip (the id it names). */
+  onOpenIdea?: (ideaId: string) => void
   /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
   onToggleTag: (name: string) => void
   /** Currently selected filter tags (highlighted row pills). */
@@ -95,7 +97,7 @@ function isoDate(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect, relations }: DeliveredViewProps) {
+export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, onOpenIdea, onToggleTag, activeTags, mdMode, parentNumber, selectedIds, onSelect, relations }: DeliveredViewProps) {
   const rows = mostRecentFirst(archivedIdeas)
   return (
     <div className={classes.priorities} data-dsh-ideas-delivered="">
@@ -164,7 +166,7 @@ export function DeliveredView({ client, archivedIdeas, workspaceTitle, onEdit, o
                     {/* Relations (idea #106): the same quiet line the Overview
                         card prints, so a row that links to another idea says so
                         here too instead of only in the editor. */}
-                    <RelationChips views={relations?.get(idea.id)} />
+                    <RelationChips views={relations?.get(idea.id)} onOpenIdea={onOpenIdea} />
                     {/* The delivery note of the run that produced this exit
                         (idea #91): what was actually delivered, on the row that
                         records the delivery. Renders nothing for an idea that was

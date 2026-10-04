@@ -375,6 +375,25 @@ function ideaRefOf(idea: IdeaRecord | undefined): IdeaRef {
   return { id: idea.id, ...(idea.ideaNumber === undefined ? {} : { number: `#${idea.ideaNumber}` }), title: idea.title }
 }
 
+/**
+ * The OPEN ideas one idea waits for, resolved to `#N Title`.
+ *
+ * Only open ones: a delivered or archived blocker is satisfied in practice, and
+ * an answer that keeps naming it long after it landed teaches the model to skip
+ * the field. This is the launch context — reported, never enforced.
+ *
+ * @param ideas - the whole snapshot (a blocker may sit outside any filter).
+ * @param ideaId - the idea being launched.
+ * @returns the blockers, in the board's own order.
+ */
+function openBlockersIn(ideas: readonly IdeaRecord[], ideaId: string): IdeaRef[] {
+  const byId = new Map(ideas.map(idea => [idea.id, idea] as const))
+  return ideaBlockedBy(ideas, ideaId)
+    .map(id => byId.get(id))
+    .filter((idea): idea is IdeaRecord => idea !== undefined && idea.status === 'open')
+    .map(ideaRefOf)
+}
+
 /** The recorded activity of an idea, oldest first, as one timeline. */
 function activityOf(idea: IdeaRecord): unknown[] {
   return (idea.events ?? []).map(entry => ({ at: entry.at, verb: entry.verb, actor: entry.actor, summary: entry.summary }))
@@ -763,6 +782,7 @@ function buildLaunchTool(host: IdeasToolHost): IdeasToolDefinition {
     description: [
       'Start an execution of an idea: the Host resolves the backend — the mirrored TaskBoard card when the task-board plugin is present, otherwise a fresh session — and the run keeps going after this call returns.',
       'A finished run moves the idea to the review gate automatically; nothing polls from the tool side.',
+      'A declared dependency is REPORTED, never enforced: the answer names the open ideas this one waits for, and marks the ones the ranking schedules below it. A run is never refused for that — tell the human instead.',
       'A domain refusal (disabled mirror, board absent, unknown model) comes back as ok:false with its own reason.',
       'Triggers: 启动执行, 运行想法, launch idea, run this idea, 实现这个想法.',
     ].join(' '),
@@ -785,7 +805,14 @@ function buildLaunchTool(host: IdeasToolHost): IdeasToolDefinition {
       if (body === undefined) return refused('invalid-arguments', 'ideaId is required and model must be a string')
       try {
         const result = await host.launchIdea(body.ideaId, body.model, body.requestId)
-        return json({ ok: true, ...(result as Record<string, unknown>) })
+        return json({
+          ok: true,
+          ...(result as Record<string, unknown>),
+          // Read AFTER the run started, from the same committed state the launch
+          // acted on: the dependency is context for the human, not a gate.
+          blockedBy: openBlockersIn(host.snapshot().ideas, body.ideaId),
+          rankConflicts: rankConflictsIn(host.snapshot().ideas, body.ideaId),
+        })
       } catch (error) {
         return refused('refused', messageOf(error))
       }
