@@ -73,16 +73,33 @@ export function resolveSessionOpener(ctx: unknown): SessionOpener | undefined {
   return undefined
 }
 
-/** One value out of a context by service NAME, or undefined. Never throws. */
+/**
+ * One value out of a context by name, or undefined. Never throws.
+ *
+ * BOTH readings are tried, and that is not belt-and-braces: on a real cordis
+ * context `ctx.get(name)` looks up a SERVICE, while `ctx[name]` goes through the
+ * context proxy — which serves declared context PROPERTIES too (`events`,
+ * `logger`, `reflect`, `registry` are properties, not services). A reader that
+ * picks one therefore misses half the surface: the first version of this file
+ * probed `ctx.get('reflect')` only, `get` existed, so the property fallback never
+ * ran and the diagnostic reported an empty page.
+ */
 function readService(ctx: unknown, name: string): unknown {
   if (ctx === null || (typeof ctx !== 'object' && typeof ctx !== 'function')) return undefined
   const host = ctx as { get?: unknown } & Record<string, unknown>
+  const viaAccessor = (): unknown => typeof host.get === 'function'
+    ? (host.get as (service: string) => unknown).call(ctx, name)
+    : undefined
   try {
-    return typeof host.get === 'function'
-      ? (host.get as (service: string) => unknown).call(ctx, name)
-      : host[name]
+    const found = viaAccessor()
+    if (found !== undefined && found !== null) return found
   } catch {
-    // An undeclared property read, or an accessor that refuses the name.
+    // An accessor that refuses the name: fall through to the property read.
+  }
+  try {
+    return host[name]
+  } catch {
+    // An undeclared property read. Nothing here is worth an exception.
     return undefined
   }
 }
@@ -103,11 +120,13 @@ const FACES_REPORTED = 12
  *
  * A dead feature that says only "no navigation face" is unactionable: the
  * reader has no way to tell a wrong name from an unsupported deployment, and the
- * answer is sitting in the context, enumerable. cordis's reflection service
- * holds every declared context property BY NAME (`ctx.reflect.props`), so the
- * diagnostic reads that, resolves each value, and names the methods that could
- * open or focus something. It is bounded and sorted: a console line a developer
- * can act on, not a page dump.
+ * answer is sitting in the context, enumerable. The reflection layer holds every
+ * declared context property BY NAME (`ctx.reflect.props`), so the diagnostic
+ * reads that, resolves each value, and names the methods that could open or focus
+ * something. It is bounded and sorted: a console line a developer can act on, not
+ * a page dump. Empty means the context could not be enumerated — which is itself
+ * a fact worth keeping: the plugin's client half may be running on a context
+ * scoped to its own declared dependencies rather than the application root.
  *
  * @returns `name.method` pairs, empty when the context cannot be enumerated.
  */

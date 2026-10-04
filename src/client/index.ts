@@ -59,6 +59,8 @@ export type { IdeaFocusOutcome } from './ideas-client.ts'
 // (hot-reload), when the claim is released so a rebuilt bundle can register.
 let claimed = false
 const releaseClaim = (): void => { claimed = false }
+/** The missing-navigation warning is emitted once per page, not per state update. */
+let warnedAboutNavigation = false
 
 export function apply(ctx: ClientContext): void {
   if (claimed) return
@@ -82,13 +84,16 @@ export function apply(ctx: ClientContext): void {
     // wrong looks exactly like a link that is absent because the deployment does
     // not support it, and only one of those is a bug.
     client.sessionOpener = resolveSessionOpener(ctx)
-    if (client.sessionOpener === undefined) {
-      // The diagnostic is the point: a missing link that names what the page
-      // DOES offer is actionable, and "wrong name" stops being
-      // indistinguishable from "unsupported deployment".
+    if (client.sessionOpener === undefined && !warnedAboutNavigation) {
+      // ONE line, ONCE per page: the client effect re-runs on every state update,
+      // and a warning that repeats trains the reader to ignore it. The diagnostic
+      // is the point — a missing link that names what the page DOES offer is
+      // actionable, and "wrong name" stops being indistinguishable from
+      // "unsupported deployment".
+      warnedAboutNavigation = true
       const faces = navigationFaces(ctx)
       console.warn(
-        `[dsh-plugin-ideas-manager] no session navigation face on this page (tried uiWorkspace.openSession, sessions.open): the "Open session" link will not be shown${faces.length === 0 ? '' : `; the page offers ${faces.join(', ')}`}`,
+        `[dsh-plugin-ideas-manager] no session navigation face on this page (tried uiWorkspace.openSession, sessions.open): the "Open session" link will not be shown${faces.length === 0 ? '; no navigation face could be enumerated on this context' : `; the page offers ${faces.join(', ')}`}`,
       )
     }
     // Panel navigation is read DEFENSIVELY, not declared in `inject`: cordis

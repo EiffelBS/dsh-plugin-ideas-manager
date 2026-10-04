@@ -43,11 +43,13 @@ export declare function resolveSessionOpener(ctx: unknown): SessionOpener | unde
  *
  * A dead feature that says only "no navigation face" is unactionable: the
  * reader has no way to tell a wrong name from an unsupported deployment, and the
- * answer is sitting in the context, enumerable. cordis's reflection service
- * holds every declared context property BY NAME (`ctx.reflect.props`), so the
- * diagnostic reads that, resolves each value, and names the methods that could
- * open or focus something. It is bounded and sorted: a console line a developer
- * can act on, not a page dump.
+ * answer is sitting in the context, enumerable. The reflection layer holds every
+ * declared context property BY NAME (`ctx.reflect.props`), so the diagnostic
+ * reads that, resolves each value, and names the methods that could open or focus
+ * something. It is bounded and sorted: a console line a developer can act on, not
+ * a page dump. Empty means the context could not be enumerated — which is itself
+ * a fact worth keeping: the plugin's client half may be running on a context
+ * scoped to its own declared dependencies rather than the application root.
  *
  * @returns `name.method` pairs, empty when the context cannot be enumerated.
  */

@@ -95,6 +95,19 @@ describe('session opener', () => {
     expect(resolveSessionOpener(context({ uiWorkspace: { forkSession: () => {} } }))).toBeUndefined()
   })
 
+  it('falls back to the context PROPERTY when the accessor finds no service', () => {
+    // `ctx.get(name)` looks up a SERVICE; `ctx[name]` goes through the context
+    // proxy and also serves declared context PROPERTIES (`events`, `logger`,
+    // `reflect`, `registry` are properties, not services). A reader that only
+    // asked the accessor therefore reported an EMPTY page — which is exactly what
+    // the diagnostic did before this case was pinned.
+    const opened: string[] = []
+    const ctx = { get: (name: string): unknown => (name === 'uiWorkspace' ? undefined : undefined) }
+    Object.assign(ctx, { uiWorkspace: { openSession: (id: string) => { opened.push(id) } } })
+    resolveSessionOpener(ctx)?.open('session-7')
+    expect(opened).toEqual(['session-7'])
+  })
+
   it('still accepts a context that exposes the service as a property', () => {
     // The second chance: a test double, or a shell where the service really is a
     // property. Cheap to keep, and it is what the layout resolver does too.
