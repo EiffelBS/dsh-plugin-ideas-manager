@@ -325,3 +325,51 @@ describe('reading the relations', () => {
     expect((result.relations as ToolResult).relatesTo).toEqual([{ id: 'ghost' }])
   })
 })
+
+describe('the dependency the ranking contradicts', () => {
+  /**
+   * The live case this answers: #47 blocks #82, and #82 sat ABOVE #47 in the
+   * same backlog. `a` = the blocker, `b` = the card that waits.
+   */
+  async function contradicted(): Promise<LedgerToolHost> {
+    const host = hostWith({ a: 'Alpha', b: 'Beta' })
+    await call(host, 'ideas_relate', { ideaId: 'a', addBlocks: ['b'] })
+    await call(host, 'ideas_triage', { ideaId: 'a', rank: 2 })
+    await call(host, 'ideas_triage', { ideaId: 'b', rank: 1 })
+    return host
+  }
+
+  it('is reported by the write that creates it, from BOTH cards', async () => {
+    const host = await contradicted()
+
+    const onBlocker = await call(host, 'ideas_triage', { ideaId: 'a', effort: 1 })
+    expect((onBlocker.rankConflicts as ToolResult[])).toHaveLength(1)
+    expect(onBlocker.rankConflicts).toEqual([{
+      role: 'blocker',
+      blocked: { id: 'b', number: expect.any(String) as unknown as string, title: 'Beta' },
+      blocker: { id: 'a', number: expect.any(String) as unknown as string, title: 'Alpha' },
+    }])
+
+    const onBlocked = await call(host, 'ideas_triage', { ideaId: 'b', value: 2 })
+    expect((onBlocked.rankConflicts as ToolResult[]).map(entry => entry.role)).toEqual(['blocked'])
+  })
+
+  it('is silent while the order matches the edge, and speaks when it stops', async () => {
+    const host = hostWith({ a: 'Alpha', b: 'Beta' })
+    await call(host, 'ideas_relate', { ideaId: 'a', addBlocks: ['b'] })
+    // a above b is exactly what the edge asks for.
+    const fine = await call(host, 'ideas_triage', { ideaId: 'a', rank: 1 })
+    expect(fine.rankConflicts).toEqual([])
+    // The same edge with the ranks swapped: the answer now names the card it
+    // contradicts, which is the point of reporting it at all.
+    await call(host, 'ideas_triage', { ideaId: 'b', rank: 1 })
+    const flipped = await call(host, 'ideas_triage', { ideaId: 'a', rank: 2 })
+    expect((flipped.rankConflicts as ToolResult[]).map(entry => entry.blocked)).toEqual([{ id: 'b', number: expect.any(String), title: 'Beta' }])
+  })
+
+  it('goes quiet again once the order is corrected', async () => {
+    const host = await contradicted()
+    const fixed = await call(host, 'ideas_triage', { ideaId: 'b', rank: 2 })
+    expect(fixed.rankConflicts).toEqual([])
+  })
+})

@@ -40,9 +40,28 @@ Versions before 0.3.0 predate this file.
   rode on no wire field, so an agent used to have to scan the whole board to work
   it out. The derivation is made from the whole document, so a blocker outside
   the current filter still counts.
+- **A card that waits, but is scheduled first, says so.** Declare "#47 blocks
+  #82" and the backlog may well put #82 above #47 — a real case, where #82's own
+  text had argued for weeks that it should descend below #47 while its rank moved
+  the other way. Nothing compared the declared link with the order, so nobody could
+  see the contradiction. The *Waiting for this idea* chip is now highlighted on
+  the card that waits, and its tooltip names it: hover it and it tells you the
+  blocker is scheduled below. It stops there on purpose — the order stays yours.
+  The board will not silently move a card for you, because a card can be worth
+  doing first even when something else has to land before it. Agents get the same
+  verdict in the answer to a ranking or a link change.
 
 ### Fixed
 
+- **Writing a reason for a ranking no longer demotes the idea to the bottom of
+  the backlog.** Saving Value, Effort or the rationale *without* touching the rank
+  used to send the idea to the last position of its workspace — on a live board, a
+  card at 7 of 20 jumped to 20. The move was invisible twice over: nobody watching
+  a card move to the end of a list thinks to check why, and the activity log
+  announced it as done — *"rank 20 in its workspace group"*, a position the caller
+  never asked for. A patch that does not name a rank now records the opinion and
+  leaves the card exactly where it is, and the log names a rank only when one was
+  actually sent. Sending a rank still re-ranks the whole backlog as before.
 - **The blocking row no longer says the opposite of what it writes.** The
   interface labelled the row that writes "blocks" with the wording of the row
   that waits for an idea (*Waits for* / *Doit attendre* / *等待*), so a card

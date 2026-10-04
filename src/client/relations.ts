@@ -15,7 +15,7 @@
  * near-duplicate flag is NOT (that one is a scan, this one is a sentence).
  */
 
-import { IDEA_RELATION_LIMIT, ideaBlockedBy } from '../core/ideas.ts'
+import { IDEA_RELATION_LIMIT, ideaBlockedBy, rankBlockConflicts, type IdeaStatus } from '../core/ideas.ts'
 
 /** The rows this module reads: what a list row already carries. */
 export interface RelationRow {
@@ -24,6 +24,9 @@ export interface RelationRow {
   ideaNumber?: number
   relatesTo?: string[]
   blocks?: string[]
+  /** Present when the caller has the full board: it is what a conflict scan reads. */
+  status?: IdeaStatus
+  rank?: number
 }
 
 /** One idea a relation picker may offer. */
@@ -54,6 +57,13 @@ export interface RelationView {
    * reference, so a chip stays one token wide and the full label is its tooltip.
    */
   short: string
+  /**
+   * True when the RANKING contradicts this edge: the card printed here blocks
+   * the one it is printed on, yet sits BELOW it in the backlog. Advisory only —
+   * the board never refuses an order because of a relation (see
+   * `rankBlockConflicts`).
+   */
+  conflict?: boolean
 }
 
 /** The three kinds a surface may print; `blockedBy` is never stored. */
@@ -94,6 +104,8 @@ export function relationViews(ideas: readonly RelationRow[], ideaId: string): Re
  */
 export function relationIndexOf(ideas: readonly RelationRow[]): Map<string, RelationView[]> {
   const byId = new Map(ideas.map(item => [item.id, item]))
+  // One scan for the whole board: the same discipline as the edge index itself.
+  const conflicting = new Set(rankBlockConflicts(ideas).map(pair => conflictKey(pair.blockedId, pair.blockerId)))
   const index = new Map<string, RelationView[]>()
   for (const idea of ideas) {
     const views: RelationView[] = []
@@ -110,11 +122,22 @@ export function relationIndexOf(ideas: readonly RelationRow[]): Map<string, Rela
     for (const id of ideaBlockedBy(ideas, idea.id)) {
       const target = byId.get(id)
       if (target === undefined) continue
-      views.push({ id, kind: 'blockedBy', label: labelOf(target, id), short: shortOf(target, id) })
+      views.push({
+        id,
+        kind: 'blockedBy',
+        label: labelOf(target, id),
+        short: shortOf(target, id),
+        conflict: conflicting.has(conflictKey(idea.id, id)),
+      })
     }
     if (views.length > 0) index.set(idea.id, views)
   }
   return index
+}
+
+/** Stable identity of one (blocked, blocker) pair, for the conflict lookup set. */
+function conflictKey(blockedId: string, blockerId: string): string {
+  return `${blockedId}\u0000${blockerId}`
 }
 
 /**

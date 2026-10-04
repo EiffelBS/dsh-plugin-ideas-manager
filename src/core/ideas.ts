@@ -492,6 +492,62 @@ export function rankGroupKey(status: IdeaStatus, workspaceId: string | undefined
 }
 
 /**
+ * One stored `blocks` edge the RANKING contradicts: the blocked card sits above
+ * the card that blocks it, so the backlog schedules the dependent work first.
+ */
+export interface IdeaRankConflict {
+  /** The card that waits (the one whose `blockedBy` names the blocker). */
+  readonly blockedId: string
+  /** The card that must land first. */
+  readonly blockerId: string
+}
+
+/** What a conflict scan reads: a rank, and the edges that point at it. */
+export interface RankConflictRow {
+  id: string
+  /** Absent = the caller cannot place the row in a group, so it is never compared. */
+  status?: IdeaStatus
+  workspaceId?: string
+  rank?: number
+  blocks?: string[]
+}
+
+/**
+ * Every declared dependency the current order contradicts: `B.blocks` contains
+ * `A`, yet A is scheduled above B inside the same ranking group.
+ *
+ * **A statement, never a constraint.** `blocks` is a fact about scope and `rank`
+ * is a judgement about value; the board does not refuse a ranking that
+ * contradicts one (docs/architecture.md records the decision and the rejected
+ * alternatives). What it does is stop being silent about it: the case this
+ * exists for was a card whose own rationale said "descend below #47" while its
+ * rank said the opposite, which no reader could see.
+ *
+ * Only pairs inside ONE rank group are compared. A cross-workspace dependency is
+ * legitimate and common, and the two numbers come from two different sequences,
+ * so "6 < 7" would be a fiction. An unranked card states no order at all, so it
+ * contradicts nothing.
+ *
+ * @param ideas - every row that carries a rank and/or a `blocks` list.
+ * @returns the conflicting pairs, blocked card first, in input order.
+ */
+export function rankBlockConflicts(ideas: readonly RankConflictRow[]): IdeaRankConflict[] {
+  const byId = new Map(ideas.map(idea => [idea.id, idea]))
+  const conflicts: IdeaRankConflict[] = []
+  for (const blocker of ideas) {
+    for (const blockedId of blocker.blocks ?? []) {
+      const blocked = byId.get(blockedId)
+      if (blocked === undefined) continue
+      if (blocked.rank === undefined || blocker.rank === undefined) continue
+      if (blocked.status === undefined || blocker.status === undefined) continue
+      if (rankGroupKey(blocked.status, blocked.workspaceId) !== rankGroupKey(blocker.status, blocker.workspaceId)) continue
+      if (blocked.rank < blocker.rank) conflicts.push({ blockedId: blocked.id, blockerId: blocker.id })
+    }
+  }
+  return conflicts
+}
+
+/**
  * Structural subset the ordering helpers read (idea #34): satisfied by both
  * the full IdeaRecord and the deferred-body IdeaListRow, so client sorts and
  * drop rebuilds never need the voluminous `body` field.

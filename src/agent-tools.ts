@@ -49,7 +49,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { IDEA_RELATION_LIMIT, ideaBlockedBy, normalizeRelationIds, type IdeaRecord } from './core/ideas.ts'
+import { IDEA_RELATION_LIMIT, ideaBlockedBy, normalizeRelationIds, rankBlockConflicts, type IdeaRecord } from './core/ideas.ts'
 import {
   buildIdeasReadSnapshot,
   parseActionEnvelope,
@@ -287,6 +287,13 @@ function ideaSummary(idea: IdeaRecord, ideas: readonly IdeaRecord[]): Record<str
   }
 }
 
+/** One idea as an answer prints it: `#N Title`, or the bare id when unnumbered. */
+interface IdeaRef {
+  id: string
+  number?: string
+  title?: string
+}
+
 /**
  * The three relation lines of one idea, every target resolved to its `#N` and
  * title while the board still knows it.
@@ -336,6 +343,36 @@ function blockedByIndexOf(ideas: readonly IdeaRecord[]): Map<string, string[]> {
     }
   }
   return index
+}
+
+/**
+ * The declared dependencies ONE idea contradicts, in either direction, resolved
+ * to the same `#N Title` shape every other view prints.
+ *
+ * A triage and a relation write are the only two things that can put a card
+ * above its own blocker, so the two answers carry the verdict instead of leaving
+ * the caller to compare ranks by hand. Advisory, never a refusal: see
+ * `rankBlockConflicts`.
+ *
+ * @param ideas - the whole snapshot (the scan compares across it).
+ * @param ideaId - the card the caller just wrote.
+ * @returns the conflicts naming that card, `blocked` and `blocker` resolved.
+ */
+function rankConflictsIn(ideas: readonly IdeaRecord[], ideaId: string): Array<{ role: 'blocked' | 'blocker', blocked: IdeaRef, blocker: IdeaRef }> {
+  const byId = new Map(ideas.map(idea => [idea.id, idea] as const))
+  return rankBlockConflicts(ideas)
+    .filter(pair => pair.blockedId === ideaId || pair.blockerId === ideaId)
+    .map(pair => ({
+      role: pair.blockedId === ideaId ? 'blocked' as const : 'blocker' as const,
+      blocked: ideaRefOf(byId.get(pair.blockedId)),
+      blocker: ideaRefOf(byId.get(pair.blockerId)),
+    }))
+}
+
+/** `#12 Fix the poll`, or the bare id for a row the ledger has not numbered. */
+function ideaRefOf(idea: IdeaRecord | undefined): IdeaRef {
+  if (idea === undefined) return { id: 'unknown' }
+  return { id: idea.id, ...(idea.ideaNumber === undefined ? {} : { number: `#${idea.ideaNumber}` }), title: idea.title }
 }
 
 /** The recorded activity of an idea, oldest first, as one timeline. */
@@ -589,7 +626,12 @@ function buildTriageTool(host: IdeasToolHost): IdeasToolDefinition {
         .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
         .slice(0, IDEAS_READ_MAX_LIMIT)
         .map((entry, index) => ({ rank: entry.rank ?? index + 1, id: entry.id, title: entry.title }))
-      return json({ ok: true, idea: ideaSummary(after, ideas), groupOrdering: ordering })
+      return json({
+        ok: true,
+        idea: ideaSummary(after, ideas),
+        groupOrdering: ordering,
+        rankConflicts: rankConflictsIn(ideas, ideaId),
+      })
     },
   }
 }
@@ -709,6 +751,7 @@ function buildRelateTool(host: IdeasToolHost): IdeasToolDefinition {
         changed: true,
         idea: ideaSummary(after, ideas),
         relations: relationViewsOf(ideas, after),
+        rankConflicts: rankConflictsIn(ideas, ideaId),
       })
     },
   }

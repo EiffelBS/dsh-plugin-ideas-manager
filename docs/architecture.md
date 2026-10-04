@@ -1118,6 +1118,42 @@ decision and is stated in the CHANGELOG rather than hidden.
   toggles a tag or changes tab — the same discipline as the multi-select
   (idea #94), for the same reason: the poll must never fight the reader.
 
+## Ranking: what a triage may move
+
+**An omitted `rank` means "leave the position alone".** The `triage` verb
+re-ranks a card's whole `(status, workspace)` group **only when the patch carries
+a rank**; `{value, effort}` or `{rationale}` alone records the opinion and touches
+no rank in the document. The activity log follows the same rule: the summary names
+a rank only when the caller sent one, because the stored position of an untouched
+card is not this verb's news.
+
+This was a live defect (2026-10-04), not a reading: a `triage` carrying only a
+rationale sent the card from rank 7 of 20 to rank 20 — and logged
+`rank 20 in its workspace group`, a move nobody asked for, written down as if it
+had been. It was invisible for so long because every caller that passed a rank was
+doing the right thing, and because a card that moves to the bottom of a backlog is
+a plausible outcome nobody questions on sight.
+
+The reason it is right in the other direction — a card cannot be re-ranked by an
+edit that never mentioned an order — is the same reason a tag patch must not
+retitle a card: **a patch states what it names, and nothing else.** The verb used to
+re-rank unconditionally, which made "record why this is worth doing" and "demote
+this to the bottom" the same call, with only the second one named.
+
+**An explicit rank equal to the current position is a RE-INSERT, not a no-op.** The
+caller stated a position ("this card must sit at position 2"), and the honest
+implementation of that instruction is to make it true — which is also what
+re-numbers a group that drifted. The resulting ORDER is identical either way, so a
+no-op would add a special case whose meaning depends on whether the group happens
+to be healthy: the same request would renumber a drifted group and do nothing on a
+clean one. Idempotence is already guaranteed by the outcome, not by a special case.
+
+**Two consequences worth keeping.** A group whose members never stated a position
+stays unranked — the board sorts those last and the client falls back to creation
+date, so a fresh capture is never buried. And a triage on a CLOSED card re-ranks
+nothing either way, which the closed-column tests already pinned: the residual ranks
+of a delivered column are the author's record of how it was delivered.
+
 ## Relations between ideas (idea #106)
 
 Two new record fields, `relatesTo` and `blocks`, each a list of idea ids capped
@@ -1268,6 +1304,52 @@ mismatch diagnosable rather than merely wrong.
 host-service). A card does not show an idea's relations, so a relations-only
 edit must not spend a mirror round trip — and must not unfreeze, by attempting a
 content patch, a card that has already run.
+
+### A `blocks` edge does NOT constrain the order: the decision, and what was rejected
+
+**The decision: the ranking stays the author's, and the board says so out loud.**
+`rankBlockConflicts` (`src/core/ideas.ts`) reports every declared dependency the
+current order contradicts — `B.blocks` contains `A`, yet A is scheduled above B in
+the same ranking group — and that report is surfaced in three places: the `blockedBy`
+chip on the card that waits (warn tone plus a tooltip that names the blocker and
+the contradiction), and the `rankConflicts` answer of the two agent writes that can
+create one (`ideas_triage`, `ideas_relate`). Nothing is refused, reordered or
+silently corrected.
+
+**Why it is a statement and not a constraint.** `blocks` is a fact about scope
+(this work needs that other work to have landed); `rank` is a judgement about value
+(of everything else, including the work that must come first). Those two genuinely
+disagree in real life: a cheap schema freeze that gates twelve cards belongs below
+them. The board has exactly one tool for the second question — the author moving a
+card — and refusing that move would make a disagreement unrepresentable instead of
+merely visible. The cost of the alternative is silent: the board used to behave as
+pure `blocks`-as-scope **by accident**, and every reader of a rank number reads it
+as a scheduling constraint. The case that forced the question is worth keeping,
+because it was never a live bug in the storage — #82 had declared in its own
+rationale that it descends below #47, then recorded a rank move the other way
+("Rang 6 -> 5"), and nothing compared the text with the order.
+
+**The two rejected alternatives:**
+
+- **Refuse a triage that would place a card above its own blocker.** Tempting, and
+  it is the only one of the three that makes the invariant mechanical. Rejected
+  because it makes the ranking verb fail for a reason its caller cannot act on:
+  the human may want to record the opinion anyway and see the contradiction, and
+  an agent would get an error instead of the pair it just created. It also pushes
+  the answer into a place the board cannot show — a refusal arrives on the call,
+  is never painted on the card, and disappears on the next poll.
+- **Derived ordering — the backlog order respects blockers automatically.**
+  Rejected as the most expensive and the most magic: the visible order would stop
+  matching the stored ranks, so every reader of a rank number (including
+  `view=summary`, the agent tools and the export) would be reading a fiction, and
+  `reorder` would gain a mode whose result the author cannot predict from what they
+  dragged. It also answers a question nobody asked: the value order is the one the
+  board is for.
+
+**What the comparison refuses to guess.** Only pairs inside ONE rank group are
+compared. A cross-workspace dependency is legitimate and common, and the two rank
+numbers come from two different sequences — "6 < 7" would be a fiction. An
+unranked card states no order at all, so it contradicts nothing.
 
 ### What a poll pays for
 

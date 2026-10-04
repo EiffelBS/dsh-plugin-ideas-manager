@@ -57,6 +57,9 @@ Open · Under review · Archived · Declined.
   color-coded badges.
 - The **Suggested rank** is the position in the *open backlog of its workspace*;
   entering one re-ranks that backlog (existing rows shift).
+- Saving **Value / Effort / Rationale without a rank leaves the card exactly where
+  it is** — it records your reasoning, it does not demote the idea to the end of
+  the backlog. The activity log names a position only when you asked for one.
 - A dedicated **Priorities** tab ranks the open ideas per workspace, with ↑/↓
   buttons and drag & drop to re-rank.
 
@@ -229,8 +232,9 @@ another. An idea can now carry two kinds of link, and both of them are things
 **you** state:
 
 - **Related to** — "this is adjacent to that, go and read the other one".
-- **Waits for** — "this cannot land before that one". The other card shows the
-  same edge from its side, as **Waiting for this idea**.
+- **Blocks** — "this one has to land before that one". The other card shows the
+  same edge from its side, as **Waiting for this idea**. Both rows read the same
+  way round: on the card you are on, you are naming the card that has to wait.
 
 - You add and remove them in the **editor**, under **Relations**: pick an idea
   from a list, or press the **×** on a chip. The **Overview card** and the
@@ -238,11 +242,16 @@ another. An idea can now carry two kinds of link, and both of them are things
   `↔ #12`, `→ #31`, `← #7` — the arrow is the direction, so the links read on
   the row itself, and nothing is printed at all for an idea that has none.
 - **You only declare a link once.** *Related to* is one statement about two
-  ideas, so it is true from both sides and cannot disagree with itself. *Waits
-  for* is stored on the card that waits, and the *Waiting for this idea* line on
-  the other card is that same edge seen from there — which is why it is
-  read-only: to remove it, open the card that declares it, and the editor names
-  which card that is.
+  ideas, so it is true from both sides and cannot disagree with itself. *Blocks*
+  is stored on the card that blocks, and the *Waiting for this idea* line on the
+  other card is that same edge seen from there — which is why it is read-only: to
+  remove it, open the card that declares it, and the editor names which card that
+  is.
+- **A blocked card that is scheduled too early is marked.** If the backlog puts a
+  card above the card that blocks it, the *Waiting for this idea* chip is
+  highlighted and says so when you hover it. That is a warning, not a lock: the
+  order stays yours, and the board will not silently move a card for you — a card
+  can be worth doing first even when something else has to land before it.
 - **A wait that loops is refused.** "A waits for B" and "B waits for A" says
   nothing, so the board will not save it and names the whole chain
   (`#1 → #2 → #3`). The loop is caught when you write it, not when the graph is

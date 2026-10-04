@@ -32,6 +32,110 @@ const createAction = (id: string, title = 'Idea title', workspaceId?: string) =>
   input: { title, body: 'Body', ...(workspaceId === undefined ? {} : { workspaceId }) },
 })
 
+describe('a triage with NO rank is an opinion, not a move', () => {
+  /** 20 open cards ranked 1..20, as `reorder` numbers them. */
+  function rankedBacklog(): IdeasHostLedger {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    const ids = Array.from({ length: 20 }, (_, index) => `idea-${String(index + 1).padStart(2, '0')}`)
+    ids.forEach((id, index) => { ledger.applyRequest(`seed-${id}`, createAction(id, `Idea ${index + 1}`, 'ws-1')) })
+    ledger.applyRequest('order', { kind: 'reorder', orderedIds: ids })
+    return ledger
+  }
+
+  const ranksOf = (ledger: IdeasHostLedger): Array<[string, number | undefined]> =>
+    ledger.snapshot().ideas
+      .map(idea => [idea.id, idea.rank] as [string, number | undefined])
+      .sort((a, b) => (a[1] ?? Number.MAX_SAFE_INTEGER) - (b[1] ?? Number.MAX_SAFE_INTEGER))
+
+  it('leaves the position alone when the patch carries no rank (reproduced 2026-10-04)', () => {
+    // Reproduced live: `triage {rationale}` on the card at rank 7 of 20 sent it
+    // to rank 20, and the activity log reported "rank 20 in its workspace group"
+    // — a move nobody asked for, written down as if it had been.
+    const ledger = rankedBacklog()
+    try {
+      const before = ranksOf(ledger)
+      expect(before[6]).toEqual(['idea-07', 7])
+
+      ledger.applyRequest('triage-no-rank', {
+        kind: 'triage',
+        ideaId: 'idea-07',
+        patch: { rationale: 'Still the best next step.' },
+      })
+
+      // The card stays where it was...
+      expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-07')!.rank).toBe(7)
+      // ...and so does every one of its nineteen peers.
+      expect(ranksOf(ledger)).toEqual(before)
+    } finally {
+      ledger.dispose()
+    }
+  })
+
+  it('records the opinion without reporting a rank nobody sent', () => {
+    const ledger = rankedBacklog()
+    try {
+      ledger.applyRequest('triage-no-rank', { kind: 'triage', ideaId: 'idea-07', patch: { value: 3, effort: 2 } })
+      const card = ledger.snapshot().ideas.find(idea => idea.id === 'idea-07')!
+      expect(card.value).toBe(3)
+      expect(card.effort).toBe(2)
+      const summary = card.events?.at(-1)?.summary ?? ''
+      expect(summary).toContain('value 3')
+      expect(summary).toContain('effort 2')
+      // The event must not claim a position: the stored rank was not the verb's
+      // doing, and an agent reading the log must not be told it was.
+      expect(summary).not.toMatch(/rank/i)
+    } finally {
+      ledger.dispose()
+    }
+  })
+
+  it('still re-inserts and shifts when a rank IS sent (the control)', () => {
+    const ledger = rankedBacklog()
+    try {
+      ledger.applyRequest('triage-rank-2', { kind: 'triage', ideaId: 'idea-07', patch: { rank: 2 } })
+      const ordered = ranksOf(ledger)
+      expect(ordered.map(entry => entry[0]).slice(0, 3)).toEqual(['idea-01', 'idea-07', 'idea-02'])
+      expect(ordered.map(entry => entry[1])).toEqual(Array.from({ length: 20 }, (_, index) => index + 1))
+      // A rank the caller sent is the one the log reports.
+      expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-07')!.events?.at(-1)?.summary)
+        .toContain('rank 2 in its workspace group')
+    } finally {
+      ledger.dispose()
+    }
+  })
+
+  it('an explicit rank equal to the current one RE-INSERTS rather than no-ops', () => {
+    // The decision, recorded because either reading is defensible: a rank the
+    // caller states is an instruction ("this card must sit at position 2"), and
+    // the verb's only honest implementation of it is to make that true — which
+    // also re-numbers a group that drifted. The resulting ORDER is identical
+    // either way, so the only thing a no-op would add is a special case that
+    // decides differently depending on whether the group happens to be healthy.
+    const ledger = rankedBacklog()
+    try {
+      const before = ranksOf(ledger)
+      ledger.applyRequest('triage-same-rank', { kind: 'triage', ideaId: 'idea-05', patch: { rank: 5 } })
+      expect(ranksOf(ledger)).toEqual(before)
+      // The group is renumbered, which is what makes the instruction idempotent
+      // even on a group that carried a hole.
+      expect(ranksOf(ledger).map(entry => entry[1])).toEqual(Array.from({ length: 20 }, (_, index) => index + 1))
+    } finally {
+      ledger.dispose()
+    }
+  })
+
+  it('leaves the whole document untouched when nothing was sent at all', () => {
+    const ledger = rankedBacklog()
+    try {
+      const before = ranksOf(ledger)
+      ledger.applyRequest('triage-empty', { kind: 'triage', ideaId: 'idea-12', patch: {} })
+      expect(ranksOf(ledger)).toEqual(before)
+    } finally {
+      ledger.dispose()
+    }
+  })
+})
+
 describe('IdeasHostLedger persistence', () => {
   it('persists a create across instances (restart-safe) and continues the revision', () => {
     const first = new IdeasHostLedger({ dir: freshDir() })
@@ -248,17 +352,22 @@ describe('IdeasHostLedger T1 lifecycle (triage / deliver / decline / numbering)'
     ledger.applyRequest('r3', { kind: 'triage', ideaId: 'idea-a', patch: { value: 5 } })
     const open = [...ledger.snapshot().ideas.filter(idea => idea.status === 'open')]
       .sort((x, y) => (x.rank ?? Number.MAX_SAFE_INTEGER) - (y.rank ?? Number.MAX_SAFE_INTEGER))
-    expect(open.map(idea => idea.id)).toEqual(['idea-b', 'idea-a'])
+    // Neither card ever stated a position, so there is no order to keep: the
+    // triage records the opinion and leaves the group unranked rather than
+    // inventing a ranking nobody asked for (see the "no rank, no move" suite).
+    expect(open.map(idea => idea.id)).toEqual(['idea-a', 'idea-b'])
+    expect(open.every(idea => idea.rank === undefined)).toBe(true)
     // A note-only triage on a delivered idea updates the opinion without
     // re-ranking the closed columns.
     ledger.applyRequest('r4', { kind: 'deliver', ideaId: 'idea-b' })
     ledger.applyRequest('r5', { kind: 'triage', ideaId: 'idea-a', patch: { rationale: 'note only' } })
     expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-a')!.rationale).toBe('note only')
     expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.status).toBe('archived')
-    // Ranks are PER GROUP: the triage re-ranks only the open group (idea-a at
-    // 1), so the delivered idea keeps its archived-group rank (1) untouched.
+    // Ranks are PER GROUP: a triage that CARRIES a rank re-ranks only the open
+    // group, so the delivered idea keeps its archived-group rank untouched.
+    ledger.applyRequest('r6', { kind: 'triage', ideaId: 'idea-a', patch: { rank: 1 } })
     expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-a')!.rank).toBe(1)
-    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.rank).toBe(1)
+    expect(ledger.snapshot().ideas.find(idea => idea.id === 'idea-b')!.rank).toBeUndefined()
     ledger.dispose()
   })
 

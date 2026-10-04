@@ -1081,12 +1081,18 @@ export class IdeasHostLedger {
           next.rationale = rationale === '' ? undefined : rationale
         }
         let ideas = this.document.ideas.map(item => item.id === action.ideaId ? next : item)
-        if (idea.status === 'open') {
+        if (idea.status === 'open' && action.patch.rank !== undefined) {
           // Re-rank INSIDE the idea's own workspace group: the suggested 1-based
           // position is relative to the other open ideas of the same workspace
           // (the workspace-less ideas form one generic group). Other workspace
           // groups and the closed columns keep their ranks — the classic
           // "rank by workspace" semantic of the Priorities view.
+          //
+          // The guard is the point. A patch that carries no rank is an OPINION,
+          // not a move: recording `{value, effort, rationale}` must leave the
+          // card where the author put it. Re-ranking unconditionally sent such a
+          // card to the END of its group — a successful edit that produced a
+          // wrong order and logged the move as if it had been asked for.
           const ordered = triageOrderedIds(ideas, action.ideaId, action.patch.rank)
           const rankById = new Map(ordered.map((id, index) => [id, index + 1]))
           ideas = ideas.map(item => ({ ...item, rank: rankById.get(item.id) ?? item.rank }))
@@ -1094,8 +1100,11 @@ export class IdeasHostLedger {
         this.document.ideas = ideas
         // One entry on the triaged idea only: the re-rank shifts its neighbours'
         // positions, which is the triage's effect rather than an event in their
-        // own timeline.
-        const finalRank = ideas.find(item => item.id === action.ideaId)?.rank
+        // own timeline. The rank is named only when the caller sent one: the
+        // stored position of an untouched card is not this verb's news.
+        const finalRank = action.patch.rank === undefined
+          ? undefined
+          : ideas.find(item => item.id === action.ideaId)?.rank
         recorded.push({
           ideaId: action.ideaId,
           verb: 'triage',
@@ -1735,11 +1744,18 @@ function rankOrdered(ideas: readonly IdeaRecord[]): IdeaRecord[] {
 
 /**
  * New rank order of the MOVED IDEA'S OWN WORKSPACE GROUP after inserting
- * `movedId` at `rank` (1-based) inside the open ideas of that group; a missing
- * rank appends. Only the group's ids are returned: the triage caller maps
- * `rankById` over the whole document and keeps every other group's rank
- * untouched (`?? item.rank`). Other workspace groups and the closed columns
- * are never re-ranked by a triage.
+ * `movedId` at `rank` (1-based) inside the open ideas of that group.
+ *
+ * Only the group's ids are returned: the triage caller maps `rankById` over the
+ * whole document and keeps every other group's rank untouched (`?? item.rank`).
+ * Other workspace groups and the closed columns are never re-ranked by a triage.
+ *
+ * A missing `rank` appends, and the ONE caller that may still pass one is the
+ * `merge` verb (the survivor takes the loser's place, at the end when the loser
+ * had none). The triage verb no longer does: it re-ranks only when the patch
+ * carries a rank, so an opinion recorded without a position cannot move a card.
+ *
+ * @param rank - the requested 1-based position; undefined appends.
  */
 function triageOrderedIds(
   ideas: readonly IdeaRecord[],

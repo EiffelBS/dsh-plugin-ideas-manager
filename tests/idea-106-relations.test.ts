@@ -30,6 +30,7 @@ import {
   ideaRelatedTo,
   isIdeaRelationList,
   normalizeRelationIds,
+  rankBlockConflicts,
   repointedRelationIds,
   type IdeaRecord,
 } from '../src/core/ideas.ts'
@@ -534,5 +535,49 @@ describe('relation helpers', () => {
     expect(blockCyclePath(graph, 'c', 'a')).toEqual(['a', 'b', 'c'])
     expect(blockCyclePath(graph, 'a', 'c')).toBeUndefined()
     expect(blockCyclePath(graph, 'a', 'a')).toEqual(['a'])
+  })
+})
+
+describe('a blocks edge the ranking contradicts', () => {
+  /** One open card of `ws-1` at `rank`, optionally blocking another id. */
+  const card = (id: string, rank: number | undefined, blocks?: string[], workspaceId = 'ws-1') =>
+    ({ id, status: 'open' as const, workspaceId, rank, ...(blocks === undefined ? {} : { blocks }) })
+
+  it('names the pair when the blocked card sits above its blocker', () => {
+    // The live case: #82 sat at rank 6, #47 at rank 7, and #47 blocks #82.
+    expect(rankBlockConflicts([card('a', 7, ['b']), card('b', 6)]))
+      .toEqual([{ blockedId: 'b', blockerId: 'a' }])
+  })
+
+  it('says nothing when the order already matches the edge', () => {
+    expect(rankBlockConflicts([card('a', 6, ['b']), card('b', 7)])).toEqual([])
+    // Side by side: a one-rank flip is the whole difference.
+    expect(rankBlockConflicts([card('a', 6, ['b']), card('b', 6)])).toEqual([])
+  })
+
+  it('never compares two sequences it cannot align', () => {
+    // Cross-workspace: 6 < 7 would be a fiction between two different backlogs.
+    expect(rankBlockConflicts([card('a', 7, ['b'], 'ws-1'), card('b', 6, undefined, 'ws-2')])).toEqual([])
+    // A card with no stated position contradicts nothing.
+    expect(rankBlockConflicts([card('a', 7, ['b']), card('b', undefined)])).toEqual([])
+    expect(rankBlockConflicts([card('a', undefined, ['b']), card('b', 1)])).toEqual([])
+    // A closed card is ranked in its own column, so the two numbers never meet.
+    expect(rankBlockConflicts([
+      { id: 'a', status: 'archived' as const, workspaceId: 'ws-1', rank: 7, blocks: ['b'] },
+      { id: 'b', status: 'open' as const, workspaceId: 'ws-1', rank: 6 },
+    ])).toEqual([])
+  })
+
+  it('tolerates a dangling edge and a row the caller cannot place', () => {
+    expect(rankBlockConflicts([card('a', 1, ['ghost']), card('b', 2)])).toEqual([])
+    // `status` absent means "this projection cannot say", not "assume it agrees".
+    expect(rankBlockConflicts([{ id: 'a', rank: 7, blocks: ['b'] }, { id: 'b', rank: 6 }])).toEqual([])
+  })
+
+  it('reports every contradictory pair of a longer chain, blocked card first', () => {
+    // c blocks b blocks a, every rank inverted: two contradictions, one per edge
+    // the order breaks.
+    expect(rankBlockConflicts([card('c', 3, ['b']), card('b', 2, ['a']), card('a', 1)]))
+      .toEqual([{ blockedId: 'b', blockerId: 'c' }, { blockedId: 'a', blockerId: 'b' }])
   })
 })

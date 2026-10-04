@@ -91,8 +91,8 @@ up in the idea's activity log under `agent:plugin:ideas-manager:agent-tool`.
 | `ideas_list` | read | One bounded page of metadata rows (`workspaceId`, `status`, `tag`, `query`, `limit`, `offset`). Never a description — call `ideas_get` for that. Every row carries `relatesTo`, `blocks` and the derived `blockedBy`. |
 | `ideas_get` | read | One idea in full: description, priority opinion, activity log, follow-up rows, and its three relation lines. |
 | `ideas_capture` | write | Title + markdown body; optional `summary`, `workspaceId`, `tags` (names only), `value`, `effort`, `rationale`, `rank`. |
-| `ideas_triage` | write | Record `value` / `effort` / `rationale` / `rank` on an open idea in one transaction; answers with the resulting group ordering. |
-| `ideas_relate` | write | Declare or drop relations: `addRelatesTo` / `removeRelatesTo`, `addBlocks` / `removeBlocks`. Edits by add and remove, so an unnamed edge survives; answers with the three resolved relation lines. |
+| `ideas_triage` | write | Record `value` / `effort` / `rationale` / `rank` on an open idea in one transaction; answers with the resulting group ordering and any `rankConflicts`. **Omit `rank` to keep the card where it is.** |
+| `ideas_relate` | write | Declare or drop relations: `addRelatesTo` / `removeRelatesTo`, `addBlocks` / `removeBlocks`. Edits by add and remove, so an unnamed edge survives; answers with the three resolved relation lines and any `rankConflicts`. |
 | `ideas_launch` | write | Start the execution (mirrored card or fresh session, resolved by the Host). |
 | `ideas_review` | write | Settle the review gate: `approve` (deliver), `followUp` (linked child + archived parent), `decline` (+ `decision`). |
 
@@ -111,6 +111,11 @@ Discipline the tools keep, and so must you:
   batch of `update` with the stable `workspaceId`; an archived idea bound to a
   task card needs `restore` -> `update` -> `archive`, because an archived card
   is read-only for every verb.
+- **`rankConflicts` is a report, not a refusal.** When a `triage` or a relation
+  write leaves a card above a card that blocks it, the answer names the pair
+  (`role` is `blocked` or `blocker`, relative to the card you wrote). The board
+  never reorders and never refuses on that ground — the order is the author's —
+  so treat the list as something to tell the human, not as an error to retry.
 
 ## Per-idea activity log
 
@@ -196,7 +201,7 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 | `create` | kind, id, input | input keys: `title`*, `body`*, `summary`, `workspaceId`, `rank`, `value`, `effort`, `rationale`, `tags`. Starts `open`, stamped with the next `ideaNumber`. |
 | `update` | kind, ideaId, patch | patch keys: `title`, `body`, `summary`, `rank`, `value`, `effort`, `rationale`, `tags`, `workspaceId`, `relatesTo`, `blocks`; `null` clears (relations like tags). Relations are **not** accepted by `create`. |
 | `move` | kind, ideaId, status | `open` / `underReview` / `archived` (manual drag; declined only via `decline`). |
-| `triage` | kind, ideaId, patch | record the priority opinion and re-rank transactionally; patch keys: `value`, `effort`, `rationale`, `rank` (open ideas only). |
+| `triage` | kind, ideaId, patch | record the priority opinion; patch keys: `value`, `effort`, `rationale`, `rank` (open ideas only). **Omit `rank` to record the opinion WITHOUT moving the card** — a patch that names no order re-ranks nothing, and the activity log then names no rank. Send `rank` to place the card; it renumbers the whole `(status, workspace)` group, and a rank equal to the current position re-inserts (same order, group renumbered). The answer carries `groupOrdering` and `rankConflicts` (see below). |
 | `decline` | kind, ideaId, decision | → `declined` + `archivedAt` + optional `decision` note. |
 | `deliver` | kind, ideaId | → `archived` + `archivedAt` + `deliveredAt`; works from `open` AND `underReview` (review approved). Mirrors the card archive; the card's `done` stays runner-owned. |
 | `followUp` | kind, ideaId, input | review rejected: creates an `open` child idea (title/body, `followUpOfId` → parent, parent's workspace inherited) and archives the parent — one atomic commit; requires the parent `underReview`. Mirrors the child as a new card only. |

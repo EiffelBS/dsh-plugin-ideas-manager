@@ -352,6 +352,24 @@ describe('the relation copy is in the STORAGE voice', () => {
     }
   })
 
+  it('pins the row label to the direction it writes', () => {
+    // The hints above prove the SENTENCE; this proves the LABEL. There is no
+    // language-independent way to test "is this word the blocker or the
+    // waiting one", so the three shipped labels are pinned as they stand: the
+    // label is the only thing a reader sees without hovering, and swapping it
+    // back to "Waits for" / "Doit attendre" / 等待 is exactly the defect this
+    // suite was written for.
+    expect([
+      fr['relations.blocks'],
+      en['relations.blocks'],
+      zh['relations.blocks'],
+    ]).toEqual(['Bloque', 'Blocks', '阻塞'])
+    // And the waiting voice stays on the read-only row, for the other readers.
+    expect(fr['relations.blockedBy']).not.toBe(fr['relations.blocks'])
+    expect(en['relations.blockedBy']).not.toBe(en['relations.blocks'])
+    expect(zh['relations.blockedBy']).not.toBe(zh['relations.blocks'])
+  })
+
   it('never renders an uninterpolated placeholder in a relation string', () => {
     const substituted = [
       'relations.removeRelated', 'relations.removeBlocked',
@@ -385,6 +403,68 @@ describe('the relation copy is in the STORAGE voice', () => {
     await openEditor('c')
     const locked = host.querySelector('[data-dsh-ideas-relation-locked="a"]')!.getAttribute('title')
     expect(locked).toBe(t('relations.blockedByHint', { target: '#1 Alpha' }))
+  })
+})
+
+describe('a dependency the ranking contradicts', () => {
+  /** The same edge as `rows()`, with the two ranks swapped: `c` now sits above
+   *  the `a` that blocks it. That is the whole defect: a stated dependency the
+   *  backlog schedules the wrong way round. */
+  function contradicted(): IdeaRecord[] {
+    return rows().map(row => {
+      if (row.id === 'a') return { ...row, rank: 3 }
+      if (row.id === 'c') return { ...row, rank: 1 }
+      return row
+    })
+  }
+
+  it('flags the BLOCKED card, and only that one, with the reason in its tooltip', async () => {
+    await mount(contradicted())
+
+    // `c` waits for `a` and is scheduled above it: its locked chip is marked and
+    // its sentence says so.
+    const flagged = host.querySelector('[data-dsh-ideas-relation-conflict="a"]')
+    expect(flagged).not.toBeNull()
+    expect(flagged!.getAttribute('data-dsh-ideas-relation')).toBe('blockedBy')
+    expect(flagged!.getAttribute('title')).toBe(t('relations.blockedByRankConflict', { target: '#1 Alpha' }))
+    expect(flagged!.className).toContain('dsh-ideas-relation-chip-conflict')
+
+    // `a`'s own `blocks` chip is NOT marked: the relation is fine, the ORDER is
+    // what is being reported, and marking both cards would double the alarm for
+    // one contradiction.
+    expect(host.querySelector('[data-dsh-ideas-relation-conflict="c"]')).toBeNull()
+    const arrow = host.querySelector('[data-dsh-ideas-relation="blocks"]')!
+    expect(arrow.getAttribute('title')).toBe(t('relations.blocksHint', { target: '#3 Gamma' }))
+  })
+
+  it('says nothing when the dependency is scheduled the right way round', async () => {
+    // The default fixture ranks the blocker ABOVE the blocked card, which is the
+    // order the edge asks for. Silence is the healthy state — a flag that is on
+    // permanently teaches the reader to ignore it.
+    await mount()
+    expect(host.querySelector('[data-dsh-ideas-relation-conflict]')).toBeNull()
+    expect(host.querySelector('[data-dsh-ideas-relation="blockedBy"]')!.getAttribute('title'))
+      .toBe(t('relations.blockedByHint', { target: '#1 Alpha' }))
+  })
+
+  it('marks the same contradiction in the card editor', async () => {
+    await mount(contradicted())
+    await openEditor('c')
+    const locked = host.querySelector('[data-dsh-ideas-relation-locked="a"]')!
+    expect(locked.getAttribute('title')).toBe(t('relations.blockedByRankConflict', { target: '#1 Alpha' }))
+    expect(locked.className).toContain('dsh-ideas-relation-chip-conflict')
+  })
+
+  it('says the same thing in the three shipped languages', () => {
+    const dictionaries: ReadonlyArray<Record<string, string>> = [fr, en, zh]
+    for (const dictionary of dictionaries) {
+      const sentence = dictionary['relations.blockedByRankConflict'].replace('{target}', '#1 Alpha')
+      // The conflict sentence must keep the plain one intact inside it, or the
+      // reader loses the edge itself and is left with a bare warning.
+      expect(sentence, dictionary['relations.blockedByRankConflict']).toContain(dictionary['relations.blockedByHint'].replace('{target}', '#1 Alpha'))
+      expect(sentence).not.toMatch(/\{/)
+      expect(sentence).not.toBe(dictionary['relations.blockedByHint'].replace('{target}', '#1 Alpha'))
+    }
   })
 })
 

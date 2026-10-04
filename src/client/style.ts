@@ -841,6 +841,15 @@ body[data-ds-dark-theme] .dsh-ideas-card {
   cursor: default;
 }
 
+/* A declared blocker the RANKING schedules BELOW the card it blocks. Still
+   neutral in shape — a relation is a statement — but it borrows the warn tone
+   the panel already uses for a launch the permission gate refused: advisory, not
+   an error. The board never refuses the order; it just stops hiding it. */
+.dsh-ideas-relation-chip-conflict {
+  border-color: var(--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-accent));
+  color: var(--dsw-alias-warn-fg, var(--dsw-alias-label-primary, var(--dsh-ideas-fb-fg)));
+}
+
 .dsh-ideas-relation-glyph {
   flex: none;
   opacity: 0.75;
@@ -2690,6 +2699,7 @@ export const classes = {
   relationChips: 'dsh-ideas-relation-chips',
   relationChip: 'dsh-ideas-relation-chip',
   relationChipLocked: 'dsh-ideas-relation-chip-locked',
+  relationChipConflict: 'dsh-ideas-relation-chip-conflict',
   relationGlyph: 'dsh-ideas-relation-glyph',
   relationRemove: 'dsh-ideas-relation-remove',
   relationEmpty: 'dsh-ideas-relation-empty',

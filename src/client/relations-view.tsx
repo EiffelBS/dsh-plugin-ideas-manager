@@ -43,10 +43,19 @@ function relationGlyph(kind: IdeaRelationViewKind): string {
   return '↔'
 }
 
-/** Tooltip naming what the chip means, so a glyph never reads as a verdict. */
-function relationHint(kind: IdeaRelationViewKind, label: string): string {
+/**
+ * Tooltip naming what the chip means, so a glyph never reads as a verdict.
+ *
+ * A chip whose edge the ORDER contradicts says so in the same breath: the
+ * blocker is printed on the card it blocks, and it is scheduled BELOW it, which
+ * is the one combination a reader of a backlog cannot be expected to notice.
+ */
+function relationHint(kind: IdeaRelationViewKind, label: string, conflict = false): string {
   if (kind === 'blocks') return t('relations.blocksHint', { target: label })
-  if (kind === 'blockedBy') return t('relations.blockedByHint', { target: label })
+  if (kind === 'blockedBy') {
+    const base = t('relations.blockedByHint', { target: label })
+    return conflict ? t('relations.blockedByRankConflict', { target: label }) : base
+  }
   return t('relations.relatesToHint', { target: label })
 }
 
@@ -68,9 +77,10 @@ export function RelationChips({ views }: { views: readonly RelationView[] | unde
       {shown.map(view => (
         <span
           key={`${view.kind}:${view.id}`}
-          className={classes.relationChip}
+          className={`${classes.relationChip}${view.conflict === true ? ` ${classes.relationChipConflict}` : ''}`}
           data-dsh-ideas-relation={view.kind}
-          title={relationHint(view.kind, view.label)}
+          {...(view.conflict === true ? { 'data-dsh-ideas-relation-conflict': view.id } : {})}
+          title={relationHint(view.kind, view.label, view.conflict)}
         >
           <span className={classes.relationGlyph} aria-hidden="true">{relationGlyph(view.kind)}</span>
           {view.short}
@@ -194,9 +204,10 @@ export function RelationsEditor({ ideas, ideaId, relatesTo, blocks, disabled, on
             : blockers.map(view => (
               <span
                 key={view.id}
-                className={`${classes.relationChip} ${classes.relationChipLocked}`}
+                className={`${classes.relationChip} ${classes.relationChipLocked}${view.conflict === true ? ` ${classes.relationChipConflict}` : ''}`}
                 data-dsh-ideas-relation-locked={view.id}
-                title={relationHint('blockedBy', view.label)}
+                {...(view.conflict === true ? { 'data-dsh-ideas-relation-conflict': view.id } : {})}
+                title={relationHint('blockedBy', view.label, view.conflict)}
               >
                 <span className={classes.relationGlyph} aria-hidden="true">{relationGlyph('blockedBy')}</span>
                 {view.label}
