@@ -8,6 +8,8 @@ Versions before 0.3.0 predate this file.
 
 ## Unreleased
 
+## 0.9.0 - 2026-10-04
+
 ### Added
 
 - **The AI analysis can now relate an idea to its neighbours.** When the analysis
