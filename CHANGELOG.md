@@ -23,13 +23,14 @@ Versions before 0.3.0 predate this file.
 
 ### Changed
 
-- **An update now upgrades the installed analysis prompt.** The prompt was
-  installed once and never replaced, so an instance that had installed an older
-  version kept using it after every upgrade — the new features simply went
-  unused, with nothing to show for it. The plugin now recognises its own past and
-  replaces it. A prompt **you** edited is still yours and is never touched; the
-  start-up log says which one is in use, and the README says how to adopt the
-  plugin's.
+- **An update now replaces the installed analysis prompt, and keeps what it
+  replaced.** The prompt was installed once and never replaced, so an instance
+  that had installed an older version kept using it after every upgrade — the
+  new features simply went unused, with nothing to show for it. Every start now
+  writes this version's prompt, and the file it replaced is kept beside it
+  (`SKILL.md.<timestamp>.bak`, the five most recent), so a prompt you wrote by
+  hand is never lost: the start-up log names the copy, and the README says how
+  to put it back.
 
 - **A long Open column stays responsive.** Once the Open column grows past a few
   hundred ideas, the board draws only the cards you can actually see and leaves

@@ -7,29 +7,27 @@
  * the skill in its catalog and loads it instead of receiving the full
  * methodology inline.
  *
- * **An installed copy is UPGRADED, and only a hand-edited one is kept.** The
- * earlier rule was first-wins: never overwrite. That protected a hand-edited
- * skill and cost something much more expensive — an instance that installed an
- * older version kept running the older PROMPT after every upgrade, with no
- * symptom at all except the features this plugin advertises going unused by the
- * analyst (it did not know relations, it silently dropped tag promptPrefixes).
- * A feature the AI cannot use is not a feature.
+ * **The bundled prompt always wins, and the previous file is never lost.** The
+ * rules before it were both wrong in the same way — first-wins kept an
+ * installation stranded on a months-old PROMPT after every upgrade, so the
+ * features this plugin advertises went unused by the analyst with no symptom;
+ * "upgrade only what we recognise" fixed that but needed a digest list to
+ * maintain and still left the author with no way to get their text back.
  *
- * So the file on disk is classified by digest:
- *  - **absent** → install the bundled copy;
- *  - **identical to the bundled copy** → already current;
- *  - **matching a digest this plugin has shipped** → it is OUR old copy, so the
- *    upgrade replaces it (and says so);
- *  - **anything else** → the author edited it; it is kept, untouched, and a
- *    warning names the one command that adopts the plugin default.
+ * So: the file on disk is replaced, whatever it is, and a copy of what was
+ * there is kept beside it (`SKILL.md.<stamp>.bak`, newest
+ * {@link SKILL_BACKUPS_KEPT} kept) BEFORE the write. Nothing is destroyed, the
+ * prompt in use is always the one this plugin ships, and restoring the author's
+ * version is a file copy away — which the start-up log names, because silently
+ * replacing a hand-written file would be its own kind of dishonesty.
  *
  * Best-effort by design — a filesystem failure (e.g. a read-only home) must
  * never break plugin boot.
  */
 
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { dshHome } from './dsh-home.ts'
 import {
   IDEAS_ANALYST_SKILL_CONTENT,
@@ -37,26 +35,14 @@ import {
   IDEAS_ANALYST_SKILL_NAME,
 } from './skills/ideas-analyst.ts'
 
-/**
- * SHA-256 of every OLDER bundled copy this plugin has shipped, so an upgrade can
- * recognise its own past and replace it. Exported for the test that pins the
- * seeded entry.
- *
- * This list is the only manual bookkeeping in the install path, and it exists
- * because the alternative — overwriting unconditionally — destroys hand-written
- * skills. When a release changes `IDEAS_ANALYST_SKILL_CONTENT`, append that
- * release's digest here in the same commit (the CURRENT copy is hashed at
- * runtime and needs no entry). A machine that installed that release then
- * upgrades itself on the next start instead of staying on a months-old prompt.
- */
-export const KNOWN_BUNDLED_DIGESTS: readonly string[] = [
-  // 2026-09-23, the copy installed on every instance created before the
-  // relations/promptPrefix work. Recognising it is the whole point.
-  'a52ebd3ac0de29e5b029070762ff4f05761373e77ab8a9473168950990cf4880',
-]
-
 /** Directory under the DSH home holding user-installed skills (user-dsh root). */
 export const DSH_SKILLS_DIR = 'skills'
+
+/** Suffix of the kept copies of a replaced prompt. */
+export const SKILL_BACKUP_SUFFIX = '.bak'
+
+/** How many replaced prompts are kept beside the current one. */
+export const SKILL_BACKUPS_KEPT = 5
 
 /** Outcome of one installation attempt. */
 export interface SkillInstallOutcome {
@@ -66,6 +52,8 @@ export interface SkillInstallOutcome {
   synced: boolean
   /** created | upgraded | matched | kept-existing */
   status: 'created' | 'upgraded' | 'matched' | 'kept-existing'
+  /** Where the replaced prompt was kept, when one was (an upgrade). */
+  backup?: string
 }
 
 /** Logging seam (defaults to the host console pattern used by the service). */
@@ -84,47 +72,101 @@ export function installedSkillPath(home: string = dshHome()): string {
   return join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME, IDEAS_ANALYST_SKILL_FILE)
 }
 
-/** SHA-256 of the bundled copy, computed rather than listed (it must never drift). */
-function bundledDigest(): string {
-  return createHash('sha256').update(IDEAS_ANALYST_SKILL_CONTENT, 'utf8').digest('hex')
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+/** `YYYYMMDD-HHMMSS` in local time: when a replaced prompt was seen. */
+function stamp(at: Date): string {
+  const two = (value: number): string => String(value).padStart(2, '0')
+  return `${at.getFullYear()}${two(at.getMonth() + 1)}${two(at.getDate())}-${two(at.getHours())}${two(at.getMinutes())}${two(at.getSeconds())}`
+}
+
+/** The kept copies beside `target`, newest first. */
+function existingBackups(target: string): string[] {
+  const dir = dirname(target)
+  const prefix = `${basename(target)}.`
+  let names: string[]
+  try {
+    names = readdirSync(dir)
+  } catch {
+    return []
+  }
+  return names
+    .filter(name => name.startsWith(prefix) && name.endsWith(SKILL_BACKUP_SUFFIX))
+    .map(name => join(dir, name))
+    .sort((left, right) => {
+      // The stamp is lexicographically ordered, so the file name is the order.
+      try {
+        return statSync(right).mtimeMs - statSync(left).mtimeMs
+      } catch {
+        return right.localeCompare(left)
+      }
+    })
 }
 
 /**
- * Install the bundled ideas-analyst skill (best-effort, upgrade-or-keep).
+ * Keep what is about to be replaced, and return where it now lives.
+ *
+ * Idempotent on content: a second install of the same previous version reuses
+ * the copy already taken instead of littering the folder, and the retention
+ * drops the oldest beyond {@link SKILL_BACKUPS_KEPT}.
+ *
+ * @returns the backup path, or undefined when the copy could not be kept (the
+ *   caller still installs: a missing courtesy copy must not strand the prompt).
+ */
+function keepPrevious(target: string, previous: string, at: Date): string | undefined {
+  const digest = sha256(previous)
+  try {
+    for (const path of existingBackups(target)) {
+      if (sha256(readFileSync(path, 'utf8')) === digest) return path
+    }
+    const path = `${target}.${stamp(at)}${SKILL_BACKUP_SUFFIX}`
+    writeFileSync(path, previous, 'utf8')
+    // Retention: the few most recent kept copies survive; older ones go.
+    for (const old of existingBackups(target).slice(SKILL_BACKUPS_KEPT)) {
+      try {
+        unlinkSync(old)
+      } catch {
+        // Nothing to do: an undeletable extra copy is not worth a failed boot.
+      }
+    }
+    return path
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Install the bundled ideas-analyst skill (always the bundled prompt; the
+ * replaced file is kept beside it).
  * @param options - `home` DSH home override; `log` journaling seam;
- *   `knownDigests` test seam for the recognised-older-copies list.
+ *   `now` clock seam for the backup stamp.
  * @returns the outcome; never throws (errors degrade to kept-existing/synced=false).
  */
 export function installIdeasAnalystSkill(options: {
   home?: string
   log?: SkillInstallLog
-  knownDigests?: readonly string[]
+  now?: Date
 } = {}): SkillInstallOutcome {
   const log = options.log ?? ((line: string): void => { console.log(`[dsh-plugin-ideas-manager] ${line}`) })
-  const known = options.knownDigests ?? KNOWN_BUNDLED_DIGESTS
   const target = installedSkillPath(options.home)
   try {
     if (existsSync(target)) {
-      // The file exists: is it OURS (an older bundled copy) or the author's?
       const existing = readFileSync(target, 'utf8')
       if (existing === IDEAS_ANALYST_SKILL_CONTENT) return { path: target, synced: true, status: 'matched' }
-      const digest = createHash('sha256').update(existing, 'utf8').digest('hex')
-      if (known.includes(digest) || digest === bundledDigest()) {
-        // Our own past: an upgrade, not an author's work. Replacing it is the
-        // whole point — otherwise the analyst runs a months-old prompt.
-        writeFileSync(target, IDEAS_ANALYST_SKILL_CONTENT, 'utf8')
-        log(`skill "${IDEAS_ANALYST_SKILL_NAME}" at ${target} was an older bundled copy; upgraded it to this version.`)
-        return { path: target, synced: true, status: 'upgraded' }
-      }
-      // Anything else was edited by a human: it wins, and the warning says which
-      // prompt is in use and how to give it up on purpose.
-      const line =
-        `skill "${IDEAS_ANALYST_SKILL_NAME}" exists at ${target} and was edited by hand ` +
-        `(it matches no bundled version), so it is kept untouched — which means the analysis prompt in use ` +
-        `is yours, NOT this plugin version. Delete the file and restart to adopt the bundled copy.`
-      log(line)
-      console.warn(`[dsh-plugin-ideas-manager] ${line}`)
-      return { path: target, synced: false, status: 'kept-existing' }
+      // Replace unconditionally: the prompt in use must be the one this plugin
+      // ships. The author's text is kept first, and the log says where — a
+      // silent overwrite of hand-written work would be its own dishonesty.
+      const backup = keepPrevious(target, existing, options.now ?? new Date())
+      writeFileSync(target, IDEAS_ANALYST_SKILL_CONTENT, 'utf8')
+      log(
+        `skill "${IDEAS_ANALYST_SKILL_NAME}" at ${target} was replaced by this version's prompt` +
+        (backup === undefined
+          ? ' (the previous copy could NOT be kept beside it)'
+          : `; the previous copy is kept at ${backup} if you want it back`) + '.',
+      )
+      return { path: target, synced: true, status: 'upgraded', ...(backup === undefined ? {} : { backup }) }
     }
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, IDEAS_ANALYST_SKILL_CONTENT, 'utf8')

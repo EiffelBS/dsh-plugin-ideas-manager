@@ -3,39 +3,56 @@
  * the user-dsh skill root (`<home>/skills/ideas-analyst/SKILL.md`) so any
  * analysing session discovers it.
  *
- * The classification is by DIGEST, and it is the whole policy: a missing file is
- * written, an older copy THIS PLUGIN shipped is upgraded, a matching copy is
- * left alone, and a hand-edited one is kept untouched with a warning. The old
- * rule was first-wins for all of them, which silently stranded every instance on
- * a months-old analysis prompt. Best-effort: failures return a kept-existing
- * outcome instead of throwing.
+ * The policy is one line — **the bundled prompt always wins, and what it
+ * replaces is kept** — because both earlier rules failed the same way: first-wins
+ * stranded every installation on a months-old prompt, and "upgrade only what we
+ * recognise" needed a digest list and still left the author no way back. So a
+ * present, different file is replaced AND copied to `SKILL.md.<stamp>.bak` first,
+ * and the log names where. Best-effort: failures return a kept-existing outcome
+ * instead of throwing.
  */
 
 import { tmpdir } from 'node:os'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   installedSkillPath,
   installIdeasAnalystSkill,
-  KNOWN_BUNDLED_DIGESTS,
+  SKILL_BACKUPS_KEPT,
+  SKILL_BACKUP_SUFFIX,
   skillRoot,
 } from '../src/skill-install.ts'
 import { IDEAS_ANALYST_SKILL_CONTENT, IDEAS_ANALYST_SKILL_NAME } from '../src/skills/ideas-analyst.ts'
 
-const digestOf = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
+/** A fixed clock, so the backup name is predictable. */
+const AT = new Date(2026, 9, 4, 3, 30, 15)
 
 let home: string
 
 beforeEach(() => {
   home = join(tmpdir(), `ideas-skill-test-${process.pid}-${randomUUID()}`)
-  mkdirSync(home, { recursive: true })
+  mkdirSync(join(home, 'skills', IDEAS_ANALYST_SKILL_NAME), { recursive: true })
 })
 
 afterEach(() => {
   rmSync(home, { recursive: true, force: true })
 })
+
+/** Write a divergent prompt where the plugin installs its own. */
+function installForeign(text: string): string {
+  const target = installedSkillPath(home)
+  writeFileSync(target, text, 'utf8')
+  return target
+}
+
+/** The kept copies beside the installed file. */
+function backups(): string[] {
+  return readdirSync(join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME))
+    .filter(name => name.endsWith(SKILL_BACKUP_SUFFIX))
+    .sort()
+}
 
 describe('installIdeasAnalystSkill', () => {
   it('writes the bundled skill to <home>/skills/ideas-analyst/SKILL.md', () => {
@@ -78,61 +95,62 @@ describe('installIdeasAnalystSkill', () => {
     expect(again.status).toBe('matched')
     expect(again.synced).toBe(true)
     expect(readFileSync(again.path, 'utf8')).toBe(IDEAS_ANALYST_SKILL_CONTENT)
+    expect(backups()).toEqual([])
   })
 
-  it('UPGRADES a copy this plugin shipped before, instead of stranding it', () => {
-    // The bug this replaces: an instance installed months ago kept running the
-    // old prompt after every upgrade, so the features the plugin advertised went
-    // unused by the analyst with no symptom anywhere.
-    const target = installedSkillPath(home)
-    mkdirSync(join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME), { recursive: true })
-    // An older copy this plugin shipped — recognised by digest through the seam,
-    // the same way the seeded 2026-09 entry works on a real home.
-    const stale = '# an older bundled copy of the skill\n'
-    writeFileSync(target, stale, 'utf8')
+  it('replaces a HAND-EDITED prompt and keeps it beside, naming where', () => {
+    // The author's text is not the prompt that runs any more — that is the
+    // point — but it is not destroyed either, and the log says where it went.
+    const edits = '# my hand-edited analyst\n'
+    installForeign(edits)
     const logged: string[] = []
-    const outcome = installIdeasAnalystSkill({ home, log: (line) => { logged.push(line) }, knownDigests: [digestOf(stale)] })
+    const outcome = installIdeasAnalystSkill({ home, log: (line) => { logged.push(line) }, now: AT })
+
     expect(outcome.status).toBe('upgraded')
     expect(outcome.synced).toBe(true)
-    expect(readFileSync(target, 'utf8')).toBe(IDEAS_ANALYST_SKILL_CONTENT)
-    expect(logged.some(line => line.includes('upgraded it to this version'))).toBe(true)
-    // And it is idempotent afterwards: the next start sees the current copy.
-    expect(installIdeasAnalystSkill({ home }).status).toBe('matched')
+    expect(readFileSync(installedSkillPath(home), 'utf8')).toBe(IDEAS_ANALYST_SKILL_CONTENT)
+    expect(outcome.backup).toBeDefined()
+    expect(readFileSync(outcome.backup!, 'utf8')).toBe(edits)
+    expect(logged.some(line => line.includes('replaced by this version'))).toBe(true)
+    expect(logged.some(line => line.includes('kept at'))).toBe(true)
   })
 
-  it('keeps a HAND-EDITED copy untouched, and says which prompt is in use', () => {
-    const target = installedSkillPath(home)
-    const edits = '# my hand-edited skill\n'
-    mkdirSync(join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME), { recursive: true })
-    writeFileSync(target, edits, 'utf8')
-    const logged: string[] = []
-    const outcome = installIdeasAnalystSkill({ home, log: (line) => { logged.push(line) } })
-    expect(outcome.status).toBe('kept-existing')
-    expect(outcome.synced).toBe(false)
-    expect(readFileSync(target, 'utf8')).toBe(edits) // untouched
-    expect(logged.some(line => line.includes('edited by hand'))).toBe(true)
-    // The sentence must name the consequence AND the way out: a kept copy means
-    // the analyst is running the author's prompt, not the plugin's.
-    expect(logged.some(line => line.includes('NOT this plugin version'))).toBe(true)
-    expect(logged.some(line => line.includes('Delete the file and restart'))).toBe(true)
+  it('replaces an OLD bundled prompt too — that is the case that used to strand an install', () => {
+    const stale = '# an older bundled copy\n'
+    installForeign(stale)
+    const outcome = installIdeasAnalystSkill({ home, now: AT })
+    expect(outcome.status).toBe('upgraded')
+    expect(readFileSync(installedSkillPath(home), 'utf8')).toBe(IDEAS_ANALYST_SKILL_CONTENT)
+    expect(readFileSync(outcome.backup!, 'utf8')).toBe(stale)
   })
 
-  it('knows the digest of the copy sitting on a real home, so that one upgrades too', () => {
-    // Guards the seeded list itself: the digest registered for the 2026-09-23
-    // release is the one an untouched installation of it produces. If the skill
-    // text is reflowed, this entry must be re-seeded rather than silently
-    // stranding every machine on the old prompt.
-    expect(KNOWN_BUNDLED_DIGESTS).toContain('a52ebd3ac0de29e5b029070762ff4f05761373e77ab8a9473168950990cf4880')
-    // Every entry is a lowercase sha-256, and none is the current copy's (that
-    // one is compared at runtime).
-    for (const digest of KNOWN_BUNDLED_DIGESTS) {
-      expect(digest).toMatch(/^[0-9a-f]{64}$/)
-      expect(digest).not.toBe(digestOf(IDEAS_ANALYST_SKILL_CONTENT))
+  it('keeps the same previous copy once, however many times the install repeats', () => {
+    // Every start re-reads the file; a backup per start would bury the folder
+    // in identical copies and tell the human nothing.
+    const stale = '# an older bundled copy\n'
+    installForeign(stale)
+    installIdeasAnalystSkill({ home, now: new Date(2026, 0, 1, 0, 0, 0) })
+    installForeign(stale)
+    const again = installIdeasAnalystSkill({ home, now: new Date(2026, 5, 5, 5, 5, 5) })
+    expect(again.status).toBe('upgraded')
+    expect(backups()).toHaveLength(1)
+    expect(readFileSync(again.backup!, 'utf8')).toBe(stale)
+  })
+
+  it('bounds the kept copies', () => {
+    for (let index = 0; index < SKILL_BACKUPS_KEPT + 3; index += 1) {
+      installForeign(`# a distinct old prompt ${index}\n`)
+      installIdeasAnalystSkill({ home, now: new Date(2026, 0, 1, 0, 0, index) })
     }
+    expect(backups()).toHaveLength(SKILL_BACKUPS_KEPT)
+    // The retained ones are the most recent prompts, not the oldest.
+    const kept = backups().map(name => readFileSync(join(skillRoot(home), IDEAS_ANALYST_SKILL_NAME, name), 'utf8'))
+    expect(kept.some(text => text.includes(`old prompt ${SKILL_BACKUPS_KEPT + 2}`))).toBe(true)
+    expect(kept.some(text => text.includes('old prompt 0'))).toBe(false)
   })
 
-  it('never throws: an unreadable/undeletable target degrades to kept-existing', () => {
-    // The whole home is a file, so mkdirSync inside it fails.
+  it('never throws: an unwritable home degrades to kept-existing', () => {
+    // The whole home is a file, so the install cannot even create the folder.
     const asFile = join(tmpdir(), `ideas-skill-file-${process.pid}-${randomUUID()}`)
     try {
       writeFileSync(asFile, 'not a dir', 'utf8')

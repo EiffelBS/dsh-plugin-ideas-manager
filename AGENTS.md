@@ -107,12 +107,9 @@ If your change adds, renames or removes a field the skill may **write**
    a tag the skill keeps must come back with its `promptPrefix`, or a
    human-written launch instruction is erased without a word.
 
-**And append this release's digest to `KNOWN_BUNDLED_DIGESTS`**
-(`src/skill-install.ts`) in the same commit. The install path recognises a file
-on disk by digest: absent → install, matches a shipped digest → **upgrade**, same
-as bundled → nothing to do, anything else → a hand-edited copy, kept. Skipping
-the append is not neutral: it is exactly what stranded existing installations on
-a months-old prompt, which is the silent failure this list exists to prevent.
+The install path itself needs no bookkeeping: it always writes the bundled
+prompt and keeps what it replaced beside it (`SKILL.md.<stamp>.bak`, the five
+most recent), so a new release needs no digest list and no migration step.
 
 ## Toolchain
 

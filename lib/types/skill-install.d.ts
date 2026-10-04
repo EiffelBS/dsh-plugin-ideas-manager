@@ -7,40 +7,29 @@
  * the skill in its catalog and loads it instead of receiving the full
  * methodology inline.
  *
- * **An installed copy is UPGRADED, and only a hand-edited one is kept.** The
- * earlier rule was first-wins: never overwrite. That protected a hand-edited
- * skill and cost something much more expensive — an instance that installed an
- * older version kept running the older PROMPT after every upgrade, with no
- * symptom at all except the features this plugin advertises going unused by the
- * analyst (it did not know relations, it silently dropped tag promptPrefixes).
- * A feature the AI cannot use is not a feature.
+ * **The bundled prompt always wins, and the previous file is never lost.** The
+ * rules before it were both wrong in the same way — first-wins kept an
+ * installation stranded on a months-old PROMPT after every upgrade, so the
+ * features this plugin advertises went unused by the analyst with no symptom;
+ * "upgrade only what we recognise" fixed that but needed a digest list to
+ * maintain and still left the author with no way to get their text back.
  *
- * So the file on disk is classified by digest:
- *  - **absent** → install the bundled copy;
- *  - **identical to the bundled copy** → already current;
- *  - **matching a digest this plugin has shipped** → it is OUR old copy, so the
- *    upgrade replaces it (and says so);
- *  - **anything else** → the author edited it; it is kept, untouched, and a
- *    warning names the one command that adopts the plugin default.
+ * So: the file on disk is replaced, whatever it is, and a copy of what was
+ * there is kept beside it (`SKILL.md.<stamp>.bak`, newest
+ * {@link SKILL_BACKUPS_KEPT} kept) BEFORE the write. Nothing is destroyed, the
+ * prompt in use is always the one this plugin ships, and restoring the author's
+ * version is a file copy away — which the start-up log names, because silently
+ * replacing a hand-written file would be its own kind of dishonesty.
  *
  * Best-effort by design — a filesystem failure (e.g. a read-only home) must
  * never break plugin boot.
  */
-/**
- * SHA-256 of every OLDER bundled copy this plugin has shipped, so an upgrade can
- * recognise its own past and replace it. Exported for the test that pins the
- * seeded entry.
- *
- * This list is the only manual bookkeeping in the install path, and it exists
- * because the alternative — overwriting unconditionally — destroys hand-written
- * skills. When a release changes `IDEAS_ANALYST_SKILL_CONTENT`, append that
- * release's digest here in the same commit (the CURRENT copy is hashed at
- * runtime and needs no entry). A machine that installed that release then
- * upgrades itself on the next start instead of staying on a months-old prompt.
- */
-export declare const KNOWN_BUNDLED_DIGESTS: readonly string[];
 /** Directory under the DSH home holding user-installed skills (user-dsh root). */
 export declare const DSH_SKILLS_DIR = "skills";
+/** Suffix of the kept copies of a replaced prompt. */
+export declare const SKILL_BACKUP_SUFFIX = ".bak";
+/** How many replaced prompts are kept beside the current one. */
+export declare const SKILL_BACKUPS_KEPT = 5;
 /** Outcome of one installation attempt. */
 export interface SkillInstallOutcome {
     /** Absolute path of the installed (or kept) SKILL.md. */
@@ -49,6 +38,8 @@ export interface SkillInstallOutcome {
     synced: boolean;
     /** created | upgraded | matched | kept-existing */
     status: 'created' | 'upgraded' | 'matched' | 'kept-existing';
+    /** Where the replaced prompt was kept, when one was (an upgrade). */
+    backup?: string;
 }
 /** Logging seam (defaults to the host console pattern used by the service). */
 export type SkillInstallLog = (line: string) => void;
@@ -60,13 +51,14 @@ export declare function skillRoot(home?: string): string;
 /** Absolute SKILL.md path for the plugin-installed skill under `home`. */
 export declare function installedSkillPath(home?: string): string;
 /**
- * Install the bundled ideas-analyst skill (best-effort, upgrade-or-keep).
+ * Install the bundled ideas-analyst skill (always the bundled prompt; the
+ * replaced file is kept beside it).
  * @param options - `home` DSH home override; `log` journaling seam;
- *   `knownDigests` test seam for the recognised-older-copies list.
+ *   `now` clock seam for the backup stamp.
  * @returns the outcome; never throws (errors degrade to kept-existing/synced=false).
  */
 export declare function installIdeasAnalystSkill(options?: {
     home?: string;
     log?: SkillInstallLog;
-    knownDigests?: readonly string[];
+    now?: Date;
 }): SkillInstallOutcome;
