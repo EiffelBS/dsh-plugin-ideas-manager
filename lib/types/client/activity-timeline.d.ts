@@ -1,5 +1,5 @@
 /**
- * The per-idea activity timeline (idea #92, part B).
+ * The per-idea activity timeline (part B).
  *
  * `IdeaRecord` keeps only the last state, so an idea that was declined a month
  * ago answers "why?" with whatever survived in its body — usually nothing. This

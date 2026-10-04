@@ -4,7 +4,7 @@
  * whose switch belongs to the heading).
  *
  * Extracted rather than duplicated because the Display tab and the Backup tab
- * (idea #95) render the same row shape with the same copy discipline — an
+ * render the same row shape with the same copy discipline — an
  * option always states what it changes, its range and its default — and a second
  * copy of that markup would drift exactly where the discipline lives.
  */

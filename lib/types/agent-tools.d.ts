@@ -1,12 +1,12 @@
 /**
- * Agent tools for the Ideas board (idea #92).
+ * Agent tools for the Ideas board.
  *
  * Until now an agent that wanted to write an idea had to hand-build the
  * `{requestId, action, initiator}` envelope, survive the PowerShell/BOM traps
- * of doing it from a shell, and know the re-rank policy by heart. These six
+ * of doing it from a shell, and know the re-rank policy by heart. These seven
  * tools are the DSH-native counterpart of the board UI, exactly as the task
- * board's own `task_board_*` tools are: any session can capture, triage, launch
- * and settle idea work without a browser.
+ * board's own `task_board_*` tools are: any session can capture, triage, relate,
+ * launch and settle idea work without a browser.
  *
  * Three rules make this surface trustworthy rather than merely convenient:
  *
@@ -26,13 +26,29 @@
  * Domain refusals come back as `ok:false` values the model can read and act on
  * rather than as thrown errors, and every read is bounded.
  *
+ * The relations (`relatesTo`, `blocks`, and the DERIVED `blockedBy`) are the
+ * reason this surface grew a seventh tool: the ledger has carried them, but
+ * they rode only on the HTTP patch, so an agent asked to state
+ * one had to hand-build an envelope — or go read the plugin's source to find out
+ * the model had one at all. Two rules keep that surface honest:
+ *
+ *  - **`blockedBy` is answered, never written.** It is the inverse of another
+ *    row's `blocks` and is stored nowhere, so every read derives it from the
+ *    snapshot ({@link ideaBlockedBy}) instead of asking the caller to know the
+ *    direction. Writing it is refused by the wire gate, tool or not.
+ *  - **An edit is an ADD/REMOVE, never a replacement.** The wire patch replaces
+ *    a whole list, which is a foot-gun an agent walks into silently; the tool
+ *    therefore computes the complete list from the record it just read, so an
+ *    edge the caller did not name survives, and a call that would change nothing
+ *    writes nothing at all (no revision, no mirror round trip, no log line).
+ *
  * Deliberately absent: any way to confirm a permission, raise a card, or take
  * the mirror's own decisions. Those are the human's.
  *
  * @module dsh-plugin-ideas-manager/agent-tools
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { IdeaRecord } from './core/ideas.ts';
+import { type IdeaRecord } from './core/ideas.ts';
 import { type IdeasSnapshot } from './protocol.ts';
 /**
  * The initiator the tools stamp on every write. It is what makes an agent's
@@ -41,7 +57,7 @@ import { type IdeasSnapshot } from './protocol.ts';
  */
 export declare const IDEAS_TOOL_INITIATOR = "plugin:ideas-manager:agent-tool";
 /** Registered tool names, in registration order. */
-export declare const IDEAS_TOOL_NAMES: readonly ["ideas_list", "ideas_get", "ideas_capture", "ideas_triage", "ideas_launch", "ideas_review"];
+export declare const IDEAS_TOOL_NAMES: readonly ["ideas_list", "ideas_get", "ideas_capture", "ideas_triage", "ideas_relate", "ideas_launch", "ideas_review"];
 /**
  * The narrow Host face the tools need. `IdeasHostService` satisfies it
  * structurally, so tests and a future host drive the same surface.
@@ -93,7 +109,7 @@ export interface IdeasToolDefinition {
  */
 export declare function carriesSystemField(action: unknown): boolean;
 /**
- * Build the six ideas tools for one Host service.
+ * Build the seven ideas tools for one Host service.
  * @param host - the Host service face (satisfied by `IdeasHostService`).
  * @returns the tool definitions, in {@link IDEAS_TOOL_NAMES} order.
  */

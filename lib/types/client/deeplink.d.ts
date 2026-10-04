@@ -1,5 +1,5 @@
 /**
- * Deep-link to an idea (idea #105): the PURE half.
+ * Deep-link to an idea: the PURE half.
  *
  * Two references reach the board — the `#N` a human reads and an idea id a
  * system holds — and both have to become one card. Nothing here touches the

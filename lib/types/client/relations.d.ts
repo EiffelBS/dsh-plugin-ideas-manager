@@ -1,5 +1,5 @@
 /**
- * Relations on the board (idea #106): the pure half.
+ * Relations on the board: the pure half.
  *
  * Everything the UI needs to decide — which ideas a relation row may name, what
  * a chip prints, and whether a list actually changed — is here, DOM-free and
@@ -14,6 +14,7 @@
  * an edge: a relation is a statement the human makes, exactly like the
  * near-duplicate flag is NOT (that one is a scan, this one is a sentence).
  */
+import { type IdeaStatus } from '../core/ideas.ts';
 /** The rows this module reads: what a list row already carries. */
 export interface RelationRow {
     id: string;
@@ -21,6 +22,9 @@ export interface RelationRow {
     ideaNumber?: number;
     relatesTo?: string[];
     blocks?: string[];
+    /** Present when the caller has the full board: it is what a conflict scan reads. */
+    status?: IdeaStatus;
+    rank?: number;
 }
 /** One idea a relation picker may offer. */
 export interface RelationCandidate {
@@ -48,6 +52,13 @@ export interface RelationView {
      * reference, so a chip stays one token wide and the full label is its tooltip.
      */
     short: string;
+    /**
+     * True when the RANKING contradicts this edge: the card printed here blocks
+     * the one it is printed on, yet sits BELOW it in the backlog. Advisory only —
+     * the board never refuses an order because of a relation (see
+     * `rankBlockConflicts`).
+     */
+    conflict?: boolean;
 }
 /** The three kinds a surface may print; `blockedBy` is never stored. */
 export type IdeaRelationViewKind = 'relatesTo' | 'blocks' | 'blockedBy';
@@ -79,6 +90,29 @@ export declare function relationIndexOf(ideas: readonly RelationRow[]): Map<stri
  * title, so an imported row is still findable and the order never flickers.
  */
 export declare function relationCandidates(ideas: readonly RelationRow[], selfId: string, exclude?: readonly string[]): RelationCandidate[];
+/**
+ * The OPEN ideas that block `ideaId`, labelled, split by what the ranking says.
+ *
+ * This is what the launch confirmation reads, because that modal is where the
+ * human decides to spend a run — not the card, which they have already read.
+ * Three rules, each load-bearing:
+ *
+ *  - only `open` blockers are named. A delivered or archived blocker is
+ *    satisfied in practice, and a warning that outlives its own resolution
+ *    teaches the reader to dismiss the line — then it is there when it matters;
+ *  - `contradicted` is the subset the ranking schedules BELOW the card that waits,
+ *    which is the case worth the stronger sentence;
+ *  - a cross-workspace blocker is never `contradicted`: two rank numbers from two
+ *    different sequences cannot be compared (see `rankBlockConflicts`).
+ *
+ * @param ideas - the whole snapshot; a blocker may sit outside the current scope.
+ * @param ideaId - the idea about to be launched.
+ * @returns label lists, ready to interpolate into a sentence.
+ */
+export declare function openBlockersOf(ideas: readonly RelationRow[], ideaId: string): {
+    pending: string[];
+    contradicted: string[];
+};
 /**
  * Whether an edited list actually differs from the stored one. The editor sends
  * only what changed: an untouched relation must not spend a revision, a mirror

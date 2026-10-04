@@ -6,7 +6,7 @@
  * capture document moves *into* the ledger, never from a markdown file). The
  * format below is pinned by the golden tests — change consciously.
  *
- * The activity log IS carried (idea #92), as a bounded `**Activity**` block
+ * The activity log IS carried, as a bounded `**Activity**` block
  * per idea. Decision and rationale: these two documents are the only portable
  * artefact the plugin produces, and "why was this declined?" is unanswerable
  * from a last-state record. The JSON round-trip (`GET /state` → `import`) also

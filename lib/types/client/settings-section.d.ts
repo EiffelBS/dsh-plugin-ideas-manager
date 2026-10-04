@@ -15,7 +15,7 @@
  *    shell exposes the slots contract; a shell without it still gets the
  *    style wiring (never throws - the GUI must survive this plugin).
  *
- * The Backup tab (idea #95, `client/backup-panel.tsx`) drives its OWN Host
+ * The Backup tab (`client/backup-panel.tsx`) drives its OWN Host
  * routes rather than the settings port, so a deployment whose settings service
  * is unavailable still gets snapshots, restore and the portable export: only
  * the display options above degrade to the spelled defaults.

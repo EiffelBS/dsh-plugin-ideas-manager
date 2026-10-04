@@ -1,10 +1,10 @@
 /**
- * Multi-select state for the ideas board (idea #94).
+ * Multi-select state for the ideas board.
  *
  * The selection is **view state**. It lives in the board component, is never
  * sent to the Host and is never persisted: the 2.5 s poll keeps publishing
  * whatever the ledger holds and can therefore never overwrite (or resurrect) a
- * selection, exactly like the open-column display order of idea #71.
+ * selection, exactly like the open-column display order.
  *
  * Two rules make "all" unambiguous, which is the whole reason this is a module
  * rather than three `useState` calls:
@@ -30,7 +30,7 @@
 export interface SelectionScope {
     /** '' = all workspaces, a concrete workspace id, or the no-workspace sentinel. */
     workspaceFilter: string;
-    /** Conjunctive tag filter (idea #36). */
+    /** Conjunctive tag filter. */
     tags: readonly string[];
     /** Header text search. */
     query: string;

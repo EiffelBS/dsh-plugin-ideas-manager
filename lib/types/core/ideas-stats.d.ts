@@ -1,5 +1,5 @@
 /**
- * Backlog health (idea #110) — the ONE definition of every number the health
+ * Backlog health — the ONE definition of every number the health
  * view prints.
  *
  * Framework-free and pure, exactly like `core/ideas.ts`: the Host route, the

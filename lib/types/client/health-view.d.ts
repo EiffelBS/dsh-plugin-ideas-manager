@@ -1,5 +1,5 @@
 /**
- * Backlog health view (idea #110): the panel's rendering of ONE bounded
+ * Backlog health view: the panel's rendering of ONE bounded
  * aggregate, fetched from `GET /api/ideas/state?view=stats`.
  *
  * The component owns no arithmetic. Every number it prints comes from the

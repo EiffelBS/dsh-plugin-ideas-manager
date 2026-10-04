@@ -1,6 +1,6 @@
 /**
  * Ideas host routes: GET /api/ideas/state, POST /api/ideas/action,
- * POST /api/ideas/launch (idea #66), and the SSE /api/ideas/events stream,
+ * POST /api/ideas/launch, and the SSE /api/ideas/events stream,
  * all behind the loopback + browser same-origin fence. Follows the
  * dsh-task-board route discipline (same error ids, same body limits, same
  * guard semantics) without importing any of its code.

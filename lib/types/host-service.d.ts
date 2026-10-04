@@ -6,7 +6,7 @@
  * mirrored task cards passing `done` and moves the linked idea to
  * `underReview` (the review gate). No other background work runs.
  *
- * Launch (idea #66): the mirror is also an EXECUTION entry point, but only on
+ * Launch: the mirror is also an EXECUTION entry point, but only on
  * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
  * passivity above is unchanged: no idea mutation ever starts a run, and `done`
  * stays runner-owned. Two execution backends share that one entry point: the
@@ -21,7 +21,7 @@
  * SERIALIZED PER IDEA ID (one promise chain per idea): a create followed by
  * an update runs one at a time in submission order, and each op re-reads the
  * fresh ledger state at execution time, so a queued link can never race its
- * predecessor into seeing "unbound" and minting a second card (idea #35).
+ * predecessor into seeing "unbound" and minting a second card.
  * The bound card id is persisted on the idea through the ledger's internal
  * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
@@ -31,7 +31,7 @@ import { TaskBoardMirror } from './taskboard-bridge.ts';
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts';
 import { type IdeasStatsOptions } from './core/ideas-stats.ts';
 import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot, type IdeasSettingsValue, type IdeasStats } from './protocol.ts';
-/** Answer of a launch (idea #66): backend-neutral on purpose, so the card
+/** Answer of a launch: backend-neutral on purpose, so the card
  *  backend and the direct-session backend serve the same route with the same
  *  shape. */
 export interface IdeasLaunchResult {
@@ -63,11 +63,11 @@ export declare class IdeasHostService {
      */
     private settings;
     private readonly pendingMirrors;
-    /** Per-idea mirror chains (idea #35): ops for one idea id run in order. */
+    /** Per-idea mirror chains: ops for one idea id run in order. */
     private readonly mirrorChains;
-    /** Launch replays: requestId -> {at, result} (idea #66, in-memory only). */
+    /** Launch replays: requestId -> {at, result} (in-memory only). */
     private readonly launchCache;
-    /** Direct-session runs in flight: sessionId -> ideaId (idea #66 v2). */
+    /** Direct-session runs in flight: sessionId -> ideaId. */
     private readonly sessionRuns;
     /** Set once the poll re-attached to a persisted in-flight run. */
     private sessionRunsReattached;
@@ -90,12 +90,12 @@ export declare class IdeasHostService {
      */
     isActive(): boolean;
     snapshot(): IdeasSnapshot;
-    /** One full record for the deferred-body read (idea #34); undefined when absent. */
+    /** One full record for the deferred-body read; undefined when absent. */
     idea(id: string): IdeaRecord | undefined;
     /** SSE frame payload; deliberately skips the ideas deep-clone of {@link snapshot}. */
     eventPayload(): IdeasEventPayload;
     /**
-     * The bounded backlog-health aggregate (idea #110), served by
+     * The bounded backlog-health aggregate, served by
      * `GET /api/ideas/state?view=stats`.
      *
      * Deliberately NOT built on {@link snapshot}: the aggregate reads counters
@@ -163,9 +163,8 @@ export declare class IdeasHostService {
      */
     attachSessions(sessions: SessionRunner): void;
     /**
-     * Bind the reader the launch path resolves its settings through (idea #66
-     * for the direct-launch permission, idea #107 for the per-workspace default
-     * model).
+     * Bind the reader the launch path resolves its settings through (the
+     * direct-launch permission, the per-workspace default model).
      *
      * One reader for the whole settings VALUE, late-bound on purpose: the port
      * can appear after the plugin applied, and a deployment with no settings
@@ -187,7 +186,7 @@ export declare class IdeasHostService {
      *    an unchanged observation, so the 30 s poll never churns the revision;
      *    a card missing from one probe keeps its last observation because the
      *    mirror self-heals a dangling link on the next write);
-     *  - feed the backend-neutral `runStatus` (idea #66) from that observation:
+     *  - feed the backend-neutral `runStatus` from that observation:
      *    `running` / `done` / `failed` map straight across, and a card observed
      *    OUTSIDE a run (back in `backlog`/`todo`) clears the stamp. Both setters
      *    are no-ops on an unchanged value, so the idle poll stays free;
@@ -205,7 +204,7 @@ export declare class IdeasHostService {
      */
     private pollCardRuns;
     /**
-     * Launch the idea's execution (idea #66) through the resolved execution
+     * Launch the idea's execution through the resolved execution
      * backend: the mirrored card whenever the task-board plugin is present (the
      * card is created when the idea has none yet), otherwise a FRESH direct
      * session — the Host-serves-no-task-board case. Both paths are AWAITED,
@@ -226,7 +225,7 @@ export declare class IdeasHostService {
      */
     launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult>;
     /**
-     * The default launch model of the idea's workspace (idea #107), or
+     * The default launch model of the idea's workspace, or
      * undefined when the workspace carries none — which is what leaves a run on
      * whatever its backend defaults to, exactly as before the field existed.
      *
@@ -276,13 +275,13 @@ export declare class IdeasHostService {
      */
     private settleRun;
     /**
-     * Append one Host-transition entry to an idea's activity log (idea #92).
+     * Append one Host-transition entry to an idea's activity log.
      * Best-effort like every other mirror/poll write: a ledger that refuses the
      * append must not take the settle down with it.
      */
     private recordRunEvent;
     /**
-     * Harvest the delivery note of a finished run (idea #91) and store it as the
+     * Harvest the delivery note of a finished run and store it as the
      * idea's host-written `deliveryNote`.
      *
      * Strictly AFTER the review gate opens, and deliberately not awaited: the
@@ -306,7 +305,7 @@ export declare class IdeasHostService {
      */
     private scheduleMirror;
     /**
-     * Queue one mirror op on its idea's chain (idea #35): ops for the SAME idea
+     * Queue one mirror op on its idea's chain: ops for the SAME idea
      * id run strictly in submission order — a create always completes (and
      * binds) before a following update even starts — while ops for different
      * ideas still run concurrently. `runMirror` never rejects, so a failed link
@@ -315,7 +314,7 @@ export declare class IdeasHostService {
      */
     private enqueueMirror;
     /**
-     * Queue one operation on its idea's chain (idea #35): ops for the SAME idea
+     * Queue one operation on its idea's chain: ops for the SAME idea
      * id run strictly in submission order — a create always completes (and
      * binds) before a following update even starts — while ops for different
      * ideas still run concurrently. Mirror ops never reject (`runMirror`); a

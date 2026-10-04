@@ -1,5 +1,5 @@
 /**
- * The delivery note on the review gate (idea #91, part A).
+ * The delivery note on the review gate (part A).
  *
  * Before this, a finished run landed in the review gate as a column change and
  * nothing else: the reviewer could only press *Open session* to learn what had

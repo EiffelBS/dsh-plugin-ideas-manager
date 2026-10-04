@@ -1,5 +1,5 @@
 /**
- * Direct-session execution backend (idea #66, v2) — the fallback for a Host
+ * Direct-session execution backend — the fallback for a Host
  * that serves NO task-board plugin.
  *
  * It speaks the same Host RPC dialect the task-board's own runner speaks
@@ -29,7 +29,7 @@
  *    settles `failed`. A run that ends in an error therefore settles `done`
  *    too — the card backend's history scan distinguishes the two and this
  *    backend deliberately does not;
- *  - a finished run leaves a delivery note (idea #91): `readDeliveryNote`
+ *  - a finished run leaves a delivery note: `readDeliveryNote`
  *    walks back to its last assistant message so the review gate has something
  *    to decide on. Best-effort like the rest of this file.
  */
@@ -86,7 +86,7 @@ export declare class SessionRunner {
      */
     listRunning(): Promise<ReadonlyMap<string, boolean>>;
     /**
-     * The delivery note of a finished run (idea #91): the text of the session's
+     * The delivery note of a finished run: the text of the session's
      * LAST assistant message, read back through the same `session` RPC surface
      * this backend already speaks.
      *

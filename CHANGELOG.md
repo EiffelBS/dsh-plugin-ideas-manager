@@ -72,6 +72,15 @@ Versions before 0.3.0 predate this file.
 
 ### Fixed
 
+- **"Back to chat" works again.** The button at the top of the board did nothing
+  at all: you clicked it, and the board stayed exactly where it was. The board
+  asks the shell to show the conversation, and it was asking for the shell's
+  panel service at a moment when the shell had not finished putting itself
+  together — so the answer "not yet" was taken as a final "no" and remembered
+  for the rest of the session. Every click after that was a no-op, silently. The
+  board now asks at the moment you click, which is the only moment the answer
+  matters, and the **Open Task Board** button in the run window — which asks the
+  same way — is repaired with it.
 - **Opening another idea from a link no longer shows the previous card.** The
   *Run* window now says what it is about to ignore, the link chips are a way out
   of a number, and the three links are three colours — details below, in

@@ -14,11 +14,11 @@
  * decline / move-to-archived -> task archive; idea restore -> task restore;
  * idea delete -> no-op (the card outlives the idea). Every failure is logged
  * and the ideas ledger stays the source of truth: the mirror never rolls back
- * a committed idea mutation. `done` is RUNNER-OWNED, and idea #66 added the
+ * a committed idea mutation. `done` is RUNNER-OWNED, and added the
  * one verb that reaches it: a launch is an explicit human action
  * (`launchTask`), never a side effect of an idea mutation.
  *
- * Duplicate guard (idea #35 — "update must never mean create"): card ids are
+ * Duplicate guard ("update must never mean create"): card ids are
  * DETERMINISTIC (`idea-` + idea.id, see mirrorCardIdFor), a bound idea is
  * only ever re-created when a NON-EMPTY snapshot proves the card gone, and
  * every ensureTask decision is logged with ideaId + binding + snapshot size +
@@ -78,7 +78,7 @@ export type TaskBoardAction = {
     taskId: string;
 }
 /**
- * Start an execution of the card (idea #66). The task-board accepts EXACTLY
+ * Start an execution of the card. The task-board accepts EXACTLY
  * `['kind','taskId']` on this kind — the model can NOT travel with the run
  * (it is a task field, pinned by the runner through `session.selectModel`),
  * so {@link TaskBoardMirror.launchTask} patches `model` first and posts the
@@ -128,7 +128,7 @@ export interface TaskBoardTaskPatch {
      * `provider/model` target id. NOT a content field (`title`/`description`/
      * `prompt` are): a model-only patch stays editable after the first execution
      * and does not touch `permissionConfirmedAt`, which is what lets a launch
-     * re-pin the model on a card that already ran (idea #66).
+     * re-pin the model on a card that already ran.
      */
     model?: string;
 }
@@ -145,7 +145,7 @@ export interface TaskBoardHttpResult {
 /**
  * Deterministic TaskBoard card id for an idea: `idea-` + idea.id.
  *
- * Idempotence (idea #35): re-running any mirror path targets the SAME card id
+ * Idempotence: re-running any mirror path targets the SAME card id
  * instead of minting a fresh `idea-${randomUUID()}` on every re-execution —
  * a re-analyze or a lost binding can no longer produce a second card. The
  * task-board host ledger REFUSES `create` of an existing id (HTTP 400
@@ -239,7 +239,7 @@ export declare class TaskBoardMirror {
     availableNow(): Promise<boolean>;
     /**
      * Resolve the task id a mirror operation must target; the caller rebinds
-     * the idea to the returned id. Decision ladder (idea #35 — "update must
+     * the idea to the returned id. Decision ladder ("update must
      * never mean create"), logged with ideaId + binding + snapshot size +
      * branch on every path so a duplicate can be discriminated after the fact:
      *
@@ -283,7 +283,7 @@ export declare class TaskBoardMirror {
     /** Idea restore -> task restore (no-op when the idea was never bound). */
     mirrorRestore(idea: IdeaRecord): Promise<void>;
     /**
-     * Launch the idea's execution on its TaskBoard card (idea #66): the human
+     * Launch the idea's execution on its TaskBoard card: the human
      * trigger turns the board into a starting point of execution, not only a
      * capture target.
      *
@@ -317,7 +317,7 @@ export declare class TaskBoardMirror {
     get isUnavailable(): boolean;
     /**
      * The session id of a card's last execution, as of the snapshot the run poll
-     * already read (idea #91). Zero extra requests: the poll calls
+     * already read. Zero extra requests: the poll calls
      * {@link fetchTaskStatuses} once per tick and every read lands in
      * `rememberSnapshot`, so the pointer to the run's own output is already in
      * memory here.
@@ -346,7 +346,7 @@ export declare class TaskBoardMirror {
      * to write to it.
      */
     private cardPermissionOf;
-    /** One ensureTask decision, always visible in the service log (idea #35). */
+    /** One ensureTask decision, always visible in the service log. */
     private decision;
     /**
      * The executable prompt, shared with the direct-session launch backend
@@ -362,7 +362,7 @@ export declare class TaskBoardMirror {
     /**
      * Post one action envelope and surface the task-board's own refusal.
      *
-     * Error relay (idea #66): the reply body used to be dropped and only the
+     * Error relay: the reply body used to be dropped and only the
      * status line read, which made every run gate opaque (`400 task is already
      * running or missing` looked exactly like a malformed request). The body
      * carries `{error}` and sometimes `{code}`; both are folded into the thrown

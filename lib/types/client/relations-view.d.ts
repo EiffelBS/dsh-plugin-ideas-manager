@@ -1,5 +1,5 @@
 /**
- * Relations on the board (idea #106): the React half.
+ * Relations on the board: the React half.
  *
  * The pure rules live in `./relations.ts`; this file only paints. Two surfaces,
  * one module:
@@ -22,12 +22,17 @@ import { type RelationRow, type RelationView } from './relations.ts';
  * chips, then a counter. Returns null when there is nothing to say, so a card
  * without relations pays zero DOM nodes.
  *
+ * `onOpenIdea` turns each chip into the way out of an id the board only shows as
+ * a number: it opens THAT idea's editor, not the one under the chip. Absent (the
+ * editor's own section), the chips stay inert spans.
+ *
  * The views are DERIVED ONCE per paint by the board (`relationIndexOf`) and
  * handed down: computing them per card would rebuild the row map and rescan the
  * whole board for every one of them.
  */
-export declare function RelationChips({ views }: {
+export declare function RelationChips({ views, onOpenIdea }: {
     views: readonly RelationView[] | undefined;
+    onOpenIdea?: (ideaId: string) => void;
 }): import("react").JSX.Element | null;
 /**
  * The editor's Relations section. State is owned by the caller (the idea modal)

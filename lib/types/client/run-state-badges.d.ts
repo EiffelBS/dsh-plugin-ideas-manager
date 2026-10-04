@@ -26,7 +26,7 @@
  *    tag for ever).
  *  - `runSessionId`: the direct-session run, with the button that opens it.
  *  - `deliveredAt`: the exit stamp.
- *  - staleness (idea #91): a view-only marker for an OPEN idea untouched for
+ *  - staleness: a view-only marker for an OPEN idea untouched for
  *    `staleAfterDays` days. Not a host-written field and not a state — it is
  *    read off the row's own `updatedAt` at render time, and the threshold is a
  *    display setting the caller passes in.
@@ -69,7 +69,7 @@ export interface RunStateBadgesProps {
     showDelivered?: boolean;
     /**
      * Days without an update before an open idea wears the quiet *stale* badge
-     * (idea #91); 0 or absent = off. Deliberately a prop and not a context: the
+     * 0 or absent = off. Deliberately a prop and not a context: the
      * threshold is one number from the settings, and passing it down keeps this
      * file free of a settings dependency. The Delivered tab omits it — its rows
      * are archived, and `isStaleIdea` only ever judges open ideas.

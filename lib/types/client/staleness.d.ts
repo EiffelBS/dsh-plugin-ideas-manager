@@ -1,5 +1,5 @@
 /**
- * Freshness marker for open ideas (idea #91, part C).
+ * Freshness marker for open ideas.
  *
  * A backlog that only grows is a graveyard: the idea nobody has looked at in
  * two months looks exactly like the one you meant to pick up yesterday. This

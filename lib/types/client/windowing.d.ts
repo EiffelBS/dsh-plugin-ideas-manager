@@ -1,5 +1,5 @@
 /**
- * Column windowing for the kanban board (idea #108).
+ * Column windowing for the kanban board.
  *
  * The board mounts one DOM subtree per card, and at the trigger this idea was
  * written for (~500 cards in the Open column) that is the whole cost: every
@@ -37,7 +37,7 @@ export declare const IDEA_CARD_GAP_PX = 8;
 /** Cards painted above and below the viewport, so a scroll never shows a hole. */
 export declare const IDEA_WINDOW_OVERSCAN = 6;
 /**
- * Open-column size at which the board prints the standing notice (idea #108).
+ * Open-column size at which the board prints the standing notice.
  * The notice is the honest interim signal that a column has grown past what a
  * glance can cover; it is NOT a claim that the board is slow (the window keeps
  * it responsive), it names the number so the reader knows what they are looking

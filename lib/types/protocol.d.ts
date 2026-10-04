@@ -7,7 +7,7 @@
  */
 import { type IdeaMergeMode, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type IdeaTag, type NewIdeaInput } from './core/ideas.ts';
 /**
- * The backlog-health aggregate (idea #110) lives in its own module so the
+ * The backlog-health aggregate lives in its own module so the
  * definition of every number it prints has exactly one home. The types are
  * re-exported here because `protocol.ts` is the ONE module both halves share,
  * and the browser bundle must reach the shape without importing the Host half.
@@ -310,7 +310,7 @@ export interface IdeaUpdatePatch {
     tags?: IdeaTagListOrNull;
     workspaceId?: string;
     /**
-     * Generic relations (idea #106), one key per stored kind: absent leaves the
+     * Generic relations, one key per stored kind: absent leaves the
      * list alone, an array REPLACES it, null (or an empty array) clears it —
      * exactly the `tags` contract. `blockedBy` is the DERIVED inverse of `blocks`
      * and is never accepted: a second spelling of one edge would be a second fact
@@ -348,7 +348,7 @@ export interface FollowUpInput {
  *
  * The action is validated by the same gate the ledger's verbs rely on; the
  * envelope fields are carried through VERBATIM, `initiator` included. That
- * detail is load-bearing (idea #92): the initiator is the activity log's
+ * detail is load-bearing: the initiator is the activity log's
  * provenance — the writer of a mutation is read back from it — so a parse that
  * validated it and then dropped it would silently turn every agent write into
  * "a human did this".
@@ -485,7 +485,7 @@ export declare const IDEAS_DENSITIES: readonly ["comfortable", "compact"];
 /** One card-density mode. */
 export type IdeasDensity = (typeof IDEAS_DENSITIES)[number];
 /**
- * Orderings of the OPEN backlog offered by the settings row (idea #71):
+ * Orderings of the OPEN backlog offered by the settings row:
  *  - `createdAt` (the default): oldest idea first. A backlog reads as a diary,
  *    so the default is the order the ideas actually arrived in;
  *  - `createdAtDesc`: newest idea first;
@@ -515,7 +515,7 @@ export declare const WORKSPACE_SCOPE_MAX_LENGTH = 256;
  * Bound of a launch model target (`provider/model`, the task-board's own
  * shape). Spelled here rather than in the route that happened to need it
  * first, because it now guards TWO inputs: the model a launch request pins
- * explicitly and the per-workspace default the Host falls back to (idea #107).
+ * explicitly and the per-workspace default the Host falls back to.
  * One bound, so a hand-edited settings document can never store a target the
  * launch route would refuse.
  */
@@ -571,22 +571,22 @@ export interface IdeasSettingsValue {
      * composes with a date order exactly as it does with the rank.
      */
     runningFirst: boolean;
-    /** Minimum width (px) a kanban column can be dragged to (idea #53). */
+    /** Minimum width (px) a kanban column can be dragged to. */
     columnMinWidth: number;
-    /** Maximum width (px) a kanban column can be dragged to (idea #53). */
+    /** Maximum width (px) a kanban column can be dragged to. */
     columnMaxWidth: number;
     /** Permission a direct (card-less) launch starts its fresh session at. */
     directRunPermission: IdeasRunPermission;
     /**
      * Days without an update after which an OPEN idea wears a quiet *stale*
-     * badge (idea #91). View only: it is computed at render time from the row's
+     * badge. View only: it is computed at render time from the row's
      * own `updatedAt`, so it stores nothing on the idea and costs the Host no
      * work. 0 turns the badge off entirely (see {@link STALE_AFTER_DAYS_RANGE}).
      */
     staleAfterDays: number;
     /**
      * Default LAUNCH model per workspace, keyed by the stable workspace id:
-     * `{ "<workspaceId>": "provider/model" }` (idea #107).
+     * `{ "<workspaceId>": "provider/model" }`.
      *
      * Deliberately a SETTING and never an idea field: the board's 2.5 s poll
      * adopts whatever the Host serves, so a per-idea copy of this would be
@@ -614,7 +614,7 @@ export interface IdeasSettingsView {
     value: IdeasSettingsValue;
     revision?: number;
 }
-/** Default bounds of the resizable kanban columns (idea #53), in pixels. */
+/** Default bounds of the resizable kanban columns, in pixels. */
 export declare const COLUMN_MIN_WIDTH_DEFAULT = 200;
 export declare const COLUMN_MAX_WIDTH_DEFAULT = 922;
 /** Inclusive bounds of the columnMinWidth option (settings row). */
@@ -637,7 +637,7 @@ export declare const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue;
 export declare const TAG_ROWS_MIN = 1;
 export declare const TAG_ROWS_MAX = 5;
 /**
- * Inclusive bounds of the `staleAfterDays` option (idea #91). 0 is a real
+ * Inclusive bounds of the `staleAfterDays` option. 0 is a real
  * value, not "unset": it means "never flag an idea as stale", which is the
  * escape hatch for a backlog the reader watches in another tool. The ceiling
  * keeps a hand-edited value from parking the badge on a decade-old idea.
@@ -671,7 +671,7 @@ export declare function clampColumnMaxWidth(value: unknown): number;
 export declare function clampStaleAfterDays(value: unknown): number;
 /**
  * Sanitize the per-workspace default launch models into a bounded map of
- * `workspaceId -> provider/model` (idea #107).
+ * `workspaceId -> provider/model`.
  *
  * Read policy, same as every other field: a non-object is no map at all, and
  * inside a map a key that trims to empty, a value that is not a string and a
@@ -727,7 +727,7 @@ export interface IdeasLaunchBody {
     ideaId: string;
     /**
      * `provider/model` target id. Absent does NOT mean "no model": the Host
-     * falls back to the workspace's default launch model (idea #107) and then,
+     * falls back to the workspace's default launch model and then,
      * for a workspace that carries none, to whatever the chosen backend defaults
      * to — the behaviour that predates the field. The fallback is HOST-side, so
      * the browser, an agent tool and a raw HTTP caller all get it.

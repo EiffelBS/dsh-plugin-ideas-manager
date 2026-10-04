@@ -1,5 +1,5 @@
 /**
- * Delivery-note extraction (idea #91, part A).
+ * Delivery-note extraction.
  *
  * A finished run settles into `underReview` and the reviewer is left with a
  * column and a verdict — the one thing the board never showed them was what
@@ -34,8 +34,7 @@ export declare const DELIVERY_NOTE_PAGE_MESSAGES = 24;
 export declare function deliveryNoteOfRecords(records: readonly unknown[] | undefined): string | undefined;
 /**
  * The session id of a TaskBoard card's last execution, read off the board
- * snapshot the under-review poll already holds (idea #91, part A, card
- * backend).
+ * snapshot the under-review poll already holds (card backend).
  *
  * The mirrored card does not own a session the ideas plugin can read; what it
  * owns is the pointer to the one its runner used. The task-board records one

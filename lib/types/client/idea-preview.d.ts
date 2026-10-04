@@ -1,5 +1,5 @@
 /**
- * Card/row description preview (idea #34): every list surface - kanban card,
+ * Card/row description preview: every list surface - kanban card,
  * Priorities row, Delivered row - renders the SAME deferred-body teaser (the
  * list snapshot's body excerpt) through the shared markdown/raw toggle. The
  * full analysis is not part of the board snapshot anymore; it loads on

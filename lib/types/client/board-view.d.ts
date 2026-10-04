@@ -13,7 +13,7 @@
  */
 import type { IdeasClient } from './ideas-client.ts';
 /**
- * Shared tag-filter row (idea #36): ONE scroll zone with a SINGLE flex-wrap
+ * Shared tag-filter row: ONE scroll zone with a SINGLE flex-wrap
  * container — the filter controls ("Filter:" label, tag search box, clear
  * button) are the FIRST items, immediately followed by every tag: the first
  * tag sits on the SAME line as the clear button (no sub-block competes for

@@ -1,5 +1,5 @@
 /**
- * Bulk actions on the ideas board (idea #94): the plans and the runner behind
+ * Bulk actions on the ideas board: the plans and the runner behind
  * bulk **tag**, bulk **re-home workspace** and bulk **archive**.
  *
  * Three invariants shape everything in this file.
@@ -40,7 +40,7 @@ export type BulkOperation = 'tag' | 'workspace' | 'archive';
  * its own verb, and no verb takes an idea back out of it.
  */
 /**
- * The columns a `move` can name. Exported because idea #111's undo plans moves
+ * The columns a `move` can name. Exported because the undo plans moves
  * too, and a second copy of this definition would be free to drift.
  */
 export type ColumnStatus = Extract<IdeaStatus, 'open' | 'underReview' | 'archived'>;
@@ -48,7 +48,7 @@ export type ColumnStatus = Extract<IdeaStatus, 'open' | 'underReview' | 'archive
  * One ordinary verb a bulk run posts for one idea. Exactly the shapes
  * `IdeasClient` already speaks — no bulk-only verb exists anywhere on this path.
  *
- * `move` names any column and `triage` exists because an UNDO (idea #111) posts
+ * `move` names any column and `triage` exists because an UNDO posts
  * through this same vocabulary: the inverse of a triage is a triage, and the
  * inverse of a column move is a move back. Neither planner below ever emits
  * them; they exist so one step type covers every write the board makes.
@@ -122,8 +122,8 @@ type PlanRow = Pick<IdeaListRow, 'id' | 'title' | 'status' | 'tags' | 'workspace
  * The order matters: the card is read-only until the idea leaves the archive,
  * and the idea must go back to the archive right after the patch lands.
  *
- * Exported because it is the rule an UNDO needs just as much as a bulk run
- * (idea #111): restoring the previous labels of an archived, card-bound idea
+ * Exported because it is the rule an UNDO needs just as much as a bulk run:
+ * restoring the previous labels of an archived, card-bound idea
  * must go through the same round trip, or the idea and its card would disagree.
  */
 export declare function updateSteps(row: PlanRow, patch: IdeaClientPatch): {

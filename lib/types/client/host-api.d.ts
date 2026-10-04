@@ -24,7 +24,7 @@ export declare class IdeasRouteMissingError extends Error {
 }
 export interface IdeasHostTransport {
     /**
-     * Board state as the LIST projection (idea #34): list fields + a short
+     * Board state as the LIST projection: list fields + a short
      * body excerpt, voluminous analyses deferred to `idea()` / `stateFull()`.
      */
     state(): Promise<IdeasListSnapshot>;
@@ -35,7 +35,7 @@ export interface IdeasHostTransport {
      */
     action(action: IdeasAction, initiator?: string): Promise<IdeasListSnapshot>;
     /**
-     * Bounded filtered read (idea #65). Optional so older hosts and lightweight
+     * Bounded filtered read. Optional so older hosts and lightweight
      * test transports keep the pre-existing board controller contract intact.
      */
     read?(query?: IdeasReadQuery): Promise<IdeasReadSnapshot>;
@@ -75,14 +75,14 @@ export interface IdeasHostTransport {
     /** Persist a settings patch (revision-fenced); rejects with 'settings-conflict'. */
     saveConfig?(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
     /**
-     * Start the idea's execution (idea #66). Optional capability: a transport
+     * Start the idea's execution. Optional capability: a transport
      * without it (an older host, a test fake) makes the board show no Launch
      * affordance at all. Rejects with the host's own message so the reason a run
      * was refused stays visible.
      */
     launch?(ideaId: string, model?: string): Promise<LaunchResponse>;
     /**
-     * The snapshot folder (idea #95). Optional capability, like `config`: a
+     * The snapshot folder. Optional capability, like `config`: a
      * transport without it simply shows no backup panel, and the board keeps
      * working — a deployment must never lose its ledger surface because an older
      * host does not know the route.
@@ -99,7 +99,7 @@ export interface IdeasHostTransport {
      */
     snapshotContentUrl?(name: string): string;
     /**
-     * The bounded backlog-health aggregate (idea #110). Optional capability, like
+     * The bounded backlog-health aggregate. Optional capability, like
      * `backups`: a transport without it (an older Host, a test fake) shows no
      * Health tab content rather than an error, and the board itself is untouched.
      *
@@ -126,14 +126,14 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     restoreSnapshot(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse>;
     snapshotContentUrl(name: string): string;
     /**
-     * The health aggregate (idea #110): its own small GET, never folded into the
+     * The health aggregate: its own small GET, never folded into the
      * board poll. The scope mirrors the board's workspace selector — omitted for
      * every workspace, a blank value for the workspace-less group.
      */
     stats(query?: IdeasStatsQuery): Promise<IdeasStats>;
     saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;
     /**
-     * The launch route (idea #66) is a dedicated POST, not an action verb: the
+     * The launch route is a dedicated POST, not an action verb: the
      * answer is a small `{ok, runId, runStatus}`, never a board snapshot, and it
      * must not consume the persisted action dedupe cache. `readJson` already
      * turns the host's `error` field into the rejection message.

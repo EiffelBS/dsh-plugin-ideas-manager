@@ -1808,9 +1808,32 @@ survive a reload and cover agent writes.
   why Ideas used to behave like a toggle and did not look like the shipped rows.
   Mount/unmount is what opens and closes the board (`boardOpen`), which gates the
   background poll.
-- Panel navigation is resolved from `ctx.layout` **defensively**, never declared
-  in `inject`: cordis refuses an undeclared property, and declaring a service a
-  deployment may not have would keep the whole plugin from booting.
+- Panel navigation is resolved from the shell's layout service through
+  `ctx.get('layout')` (`client/panel-navigation.ts`), **never declared in
+  `inject`**: cordis refuses an undeclared property, and declaring a service a
+  deployment may not have would keep the whole plugin from booting. The property
+  read survives only as a second chance for a test double or an older shell.
+- **The layout face is read at CALL time, not once at `apply`.** This is the
+  third resolver in the plugin with the same shape, and the second one to break
+  on it (`client/session-opener.ts` needed the same repair; the fix there was to
+  re-probe on every state update, which is strictly weaker). `ctx.get(name)`
+  answers `undefined` until the providing fiber is *active*, and the layout's
+  fiber waits on `theme`/`locale`/`shortcuts` — a language pack fetched over the
+  wire — while this plugin's own `inject` (`slots`, the two registries, `remote`,
+  `remote.session`) is satisfied much earlier. A one-shot probe at mount
+  therefore cached "no layout" on a perfectly healthy page and every later click
+  was a silent no-op, with a green test suite: every fake in it answered on the
+  spot, so the timing the bug lived in was never in a test.
+- **A dead panel click is always observable.** Two failures are indistinguishable
+  from the outside — a navigator that resolved nothing, and a layout that
+  accepted the call without moving the column — so each leaves its own one-line
+  `console.warn`: the first names the missing service, the second names the panel
+  still selected. The second is a post-condition, not a poll: `selectPanel`
+  writes the store synchronously and `layout.panelInfo.getSnapshot()` reads it
+  back synchronously, so a stale reading means the write never landed. A shell
+  that serves no selection source skips the check rather than inventing a
+  failure. This is the rule in `AGENTS.md` ("warn when nothing resolves") applied
+  to a second resolver that had been silently swallowing both answers.
 - A launch refused by the TaskBoard **permission gate** is the one refusal with a
   destination: the card's effective permission sits above the session default, and
   only a human may confirm that binding. The modal now deep-links to **our own**

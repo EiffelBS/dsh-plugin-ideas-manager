@@ -4,7 +4,7 @@
  * the same conjunctive filter (see board-view.tsx for the state).
  */
 import type { IdeaTag } from '../core/ideas.ts';
-/** Structural row face the tag helpers read (full records AND list rows, idea #34). */
+/** Structural row face the tag helpers read (full records AND list rows). */
 export type TaggedIdea = {
     tags?: IdeaTag[];
 };
@@ -13,7 +13,7 @@ export declare function matchesTags(idea: TaggedIdea, selected: readonly string[
 /** Every label in use across the ledger, sorted (for the filter chips). */
 export declare function collectKnownTags(ideas: readonly TaggedIdea[]): string[];
 /**
- * Narrow the filter chips with the chip search box (idea #36): a
+ * Narrow the filter chips with the chip search box: a
  * case-insensitive substring match on the label. Matched chips keep their
  * order; SELECTED chips are appended when the query (or nothing at all)
  * hides them, so an active filter never becomes an invisible filter — even

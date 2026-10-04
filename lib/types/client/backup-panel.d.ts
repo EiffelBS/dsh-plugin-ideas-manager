@@ -1,5 +1,5 @@
 /**
- * Backup surface of the settings section (idea #95): timestamped snapshots of
+ * Backup surface of the settings section: timestamped snapshots of
  * the whole board, a restore that keeps what it replaces, and the portable
  * export/import that moves a ledger between machines.
  *

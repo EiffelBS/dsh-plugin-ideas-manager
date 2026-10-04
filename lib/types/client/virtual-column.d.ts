@@ -1,5 +1,5 @@
 /**
- * React binding for the column windowing of idea #108.
+ * React binding for the column windowing.
  *
  * `windowing.ts` owns the geometry; this file owns the three things only a DOM
  * can supply: the scroll offset, the measured heights, and the scroller's own

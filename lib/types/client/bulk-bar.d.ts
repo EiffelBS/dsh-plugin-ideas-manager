@@ -1,5 +1,5 @@
 /**
- * Multi-select and bulk actions on the board (idea #94): the per-row select
+ * Multi-select and bulk actions on the board: the per-row select
  * box, the selection bar, and the bulk dialog that runs a batch and reports it
  * idea by idea.
  *

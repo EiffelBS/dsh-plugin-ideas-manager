@@ -43,7 +43,7 @@ export interface LedgerState {
     ideas: IdeaRecord[];
 }
 /**
- * Activity-log provenance of one mutation (idea #92). `actor` is the explicit
+ * Activity-log provenance of one mutation. `actor` is the explicit
  * override for a Host-written transition; when absent, `initiator` decides
  * (`human` with no initiator, `agent:<initiator>` otherwise).
  */
@@ -159,7 +159,7 @@ export declare class IdeasHostLedger {
         revision: number;
     };
     /**
-     * Read-only view of the current document for a PURE aggregate (idea #110),
+     * Read-only view of the current document for a PURE aggregate,
      * without the deep clone every other reader pays.
      *
      * The one exception to "every reader gets its own copy", and it exists
@@ -177,7 +177,7 @@ export declare class IdeasHostLedger {
      */
     statsSource(): IdeasStatsSource;
     /**
-     * One idea, deep-cloned like a snapshot row (idea #34): the deferred-body
+     * One idea, deep-cloned like a snapshot row: the deferred-body
      * read GET /api/ideas/idea?id= clones a SINGLE record instead of paying
      * the whole-ledger snapshot clone for one card.
      */
@@ -242,7 +242,7 @@ export declare class IdeasHostLedger {
      * the same action returns the current state without mutating. The cache is
      * persisted with every commit, so a Host restart cannot replay a mutation.
      *
-     * `audit` is the activity-log provenance of this mutation (idea #92): the
+     * `audit` is the activity-log provenance of this mutation: the
      * asserted envelope initiator becomes `agent:<initiator>`, its absence means
      * `human`, and the explicit `run` override marks a transition the Host itself
      * writes (the launch settle opening the review gate). It is NOT part of the
@@ -250,7 +250,7 @@ export declare class IdeasHostLedger {
      */
     applyRequest(requestId: string, action: IdeasAction, audit?: IdeaActionAudit): LedgerApplyResult;
     /**
-     * Host-internal activity entry (idea #92): the transitions that never pass
+     * Host-internal activity entry: the transitions that never pass
      * through an action verb — a launch accepted, a run settled, a harvested
      * delivery note — are exactly the ones a reader most wants in the timeline.
      * Same system-field discipline as `bindTaskBoardId` and the same
@@ -279,7 +279,7 @@ export declare class IdeasHostLedger {
      */
     setTaskBoardStatus(ideaId: string, status: string | undefined): boolean;
     /**
-     * Host-internal LAUNCH-LIFECYCLE stamp (idea #66): `running` is written by
+     * Host-internal LAUNCH-LIFECYCLE stamp: `running` is written by
      * the launch route the moment the execution is accepted, the settled state by
      * the run poll. Same system-field discipline as `bindTaskBoardId` (the
      * protocol gate never accepts `runStatus` from the wire) and the same
@@ -293,7 +293,7 @@ export declare class IdeasHostLedger {
      */
     setRunStatus(ideaId: string, status: IdeaRunStatus | undefined): boolean;
     /**
-     * Host-internal SESSION id of the latest run (idea #66 v2): written with the
+     * Host-internal SESSION id of the latest run: written with the
      * `running` stamp by a direct-session launch, stamped from the mirrored card's
      * own executions by the run poll, and deliberately KEPT when the run settles
      * so the card keeps a way back into the chat it was worked on. Same
@@ -309,7 +309,7 @@ export declare class IdeasHostLedger {
      */
     setRunSession(ideaId: string, sessionId: string | undefined): boolean;
     /**
-     * Host-internal DELIVERY NOTE of the latest finished run (idea #91): the
+     * Host-internal DELIVERY NOTE of the latest finished run: the
      * text harvested off the run at settle time, bounded to
      * {@link DELIVERY_NOTE_MAX_BYTES}. Same system-field discipline as
      * `bindTaskBoardId` (the wire gate never accepts `deliveryNote` from

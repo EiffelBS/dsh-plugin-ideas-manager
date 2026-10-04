@@ -1,5 +1,5 @@
 /**
- * Undo for the board's own manual actions (idea #111): the session-local
+ * Undo for the board's own manual actions: the session-local
  * INVERSE of an edit, a triage, a restore, a bulk tag, a bulk re-home and a
  * bulk archive.
  *
@@ -222,7 +222,7 @@ export interface UndoKeyEvent {
  * `Ctrl+Z` / `Cmd+Z`, and nothing else.
  *
  * `Ctrl+Shift+Z` is deliberately NOT the undo: that chord is redo everywhere,
- * and this board has no redo (idea #111 defers it on purpose — redoing a
+ * and this board has no redo (defers it on purpose — redoing a
  * destructive batch without the confirmation its original click carried is a new
  * way to make a mistake, not a comfort).
  */

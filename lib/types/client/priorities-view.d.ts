@@ -8,7 +8,7 @@
  * surface below the rows appends at the end of the dragged idea's workspace
  * group.
  *
- * The run-state tags (idea #71) are the shared RunStateBadges of the Overview
+ * The run-state tags are the shared RunStateBadges of the Overview
  * card header: an idea in flight or in failure says so on its row, which is
  * where the "what do I pick next" decision is actually made. They are
  * last-observation facts written by the host poll, never by an idea verb, and
@@ -37,6 +37,8 @@ export interface PrioritiesProps {
     workspaceTitle: (workspaceId: string) => string;
     /** Open the shared edit modal on the given row (fetches the full body first). */
     onEdit: (idea: IdeaListRow) => void;
+    /** Open ANOTHER idea's editor from a relation chip (the id it names). */
+    onOpenIdea?: (ideaId: string) => void;
     /** Toggle a tag in the shared conjunctive filter (same state as kanban). */
     onToggleTag: (name: string) => void;
     /** Currently selected filter tags (highlighted pills + row meta). */
@@ -48,7 +50,7 @@ export interface PrioritiesProps {
      *  False (single-workspace scope) keeps the plain unheaded list. */
     grouped: boolean;
     /**
-     * Resolve the parent of a follow-up child into its ledger number (idea #71).
+     * Resolve the parent of a follow-up child into its ledger number.
      * The row carries `followUpOfId` but never the parent's number, so the board
      * owns the id -> idea map and passes the resolver down; the run-state chips
      * are skipped when it is absent.
@@ -56,7 +58,7 @@ export interface PrioritiesProps {
     parentNumber?: (ideaId: string) => number | undefined;
     /**
      * Days without an update before an open row wears the quiet *stale* badge
-     * (idea #91); 0 or absent = off. Every row here is OPEN, so this is the one
+     * 0 or absent = off. Every row here is OPEN, so this is the one
      * ranked surface the badge belongs on. Passed down by the board, which owns
      * the display settings.
      */
@@ -64,14 +66,14 @@ export interface PrioritiesProps {
     /** Render instant shared with the Overview cards (see IdeasBoard). */
     now?: number;
     /**
-     * Multi-select (idea #94): is this row part of the current selection, and the
+     * Multi-select: is this row part of the current selection, and the
      * toggle/extend handler. Absent = the ranked list renders no select box (the
      * board always passes it, so the affordance is consistent across the tabs).
      */
     selectedIds?: ReadonlySet<string>;
     onSelect?: (ideaId: string, shiftKey: boolean) => void;
     /**
-     * Relation lines per idea id (idea #106), derived ONCE per paint by the board
+     * Relation lines per idea id, derived ONCE per paint by the board
      * over the WHOLE snapshot and handed down. Passed in rather than recomputed:
      * this view paints the OPEN rows of the current scope, so a link to a card
      * outside that scope could not be resolved here, and would print a bare id.
@@ -80,4 +82,4 @@ export interface PrioritiesProps {
     relations?: ReadonlyMap<string, readonly RelationView[]>;
 }
 /** Ranked backlog view (see module doc). */
-export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now, selectedIds, onSelect, relations }: PrioritiesProps): import("react").JSX.Element;
+export declare function PrioritiesView({ client, openIdeas, allIdeas, workspaceTitle, onEdit, onOpenIdea, onToggleTag, activeTags, mdMode, grouped, parentNumber, staleAfterDays, now, selectedIds, onSelect, relations }: PrioritiesProps): import("react").JSX.Element;
