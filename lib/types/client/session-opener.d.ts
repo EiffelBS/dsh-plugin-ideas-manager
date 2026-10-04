@@ -38,6 +38,17 @@ export interface SessionOpener {
  */
 export declare function resolveSessionOpener(ctx: unknown): SessionOpener | undefined;
 /**
+ * Every service name this page declares — the complete picture, for when the
+ * filtered list above is not enough.
+ *
+ * The verb-filtered list answers "what could open something"; this answers "what
+ * is here at all", which is what identifies a face whose method is named
+ * something the filter never imagined (`navigate`, `show`, `goto`) or a page
+ * that navigates by URL rather than by service. Sorted and bounded so it stays
+ * one console line.
+ */
+export declare function serviceNames(ctx: unknown): string[];
+/**
  * What this page CAN do to show a session — the honest companion to a missing
  * link.
  *

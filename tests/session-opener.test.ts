@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { resolveSessionOpener, navigationFaces } from '../src/client/session-opener.ts'
+import { resolveSessionOpener, navigationFaces, serviceNames } from '../src/client/session-opener.ts'
 
 /** A client root context shaped like cordis: services come from `get`. */
 function context(services: Record<string, unknown>, options: { throwOn?: string[] } = {}) {
@@ -146,6 +146,18 @@ describe('the missing-link diagnostic', () => {
     const faces = navigationFaces(page(many))
     expect(faces).toHaveLength(12)
     expect([...faces]).toEqual([...faces].sort())
+  })
+
+  it('lists every service the page declares, for when the filtered list is not enough', () => {
+    // The filtered list answers "what could open something"; this answers "what is
+    // here at all", which is how a face with a verb nobody imagined gets found.
+    const names = serviceNames(page({
+      uiWorkspace: { openSession: () => {} },
+      feedbackUi: { openSession: () => {} },
+      quietService: {},
+    }))
+    expect(names).toEqual(['feedbackUi', 'quietService', 'uiWorkspace'])
+    expect(serviceNames(context({}))).toEqual([])
   })
 
   it('returns nothing rather than throwing on a context it cannot enumerate', () => {

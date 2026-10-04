@@ -19,7 +19,7 @@ import { registerIdeasSettingsSection } from './settings-section.tsx'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 import { resolveSessionLauncher } from './session-queue.ts'
-import { navigationFaces, resolveSessionOpener } from './session-opener.ts'
+import { navigationFaces, resolveSessionOpener, serviceNames } from './session-opener.ts'
 import { createIdeasBoardService, IDEAS_BOARD_SERVICE } from './deeplink-service.ts'
 
 /**
@@ -92,8 +92,9 @@ export function apply(ctx: ClientContext): void {
       // "unsupported deployment".
       warnedAboutNavigation = true
       const faces = navigationFaces(ctx)
+      const names = serviceNames(ctx)
       console.warn(
-        `[dsh-plugin-ideas-manager] no session navigation face on this page (tried uiWorkspace.openSession, sessions.open): the "Open session" link will not be shown${faces.length === 0 ? '; no navigation face could be enumerated on this context' : `; the page offers ${faces.join(', ')}`}`,
+        `[dsh-plugin-ideas-manager] no session navigation face on this page (tried uiWorkspace.openSession, sessions.open): the "Open session" link will not be shown${faces.length === 0 ? '; no navigation face could be enumerated on this context' : `; pages offering one: ${faces.join(', ')}`}${names.length === 0 ? '' : `; page services: ${names.join(', ')}`}`,
       )
     }
     // Panel navigation is read DEFENSIVELY, not declared in `inject`: cordis

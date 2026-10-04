@@ -111,8 +111,24 @@ function readServiceFace(ctx: unknown, name: string): OpenableSessions | undefin
   return candidate as OpenableSessions
 }
 
-/** How many candidate faces the diagnostic is allowed to name. */
-const FACES_REPORTED = 12
+/**
+ * Every service name this page declares — the complete picture, for when the
+ * filtered list above is not enough.
+ *
+ * The verb-filtered list answers "what could open something"; this answers "what
+ * is here at all", which is what identifies a face whose method is named
+ * something the filter never imagined (`navigate`, `show`, `goto`) or a page
+ * that navigates by URL rather than by service. Sorted and bounded so it stays
+ * one console line.
+ */
+export function serviceNames(ctx: unknown): string[] {
+  const props = (readService(ctx, 'reflect') as { props?: unknown } | undefined)?.props
+  if (typeof props !== 'object' || props === null) return []
+  return Object.keys(props as Record<string, unknown>).sort().slice(0, SERVICES_REPORTED)
+}
+
+/** How many service names the diagnostic is allowed to print. */
+const SERVICES_REPORTED = 60
 
 /**
  * What this page CAN do to show a session — the honest companion to a missing
@@ -146,3 +162,6 @@ export function navigationFaces(ctx: unknown): string[] {
   }
   return found.sort().slice(0, FACES_REPORTED)
 }
+
+/** How many candidate faces the diagnostic is allowed to name. */
+const FACES_REPORTED = 12
