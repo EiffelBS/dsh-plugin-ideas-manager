@@ -59,6 +59,11 @@ function fixture(): IdeasListSnapshot {
       // Delivered, then restored: the ledger clears archivedAt but keeps
       // deliveredAt, so an OPEN row can still carry a delivery date.
       { ...base, createdAt: 300, id: 'restored', ideaNumber: 7, title: 'Restored idea', status: 'open', rank: 5, bodyExcerpt: 'g', deliveredAt: 70 },
+      // Delivered AND archived, with the mirrored card frozen on 'running': the
+      // poll stops observing a card once its idea leaves the backlog, so this is
+      // a stale sample, not a live run. It is the row that wore a permanent
+      // "Running" tag on finished work. `runStatus: 'done'` is the truth here.
+      { ...base, createdAt: 200, id: 'frozen-card', ideaNumber: 8, title: 'Delivered while its card read running', status: 'archived', rank: 2, bodyExcerpt: 'h', archivedAt: 80, deliveredAt: 80, taskBoardId: 'task-3', taskBoardStatus: 'running', runStatus: 'done', runSessionId: 'session-frozen' },
     ],
   }
 }
@@ -206,6 +211,12 @@ function deliveredTitles(): string[] {
     .map(row => (row.textContent ?? '').trim())
 }
 
+/** One Delivered row, found by its title: the rows carry no idea-id either. */
+function deliveredRow(titleFragment: string): HTMLElement | undefined {
+  return Array.from(host.querySelectorAll<HTMLElement>('[data-dsh-ideas-delivered] li'))
+    .find(row => (row.textContent ?? '').includes(titleFragment))
+}
+
 describe('run-state tags on the Priorities rows', () => {
   it('shows the running and failed tags on a ranked row, with the last-observed tooltip', async () => {
     await renderBoard()
@@ -278,6 +289,30 @@ describe('run-state tags on the Priorities rows', () => {
 })
 
 describe('run-state tags on the Delivered rows', () => {
+  it('never wears a Running tag on delivered work because of a frozen card sample', async () => {
+    // The reported bug: an archived, delivered idea whose mirrored card was
+    // frozen on 'running' showed "Running" for ever. The poll only observes a
+    // card while its idea is OPEN, so that field is a stale sample afterwards —
+    // but the board's own run record said `done`, and the delivery is stamped.
+    await renderBoard()
+    await openTab(2)
+    const row = deliveredRow('Delivered while its card read running')
+    expect(row, 'the delivered row is missing').not.toBeUndefined()
+    expect(row?.querySelector('[data-dsh-ideas-task-running]'), 'a frozen card sample still drew a Running tag on delivered work').toBeNull()
+    // The tab holds exactly ONE running tag, and it belongs to the row the board
+    // itself records as running — so the frozen one is silenced, not the badge.
+    expect(host.querySelectorAll('[data-dsh-ideas-delivered] [data-dsh-ideas-task-running]').length).toBe(1)
+  })
+
+  it('still shows Running on an archived idea the board itself records as running', async () => {
+    // The counterpart, so the fix cannot rot into "hide the badge": `runStatus`
+    // is the run record of record and stays authoritative in any column, so a
+    // card genuinely re-run from the task board says so, delivered or not.
+    await renderBoard()
+    await openTab(2)
+    const row = deliveredRow('Archived while running')
+    expect(row?.querySelector('[data-dsh-ideas-task-running]'), 'an archived idea with runStatus: running lost its Running tag').not.toBeNull()
+  })
   it('shows a run still in flight on an archived idea (its row has no other meta)', async () => {
     await renderBoard()
     await openTab(2)
@@ -407,7 +442,11 @@ describe('Open column display order (openOrdering + runningFirst)', () => {
     const reorder = transport.posted.find(action => action.kind === 'reorder')
     // The Open group is written in the display order with the card inserted at
     // the drop point - the one shape a date-ordered column could get wrong.
-    expect(reorder?.orderedIds).toEqual(['plain', 'failed', 'child', 'restored', 'running', 'gate', 'archived-run'])
+    // The reorder verb carries the whole board in column order (open, then the
+    // gate, then archived workspace groups, then the workspace-less one), so the
+    // two archived fixture rows both appear — `frozen-card` in the ws1 group,
+    // `archived-run` in the workspace-less group that sorts last.
+    expect(reorder?.orderedIds).toEqual(['plain', 'failed', 'child', 'restored', 'running', 'gate', 'frozen-card', 'archived-run'])
     // No `move`: an in-column drop is a pure reorder.
     expect(transport.posted.map(action => action.kind)).toEqual(['reorder'])
 

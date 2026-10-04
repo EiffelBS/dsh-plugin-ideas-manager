@@ -15,9 +15,15 @@
  *  - `taskBoardStatus === 'failed'` on an OPEN idea: a failed run delivered
  *    nothing, so the idea deliberately stays in the backlog and the badge only
  *    makes the situation visible.
- *  - `runStatus === 'running'` or `taskBoardStatus === 'running'`: a run is in
- *    flight, whichever backend runs it (a card started from the task board
- *    itself is folded into runStatus by the next poll).
+ *  - `runStatus === 'running'`: a run is in flight, in ANY column — the
+ *    board's own run record, which stays authoritative after the idea left the
+ *    backlog (a card re-run from the task board still says so).
+ *  - `taskBoardStatus === 'running'` on an OPEN idea: a mirrored card started
+ *    from the task-board itself. Only while the idea is still open: the poll
+ *    stops observing a card whose idea left the backlog, so on a delivered or
+ *    archived card the field is a frozen sample from that moment and must not be
+ *    read as a live state (it is how delivered work came to wear a "Running"
+ *    tag for ever).
  *  - `runSessionId`: the direct-session run, with the button that opens it.
  *  - `deliveredAt`: the exit stamp.
  *  - staleness (idea #91): a view-only marker for an OPEN idea untouched for
@@ -121,10 +127,16 @@ export function RunStateBadges({ idea, client, parentNumber, showDelivered = tru
       )}
       {/* A launch in flight (idea #66), whichever backend runs it: the badge is
           what keeps the card from looking ordinary the second after the button
-          was clicked. The card status counts too: someone can start the mirrored
+          was clicked. The card status counts too — someone can start the mirrored
           card from the task-board itself, and the next poll folds that into
-          runStatus. */}
-      {(idea.runStatus === 'running' || idea.taskBoardStatus === 'running') && (
+          runStatus — but ONLY while the idea is still on the backlog: the poll
+          stops observing a card once its idea leaves it, so `taskBoardStatus` on a
+          delivered/archived card is a FROZEN sample from the moment it left, and
+          reading it as a live state put "Running" on finished, delivered work.
+          `runStatus` is the board's own run record and stays authoritative
+          whatever the column: a card genuinely re-run from the task board still
+          says so. */}
+      {(idea.runStatus === 'running' || (idea.status === 'open' && idea.taskBoardStatus === 'running')) && (
         <span
           className={classes.taskRunningBadge}
           title={t('card.taskRunningHint')}

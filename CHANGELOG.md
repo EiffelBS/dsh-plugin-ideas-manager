@@ -8,6 +8,15 @@ Versions before 0.3.0 predate this file.
 
 ## Unreleased
 
+### Fixed
+
+- **A delivered idea no longer wears a "Running" tag.** An idea whose work was
+  finished and delivered could keep showing *Running* for ever: the tag also
+  reads the mirrored TaskBoard card, and that observation stops the moment its
+  idea leaves the backlog, so a card caught mid-flight froze the tag at
+  *Running* while the run itself was long settled. The tag now follows the run
+  the board actually recorded, and a card genuinely re-run still says so.
+
 ## 0.9.0 - 2026-10-04
 
 ### Added

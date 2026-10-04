@@ -15,9 +15,15 @@
  *  - `taskBoardStatus === 'failed'` on an OPEN idea: a failed run delivered
  *    nothing, so the idea deliberately stays in the backlog and the badge only
  *    makes the situation visible.
- *  - `runStatus === 'running'` or `taskBoardStatus === 'running'`: a run is in
- *    flight, whichever backend runs it (a card started from the task board
- *    itself is folded into runStatus by the next poll).
+ *  - `runStatus === 'running'`: a run is in flight, in ANY column — the
+ *    board's own run record, which stays authoritative after the idea left the
+ *    backlog (a card re-run from the task board still says so).
+ *  - `taskBoardStatus === 'running'` on an OPEN idea: a mirrored card started
+ *    from the task-board itself. Only while the idea is still open: the poll
+ *    stops observing a card whose idea left the backlog, so on a delivered or
+ *    archived card the field is a frozen sample from that moment and must not be
+ *    read as a live state (it is how delivered work came to wear a "Running"
+ *    tag for ever).
  *  - `runSessionId`: the direct-session run, with the button that opens it.
  *  - `deliveredAt`: the exit stamp.
  *  - staleness (idea #91): a view-only marker for an OPEN idea untouched for
