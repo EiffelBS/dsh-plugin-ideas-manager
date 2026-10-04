@@ -37,3 +37,18 @@ export interface SessionOpener {
  * @returns the opener, or undefined when no navigation face is reachable.
  */
 export declare function resolveSessionOpener(ctx: unknown): SessionOpener | undefined;
+/**
+ * What this page CAN do to show a session — the honest companion to a missing
+ * link.
+ *
+ * A dead feature that says only "no navigation face" is unactionable: the
+ * reader has no way to tell a wrong name from an unsupported deployment, and the
+ * answer is sitting in the context, enumerable. cordis's reflection service
+ * holds every declared context property BY NAME (`ctx.reflect.props`), so the
+ * diagnostic reads that, resolves each value, and names the methods that could
+ * open or focus something. It is bounded and sorted: a console line a developer
+ * can act on, not a page dump.
+ *
+ * @returns `name.method` pairs, empty when the context cannot be enumerated.
+ */
+export declare function navigationFaces(ctx: unknown): string[];

@@ -19,7 +19,7 @@ import { registerIdeasSettingsSection } from './settings-section.tsx'
 import { resolveWorkspacesSource, WORKSPACES_SERVICE } from './workspaces.ts'
 import { resolveActiveWorkspaceSource, SESSIONS_SERVICE } from './session-context.ts'
 import { resolveSessionLauncher } from './session-queue.ts'
-import { resolveSessionOpener } from './session-opener.ts'
+import { navigationFaces, resolveSessionOpener } from './session-opener.ts'
 import { createIdeasBoardService, IDEAS_BOARD_SERVICE } from './deeplink-service.ts'
 
 /**
@@ -83,7 +83,13 @@ export function apply(ctx: ClientContext): void {
     // not support it, and only one of those is a bug.
     client.sessionOpener = resolveSessionOpener(ctx)
     if (client.sessionOpener === undefined) {
-      console.warn('[dsh-plugin-ideas-manager] no session navigation face on this page (uiWorkspace.openSession): the "Open session" link will not be shown')
+      // The diagnostic is the point: a missing link that names what the page
+      // DOES offer is actionable, and "wrong name" stops being
+      // indistinguishable from "unsupported deployment".
+      const faces = navigationFaces(ctx)
+      console.warn(
+        `[dsh-plugin-ideas-manager] no session navigation face on this page (tried uiWorkspace.openSession, sessions.open): the "Open session" link will not be shown${faces.length === 0 ? '' : `; the page offers ${faces.join(', ')}`}`,
+      )
     }
     // Panel navigation is read DEFENSIVELY, not declared in `inject`: cordis
     // refuses an undeclared property, and declaring a service a deployment may

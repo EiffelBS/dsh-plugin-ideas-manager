@@ -73,19 +73,57 @@ export function resolveSessionOpener(ctx: unknown): SessionOpener | undefined {
   return undefined
 }
 
-/** One service out of a context by NAME, or undefined. Never throws. */
-function readServiceFace(ctx: unknown, name: string): OpenableSessions | undefined {
+/** One value out of a context by service NAME, or undefined. Never throws. */
+function readService(ctx: unknown, name: string): unknown {
   if (ctx === null || (typeof ctx !== 'object' && typeof ctx !== 'function')) return undefined
   const host = ctx as { get?: unknown } & Record<string, unknown>
-  let candidate: unknown
   try {
-    candidate = typeof host.get === 'function'
+    return typeof host.get === 'function'
       ? (host.get as (service: string) => unknown).call(ctx, name)
       : host[name]
   } catch {
     // An undeclared property read, or an accessor that refuses the name.
     return undefined
   }
+}
+
+/** One service out of a context by NAME, or undefined. Never throws. */
+function readServiceFace(ctx: unknown, name: string): OpenableSessions | undefined {
+  const candidate = readService(ctx, name)
   if (typeof candidate !== 'object' || candidate === null) return undefined
   return candidate as OpenableSessions
+}
+
+/** How many candidate faces the diagnostic is allowed to name. */
+const FACES_REPORTED = 12
+
+/**
+ * What this page CAN do to show a session — the honest companion to a missing
+ * link.
+ *
+ * A dead feature that says only "no navigation face" is unactionable: the
+ * reader has no way to tell a wrong name from an unsupported deployment, and the
+ * answer is sitting in the context, enumerable. cordis's reflection service
+ * holds every declared context property BY NAME (`ctx.reflect.props`), so the
+ * diagnostic reads that, resolves each value, and names the methods that could
+ * open or focus something. It is bounded and sorted: a console line a developer
+ * can act on, not a page dump.
+ *
+ * @returns `name.method` pairs, empty when the context cannot be enumerated.
+ */
+export function navigationFaces(ctx: unknown): string[] {
+  const props = (readService(ctx, 'reflect') as { props?: unknown } | undefined)?.props
+  if (typeof props !== 'object' || props === null) return []
+  const found: string[] = []
+  for (const name of Object.keys(props as Record<string, unknown>)) {
+    const value = readService(ctx, name)
+    if (typeof value !== 'object' || value === null) continue
+    const members = value as Record<string, unknown>
+    for (const key of Object.keys(members)) {
+      if (typeof members[key] !== 'function') continue
+      if (!/open|focus|reveal|select|activate/i.test(key)) continue
+      found.push(`${name}.${key}`)
+    }
+  }
+  return found.sort().slice(0, FACES_REPORTED)
 }

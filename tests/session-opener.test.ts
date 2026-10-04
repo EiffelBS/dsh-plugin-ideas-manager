@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { resolveSessionOpener } from '../src/client/session-opener.ts'
+import { resolveSessionOpener, navigationFaces } from '../src/client/session-opener.ts'
 
 /** A client root context shaped like cordis: services come from `get`. */
 function context(services: Record<string, unknown>, options: { throwOn?: string[] } = {}) {
@@ -101,5 +101,45 @@ describe('session opener', () => {
     const opened: string[] = []
     resolveSessionOpener({ uiWorkspace: { openSession: (id: string) => { opened.push(id) } } })?.open('session-6')
     expect(opened).toEqual(['session-6'])
+  })
+})
+
+describe('the missing-link diagnostic', () => {
+  /** A context whose reflection service declares the given service names. */
+  function page(services: Record<string, unknown>) {
+    const served: Record<string, unknown> = { ...services }
+    served['reflect'] = { props: Object.fromEntries(Object.keys(services).map(name => [name, { type: 'service' }])) }
+    return { get: (name: string): unknown => served[name] }
+  }
+
+  it('names the page faces that could open or focus something', () => {
+    // The whole point of the diagnostic: when the link is missing, say what the
+    // page DOES offer, so a wrong name is no longer guesswork.
+    const faces = navigationFaces(page({
+      uiWorkspace: { openSession: () => {}, forkSession: () => {} },
+      sessions: { list: { getSnapshot: () => ({}) } },
+      layout: { selectPanel: () => {} },
+      unrelated: { refresh: () => {} },
+    }))
+    expect(faces).toContain('uiWorkspace.openSession')
+    expect(faces).toContain('layout.selectPanel')
+    // Read-only members and unrelated verbs are not navigation.
+    expect(faces).not.toContain('sessions.list.getSnapshot')
+    expect(faces).not.toContain('unrelated.refresh')
+  })
+
+  it('is bounded and sorted, so it stays one console line', () => {
+    const many = Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`service${index}`, { open: () => {} }]))
+    const faces = navigationFaces(page(many))
+    expect(faces).toHaveLength(12)
+    expect([...faces]).toEqual([...faces].sort())
+  })
+
+  it('returns nothing rather than throwing on a context it cannot enumerate', () => {
+    expect(navigationFaces(undefined)).toEqual([])
+    expect(navigationFaces(context({}))).toEqual([])
+    expect(navigationFaces({ get: () => ({ props: 'not an object' }) })).toEqual([])
+    // A service that throws on read must not take the diagnostic down with it.
+    expect(navigationFaces({ reflect: { props: { boom: { type: 'service' } } }, get: () => { throw new Error('refused') } })).toEqual([])
   })
 })
