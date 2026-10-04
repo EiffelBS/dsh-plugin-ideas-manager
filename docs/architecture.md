@@ -281,8 +281,8 @@ Decisions worth keeping in mind before touching it:
 ## Agent tools (idea #92)
 
 `src/agent-tools.ts` exposes `ideas_list`, `ideas_get`, `ideas_capture`,
-`ideas_triage`, `ideas_launch` and `ideas_review` to the Host's **optional**
-agent-tool registry.
+`ideas_triage`, `ideas_relate`, `ideas_launch` and `ideas_review` to the Host's
+**optional** agent-tool registry.
 
 - **The registry is feature-detected, never declared.** `inject` in `index.ts`
   stays `['webServer', 'systemPrompt']`; the tools are followed through a scoped
@@ -315,6 +315,24 @@ agent-tool registry.
   `plugin:ideas-manager:agent-tool`, so it reads back as
   `agent:plugin:ideas-manager:agent-tool` in the activity log, exactly like the
   analyst sessions.
+- **`blockedBy` is answered, never written.** It is derived from the other rows'
+  `blocks` and stored nowhere, so every projection that a model reads derives it
+  from the snapshot (`ideaBlockedBy`, or one `blockedByIndexOf` pass for a whole
+  page). The rejected alternative — adding `blockedBy` to the wire — would put
+  two spellings of one edge into the ledger, which is the failure the storage
+  decision below exists to prevent. `ideaSummary` therefore takes the snapshot as
+  a REQUIRED argument: a summary that answered "nothing waits on this card"
+  because the caller passed no peers would be a confident lie.
+- **`ideas_relate` edits by add/remove, because the wire replaces.** The
+  `update` patch carries a whole list, so sending only the new id erases every
+  edge the caller did not name — silently, with a 200. The tool reads the record
+  first and submits the complete list, sends only the kinds the call actually
+  touched (an untouched relation must not spend a revision, a mirror round trip
+  or an activity line), refuses an edit that would pass the ledger's cap instead
+  of letting it truncate, and answers `changed: false` without writing when the
+  named relation is already the stored one. The known-target, self-link and
+  `blocks`-cycle refusals stay the ledger's: duplicating them here would be a
+  second source of truth for an invariant `host-ledger.ts` owns.
 - Registration is owned by the fiber that created it: the disposers ride the
   scoped-injection cleanup, so a replaced registry is re-registered rather than
   short-circuited by a stale disposer, and a disabled board registers nothing.
@@ -1233,6 +1251,18 @@ capture followed by an `update`. An agent writes `create` then `update`.
 
 `blockedBy` is refused at the wire gate, which is the mechanical guarantee behind
 the direction rule: there is no code path that can write the inverse.
+
+**The interface speaks the STORAGE voice, and that is load-bearing.** The row
+that writes `blocks` is labelled *Blocks* / *Bloque* / *阻塞*, with the picker
+"Add an idea this one blocks…" and the chip hint "{target} cannot land before
+this one" — the sentence the DERIVED row prints on the other card for the same
+edge, which is why the two templates are asserted equal. The copy originally ran
+the other way (*Waits for* / *Doit attendre*), so a card that blocked #48 read
+"Waits for: #48 — Cannot land before #48": the inverse of the edge, on the very
+row that writes it, and an error whose effect surfaces on a card the human never
+opened. The glyphs (`→` for `blocks`, `←` for `blockedBy`) and
+`relations.blocksHint` were already in the storage voice, which is what made the
+mismatch diagnosable rather than merely wrong.
 
 **The mirror is skipped for a relations-only patch** (`mirrorKindOf` in
 host-service). A card does not show an idea's relations, so a relations-only

@@ -126,7 +126,7 @@ async function call(tools: Map<string, IdeasToolDefinition>, name: string, args:
 }
 
 describe('the ideas_* tool family', () => {
-  it('exposes exactly the six documented tools, each with a model-facing contract', () => {
+  it('exposes exactly the seven documented tools, each with a model-facing contract', () => {
     const tools = toolsOf(new FakeHost())
     expect([...tools.keys()]).toEqual([...IDEAS_TOOL_NAMES])
     for (const tool of tools.values()) {
@@ -151,6 +151,7 @@ describe('the ideas_* tool family', () => {
     expect(requiredOf('ideas_get')).toEqual(['ideaId'])
     expect(requiredOf('ideas_capture')).toEqual(['title'])
     expect(requiredOf('ideas_triage')).toEqual(['ideaId'])
+    expect(requiredOf('ideas_relate')).toEqual(['ideaId'])
     expect(requiredOf('ideas_launch')).toEqual(['ideaId'])
     expect(requiredOf('ideas_review')).toEqual(['ideaId', 'verdict'])
   })
@@ -428,7 +429,7 @@ describe('registration', () => {
     }
   }
 
-  it('registers all six tools into the registry the deployment serves', () => {
+  it('registers all seven tools into the registry the deployment serves', () => {
     const registry = new FakeRegistry()
     const ctx = fakeContext(registry)
     installIdeasAgentTools(ctx as never, new FakeHost(), () => true)
@@ -478,7 +479,7 @@ describe('registration', () => {
     }
 
     installIdeasAgentTools(ctx as never, new FakeHost(), () => true)
-    expect(first.registered).toHaveLength(6)
+    expect(first.registered).toHaveLength(7)
     const releaseFirst = cycle()
     expect(releaseFirst).toBeDefined()
 
@@ -486,7 +487,7 @@ describe('registration', () => {
     releaseFirst()
     served = second
     cycle()
-    expect(first.disposed).toBe(6)
+    expect(first.disposed).toBe(7)
     expect(second.registered.map(tool => tool.name)).toEqual([...IDEAS_TOOL_NAMES])
   })
 
@@ -499,16 +500,16 @@ describe('registration', () => {
     // Without a scoped injection the registration is owned by the plugin's own
     // lifetime; the disposer is the single source of truth for it either way.
     installIdeasAgentTools(ctx as never, new FakeHost(), () => true)
-    expect(registry.registered).toHaveLength(6)
+    expect(registry.registered).toHaveLength(7)
     expect(registry.disposed).toBe(0)
   })
 
-  it('survives a registry that refuses one tool and keeps the other five', () => {
+  it('survives a registry that refuses one tool and keeps the other six', () => {
     const registry = new FakeRegistry('ideas_review')
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     installIdeasAgentTools(fakeContext(registry) as never, new FakeHost(), () => true)
     expect(registry.registered.map(tool => tool.name)).toEqual([
-      'ideas_list', 'ideas_get', 'ideas_capture', 'ideas_triage', 'ideas_launch',
+      'ideas_list', 'ideas_get', 'ideas_capture', 'ideas_triage', 'ideas_relate', 'ideas_launch',
     ])
     expect(error).toHaveBeenCalled()
     error.mockRestore()

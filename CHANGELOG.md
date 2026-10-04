@@ -24,9 +24,38 @@ Versions before 0.3.0 predate this file.
   board has no verb that undoes them — the interface would rather admit that
   than offer a promise it cannot keep. Undo lives in this browser session only:
   the last 20 actions, for 30 minutes, and it forgets on reload.
+- **Agents can state and read the links between ideas.** The board has carried
+  "related to" and "blocks" for a long time, but only the HTTP channel could
+  reach them: an agent asked to link two cards had to hand-build the JSON
+  envelope — or go and read the plugin's own source to find out the field
+  existed. There is now an `ideas_relate` tool, and every read carries the links.
+  `ideas_relate` edits the two lists by **add and remove** rather than by
+  replacement, so a link the agent did not mention survives the call, and a call
+  that would change nothing writes nothing at all (no revision, no card round
+  trip, no misleading line in the activity log). It answers with the three lines
+  a human reads on a card, each target resolved to its `#N` and title.
+- **Reads now answer "what is this idea blocked by?" directly.** Every row a
+  list returns, and every full read, carries the stored `relatesTo` and `blocks`
+  **and** the derived `blockedBy` — the inverse side, which exists on no card and
+  rode on no wire field, so an agent used to have to scan the whole board to work
+  it out. The derivation is made from the whole document, so a blocker outside
+  the current filter still counts.
 
 ### Fixed
 
+- **The blocking row no longer says the opposite of what it writes.** The
+  interface labelled the row that writes "blocks" with the wording of the row
+  that waits for an idea (*Waits for* / *Doit attendre* / *等待*), so a card
+  that blocked #48 read "Waits for: #48 — Cannot land before #48". Whoever
+  wanted "#51 waits for #47" could pick the wrong row, and the effect appeared
+  on the other card, far from the mistake. The row, its picker and its chip now
+  speak the direction they actually write: **Blocks**, "Add an idea this one
+  blocks…", "{target} cannot land before this one". The read-only "waiting for
+  this idea" row is unchanged, so both cards now tell you the same thing about
+  one link.
+- **A stray `{target}` no longer appears under the relations.** The note below
+  the read-only row asks for a placeholder it was never given, so the interface
+  printed the braces literally, in every language.
 - **A delivered idea no longer wears a "Running" tag.** An idea whose work was
   finished and delivered could keep showing *Running* for ever: the tag also
   reads the mirrored TaskBoard card, and that observation stops the moment its

@@ -531,15 +531,16 @@ dsh plugin --profile web remove dsh-plugin-ideas-manager
 
 ## For agents and integrators
 
-**Six agent tools, when your deployment serves them.** Any DSH session can then
+**Seven agent tools, when your deployment serves them.** Any DSH session can then
 work the board directly, with no shell and no hand-built JSON:
 
 | Tool | What it does |
 |---|---|
 | `ideas_list` | Read a filtered, paginated page of idea metadata |
-| `ideas_get` | Read one idea in full, including its activity log |
+| `ideas_get` | Read one idea in full, including its activity log and its relations |
 | `ideas_capture` | Capture an idea with a priority opinion, in one call |
 | `ideas_triage` | Record value / effort / rationale / rank on an open idea |
+| `ideas_relate` | Declare or drop the links between ideas: related to, and blocks |
 | `ideas_launch` | Start the idea's execution |
 | `ideas_review` | Settle the review gate: approve, follow-up, or decline |
 
@@ -547,6 +548,15 @@ They drive the same ledger as the board, so anything a tool writes is on your
 board immediately, and it shows up in that idea's activity log as the agent's
 work. A call that would be invalid over HTTP is refused the same way. Nothing
 lets an agent write a run state or claim a task card.
+
+Relations come along with the reads: every row a list returns carries what a card
+is related to, what it **blocks**, and — derived, because it is declared on the
+other card — what **waits on it**. An agent no longer has to open every card to
+answer "what is this idea blocked by?".
+
+`ideas_relate` edits the two lists by *add* and *remove* rather than by
+replacement, so a link the agent did not mention survives the call, and a call
+that would change nothing writes nothing at all.
 
 If your deployment serves no agent-tool registry, the board simply does not
 offer them — every feature below still works.

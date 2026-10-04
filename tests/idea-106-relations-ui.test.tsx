@@ -26,6 +26,7 @@ import {
   withRelation,
   withoutRelation,
 } from '../src/client/relations.ts'
+import { en, fr, t, zh } from '../src/client/locales.ts'
 
 /** Three ideas; `a` is adjacent to `b` and waits for `c`, so `c` is blocked by `a`. */
 function rows(): IdeaRecord[] {
@@ -328,6 +329,62 @@ describe('the relation line on the list tabs', () => {
     await mount(linked)
     await openTab(2)
     expect(chipsIn('[data-dsh-ideas-delivered]')).toEqual(['relatesTo:↔:#1'])
+  })
+})
+
+describe('the relation copy is in the STORAGE voice', () => {
+  /** The three shipped dictionaries, widened so a key can be named as a string. */
+  const dictionaries: ReadonlyArray<Record<string, string>> = [fr, en, zh]
+
+  it('says one sentence about one edge, whichever card you read it from', () => {
+    // `A.blocks = [B]` means A blocks B. Read on A the chip names B, read on B
+    // the locked chip names A — and both sentences must place the OTHER card as
+    // the subject of "cannot land before this one". The shipped copy put the
+    // editor row in the opposite voice ("Waits for" / "Doit attendre"), so a card
+    // that blocked #48 read "Waits for: #48 — Cannot land before #48": the
+    // inverse of the edge, in every language, on the very row that writes it.
+    for (const dictionary of dictionaries) {
+      expect(dictionary['relations.blocksHint']).toBe(dictionary['relations.blockedByHint'])
+      expect(dictionary['relations.blocksHint'].startsWith('{target}')).toBe(true)
+      // The two rows must not collapse into one label either: `Blocks` names
+      // what this card does, `Waiting for this idea` what others await from it.
+      expect(dictionary['relations.blocks']).not.toBe(dictionary['relations.blockedBy'])
+    }
+  })
+
+  it('never renders an uninterpolated placeholder in a relation string', () => {
+    const substituted = [
+      'relations.removeRelated', 'relations.removeBlocked',
+      'relations.relatesToHint', 'relations.blocksHint', 'relations.blockedByHint',
+    ]
+    for (const dictionary of dictionaries) {
+      for (const key of substituted) {
+        expect(dictionary[key].replace('{target}', '#3 Gamma'), `${key}`).not.toMatch(/\{/)
+      }
+      // Rendered with NO params under the locked row, so asking for one prints a
+      // literal `{target}` in the interface — which is what it used to do.
+      expect(dictionary['relations.blockedByExplained']).not.toMatch(/\{/)
+    }
+  })
+
+  it('labels the editable row with the direction it actually writes', async () => {
+    await openEditor('a')
+    // The row whose picker writes `blocks` must carry the `blocks` label. Finding
+    // it BY its placeholder is what makes this test fail loudly if the two rows
+    // are ever swapped.
+    const picker = host.querySelector(`[aria-label="${t('relations.addBlocked')}"]`)
+    expect(picker).not.toBeNull()
+    const row = picker!.closest('.dsh-ideas-relation-row')!
+    expect(row.firstElementChild!.textContent).toBe(t('relations.blocks'))
+  })
+
+  it('tells the reader the same thing on both cards of the edge', async () => {
+    // The arrow chip on `a` (which blocks `c`) and the locked chip on `c`.
+    const arrow = host.querySelector('[data-dsh-ideas-relation="blocks"]')!.getAttribute('title')
+    expect(arrow).toBe(t('relations.blocksHint', { target: '#3 Gamma' }))
+    await openEditor('c')
+    const locked = host.querySelector('[data-dsh-ideas-relation-locked="a"]')!.getAttribute('title')
+    expect(locked).toBe(t('relations.blockedByHint', { target: '#1 Alpha' }))
   })
 })
 

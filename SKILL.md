@@ -80,7 +80,7 @@ So when your answer ends with "see idea #42":
 
 ## `ideas_*` agent tools (preferred over hand-building the envelope)
 
-When the deployment serves an agent-tool registry, six `ideas_*` tools drive the
+When the deployment serves an agent-tool registry, seven `ideas_*` tools drive the
 same ledger, the same routes and the same launch path as the board. Prefer them
 over hand-writing `/api/ideas` envelopes: they take the arguments in plain
 language, they refuse the same malformed calls, and every write they make shows
@@ -88,10 +88,11 @@ up in the idea's activity log under `agent:plugin:ideas-manager:agent-tool`.
 
 | tool | reads/writes | notes |
 |---|---|---|
-| `ideas_list` | read | One bounded page of metadata rows (`workspaceId`, `status`, `tag`, `query`, `limit`, `offset`). Never a description — call `ideas_get` for that. |
-| `ideas_get` | read | One idea in full: description, priority opinion, activity log, follow-up rows. |
+| `ideas_list` | read | One bounded page of metadata rows (`workspaceId`, `status`, `tag`, `query`, `limit`, `offset`). Never a description — call `ideas_get` for that. Every row carries `relatesTo`, `blocks` and the derived `blockedBy`. |
+| `ideas_get` | read | One idea in full: description, priority opinion, activity log, follow-up rows, and its three relation lines. |
 | `ideas_capture` | write | Title + markdown body; optional `summary`, `workspaceId`, `tags` (names only), `value`, `effort`, `rationale`, `rank`. |
 | `ideas_triage` | write | Record `value` / `effort` / `rationale` / `rank` on an open idea in one transaction; answers with the resulting group ordering. |
+| `ideas_relate` | write | Declare or drop relations: `addRelatesTo` / `removeRelatesTo`, `addBlocks` / `removeBlocks`. Edits by add and remove, so an unnamed edge survives; answers with the three resolved relation lines. |
 | `ideas_launch` | write | Start the execution (mirrored card or fresh session, resolved by the Host). |
 | `ideas_review` | write | Settle the review gate: `approve` (deliver), `followUp` (linked child + archived parent), `decline` (+ `decision`). |
 
@@ -222,7 +223,7 @@ Two stored kinds, both written with the ordinary `update` verb:
 | kind | meaning | stored where |
 |---|---|---|
 | `relatesTo` | "adjacent to that, read the other one" | **both** rows — one statement, written once |
-| `blocks` | "this cannot land before that one" | the row that waits, only |
+| `blocks` | "that one cannot land before this one" | the row that waits, only |
 
 `blockedBy` **is not a field and cannot be written.** Derive it:
 `blockedBy(X) = the ideas whose blocks list contains X`. Both sides are in
@@ -230,15 +231,23 @@ Two stored kinds, both written with the ordinary `update` verb:
 bounded read over the whole board answers every "what does this wait on?" — that
 is `GET /api/ideas/state?view=summary&fields=id,title,ideaNumber,blocks&limit=200`.
 
+Over the agent tools you never derive it yourself: `ideas_list` rows and
+`ideas_get` carry `blockedBy` already, computed from the whole document, and
+`ideas_relate` answers with all three lines resolved to `#N` + title.
+
 Writing:
 
 - `{"kind":"update","ideaId":"<X>","patch":{"relatesTo":["<Y>"]}}` — replaces X's
   whole list, and the Host writes the mirrored row for you. Removing works the
   same way: send the shorter list, or `null` to clear it.
-- `{"kind":"update","ideaId":"<X>","patch":{"blocks":["<Y>"]}}` — `X` waits for
-  `Y`. To express "Y waits for X", send the patch for **Y**.
+- `{"kind":"update","ideaId":"<X>","patch":{"blocks":["<Y>"]}}` — `X` blocks
+  `Y`, so `Y` cannot land before `X`. To express "Y waits for X", send the patch
+  for **Y**.
 - `create` takes no relations (a new idea has no id yet): `create` then `update`.
 - Absent = untouched; an array replaces; `null` clears. Same contract as `tags`.
+- `ideas_relate` is the same edit without the replacement trap: pass
+  `addRelatesTo` / `removeRelatesTo` / `addBlocks` / `removeBlocks` and it sends
+  the complete list it read, so an edge you did not name is never erased.
 
 Refusals (the Host's own sentence comes back in `message`):
 

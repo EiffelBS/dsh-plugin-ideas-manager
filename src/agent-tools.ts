@@ -3,10 +3,10 @@
  *
  * Until now an agent that wanted to write an idea had to hand-build the
  * `{requestId, action, initiator}` envelope, survive the PowerShell/BOM traps
- * of doing it from a shell, and know the re-rank policy by heart. These six
+ * of doing it from a shell, and know the re-rank policy by heart. These seven
  * tools are the DSH-native counterpart of the board UI, exactly as the task
- * board's own `task_board_*` tools are: any session can capture, triage, launch
- * and settle idea work without a browser.
+ * board's own `task_board_*` tools are: any session can capture, triage, relate,
+ * launch and settle idea work without a browser.
  *
  * Three rules make this surface trustworthy rather than merely convenient:
  *
@@ -26,6 +26,22 @@
  * Domain refusals come back as `ok:false` values the model can read and act on
  * rather than as thrown errors, and every read is bounded.
  *
+ * The relations (`relatesTo`, `blocks`, and the DERIVED `blockedBy`) are the
+ * reason this surface grew a seventh tool: the ledger has carried them since
+ * idea #106, but they rode only on the HTTP patch, so an agent asked to state
+ * one had to hand-build an envelope — or go read the plugin's source to find out
+ * the model had one at all. Two rules keep that surface honest:
+ *
+ *  - **`blockedBy` is answered, never written.** It is the inverse of another
+ *    row's `blocks` and is stored nowhere, so every read derives it from the
+ *    snapshot ({@link ideaBlockedBy}) instead of asking the caller to know the
+ *    direction. Writing it is refused by the wire gate, tool or not.
+ *  - **An edit is an ADD/REMOVE, never a replacement.** The wire patch replaces
+ *    a whole list, which is a foot-gun an agent walks into silently; the tool
+ *    therefore computes the complete list from the record it just read, so an
+ *    edge the caller did not name survives, and a call that would change nothing
+ *    writes nothing at all (no revision, no mirror round trip, no log line).
+ *
  * Deliberately absent: any way to confirm a permission, raise a card, or take
  * the mirror's own decisions. Those are the human's.
  *
@@ -33,7 +49,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { IdeaRecord } from './core/ideas.ts'
+import { IDEA_RELATION_LIMIT, ideaBlockedBy, normalizeRelationIds, type IdeaRecord } from './core/ideas.ts'
 import {
   buildIdeasReadSnapshot,
   parseActionEnvelope,
@@ -57,6 +73,7 @@ export const IDEAS_TOOL_NAMES = [
   'ideas_get',
   'ideas_capture',
   'ideas_triage',
+  'ideas_relate',
   'ideas_launch',
   'ideas_review',
 ] as const
@@ -231,8 +248,21 @@ function submitAction(host: IdeasToolHost, action: Record<string, unknown>): Jso
 
 /* --- projections ---------------------------------------------------------- */
 
-/** Compact idea row for the model: identity, column, opinion, lineage, runs. */
-function ideaSummary(idea: IdeaRecord): Record<string, unknown> {
+/**
+ * Compact idea row for the model: identity, column, opinion, lineage, runs, and
+ * the three relation lines.
+ *
+ * `blockedBy` is DERIVED — it exists on no row and rides no wire field — so it
+ * is computed here from the whole snapshot ({@link ideaBlockedBy}). That is why
+ * the snapshot is a REQUIRED argument: a summary that silently answered "nothing
+ * waits on this card" because the caller passed no peers would be a confident
+ * lie, and "which idea am I blocked by?" is the question this projection exists
+ * to answer.
+ *
+ * @param idea - the row to project.
+ * @param ideas - the whole snapshot, used to derive `blockedBy`.
+ */
+function ideaSummary(idea: IdeaRecord, ideas: readonly IdeaRecord[]): Record<string, unknown> {
   return {
     id: idea.id,
     ...(idea.ideaNumber === undefined ? {} : { number: `#${idea.ideaNumber}` }),
@@ -250,8 +280,62 @@ function ideaSummary(idea: IdeaRecord): Record<string, unknown> {
     ...(idea.followUpOfId === undefined ? {} : { followUpOfId: idea.followUpOfId }),
     ...(idea.deliveredAt === undefined ? {} : { deliveredAt: idea.deliveredAt }),
     ...(idea.decision === undefined ? {} : { decision: idea.decision }),
+    ...(idea.relatesTo === undefined ? {} : { relatesTo: idea.relatesTo }),
+    ...(idea.blocks === undefined ? {} : { blocks: idea.blocks }),
+    ...(ideas.length === 0 ? {} : { blockedBy: ideaBlockedBy(ideas, idea.id) }),
     ...(idea.events === undefined ? {} : { activity: idea.events }),
   }
+}
+
+/**
+ * The three relation lines of one idea, every target resolved to its `#N` and
+ * title while the board still knows it.
+ *
+ * A bare id is what made the edge look unopenable: an agent reporting "blocks
+ * the mirror card" needs the number, and an unresolved target is reported as
+ * such rather than as a confident empty label.
+ *
+ * @param ideas - the whole snapshot (relations are cross-row).
+ * @param idea - the idea whose lines are projected.
+ */
+function relationViewsOf(ideas: readonly IdeaRecord[], idea: IdeaRecord): Record<string, unknown> {
+  const byId = new Map(ideas.map(item => [item.id, item]))
+  const targets = (ids: readonly string[]): Array<Record<string, unknown>> => ids.map(id => {
+    const target = byId.get(id)
+    if (target === undefined) return { id }
+    return {
+      id,
+      ...(target.ideaNumber === undefined ? {} : { number: `#${target.ideaNumber}` }),
+      title: target.title,
+    }
+  })
+  return {
+    relatesTo: targets(idea.relatesTo ?? []),
+    blocks: targets(idea.blocks ?? []),
+    blockedBy: targets(ideaBlockedBy(ideas, idea.id)),
+  }
+}
+
+/**
+ * The inverse of the stored `blocks` for every idea at once, in one pass.
+ *
+ * Built once per read for the same reason the board builds its relation index
+ * once per paint: `blockedBy` is derived from the other rows, so asking per row
+ * would be O(rows²) on every page.
+ *
+ * @param ideas - the whole snapshot.
+ * @returns target id -> the ids of the ideas that block it.
+ */
+function blockedByIndexOf(ideas: readonly IdeaRecord[]): Map<string, string[]> {
+  const index = new Map<string, string[]>()
+  for (const idea of ideas) {
+    for (const target of idea.blocks ?? []) {
+      const blockers = index.get(target)
+      if (blockers === undefined) index.set(target, [idea.id])
+      else blockers.push(idea.id)
+    }
+  }
+  return index
 }
 
 /** The recorded activity of an idea, oldest first, as one timeline. */
@@ -259,11 +343,18 @@ function activityOf(idea: IdeaRecord): unknown[] {
   return (idea.events ?? []).map(entry => ({ at: entry.at, verb: entry.verb, actor: entry.actor, summary: entry.summary }))
 }
 
-/** Field list of the bounded list projection the tools read through. */
+/**
+ * Field list of the bounded list projection the tools read through.
+ *
+ * `relatesTo` and `blocks` are SELECTED rather than fetched: they are lists of
+ * ids, not bodies, so a page of 200 rows pays a few hundred bytes for the whole
+ * relation graph — the difference between an agent that can answer "what does
+ * this workspace wait on?" and one that has to fetch every card to find out.
+ */
 const LIST_FIELDS: IdeasReadField[] = [
   'summary', 'rank', 'value', 'effort', 'rationale', 'tags', 'workspaceId',
   'taskBoardId', 'taskBoardStatus', 'runStatus', 'deliveryNote',
-  'followUpOfId', 'deliveredAt', 'decision',
+  'followUpOfId', 'deliveredAt', 'decision', 'relatesTo', 'blocks',
 ]
 
 /** Split a comma-separated status list, keeping only the closed union members. */
@@ -280,7 +371,8 @@ function buildListTool(host: IdeasToolHost): IdeasToolDefinition {
     name: 'ideas_list',
     description: [
       'Read the Ideas board: one bounded, filtered page of idea rows.',
-      'Returns metadata only — title, column, tags, priority opinion, run state, lineage — never the descriptions; call ideas_get for one idea in full.',
+      'Returns metadata only — title, column, tags, priority opinion, run state, lineage, relations — never the descriptions; call ideas_get for one idea in full.',
+      'Relations ride on every row: relatesTo and blocks are the stored lists, and blockedBy is DERIVED from the other cards\' blocks, so "what is this card waiting on?" and "what waits on it?" are both answered here.',
       'The workspaceId, status (a comma-separated subset of open/underReview/archived/declined), tag and query filters are conjunctive.',
       'Follow meta.nextOffset while it is set to walk the whole match.',
       'Triggers: 想法, ideas, backlog, idees, 想法板, 看板, list ideas, what ideas do we have.',
@@ -324,13 +416,16 @@ function buildListTool(host: IdeasToolHost): IdeasToolDefinition {
         limit,
         offset,
       })
+      // `blockedBy` is derived from the WHOLE document, not from the matched
+      // page: a blocker outside the current filter still blocks a row inside it.
+      const blockers = blockedByIndexOf(snapshot.ideas)
       return json({
         ok: true,
         revision: page.revision,
         matched: page.meta.matched,
         returned: page.ideas.length,
         nextOffset: page.meta.nextOffset,
-        ideas: page.ideas,
+        ideas: page.ideas.map(row => ({ ...row, blockedBy: blockers.get(row.id) ?? [] })),
       })
     },
   }
@@ -340,7 +435,8 @@ function buildGetTool(host: IdeasToolHost): IdeasToolDefinition {
   return {
     name: 'ideas_get',
     description: [
-      'Read ONE idea in full: its complete description, its priority opinion, and its activity log (who did what, when — bounded to the last 50 entries).',
+      'Read ONE idea in full: its complete description, its priority opinion, its relations, and its activity log (who did what, when — bounded to the last 50 entries).',
+      'Relations come as the three lines a human reads on the card: related to, waits for (blocks), and is waited for (blockedBy, derived from the other cards).',
       'Also returns the compact rows of the follow-up ideas raised from this one.',
       'Triggers: 读取想法, 打开想法, idea detail, read idea, what happened to this idea.',
     ].join(' '),
@@ -358,12 +454,17 @@ function buildGetTool(host: IdeasToolHost): IdeasToolDefinition {
       if (ideaId === undefined) return refused('invalid-arguments', 'ideaId is required')
       const idea = host.idea(ideaId)
       if (idea === undefined) return refused('idea-not-found', `no idea with id ${ideaId}`)
-      const followUps = host.snapshot().ideas
+      const ideas = host.snapshot().ideas
+      const followUps = ideas
         .filter(entry => entry.followUpOfId === ideaId)
-        .map(ideaSummary)
+        .map(entry => ideaSummary(entry, ideas))
       return json({
         ok: true,
-        idea: { ...idea, activity: activityOf(idea) },
+        // The raw record already carries the two STORED lists; `blockedBy` is
+        // the one relation no row holds, so it is added here rather than left
+        // for the model to reconstruct by reading every other card.
+        idea: { ...idea, blockedBy: ideaBlockedBy(ideas, ideaId), activity: activityOf(idea) },
+        relations: relationViewsOf(ideas, idea),
         followUps,
       })
     },
@@ -428,12 +529,13 @@ function buildCaptureTool(host: IdeasToolHost): IdeasToolDefinition {
       if (typeof answer === 'object' && answer !== null && (answer as { ok?: unknown }).ok !== true) return answer
       const idea = host.idea(id)
       if (idea === undefined) return refused('not-found', 'the idea was accepted but could not be read back')
-      const groupSize = host.snapshot().ideas.filter(entry =>
+      const ideas = host.snapshot().ideas
+      const groupSize = ideas.filter(entry =>
         entry.status === 'open'
         && entry.workspaceId === idea.workspaceId).length
       return json({
         ok: true,
-        idea: ideaSummary(idea),
+        idea: ideaSummary(idea, ideas),
         workspaceOpenBacklog: groupSize,
         nextStep: 'Re-rank the workspace open backlog on any material change (ideas_triage on the ideas whose position actually moved); ranks stay advisory.',
       })
@@ -481,12 +583,133 @@ function buildTriageTool(host: IdeasToolHost): IdeasToolDefinition {
       if (typeof answer === 'object' && answer !== null && (answer as { ok?: unknown }).ok !== true) return answer
       const after = host.idea(ideaId)
       if (after === undefined) return refused('not-found', 'the triage was accepted but the idea could not be read back')
-      const ordering = host.snapshot().ideas
+      const ideas = host.snapshot().ideas
+      const ordering = ideas
         .filter(entry => entry.status === 'open' && entry.workspaceId === after.workspaceId)
         .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
         .slice(0, IDEAS_READ_MAX_LIMIT)
         .map((entry, index) => ({ rank: entry.rank ?? index + 1, id: entry.id, title: entry.title }))
-      return json({ ok: true, idea: ideaSummary(after), groupOrdering: ordering })
+      return json({ ok: true, idea: ideaSummary(after, ideas), groupOrdering: ordering })
+    },
+  }
+}
+
+/**
+ * Read a list of relation TARGET ids: strings only, trimmed, de-duplicated. A
+ * non-string entry is dropped rather than refused, exactly like a tag name, so a
+ * model that mixes numbers into the list still gets the edges it spelled right.
+ *
+ * @param args - the raw tool arguments.
+ * @param key - the argument name to read.
+ * @returns the target ids, in the order they were given.
+ */
+function readRelationIds(args: Record<string, unknown>, key: string): string[] {
+  const value = args[key]
+  if (!Array.isArray(value)) return []
+  const ids: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue
+    const id = entry.trim()
+    if (id !== '' && !ids.includes(id)) ids.push(id)
+  }
+  return ids
+}
+
+/**
+ * Whether a relation list would change. Order is NOT a change, for the reason
+ * `relationListChanged` gives on the client side: the ledger appends and
+ * re-points edges, so the same set in another order is the same statement, and
+ * treating it as a change would spend a revision and a log line on nothing.
+ *
+ * @param before - the stored list (absent = no edge of this kind).
+ * @param next - the list the tool computed.
+ * @returns true when the two hold the same ids.
+ */
+function sameRelationSet(before: readonly string[] | undefined, next: readonly string[]): boolean {
+  const left = [...(before ?? [])].sort()
+  const right = [...next].sort()
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
+function buildRelateTool(host: IdeasToolHost): IdeasToolDefinition {
+  return {
+    name: 'ideas_relate',
+    description: [
+      'Declare or remove the relations between ideas — the two kinds the board has, and the only two.',
+      'relatesTo: "adjacent, read the other one too" (stored symmetrically, so both cards record it). blocks: THIS card cannot land before that one — the direction is the whole point, so to say "this card waits for X", call this on X with addBlocks: [this card].',
+      'There is no blockedBy argument: it is the derived inverse of the other cards\' blocks, it rides on every read, and the wire gate refuses it in a patch.',
+      'The lists are edited as ADDS and REMOVES, never as replacements: an edge you do not name survives the call, and a call that changes nothing writes nothing.',
+      'State a relation you can justify from the two cards\' own text; a wrong edge misleads every later reader, and an empty relation graph is a normal state.',
+      'Answers with the card\'s three relation lines, every target resolved to its number and title.',
+      'Triggers: relates to, related ideas, blocked by, blocks, blocking, depends on, link ideas, relation, 关联, 相关, 阻塞, 被阻塞, 依赖, 关联想法.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        ideaId: { type: 'string', description: 'The card the relation is declared ON. Every other id is the TARGET.' },
+        addRelatesTo: { type: 'array', items: { type: 'string' }, description: `Target idea ids to declare this one adjacent to (writes "relatesTo"; max ${IDEA_RELATION_LIMIT} edges).` },
+        removeRelatesTo: { type: 'array', items: { type: 'string' }, description: 'Target idea ids to undeclare from "relatesTo".' },
+        addBlocks: { type: 'array', items: { type: 'string' }, description: `Target idea ids this card CANNOT LAND BEFORE (writes "blocks" on THIS card; max ${IDEA_RELATION_LIMIT} edges).` },
+        removeBlocks: { type: 'array', items: { type: 'string' }, description: 'Target idea ids this card stops waiting for.' },
+      },
+      required: ['ideaId'],
+    },
+    output: { schema: {}, render: renderJson },
+    async execute(args) {
+      const raw = typeof args === 'object' && args !== null ? args as Record<string, unknown> : {}
+      const ideaId = readString(raw, 'ideaId')
+      if (ideaId === undefined) return refused('invalid-arguments', 'ideaId is required')
+      const before = host.idea(ideaId)
+      if (before === undefined) return refused('idea-not-found', `no idea with id ${ideaId}`)
+      const edits = {
+        relatesTo: { add: readRelationIds(raw, 'addRelatesTo'), remove: readRelationIds(raw, 'removeRelatesTo') },
+        blocks: { add: readRelationIds(raw, 'addBlocks'), remove: readRelationIds(raw, 'removeBlocks') },
+      }
+      const touched = (['relatesTo', 'blocks'] as const).filter(key =>
+        edits[key].add.length > 0 || edits[key].remove.length > 0)
+      if (touched.length === 0) {
+        return refused('nothing-to-record', 'pass addRelatesTo / removeRelatesTo and/or addBlocks / removeBlocks')
+      }
+
+      // The wire patch REPLACES a stored list, which is the one way this edit can
+      // silently destroy an edge nobody mentioned. So the complete list is
+      // computed here from the record read above: remove first, then append.
+      const patch: Record<string, unknown> = {}
+      for (const key of touched) {
+        const { add, remove } = edits[key]
+        const kept = [...new Set([...(before[key] ?? []).filter(id => !remove.includes(id)), ...add])]
+        // A list past the ledger's cap would be TRUNCATED on write, and the edge
+        // that fell off would be invisible. Refuse with the number instead.
+        if (kept.length > IDEA_RELATION_LIMIT) {
+          return refused('relation-limit', `a relation list holds at most ${IDEA_RELATION_LIMIT} ids, this edit would make ${kept.length}`)
+        }
+        if (sameRelationSet(before[key], kept)) continue
+        // An empty list CLEARS the stored one — that is the wire contract, and
+        // it is why removing the last edge has to send `[]` rather than omit.
+        patch[key] = normalizeRelationIds(kept) ?? []
+      }
+      if (Object.keys(patch).length === 0) {
+        // Already stated: answering `changed:false` keeps the model from
+        // reporting an edit that never happened.
+        const ideas = host.snapshot().ideas
+        return json({
+          ok: true,
+          changed: false,
+          idea: ideaSummary(before, ideas),
+          relations: relationViewsOf(ideas, before),
+          message: 'the named relation is already the stored one; nothing was written',
+        })
+      }
+      const answer = submitAction(host, { kind: 'update', ideaId, patch })
+      if (!isOk(answer)) return answer
+      const ideas = host.snapshot().ideas
+      const after = host.idea(ideaId) ?? before
+      return json({
+        ok: true,
+        changed: true,
+        idea: ideaSummary(after, ideas),
+        relations: relationViewsOf(ideas, after),
+      })
     },
   }
 }
@@ -562,17 +785,21 @@ function buildReviewTool(host: IdeasToolHost): IdeasToolDefinition {
       const before = host.idea(ideaId)
       if (before === undefined) return refused('idea-not-found', `no idea with id ${ideaId}`)
       const decision = readString(raw, 'decision')
+      // Each branch re-reads the snapshot AFTER its write, so the projected row
+      // and the relations derived from it belong to the same committed state.
+      const committed = (fallback: IdeaRecord): { idea: Record<string, unknown>; all: IdeaRecord[] } => {
+        const all = host.snapshot().ideas
+        return { idea: ideaSummary(all.find(entry => entry.id === ideaId) ?? fallback, all), all }
+      }
       if (verdict === 'approve') {
         const answer = submitAction(host, { kind: 'deliver', ideaId })
         if (!isOk(answer)) return answer
-        const after = host.idea(ideaId)
-        return json({ ok: true, verdict, idea: after === undefined ? ideaSummary(before) : ideaSummary(after) })
+        return json({ ok: true, verdict, idea: committed(before).idea })
       }
       if (verdict === 'decline') {
         const answer = submitAction(host, { kind: 'decline', ideaId, ...(decision === undefined ? {} : { decision }) })
         if (!isOk(answer)) return answer
-        const after = host.idea(ideaId)
-        return json({ ok: true, verdict, idea: after === undefined ? ideaSummary(before) : ideaSummary(after) })
+        return json({ ok: true, verdict, idea: committed(before).idea })
       }
       const childTitle = readString(raw, 'childTitle')
       if (childTitle === undefined) return refused('invalid-arguments', 'a follow-up needs a childTitle')
@@ -583,13 +810,13 @@ function buildReviewTool(host: IdeasToolHost): IdeasToolDefinition {
         input: { title: childTitle, body: childBody },
       })
       if (!isOk(answer)) return answer
-      const after = host.idea(ideaId)
-      const child = host.snapshot().ideas.find(entry => entry.followUpOfId === ideaId)
+      const after = committed(before)
+      const child = after.all.find(entry => entry.followUpOfId === ideaId)
       return json({
         ok: true,
         verdict,
-        idea: after === undefined ? ideaSummary(before) : ideaSummary(after),
-        ...(child === undefined ? {} : { followUp: ideaSummary(child) }),
+        idea: after.idea,
+        ...(child === undefined ? {} : { followUp: ideaSummary(child, after.all) }),
       })
     },
   }
@@ -601,7 +828,7 @@ function isOk(answer: Json): boolean {
 }
 
 /**
- * Build the six ideas tools for one Host service.
+ * Build the seven ideas tools for one Host service.
  * @param host - the Host service face (satisfied by `IdeasHostService`).
  * @returns the tool definitions, in {@link IDEAS_TOOL_NAMES} order.
  */
@@ -611,6 +838,7 @@ export function buildIdeasTools(host: IdeasToolHost): IdeasToolDefinition[] {
     buildGetTool(host),
     buildCaptureTool(host),
     buildTriageTool(host),
+    buildRelateTool(host),
     buildLaunchTool(host),
     buildReviewTool(host),
   ]
