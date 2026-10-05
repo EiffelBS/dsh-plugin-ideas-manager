@@ -11,14 +11,20 @@ tc*.txt
 r[0-9]*.txt
 test-*.txt
 
-# Local maintenance tooling (ledger scans, mirror acceptance runs, batch
-# workspace moves). It targets one developer's ~/.dsh ledgers, has no use for
-# the people installing this plugin, and is therefore not shipped.
-# Exception: changelog-notes.mjs builds the GitHub Release body in
-# .github/workflows/release.yml, so it stays in the repository.
+# Local maintenance tooling (mirror acceptance runs, batch workspace moves).
+# It targets one developer's ~/.dsh ledgers, has no use for the people
+# installing this plugin, and is therefore not shipped.
+# Two exceptions, both referenced by a TRACKED file, which is what makes them
+# executable on a fresh clone:
+#  - changelog-notes.mjs builds the GitHub Release body in
+#    .github/workflows/release.yml;
+#  - scan-mojibake.mjs is the command AGENTS.md and docs/mojibake-fix.md tell a
+#    reader to run against a ledger. Neither file is shipped either
+#    (package.json `files` covers lib/ and src/), so this costs nothing.
 scripts/*
 !scripts/changelog-notes.mjs
 !scripts/changelog-notes.d.mts
+!scripts/scan-mojibake.mjs
 
 # Hand-written wire payloads kept at the root while iterating on a verb (they
 # are copies of POST /api/ideas/action bodies, so they carry idea titles).
