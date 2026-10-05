@@ -331,10 +331,13 @@ describe('BackupPanel', () => {
 
     await act(async () => {
       input.dispatchEvent(new Event('change', { bubbles: true }))
-      await new Promise(resolve => { setTimeout(resolve, 0) })
     })
 
-    expect(transport.restored).toEqual([{ document }])
+    // The handler reads the file BEFORE it can post anything, so one turn of the
+    // event loop was never a bound — it happened to be enough on a fast machine
+    // and one turn short under load, which is how this test failed the release
+    // run on the runner while passing everywhere else. Wait for the outcome.
+    await vi.waitFor(() => { expect(transport.restored).toEqual([{ document }]) })
   })
 
   it('degrades to a note on a host that serves no backup route', async () => {

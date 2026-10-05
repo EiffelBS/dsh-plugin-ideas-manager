@@ -1,0 +1,12 @@
+# Text files are checked out with LF endings on EVERY platform, including
+# Windows.
+#
+# This is not cosmetic. With `core.autocrlf=true` a Windows clone materialises
+# CRLF, and a CRLF checkout made `tests/changelog-notes.test.ts` fail with a bare
+# `SyntaxError: Invalid or unexpected token` on the import of the shebang'd
+# `scripts/changelog-notes.mjs` — while the same commit passed everywhere else.
+# The file parses under plain Node either way; it is vitest's transform that
+# rejects it, so the error pointed at the import line and named no file.
+#
+# Git only normalises what it detects as text, so binary assets are unaffected.
+* text=auto eol=lf
