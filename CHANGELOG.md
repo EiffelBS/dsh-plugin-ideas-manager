@@ -6,7 +6,7 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
-## Unreleased
+## 0.10.0 - 2026-10-05
 
 ### Added
 
@@ -43,10 +43,10 @@ Versions before 0.3.0 predate this file.
   stops being named, so the line cannot outlive its own reason. Agents read the
   same thing in the answer to `ideas_launch`.
 - **A link is a way out of a number.** The chips a card prints used to be labels:
-  `#47` told you an idea was related, blocking or blocked, and offered nothing
-  else. Clicking one now opens *that* idea's editor — the chip points away from
-  the card you are reading, on the Overview card and on the Priorities and
-  Delivered rows alike.
+  the number alone told you an idea was related, blocking or blocked, and
+  offered nothing else. Clicking one now opens *that* idea's editor — the chip
+  points away from the card you are reading, on the Overview card and on the
+  Priorities and Delivered rows alike.
 - **The three links are three colours.** *Related* is green, *blocks* amber,
   *blocked by* red, on the cards and in the editor. Colour is the second channel,
   never the only one: the arrows (`↔` / `→` / `←`) and the editor's labels already
@@ -59,11 +59,12 @@ Versions before 0.3.0 predate this file.
   rode on no wire field, so an agent used to have to scan the whole board to work
   it out. The derivation is made from the whole document, so a blocker outside
   the current filter still counts.
-- **A card that waits, but is scheduled first, says so.** Declare "#47 blocks
-  #82" and the backlog may well put #82 above #47 — a real case, where #82's own
-  text had argued for weeks that it should descend below #47 while its rank moved
-  the other way. Nothing compared the declared link with the order, so nobody could
-  see the contradiction. The *Waiting for this idea* chip is now highlighted on
+- **A card that waits, but is scheduled first, says so.** Declare that one idea
+  *blocks* another and the backlog may well put the blocked card *above* its
+  blocker — a real case, where the blocked card's own text had argued for weeks
+  that it should descend below it while its rank moved the other way. Nothing
+  compared the declared link with the order, so nobody could see the
+  contradiction. The *Waiting for this idea* chip is now highlighted on
   the card that waits, and its tooltip names it: hover it and it tells you the
   blocker is scheduled below. It stops there on purpose — the order stays yours.
   The board will not silently move a card for you, because a card can be worth
@@ -108,10 +109,11 @@ Versions before 0.3.0 predate this file.
 - **The blocking row no longer says the opposite of what it writes.** The
   interface labelled the row that writes "blocks" with the wording of the row
   that waits for an idea (*Waits for* / *Doit attendre* / *等待*), so a card
-  that blocked #48 read "Waits for: #48 — Cannot land before #48". Whoever
-  wanted "#51 waits for #47" could pick the wrong row, and the effect appeared
-  on the other card, far from the mistake. The row, its picker and its chip now
-  speak the direction they actually write: **Blocks**, "Add an idea this one
+  that blocked another read "Waits for: <target> — Cannot land before
+  <target>". Whoever wanted "this card waits for that one" could pick the wrong
+  row, and the effect appeared on the other card, far from the mistake. The row,
+  its picker and its chip now speak the direction they actually write:
+  **Blocks**, "Add an idea this one
   blocks…", "{target} cannot land before this one". The read-only "waiting for
   this idea" row is unchanged, so both cards now tell you the same thing about
   one link.
