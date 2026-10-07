@@ -24,6 +24,18 @@ Versions before 0.3.0 predate this file.
   so on a card-backed idea the window shows the model picker but not the effort
   selector — better to omit a choice that could not be kept than to offer one.
 
+### Fixed
+
+- **A refused button no longer looks like a broken one.** The launch window's
+  **Save as the workspace default** stays unavailable until the model you picked
+  actually differs from the one already stored for that workspace. It used to
+  keep the same colours and the same pointer cursor as a live button, so the
+  click landed on a disabled control and simply did nothing. A disabled button
+  now looks disabled, and while the save is refused the window names the missing
+  gesture — **Already the default for …** when the pick is the stored one, or
+  **Pick a model above …** when no model is picked yet — instead of leaving you
+  to guess at a dead click.
+
 ## 0.10.0 - 2026-10-05
 
 ### Added

@@ -94,4 +94,24 @@ describe('injected sheet parse (what the browser keeps)', () => {
       expect({ hide, present: CSS_TEXT.includes(hide) }).toEqual({ hide, present: true })
     }
   })
+
+  it('keeps a disabled button looking disabled', () => {
+    // A ghost button with no :disabled rule kept the pointer cursor AND its
+    // hover fill, so a gesture the modal refuses — the launch modal's "save as
+    // the workspace default" while the pick still equals the stored default —
+    // read as a live button that does nothing when clicked. The rule has to
+    // survive the parse, or the browser drops it again.
+    ensureIdeasStyle()
+    const sheet = document.querySelector('style[data-plugin-css="dsh-plugin-ideas-manager/style"]')
+    expect(sheet).not.toBeNull()
+    const rules = Array.from((sheet as HTMLStyleElement & { sheet: CSSStyleSheet }).sheet?.cssRules ?? [])
+    const selectors = rules
+      .map(rule => ('selectorText' in rule ? rule.selectorText : ''))
+      .join('\n')
+    expect(selectors).toContain('.dsh-ideas-ghost-button:disabled')
+    expect(selectors).toContain('.dsh-ideas-primary-button:disabled')
+    // And the hover fill is switched back off for a disabled ghost button,
+    // which is the half that made the dead click look live.
+    expect(CSS_TEXT).toContain('.dsh-ideas-ghost-button:disabled:hover')
+  })
 })

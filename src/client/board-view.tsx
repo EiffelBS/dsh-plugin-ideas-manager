@@ -1560,6 +1560,18 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
                 {t('launch.saveDefault')}
               </button>
             </div>
+            {/* A disabled button that explains nothing reads as a broken
+                button: the save is refused until the pick actually differs
+                from the stored default, so name the missing gesture here
+                rather than leaving the author to guess at a dead click. */}
+            {!pending && !client.configPending && client.config.available
+              && (pickedTarget === undefined || pickedTarget === workspaceDefault) && (
+              <div className={classes.fieldHint} data-dsh-ideas-default-why="">
+                {pickedTarget === undefined
+                  ? t('launch.defaultNeedsModel', { workspace: workspaceTitle })
+                  : t('launch.defaultUnchanged', { workspace: workspaceTitle })}
+              </div>
+            )}
             {client.configError !== undefined && (
               <div className={classes.error}>{`${t('settings.saveFailed')}${client.configError}`}</div>
             )}

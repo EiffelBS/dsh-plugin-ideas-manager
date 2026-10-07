@@ -310,6 +310,21 @@ body[data-ds-dark-theme] {
   background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-button-primary-fill, var(--dsh-ideas-fb-accent)));
 }
 
+/* A disabled button must not look clickable. Without a :disabled rule the
+   ghost button kept the pointer cursor AND its hover fill, so a gesture the
+   modal refuses (no model picked yet, or nothing changed) read as a dead click
+   instead of as a button that is simply not available. */
+.dsh-ideas-primary-button:disabled,
+.dsh-ideas-ghost-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.dsh-ideas-ghost-button:disabled:hover {
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));
+}
+
 .dsh-ideas-ghost-button {
   background: transparent;
   color: var(--dsw-alias-label-secondary, var(--dsh-ideas-fb-fg-soft));

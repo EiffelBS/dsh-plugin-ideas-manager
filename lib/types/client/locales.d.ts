@@ -265,6 +265,8 @@ export declare const fr: {
     'launch.forgetDefault': string;
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
+    'launch.defaultUnchanged': string;
+    'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -673,6 +675,8 @@ export declare const en: {
     'launch.forgetDefault': string;
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
+    'launch.defaultUnchanged': string;
+    'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
@@ -1067,6 +1071,8 @@ export declare const zh: {
     'launch.forgetDefault': string;
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
+    'launch.defaultUnchanged': string;
+    'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
     'followUp.childTitle': string;
