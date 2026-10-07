@@ -80,7 +80,7 @@ export interface IdeasHostTransport {
      * affordance at all. Rejects with the host's own message so the reason a run
      * was refused stays visible.
      */
-    launch?(ideaId: string, model?: string): Promise<LaunchResponse>;
+    launch?(ideaId: string, model?: string, reasoningEffort?: string): Promise<LaunchResponse>;
     /**
      * The snapshot folder. Optional capability, like `config`: a
      * transport without it simply shows no backup panel, and the board keeps
@@ -138,7 +138,7 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
      * must not consume the persisted action dedupe cache. `readJson` already
      * turns the host's `error` field into the rejection message.
      */
-    launch(ideaId: string, model?: string): Promise<LaunchResponse>;
+    launch(ideaId: string, model?: string, reasoningEffort?: string): Promise<LaunchResponse>;
     private post;
     private request;
     /**

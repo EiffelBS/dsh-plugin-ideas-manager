@@ -180,7 +180,10 @@ export class HostLaunchBackend implements LaunchBackend {
 
   async launch(idea: LaunchTarget, model?: ModelChoice): Promise<LaunchOutcome> {
     if (this.transport.launch === undefined) throw new Error('launch-unavailable')
-    return await this.transport.launch(idea.id, modelTargetIdOf(model))
+    // The effort travels with the model; the Host drops it on the card backend
+    // (the mirror patch is model-only) and pins it via `selectModel` on a fresh
+    // session.
+    return await this.transport.launch(idea.id, modelTargetIdOf(model), model?.reasoningEffort)
   }
 }
 

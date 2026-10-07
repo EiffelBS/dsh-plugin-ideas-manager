@@ -123,9 +123,14 @@ it is the surface you reach from the Priorities and Delivered tabs, so you never
 have to hunt the card back in the Overview to start a run.
 
 1. Click **Launch execution**, pick a model (or keep the session default) and
-   confirm. DSH tells you which of the two ways it will run before you commit.
-   When this workspace already has a **default launch model**, the modal skips
-   the question and just names the model the run will use.
+   confirm. A model that supports a reasoning effort then offers a second
+   selector with the levels it declares — its own default is preselected, and
+   **Model default** pins no effort at all. DSH tells you which of the two ways
+   it will run before you commit. When this workspace already has a **default
+   launch model**, the modal skips the question and just names the model the
+   run will use. The effort selector is honest about where it can go: it is
+   offered only when the run reaches a fresh session, because a TaskBoard card
+   carries the model and nothing else.
 2. **With the TaskBoard plugin installed**, the run goes through that idea's
    board card. **Without it**, DSH opens a brand-new chat session in the idea's
    workspace instead. Either way you get a real execution, and the board needs no
@@ -589,7 +594,7 @@ read the state and write ideas without any UI:
 | `GET /api/ideas/state?view=stats` | Bounded backlog health: one aggregate, optionally scoped to `workspaceId` |
 | `GET /api/ideas/idea?id=<id>` | One complete idea |
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `merge`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
-| `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model? }` — omit `model` and the run takes the workspace's default launch model, then the session default |
+| `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model?, reasoningEffort? }` — omit `model` and the run takes the workspace's default launch model, then the session default; omit `reasoningEffort` and the model keeps its own default |
 | `GET /api/ideas/events` | Server-sent change notifications |
 | `GET /api/ideas/backup` | The snapshot folder: `{ ok, dir, retention, snapshots[], running }` |
 | `POST /api/ideas/backup` | Export the board now: `{ reason?: 'manual' \| 'export' }` |

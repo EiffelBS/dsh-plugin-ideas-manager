@@ -26,10 +26,18 @@ import { SessionRunner, type HostSessionGateway } from '../src/session-runner.ts
 /** Minimal gateway double: answers `session/create` and nothing else. */
 class FakeGateway implements HostSessionGateway {
   methods: string[] = []
-  async invoke(request: { namespace: string; method: string }): Promise<unknown> {
+  /** The args of the last `session/selectModel` call, for effort assertions. */
+  selectModelArgs: Record<string, unknown> | undefined
+  async invoke(request: { namespace: string; method: string; args?: unknown }): Promise<unknown> {
     this.methods.push(request.method)
     if (request.method === 'create') return { sessionId: 'session-1' }
     if (request.method === 'list') return { items: [] }
+    if (request.method === 'selectModel') {
+      // The runner wraps the selectModel payload as { request: {...} } on the
+      // wire; record the inner request so the assertion reads naturally.
+      this.selectModelArgs = ((request.args ?? {}) as { request?: Record<string, unknown> }).request
+      return { ok: true }
+    }
     return { ok: true }
   }
 }
@@ -201,6 +209,40 @@ describe('POST /api/ideas/launch', () => {
     expect(await response.json()).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
     expect(gateway.methods).toContain('create')
     expect(taskBoard.posts).toHaveLength(0)
+  })
+
+  it('forwards a reasoning effort on the wire to the fresh session selectModel', async () => {
+    // The effort is additive on the launch body and reaches the direct-session
+    // backend's selectModel — the only backend that can carry it.
+    const gateway = new FakeGateway()
+    const { base } = await serve({ withMirror: false, autoMirror: false, sessions: new SessionRunner(gateway) })
+
+    const response = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1', model: 'deepseek/deepseek-chat', reasoningEffort: 'high' })
+    expect(response.status).toBe(200)
+    expect(gateway.selectModelArgs).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      reasoningEffort: 'high',
+    })
+  })
+
+  it('refuses a blank reasoning effort as no effort pinned, never as an unknown key', async () => {
+    const gateway = new FakeGateway()
+    const { base } = await serve({ withMirror: false, autoMirror: false, sessions: new SessionRunner(gateway) })
+
+    // A blank effort trims to "no effort": the launch still succeeds and
+    // selectModel is called without the key.
+    const blank = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1', model: 'deepseek/deepseek-chat', reasoningEffort: '   ' })
+    expect(blank.status).toBe(200)
+    expect(gateway.selectModelArgs).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    })
+    // A non-string effort is a body-parser refusal, not a silent omission.
+    const wrong = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1', reasoningEffort: 7 })
+    expect(wrong.status).toBe(400)
   })
 
   it("relays the task-board's own refusal as the error message", async () => {    const { base, taskBoard } = await serve()

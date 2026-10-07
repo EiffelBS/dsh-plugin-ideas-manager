@@ -431,11 +431,14 @@ export declare class IdeasClient {
      * rethrown for the modal to keep the human in place.
      *
      * `model` is the `provider/model` target id, or undefined to let the run
-     * keep the session default.
+     * keep the session default. `reasoningEffort` is an adapter-owned effort id
+     * for THIS run; it travels with the model and only reaches the direct-session
+     * backend (the card mirror patch is model-only), so it is ignored when the
+     * run has no model to pin or goes through a card.
      *
      * @throws when the transport predates the launch route (`launch-unavailable`).
      */
-    launchIdea(ideaId: string, model?: string): Promise<void>;
+    launchIdea(ideaId: string, model?: string, reasoningEffort?: string): Promise<void>;
     reorderIdea(orderedIds: string[]): Promise<void>;
     /**
      * Load the snapshot folder. Reads only: opening the backup panel never

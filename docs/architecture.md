@@ -108,6 +108,33 @@ backend's own default) — see *Default launch model per workspace* below.
 - The wire quirk worth remembering: `session/list` takes `{_request}` on this
   RPC surface while every other method takes `{request}` (`invokeWireArgs`).
 
+### Reasoning effort: one parameter, two backends, one honest gate
+
+The model catalog exposes per-model reasoning efforts (`reasoning.efforts` with
+`id`/`name`/`description` and a `defaultEffort`), and the Host's `selectModel`
+RPC accepts a `reasoningEffort` — but the board's model picker never surfaced
+it. This change surfaces exactly that one existing parameter, for the models
+that declare it, and nothing richer.
+
+- **The catalog is the source of truth.** `modelChoicesOf` reads `reasoning`
+  from the catalog and copies `defaultEffort` into `ModelChoice.reasoningEffort`
+  (what the picker preselects) and `efforts` into `ModelChoice.reasoningEfforts`
+  (what the selector offers). The ids are adapter-owned strings
+  (`ReasoningEffortId` is a branded `string`), never a hardcoded enumeration.
+- **The wire stays frozen.** `POST /api/ideas/launch` gains an optional
+  `reasoningEffort?` field — additive, so the envelope and the default
+  `GET /api/ideas/state` response do not change. A blank string is "no effort
+  pinned", expressed by omitting the key (same discipline as `model`).
+- **The card backend cannot carry it.** The mirror patch is model-only (frozen
+  by design once a card has run), so a reasoning effort would only ever reach
+  the direct-session backend. The launch modal therefore gates the selector on
+  the idea having no card (`!idea.taskBoardId`) rather than offer a choice that
+  would be silently dropped. The analyst modals (capture / re-analyze /
+  find-similar) always run a fresh session, so their selector is always on.
+- **The effort rides the model's `selectModel` call.** It is sent only when a
+  model is pinned (the effort qualifies a model; it cannot travel alone), and
+  omitted when blank so the session keeps the model's own default.
+
 ### Delivery note harvest
 
 At settle time the host writes a short `deliveryNote` on the idea — the **last

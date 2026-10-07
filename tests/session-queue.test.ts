@@ -411,6 +411,80 @@ describe('resolveSessionLauncher', () => {
     ])
   })
 
+  it('reads the reasoning effort from the catalog: default preselects, levels feed the selector', async () => {
+    // The catalog is the source of truth: a model that declares `reasoning`
+    // carries its `defaultEffort` (what the picker preselects) and its
+    // `efforts` list (what the selector offers). A model that declares none
+    // carries neither, so the board shows no effort selector for it.
+    const controller = {
+      create: async (): Promise<string> => 's',
+      scope: () => ({}),
+      sessionOf: () => undefined,
+      modelCatalog: async () => ({
+        ok: true,
+        value: {
+          groups: [
+            {
+              id: 'p1',
+              name: 'Provider One',
+              models: [
+                {
+                  id: 'm1',
+                  name: 'Reasoning Model',
+                  reasoning: {
+                    efforts: [
+                      { id: 'low', name: 'Low', description: 'Fast, shallow' },
+                      { id: 'high', name: 'High', description: 'Slow, thorough' },
+                    ],
+                    defaultEffort: 'high',
+                  },
+                },
+                { id: 'm2', name: 'Plain Model' },
+              ],
+            },
+          ],
+        },
+      }),
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    const choices = await launcher.listModels()
+    expect(choices).toEqual([
+      {
+        provider: 'p1',
+        model: 'm1',
+        label: 'Provider One · Reasoning Model',
+        reasoningEffort: 'high',
+        reasoningEfforts: [
+          { id: 'low', name: 'Low', description: 'Fast, shallow' },
+          { id: 'high', name: 'High', description: 'Slow, thorough' },
+        ],
+      },
+      { provider: 'p1', model: 'm2', label: 'Provider One · Plain Model' },
+    ])
+  })
+
+  it('passes the chosen reasoning effort to selectModel on the fresh session', async () => {
+    const selected: Array<{ sessionId?: string; provider?: string; model?: string; reasoningEffort?: string }> = []
+    const controller = {
+      create: async (): Promise<string> => 'session-eff',
+      scope: () => ({}),
+      sessionOf: (ctx: unknown): unknown => ({
+        prompt: async () => ({ ok: true, value: { accepted: true } }),
+      }),
+      selectModel: async (sel: { sessionId: string; provider: string; model: string; reasoningEffort?: string }): Promise<{ ok: boolean; value: { selected: unknown } }> => {
+        selected.push(sel)
+        return { ok: true, value: { selected: sel } }
+      },
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }) as SessionLauncher
+    const result = await launcher.launch({
+      workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [],
+      model: { provider: 'p1', model: 'm1', label: 'Provider One · Reasoning Model', reasoningEffort: 'low' },
+    })
+    expect(result).toEqual({ accepted: true })
+    expect(selected).toEqual([{ sessionId: 'session-eff', provider: 'p1', model: 'm1', reasoningEffort: 'low' }])
+  })
+
   it('selects the model on the fresh session before prompting', async () => {
     const selected: Array<{ sessionId?: string; provider?: string; model?: string }> = []
     const controller = {

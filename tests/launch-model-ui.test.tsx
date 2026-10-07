@@ -27,6 +27,7 @@ import {
   withoutWorkspaceLaunchModel,
 } from '../src/client/launch.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
+import type { ModelChoice } from '../src/client/session-queue.ts'
 import {
   IDEAS_SCHEMA_VERSION,
   sanitizeSettings,
@@ -40,9 +41,28 @@ import {
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const CATALOG = [
+const CATALOG: ModelChoice[] = [
   { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek · Chat' },
   { provider: 'deepseek', model: 'deepseek-reasoner', label: 'DeepSeek · Reasoner' },
+]
+
+/**
+ * The same catalog, except the reasoner declares reasoning levels — the shape
+ * the DSH model catalog serves (`reasoning.efforts` + `defaultEffort`). The
+ * chat model declares none, so it is the "no selector" control.
+ */
+const REASONING_CATALOG: ModelChoice[] = [
+  { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek · Chat' },
+  {
+    provider: 'deepseek',
+    model: 'deepseek-reasoner',
+    label: 'DeepSeek · Reasoner',
+    reasoningEffort: 'high',
+    reasoningEfforts: [
+      { id: 'low', name: 'Low', description: 'Fast, shallow' },
+      { id: 'high', name: 'High', description: 'Slow, thorough' },
+    ],
+  },
 ]
 
 function snapshot(): IdeasListSnapshot {
@@ -56,9 +76,21 @@ function snapshot(): IdeasListSnapshot {
   }
 }
 
+/** The same board plus one idea that has no TaskBoard card yet. */
+function cardlessSnapshot(): IdeasListSnapshot {
+  return {
+    schemaVersion: IDEAS_SCHEMA_VERSION,
+    revision: 1,
+    ideas: [
+      { id: 'cardless', title: 'Cardless', status: 'open', rank: 3, bodyExcerpt: 'c', createdAt: 1, updatedAt: 100, workspaceId: 'ws1' },
+      ...snapshot().ideas,
+    ],
+  }
+}
+
 /** Transport that serves a mutable settings view and records every write. */
 class FakeTransport implements IdeasHostTransport {
-  launches: Array<{ ideaId: string; model: string | undefined }> = []
+  launches: Array<{ ideaId: string; model: string | undefined; reasoningEffort?: string }> = []
   saved: IdeasSettingsPatch[] = []
   view: IdeasSettingsView
   failure: string | undefined
@@ -89,8 +121,8 @@ class FakeTransport implements IdeasHostTransport {
     }
     return this.view
   }
-  async launch(ideaId: string, model?: string): Promise<LaunchResponse> {
-    this.launches.push({ ideaId, model })
+  async launch(ideaId: string, model?: string, reasoningEffort?: string): Promise<LaunchResponse> {
+    this.launches.push({ ideaId, model, reasoningEffort })
     if (this.failure !== undefined) throw new Error(this.failure)
     return { ok: true, runId: `card-${ideaId}`, taskId: `card-${ideaId}`, runStatus: 'running' }
   }
@@ -115,15 +147,19 @@ afterEach(() => {
   host.remove()
 })
 
-async function renderBoard(transport: FakeTransport): Promise<void> {
+async function renderBoard(
+  transport: FakeTransport,
+  catalog: ModelChoice[] = CATALOG,
+  board: IdeasListSnapshot = snapshot(),
+): Promise<void> {
   client = new IdeasClient(transport, undefined)
-  client.snapshot = snapshot()
+  client.snapshot = board
   // A model catalog, so the picker would be there if the modal wanted one.
   client.sessionLauncher = {
     launch: async () => ({ accepted: true }),
     launchReanalyze: async () => ({ accepted: true }),
     launchFindSimilar: async () => ({ accepted: true }),
-    listModels: async () => CATALOG,
+    listModels: async () => catalog,
     currentModel: async () => ({ provider: 'deepseek', model: 'deepseek-reasoner' }),
   }
   act(() => {
@@ -396,5 +432,97 @@ describe('setting, changing and forgetting the default', () => {
     expect(host.textContent).toContain('settings-conflict')
     // The stored default is untouched: the board still shows what is stored.
     expect(stored(transport)).toEqual({ ws1: 'deepseek/deepseek-chat' })
+  })
+})
+
+describe('the reasoning effort selector', () => {
+  it('offers the levels the model declares, preselected with its own default', async () => {
+    const transport = new FakeTransport()
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    const effort = query<HTMLSelectElement>('#dsh-ideas-reasoning-effort')
+    expect(effort).not.toBeNull()
+    // The catalog is the source of truth: exactly the levels it declared, plus
+    // the explicit "no effort pinned" row — never a hardcoded list.
+    expect(Array.from(effort!.options).map(option => option.value)).toEqual(['', 'low', 'high'])
+    // The model's own `defaultEffort` is what the picker preselects.
+    expect(effort!.value).toBe('high')
+    // The chosen level's description is on screen, so the pick is informed.
+    expect(host.textContent).toContain('Slow, thorough')
+  })
+
+  it('pins the preselected level on the launch, alongside the model', async () => {
+    const transport = new FakeTransport()
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    expect(transport.launches).toEqual([
+      { ideaId: 'cardless', model: 'deepseek/deepseek-reasoner', reasoningEffort: 'high' },
+    ])
+  })
+
+  it('pins the level the human picked over the model default', async () => {
+    const transport = new FakeTransport()
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    const effort = query<HTMLSelectElement>('#dsh-ideas-reasoning-effort') as HTMLSelectElement
+    await act(async () => {
+      effort.value = 'low'
+      effort.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    expect(transport.launches).toEqual([
+      { ideaId: 'cardless', model: 'deepseek/deepseek-reasoner', reasoningEffort: 'low' },
+    ])
+  })
+
+  it('pins nothing when the human leaves the model default in place', async () => {
+    const transport = new FakeTransport()
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    const effort = query<HTMLSelectElement>('#dsh-ideas-reasoning-effort') as HTMLSelectElement
+    await act(async () => {
+      effort.value = ''
+      effort.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    // No effort on the wire at all: the session keeps the model's own default,
+    // rather than the board pinning a level the human never chose.
+    expect(transport.launches).toEqual([{ ideaId: 'cardless', model: 'deepseek/deepseek-reasoner' }])
+  })
+
+  it('shows no selector for a model that declares no reasoning', async () => {
+    const transport = new FakeTransport()
+    // The plain catalog carries no `reasoning` on either model.
+    await renderBoard(transport, CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    expect(query('#dsh-ideas-model')).not.toBeNull()
+    expect(query('#dsh-ideas-reasoning-effort')).toBeNull()
+  })
+
+  it('shows no selector on a card-backed idea, and pins no level', async () => {
+    const transport = new FakeTransport()
+    // A reasoning model AND a card: the mirror patch is model-only, so the
+    // window must not offer a choice the run could not keep.
+    await renderBoard(transport, REASONING_CATALOG, snapshot())
+    await openModal('launchable')
+
+    expect(query('#dsh-ideas-model')).not.toBeNull()
+    expect(query('#dsh-ideas-reasoning-effort')).toBeNull()
+
+    click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+    expect(transport.launches).toEqual([{ ideaId: 'launchable', model: 'deepseek/deepseek-reasoner' }])
   })
 })

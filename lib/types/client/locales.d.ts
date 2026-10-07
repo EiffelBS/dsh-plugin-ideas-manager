@@ -157,6 +157,8 @@ export declare const fr: {
     'new.modelFilterPlaceholder': string;
     'new.modelSessionDefault': string;
     'new.modelHint': string;
+    'new.reasoningEffort': string;
+    'new.reasoningEffortDefault': string;
     'new.sessionWorkspaceHint': string;
     'card.drag': string;
     'card.clickToEdit': string;
@@ -548,6 +550,8 @@ export declare const en: {
     'new.modelFilterPlaceholder': string;
     'new.modelSessionDefault': string;
     'new.modelHint': string;
+    'new.reasoningEffort': string;
+    'new.reasoningEffortDefault': string;
     'new.sessionWorkspaceHint': string;
     'new.submit': string;
     'new.submitAi': string;
@@ -955,6 +959,8 @@ export declare const zh: {
     'new.modelFilterPlaceholder': string;
     'new.modelSessionDefault': string;
     'new.modelHint': string;
+    'new.reasoningEffort': string;
+    'new.reasoningEffortDefault': string;
     'new.sessionWorkspaceHint': string;
     'card.drag': string;
     'card.clickToEdit': string;

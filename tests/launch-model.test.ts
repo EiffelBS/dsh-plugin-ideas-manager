@@ -247,6 +247,61 @@ describe('the same default must reach BOTH backends', () => {
   })
 })
 
+describe('the reasoning effort reaches the session, never the card', () => {
+  // The effort is an adapter-owned id that rides the model's selectModel call.
+  // It can ONLY reach the direct-session backend: the card mirror patch is
+  // model-only (frozen by design once the card has run), so a card-backed run
+  // ignores it. These tests pin both halves.
+  it('pins it on the fresh session through selectModel, alongside the model', async () => {
+    const { service, taskBoard, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      withMirror: false,
+      autoMirror: false,
+    })
+
+    const result = await service.launchIdea('idea-1', undefined, undefined, 'high')
+
+    expect(result.taskId).toBeUndefined()
+    expect(gateway.selectModelArgs()).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      reasoningEffort: 'high',
+    })
+    expect(taskBoard.posts).toHaveLength(0)
+  })
+
+  it('omits it from selectModel when blank, so the model keeps its own default', async () => {
+    const { service, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      withMirror: false,
+      autoMirror: false,
+    })
+
+    await service.launchIdea('idea-1', undefined, undefined, '   ')
+
+    expect(gateway.selectModelArgs()).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    })
+  })
+
+  it('ignores it on the card backend: the mirror patch stays model-only', async () => {
+    const { service, taskBoard } = await serve({ launchModels: { ws1: 'deepseek/deepseek-chat' } })
+
+    const result = await service.launchIdea('idea-1', undefined, undefined, 'high')
+
+    expect(result.taskId).toBe('idea-idea-1')
+    // The card patch carries the model and nothing else — no effort key, which
+    // is exactly the frozen-by-design limit the board's selector is gated on.
+    expect(taskBoard.posts.map(entry => entry.action)).toEqual([
+      { kind: 'update', taskId: 'idea-idea-1', patch: { model: 'deepseek/deepseek-chat' } },
+      { kind: 'run', taskId: 'idea-idea-1' },
+    ])
+  })
+})
+
 describe('a default that no longer resolves fails LOUDLY', () => {
   it('on the card backend: the task-board refusal is relayed, never retried', async () => {
     const { service, taskBoard } = await serve({ launchModels: { ws1: 'p/gone' } })
@@ -437,15 +492,21 @@ describe('the frozen wire is untouched (the default is additive elsewhere)', () 
     expect(wire).not.toContain('p/two')
   })
 
-  it('leaves the launch BODY exactly {requestId?, initiator?, ideaId, model?}', () => {
+  it('leaves the launch BODY exactly {requestId?, initiator?, ideaId, model?, reasoningEffort?}', () => {
     expect(parseLaunchBody({ ideaId: 'a' })).toEqual({ ideaId: 'a' })
     expect(parseLaunchBody({ ideaId: 'a', model: 'p/m' })).toEqual({ ideaId: 'a', model: 'p/m' })
+    // `reasoningEffort` is additive and optional: a blank string is no effort
+    // pinned, expressed by omitting the key (same discipline as `model`).
+    expect(parseLaunchBody({ ideaId: 'a', reasoningEffort: 'high' })).toEqual({ ideaId: 'a', reasoningEffort: 'high' })
+    expect(parseLaunchBody({ ideaId: 'a', model: 'p/m', reasoningEffort: 'low' })).toEqual({ ideaId: 'a', model: 'p/m', reasoningEffort: 'low' })
+    expect(parseLaunchBody({ ideaId: 'a', reasoningEffort: '   ' })).toEqual({ ideaId: 'a' })
     // `model` stays OPTIONAL and stays a plain string: the fallback is resolved
     // from the workspace when it is absent, not from a new body key.
     for (const extra of ['workspaceModel', 'launchModel', 'useWorkspaceDefault']) {
       expect(parseLaunchBody({ ideaId: 'a', [extra]: 'p/m' })).toBeUndefined()
     }
     expect(parseLaunchBody({ ideaId: 'a', model: null })).toBeUndefined()
+    expect(parseLaunchBody({ ideaId: 'a', reasoningEffort: null })).toBeUndefined()
   })
 
   it('adds its surface on the CONFIG route only, never as an action verb', () => {

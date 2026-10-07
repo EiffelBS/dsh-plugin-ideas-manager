@@ -35,15 +35,32 @@ export interface AiCaptureInput {
     model?: ModelChoice;
 }
 /**
+ * One adapter-owned reasoning effort level, as the catalog's
+ * `reasoning.efforts` entries expose it. The ids are opaque adapter strings
+ * (`ReasoningEffortId` is a branded `string`), never a fixed enumeration —
+ * the picker reads them from the catalog and never hardcodes a list.
+ */
+export interface ReasoningEffortOption {
+    id: string;
+    name: string;
+    description?: string;
+}
+/**
  * A selectable model for the analysing session. The `provider` is the Host
  * model-provider group id; `model` is the model id inside that group —
  * together they form the `ModelSelection` the session controller installs for
  * a Session (`selectModel`). `label` is the display string for the picker.
+ *
+ * `reasoningEffort` is the effort the picker preselects (the model's catalog
+ * `defaultEffort` when present); `reasoningEfforts` is the full list of
+ * levels the model declares, empty when it declares none. Both come from the
+ * catalog, so a model without reasoning support carries neither.
  */
 export interface ModelChoice {
     provider: string;
     model: string;
     reasoningEffort?: string;
+    reasoningEfforts?: readonly ReasoningEffortOption[];
     label: string;
 }
 /** Result of handing the capture to a session. */
@@ -265,7 +282,13 @@ interface DshModelGroup {
         id: string;
         name: string;
         description?: string;
+        reasoning?: DshModelReasoning;
     }[];
+}
+/** Duck-typed shape of the per-model `reasoning` block the catalog exposes. */
+interface DshModelReasoning {
+    efforts: readonly ReasoningEffortOption[];
+    defaultEffort?: string;
 }
 interface DshModelCatalog {
     default?: {

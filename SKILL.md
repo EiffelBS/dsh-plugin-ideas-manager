@@ -349,7 +349,8 @@ document wholesale.
 - The bound card id persists on the idea as `taskBoardId` (internal field,
   never accepted from the wire). The settings namespace `ideas` exposes
   `enabled`, `announceToAgent` (default false) and `autoMirror` (default true).
-- **Launch**: `POST /api/ideas/launch` `{ ideaId, model? }` starts the
+- **Launch**: `POST /api/ideas/launch` `{ ideaId, model?, reasoningEffort? }`
+  starts the
   idea's execution (a dedicated route, not a verb). The **host** picks the
   backend: the mirrored card when the task-board plugin is present (minting the
   `idea-<id>` card when the idea has none yet), otherwise a fresh direct chat
@@ -361,6 +362,12 @@ document wholesale.
   host-written system fields — an agent must never set them through
   `update`/`import` (the wire gate rejects them), and a launched idea should not
   be edited "to fix" the running card.
+  `reasoningEffort` is optional and additive: one of the effort ids the chosen
+  model's own catalog entry declares (`reasoning.efforts`), pinned on the fresh
+  session's `selectModel` beside the model it qualifies. A blank string is "no
+  effort pinned" — express it by omitting the key. It reaches the
+  **direct-session** backend only: the card mirror patch is model-only, so a
+  card-backed run ignores it.
 
 ## Default launch model per workspace
 

@@ -38,15 +38,33 @@ export interface AiCaptureInput {
 }
 
 /**
+ * One adapter-owned reasoning effort level, as the catalog's
+ * `reasoning.efforts` entries expose it. The ids are opaque adapter strings
+ * (`ReasoningEffortId` is a branded `string`), never a fixed enumeration —
+ * the picker reads them from the catalog and never hardcodes a list.
+ */
+export interface ReasoningEffortOption {
+  id: string
+  name: string
+  description?: string
+}
+
+/**
  * A selectable model for the analysing session. The `provider` is the Host
  * model-provider group id; `model` is the model id inside that group —
  * together they form the `ModelSelection` the session controller installs for
  * a Session (`selectModel`). `label` is the display string for the picker.
+ *
+ * `reasoningEffort` is the effort the picker preselects (the model's catalog
+ * `defaultEffort` when present); `reasoningEfforts` is the full list of
+ * levels the model declares, empty when it declares none. Both come from the
+ * catalog, so a model without reasoning support carries neither.
  */
 export interface ModelChoice {
   provider: string
   model: string
   reasoningEffort?: string
+  reasoningEfforts?: readonly ReasoningEffortOption[]
   label: string
 }
 
@@ -233,7 +251,12 @@ interface DshSessionsController {
 interface DshModelGroup {
   id: string
   name: string
-  models: readonly { id: string; name: string; description?: string }[]
+  models: readonly { id: string; name: string; description?: string; reasoning?: DshModelReasoning }[]
+}
+/** Duck-typed shape of the per-model `reasoning` block the catalog exposes. */
+interface DshModelReasoning {
+  efforts: readonly ReasoningEffortOption[]
+  defaultEffort?: string
 }
 interface DshModelCatalog {
   default?: { provider: string; model: string; reasoningEffort?: string }
@@ -427,6 +450,13 @@ Report and stop.`
  * in every provider group, labelled `provider · model`. Reflects the catalog
  * faithfully: when `modelCatalog()` is absent or fails, returns [] so the
  * board hides the model picker and the analysing session uses its default.
+ *
+ * The reasoning effort travels with the choice: `reasoningEffort` is the
+ * model's catalog `defaultEffort` (what the picker preselects) and
+ * `reasoningEfforts` is the declared level list (what the selector offers).
+ * A model that declares no `reasoning` carries neither, so the board shows no
+ * effort selector for it. The ids are adapter-owned strings, read here from
+ * the catalog and never hardcoded.
  */
 function modelChoicesOf(controller: DshSessionsController): Promise<ModelChoice[]> {
   if (typeof controller.modelCatalog !== 'function') return Promise.resolve([])
@@ -436,10 +466,13 @@ function modelChoicesOf(controller: DshSessionsController): Promise<ModelChoice[
       const groupRows: ModelChoice[] = []
       for (const group of result.value.groups ?? []) {
         for (const model of group.models ?? []) {
+          const reasoning = model.reasoning
           groupRows.push({
             provider: group.id,
             model: model.id,
             label: `${group.name} · ${model.name}`,
+            ...(reasoning?.defaultEffort === undefined ? {} : { reasoningEffort: reasoning.defaultEffort }),
+            ...(reasoning === undefined ? {} : { reasoningEfforts: reasoning.efforts }),
           })
         }
       }

@@ -6,6 +6,24 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Added
+
+- **Choose how hard a model thinks, in the launch window.** When you pick a
+  model that supports a reasoning effort, the launch window now offers a second
+  selector with the levels that model declares — its own default is preselected,
+  and **Model default** pins no effort at all, so the run keeps whatever the
+  model would have done anyway. The levels come straight from the model catalog
+  (they are adapter-owned names, not a fixed list), and the same selector appears
+  in the capture, re-analyze and find-similar windows, where a fresh session
+  always reaches the model. The effort travels with the model you chose and is
+  pinned on the session before the run starts.
+  The selector is honest about where it can go: it is offered only when the run
+  reaches a fresh session. A TaskBoard card carries the model and nothing else,
+  so on a card-backed idea the window shows the model picker but not the effort
+  selector — better to omit a choice that could not be kept than to offer one.
+
 ## 0.10.0 - 2026-10-05
 
 ### Added

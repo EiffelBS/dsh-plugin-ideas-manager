@@ -155,7 +155,7 @@ export interface IdeasHostTransport {
    * affordance at all. Rejects with the host's own message so the reason a run
    * was refused stays visible.
    */
-  launch?(ideaId: string, model?: string): Promise<LaunchResponse>
+  launch?(ideaId: string, model?: string, reasoningEffort?: string): Promise<LaunchResponse>
   /**
    * The snapshot folder. Optional capability, like `config`: a
    * transport without it simply shows no backup panel, and the board keeps
@@ -265,7 +265,7 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
    * must not consume the persisted action dedupe cache. `readJson` already
    * turns the host's `error` field into the rejection message.
    */
-  async launch(ideaId: string, model?: string): Promise<LaunchResponse> {
+  async launch(ideaId: string, model?: string, reasoningEffort?: string): Promise<LaunchResponse> {
     return await this.request<LaunchResponse>(`${IDEAS_API_PREFIX}/launch`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -276,6 +276,8 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
         // Omit the key for "inherit the session default": null is rejected by
         // the wire parser and an empty string is not the same request.
         ...(model === undefined || model === '' ? {} : { model }),
+        // Same discipline for the effort: an absent/blank effort pins nothing.
+        ...(reasoningEffort === undefined || reasoningEffort === '' ? {} : { reasoningEffort }),
       }),
     })
   }

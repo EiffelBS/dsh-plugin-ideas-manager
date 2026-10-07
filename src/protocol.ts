@@ -1513,7 +1513,7 @@ export interface LaunchResponse {
   runStatus: 'running'
 }
 
-/** Strict parser for `POST /api/ideas/launch` ({ requestId?, initiator?, ideaId, model? }). */
+/** Strict parser for `POST /api/ideas/launch` ({ requestId?, initiator?, ideaId, model?, reasoningEffort? }). */
 export interface IdeasLaunchBody {
   /** Optional replay key, honoured by the host service for a short window. */
   requestId?: string
@@ -1528,6 +1528,14 @@ export interface IdeasLaunchBody {
    * the browser, an agent tool and a raw HTTP caller all get it.
    */
   model?: string
+  /**
+   * Adapter-owned reasoning effort id for THIS run, read from the model catalog
+   * and never hardcoded. Absent pins no effort: the backend resolves the model's
+   * own default. Additive and backend-selective — only the direct-session
+   * backend can carry it (the card mirror patch is model-only), so the Host
+   * ignores it on the card path.
+   */
+  reasoningEffort?: string
 }
 
 /**
@@ -1535,20 +1543,24 @@ export interface IdeasLaunchBody {
  * every other ideas body), `ideaId` is required and non-blank, and the model is
  * a plain string that trims to empty = "no model pinned" (never `null`: the
  * task-board task field rejects null, and an empty selection is expressed by
- * OMITTING the key).
+ * OMITTING the key). `reasoningEffort` follows the same discipline: a blank
+ * string is no effort pinned, expressed by omitting the key.
  */
 export function parseLaunchBody(value: unknown): IdeasLaunchBody | undefined {
   const body = record(value)
-  if (body === undefined || !exactKeys(body, ['requestId', 'initiator', 'ideaId', 'model'])) return undefined
+  if (body === undefined || !exactKeys(body, ['requestId', 'initiator', 'ideaId', 'model', 'reasoningEffort'])) return undefined
   if (typeof body.ideaId !== 'string' || body.ideaId.trim() === '') return undefined
   if (body.requestId !== undefined && (typeof body.requestId !== 'string' || body.requestId.trim() === '')) return undefined
   if (body.initiator !== undefined && typeof body.initiator !== 'string') return undefined
   if (body.model !== undefined && typeof body.model !== 'string') return undefined
+  if (body.reasoningEffort !== undefined && typeof body.reasoningEffort !== 'string') return undefined
   const model = typeof body.model === 'string' ? body.model.trim() : ''
+  const reasoningEffort = typeof body.reasoningEffort === 'string' ? body.reasoningEffort.trim() : ''
   return {
     ideaId: body.ideaId.trim(),
     ...(typeof body.requestId === 'string' ? { requestId: body.requestId.trim() } : {}),
     ...(typeof body.initiator === 'string' && body.initiator !== '' ? { initiator: body.initiator } : {}),
     ...(model === '' ? {} : { model }),
+    ...(reasoningEffort === '' ? {} : { reasoningEffort }),
   }
 }

@@ -718,7 +718,7 @@ export interface LaunchResponse {
     /** Always `running` on an accept; the settle is written by the host poll. */
     runStatus: 'running';
 }
-/** Strict parser for `POST /api/ideas/launch` ({ requestId?, initiator?, ideaId, model? }). */
+/** Strict parser for `POST /api/ideas/launch` ({ requestId?, initiator?, ideaId, model?, reasoningEffort? }). */
 export interface IdeasLaunchBody {
     /** Optional replay key, honoured by the host service for a short window. */
     requestId?: string;
@@ -733,12 +733,21 @@ export interface IdeasLaunchBody {
      * the browser, an agent tool and a raw HTTP caller all get it.
      */
     model?: string;
+    /**
+     * Adapter-owned reasoning effort id for THIS run, read from the model catalog
+     * and never hardcoded. Absent pins no effort: the backend resolves the model's
+     * own default. Additive and backend-selective — only the direct-session
+     * backend can carry it (the card mirror patch is model-only), so the Host
+     * ignores it on the card path.
+     */
+    reasoningEffort?: string;
 }
 /**
  * Strict parser for the launch body. Unknown keys reject (same discipline as
  * every other ideas body), `ideaId` is required and non-blank, and the model is
  * a plain string that trims to empty = "no model pinned" (never `null`: the
  * task-board task field rejects null, and an empty selection is expressed by
- * OMITTING the key).
+ * OMITTING the key). `reasoningEffort` follows the same discipline: a blank
+ * string is no effort pinned, expressed by omitting the key.
  */
 export declare function parseLaunchBody(value: unknown): IdeasLaunchBody | undefined;

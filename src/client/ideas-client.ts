@@ -734,14 +734,17 @@ export class IdeasClient {
    * rethrown for the modal to keep the human in place.
    *
    * `model` is the `provider/model` target id, or undefined to let the run
-   * keep the session default.
+   * keep the session default. `reasoningEffort` is an adapter-owned effort id
+   * for THIS run; it travels with the model and only reaches the direct-session
+   * backend (the card mirror patch is model-only), so it is ignored when the
+   * run has no model to pin or goes through a card.
    *
    * @throws when the transport predates the launch route (`launch-unavailable`).
    */
-  async launchIdea(ideaId: string, model?: string): Promise<void> {
+  async launchIdea(ideaId: string, model?: string, reasoningEffort?: string): Promise<void> {
     if (this.transport.launch === undefined) throw new Error('launch-unavailable')
     try {
-      await this.transport.launch(ideaId, model)
+      await this.transport.launch(ideaId, model, reasoningEffort)
       this.error = undefined
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)

@@ -76,7 +76,7 @@ export declare class SessionRunner {
      * @throws {SessionLaunchError} when the Host refuses any step. The message
      *   is the Host's own, so the modal shows what actually refused.
      */
-    launchIdea(idea: IdeaRecord, model?: string, permission?: string): Promise<string>;
+    launchIdea(idea: IdeaRecord, model?: string, permission?: string, reasoningEffort?: string): Promise<string>;
     /**
      * The session roster as `sessionId -> running`. One RPC per settle tick,
      * shared by every tracked run, exactly like the card backend reads the card

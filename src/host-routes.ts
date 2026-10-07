@@ -326,7 +326,7 @@ export function makeIdeasRoutes(
       // be stored as a default, and vice versa.
       if (parsed.model !== undefined && parsed.model.length > IDEAS_LAUNCH_MODEL_MAX_LENGTH) return deny(400, 'model-too-long')
       try {
-        const result = await service.launchIdea(parsed.ideaId, parsed.model, parsed.requestId)
+        const result = await service.launchIdea(parsed.ideaId, parsed.model, parsed.requestId, parsed.reasoningEffort)
         writeJson(res, 200, result, { 'cache-control': 'no-store' })
       } catch (error) {
         if (error instanceof TaskBoardMirrorDisabledError) return deny(409, 'taskboard-mirror-disabled')

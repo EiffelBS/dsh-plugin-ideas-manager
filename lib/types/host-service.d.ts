@@ -217,13 +217,17 @@ export declare class IdeasHostService {
      * @param model - an explicit `provider/model` for THIS run. Absent is not
      *   "no model": the workspace default applies, then the backend's own
      *   default (see {@link workspaceLaunchModel}).
+     * @param reasoningEffort - an adapter-owned effort id for THIS run, read from
+     *   the model catalog. It travels with the model and only the direct-session
+     *   backend can carry it (the card mirror patch is model-only), so it is
+     *   ignored on the card path.
      *
      * @throws when the plugin is disabled, no backend is available, the idea is
      *   unknown, or the backend refuses the run (the message carries its own
      *   reason: `task is already running or missing`, `workspace not found`,
      *   `session selectModel rejected: ...`).
      */
-    launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult>;
+    launchIdea(ideaId: string, model?: string, requestId?: string, reasoningEffort?: string): Promise<IdeasLaunchResult>;
     /**
      * The default launch model of the idea's workspace, or
      * undefined when the workspace carries none — which is what leaves a run on

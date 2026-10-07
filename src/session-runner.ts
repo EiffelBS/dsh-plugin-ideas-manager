@@ -123,7 +123,7 @@ export class SessionRunner {
    * @throws {SessionLaunchError} when the Host refuses any step. The message
    *   is the Host's own, so the modal shows what actually refused.
    */
-  async launchIdea(idea: IdeaRecord, model?: string, permission?: string): Promise<string> {
+  async launchIdea(idea: IdeaRecord, model?: string, permission?: string, reasoningEffort?: string): Promise<string> {
     const workspaceId = idea.workspaceId
     if (workspaceId === undefined || workspaceId === '') {
       throw new SessionLaunchError('idea has no workspace to run in', undefined)
@@ -158,10 +158,15 @@ export class SessionRunner {
         const slash = target.indexOf('/')
         const provider = slash >= 0 ? target.slice(0, slash).trim() : undefined
         const modelId = slash >= 0 ? target.slice(slash + 1).trim() : target
+        // The effort is an adapter-owned id read from the model catalog; it rides
+        // the same selectModel call as the model it qualifies, and is omitted
+        // entirely when blank (the session then keeps the model's own default).
+        const effort = reasoningEffort?.trim()
         await this.invoke('session', 'selectModel', {
           sessionId,
           ...provider === undefined || provider === '' ? {} : { provider },
           model: modelId,
+          ...(effort === undefined || effort === '' ? {} : { reasoningEffort: effort }),
         })
       }
       await this.invoke('session', 'prompt', {

@@ -442,13 +442,17 @@ export class IdeasHostService {
    * @param model - an explicit `provider/model` for THIS run. Absent is not
    *   "no model": the workspace default applies, then the backend's own
    *   default (see {@link workspaceLaunchModel}).
+   * @param reasoningEffort - an adapter-owned effort id for THIS run, read from
+   *   the model catalog. It travels with the model and only the direct-session
+   *   backend can carry it (the card mirror patch is model-only), so it is
+   *   ignored on the card path.
    *
    * @throws when the plugin is disabled, no backend is available, the idea is
    *   unknown, or the backend refuses the run (the message carries its own
    *   reason: `task is already running or missing`, `workspace not found`,
    *   `session selectModel rejected: ...`).
    */
-  async launchIdea(ideaId: string, model?: string, requestId?: string): Promise<IdeasLaunchResult> {
+  async launchIdea(ideaId: string, model?: string, requestId?: string, reasoningEffort?: string): Promise<IdeasLaunchResult> {
     if (!this.active) throw new Error('ideas plugin is disabled')
     const captured = this.ledger.idea(ideaId)
     if (captured === undefined) throw new Error('idea not found')
@@ -496,7 +500,11 @@ export class IdeasHostService {
       // below holds for every caller (browser, agent tool, in-process).
       const explicit = model?.trim()
       const target = explicit === undefined || explicit === '' ? this.workspaceLaunchModel(fresh) : explicit
-      if (!viaCard) return await this.launchInSession(fresh, target)
+      // The effort reaches ONLY the direct-session backend: the card path patches
+      // the card's `model` (model-only, frozen by design), so a reasoning effort
+      // could never travel with it. Passing it to launchInSession is therefore
+      // the whole delivery — the card path simply ignores it.
+      if (!viaCard) return await this.launchInSession(fresh, target, reasoningEffort)
       try {
         const taskId = await this.mirror!.launchTask(fresh, target)
         this.ledger.bindTaskBoardId(ideaId, taskId)
@@ -506,7 +514,7 @@ export class IdeasHostService {
         if (this.sessions === undefined || !(error instanceof TaskBoardUnavailableError)) throw error
         // The card could not run; the session can. Same route, same shape, and
         // the human sees a run rather than a 503 on a board that is simply gone.
-        return await this.launchInSession(fresh, target)
+        return await this.launchInSession(fresh, target, reasoningEffort)
       }
     })
     const result: IdeasLaunchResult = { ok: true, runId: outcome.runId, runStatus: 'running' }
@@ -545,8 +553,8 @@ export class IdeasHostService {
    * for settling. `runSessionId` is written with the stamp so a restarted Host
    * re-attaches (see {@link pollSessionRuns}).
    */
-  private async launchInSession(idea: IdeaRecord, model?: string): Promise<{ runId: string }> {
-    const sessionId = await this.sessions!.launchIdea(idea, model, this.settings?.()?.directRunPermission)
+  private async launchInSession(idea: IdeaRecord, model?: string, reasoningEffort?: string): Promise<{ runId: string }> {
+    const sessionId = await this.sessions!.launchIdea(idea, model, this.settings?.()?.directRunPermission, reasoningEffort)
     this.ledger.setRunStatus(idea.id, 'running')
     this.ledger.setRunSession(idea.id, sessionId)
     this.sessionRuns.set(sessionId, idea.id)
