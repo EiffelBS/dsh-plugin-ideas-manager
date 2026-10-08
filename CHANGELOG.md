@@ -44,6 +44,14 @@ Versions before 0.3.0 predate this file.
   **Pick a model above …** when no model is picked yet — instead of leaving you
   to guess at a dead click.
 
+- **A refused save now says what to do.** A settings write refused by the
+  revision fence — another tab, another client, or a page left open while the
+  settings moved — answered **The settings changed elsewhere — please retry**,
+  which sends you straight back into the same refusal: the page still holds the
+  old revision, so retrying the identical save fails again. The message now
+  names the gesture: **The settings changed since this page loaded: refresh it,
+  then try again.**
+
 ## 0.10.0 - 2026-10-05
 
 ### Added
