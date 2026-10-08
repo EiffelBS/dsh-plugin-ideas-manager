@@ -28,7 +28,17 @@ import { matchesTags, collectKnownTags, filterKnownTags, tagHue } from './tags.t
 import { dragAutoscrollBegin, dragAutoscrollTrack, dragAutoscrollEnd } from './autoscroll.ts'
 import type { AiCaptureInput, FindSimilarInput, ModelChoice, ReanalyzeInput, ReasoningEffortOption, SessionLauncher } from './session-queue.ts'
 import { matchSessionSelection, pickModelTarget } from './session-queue.ts'
-import { canLaunch, classifyLaunchRefusal, launchModelForWorkspace, modelTargetIdOf, withWorkspaceLaunchModel, withoutWorkspaceLaunchModel } from './launch.ts'
+import {
+  canLaunch,
+  classifyLaunchRefusal,
+  launchModelForWorkspace,
+  launchReasoningEffortForWorkspace,
+  modelTargetIdOf,
+  withWorkspaceLaunchModel,
+  withWorkspaceLaunchReasoningEffort,
+  withoutWorkspaceLaunchModel,
+  withoutWorkspaceLaunchReasoningEffort,
+} from './launch.ts'
 import {
   buildFindSimilarInput,
   canFindSimilar,
@@ -314,8 +324,19 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly RankableI
  *  `selectModel`) and for a card-less idea's launch; the launch modal turns it
  *  OFF for a card-backed idea, because the TaskBoard mirror patch is model-only
  *  and the chosen effort could never reach the run. When off, the picker
- *  preselects no effort and the selector is not rendered. */
-function useAnalystModelPicker(launcher: SessionLauncher | undefined, initialTarget?: string, reasoningEffortEnabled = true): {
+ *  preselects no effort and the selector is not rendered.
+ *
+ *  `initialEffort` is the reasoning effort stored WITH `initialTarget` (the
+ *  launch modal passes the workspace default's pair). It only preselects while
+ * the picker still shows that same model, so reopening the picker over a saved
+ *  default shows the pair the run will actually use instead of silently
+ *  reverting to the model's own catalog default. */
+function useAnalystModelPicker(
+  launcher: SessionLauncher | undefined,
+  initialTarget?: string,
+  reasoningEffortEnabled = true,
+  initialEffort?: string,
+): {
   modelChoices: ModelChoice[]
   modelProviders: string[]
   filteredModelChoices: ModelChoice[]
@@ -338,6 +359,10 @@ function useAnalystModelPicker(launcher: SessionLauncher | undefined, initialTar
   const [selModelKey, setSelModelKey] = useState('')
   const [selReasoningEffort, setSelReasoningEffort] = useState('')
   const initialTargetRef = useRef(initialTarget)
+  // The effort stored with that target, held for the same reason: a settings
+  // write that arrives while the picker is open must not restart the load, and
+  // must not silently reseed a pick the human is making.
+  const initialEffortRef = useRef(initialEffort)
   useEffect(() => {
     let cancelled = false
     if (launcher === undefined) return
@@ -389,12 +414,21 @@ function useAnalystModelPicker(launcher: SessionLauncher | undefined, initialTar
   // or with nothing when reasoning is gated off. Keyed on the matched choice's
   // identity, so a re-render that keeps the same model never resets a pick the
   // human is making.
+  //
+  // The one exception is the model this workspace already defaults to: there the
+  // effort STORED with that default wins over the model's own catalog default, so
+  // reopening the picker shows the pair the run will actually use rather than
+  // reverting to a level the human already replaced.
   useEffect(() => {
     if (!reasoningEffortEnabled) {
       setSelReasoningEffort('')
       return
     }
-    setSelReasoningEffort(matchedChoice?.reasoningEffort ?? '')
+    const stored = initialEffortRef.current?.trim() ?? ''
+    const defaultTarget = initialTargetRef.current?.trim()
+    const showingDefault = stored !== '' && defaultTarget !== undefined && defaultTarget !== ''
+      && modelTargetIdOf(matchedChoice) === defaultTarget
+    setSelReasoningEffort(showingDefault ? stored : matchedChoice?.reasoningEffort ?? '')
   }, [matchedChoice, reasoningEffortEnabled])
   // The choice handed to the launch carries the effort the human actually
   // picked (the catalog default until they change it), and no effort at all
@@ -1357,7 +1391,9 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   // asking, and `changingDefault` is what reveals the picker over it.
   const workspaceId = idea.workspaceId ?? ''
   const storedModels = client.config.value.launchModelByWorkspace
+  const storedEfforts = client.config.value.launchReasoningEffortByWorkspace
   const workspaceDefault = launchModelForWorkspace(storedModels, workspaceId)
+  const workspaceDefaultEffort = launchReasoningEffortForWorkspace(storedEfforts, workspaceId)
   const [changingDefault, setChangingDefault] = useState(false)
   // The reasoning-effort selector only makes sense when the run reaches a fresh
   // session's `selectModel`. A card-backed idea runs through the TaskBoard mirror
@@ -1365,7 +1401,12 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   // chosen effort could never reach it — the launch modal therefore hides the
   // selector there rather than offer a choice that would be silently dropped.
   const reasoningEffortEnabled = idea.taskBoardId === undefined || idea.taskBoardId === ''
-  const picker = useAnalystModelPicker(client.sessionLauncher, workspaceDefault, reasoningEffortEnabled)
+  const picker = useAnalystModelPicker(
+    client.sessionLauncher,
+    workspaceDefault,
+    reasoningEffortEnabled,
+    workspaceDefaultEffort,
+  )
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [copied, setCopied] = useState(false)
@@ -1376,7 +1417,22 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   const defaultLabel = workspaceDefault === undefined
     ? undefined
     : pickModelTarget(picker.modelChoices, workspaceDefault)?.label ?? workspaceDefault
+  // The effort stored WITH that default, named from the catalog when it knows
+  // the model and spelled raw when it does not — the same honesty rule as the
+  // model label above. Named at all because a default that pins a level the
+  // run will silently use is worth saying out loud.
+  const defaultEffortLabel = workspaceDefaultEffort === undefined
+    ? undefined
+    : picker.modelChoices.find(choice => modelTargetIdOf(choice) === workspaceDefault)
+      ?.reasoningEfforts?.find(effort => effort.id === workspaceDefaultEffort)?.name
+      ?? workspaceDefaultEffort
   const pickedTarget = modelTargetIdOf(picker.selectedModel)
+  const pickedEffort = picker.selectedModel?.reasoningEffort
+  // The save is a gesture on the PAIR the run will use, not on the model alone:
+  // the effort qualifies the model, so a pick that changes only the effort is
+  // a real change, and one that changes neither is the no-op the button refuses.
+  const pairUnchanged = pickedTarget === workspaceDefault
+    && (pickedEffort ?? '') === (workspaceDefaultEffort ?? '')
   // The declared dependencies of THIS idea, named where the human decides to
   // spend the run. A blocker that is no longer open (delivered, archived) is not
   // a blocker in practice, and a warning that survives its own resolution teaches
@@ -1389,14 +1445,27 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   const rememberDefault = (): Promise<void> => {
     const target = modelTargetIdOf(picker.selectedModel)
     if (target === undefined) return Promise.resolve()
+    // The effort is saved WITH the model, in the same patch: it qualifies that
+    // model and nothing else, so a default that carries both is the only shape
+    // the Host can apply without guessing. A blank effort (the model's own
+    // default, or a model that declares no levels) clears the entry rather than
+    // storing an empty string.
     return client.saveConfig({
       launchModelByWorkspace: withWorkspaceLaunchModel(storedModels, workspaceId, target),
+      launchReasoningEffortByWorkspace: withWorkspaceLaunchReasoningEffort(
+        storedEfforts,
+        workspaceId,
+        picker.selectedModel?.reasoningEffort ?? '',
+      ),
     })
   }
   const forgetDefault = (): void => {
     setChangingDefault(false)
+    // Both halves go together: an effort without its model would pin a level on
+    // whatever model the run happens to land on.
     void client.saveConfig({
       launchModelByWorkspace: withoutWorkspaceLaunchModel(storedModels, workspaceId),
+      launchReasoningEffortByWorkspace: withoutWorkspaceLaunchReasoningEffort(storedEfforts, workspaceId),
     })
   }
   // Revealing the picker over a default PRESELECTS it, whenever the default
@@ -1487,7 +1556,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
           <div className={classes.field}>
             <span className={classes.fieldLabel}>{t('launch.defaultModel')}</span>
             <div className={classes.fieldHint} data-dsh-ideas-launch-default="">
-              {defaultLabel}
+              {defaultLabel}{defaultEffortLabel === undefined ? '' : ` · ${defaultEffortLabel}`}
             </div>
             <div className={classes.fieldHint}>{t('launch.defaultHint')}</div>
             {/* Forget is offered even without a catalog: it needs no picker, and
@@ -1546,7 +1615,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
               <button
                 type="button"
                 className={classes.ghostButton}
-                disabled={pending || client.configPending || !client.config.available || pickedTarget === undefined || pickedTarget === workspaceDefault}
+                disabled={pending || client.configPending || !client.config.available || pickedTarget === undefined || pairUnchanged}
                 data-dsh-ideas-save-default=""
                 onClick={() => {
                   // Collapse only on a save that LANDED: a refusal keeps the
@@ -1565,7 +1634,7 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
                 from the stored default, so name the missing gesture here
                 rather than leaving the author to guess at a dead click. */}
             {!pending && !client.configPending && client.config.available
-              && (pickedTarget === undefined || pickedTarget === workspaceDefault) && (
+              && (pickedTarget === undefined || pairUnchanged) && (
               <div className={classes.fieldHint} data-dsh-ideas-default-why="">
                 {pickedTarget === undefined
                   ? t('launch.defaultNeedsModel', { workspace: workspaceTitle })

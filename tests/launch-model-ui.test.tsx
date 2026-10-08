@@ -97,10 +97,17 @@ class FakeTransport implements IdeasHostTransport {
   /** What a settings WRITE answers with; a code like the Host's own. */
   saveError: string | undefined
 
-  constructor(launchModels: Record<string, string> = {}, options: { available?: boolean } = {}) {
+  constructor(
+    launchModels: Record<string, string> = {},
+    options: { available?: boolean; efforts?: Record<string, string> } = {},
+  ) {
     this.view = {
       available: options.available ?? true,
-      value: sanitizeSettings({ ...IDEAS_SETTINGS_DEFAULTS, launchModelByWorkspace: launchModels }),
+      value: sanitizeSettings({
+        ...IDEAS_SETTINGS_DEFAULTS,
+        launchModelByWorkspace: launchModels,
+        launchReasoningEffortByWorkspace: options.efforts ?? {},
+      }),
       revision: 1,
     }
   }
@@ -296,7 +303,12 @@ describe('setting, changing and forgetting the default', () => {
     await act(async () => { await Promise.resolve() })
 
     expect(transport.saved).toEqual([
-      { launchModelByWorkspace: { ws2: 'p/other', ws1: 'deepseek/deepseek-chat' } },
+      {
+        launchModelByWorkspace: { ws2: 'p/other', ws1: 'deepseek/deepseek-chat' },
+        // The chat model declares no levels, so the effort half is written back
+        // unchanged: the pair is one setting, sent in one patch.
+        launchReasoningEffortByWorkspace: {},
+      },
     ])
     // Remembering is not launching: the run is still the author's decision.
     expect(transport.launches).toEqual([])
@@ -392,7 +404,10 @@ describe('setting, changing and forgetting the default', () => {
     await act(async () => { await Promise.resolve() })
 
     expect(transport.saved).toEqual([
-      { launchModelByWorkspace: { ws1: 'deepseek/deepseek-reasoner' } },
+      {
+        launchModelByWorkspace: { ws1: 'deepseek/deepseek-reasoner' },
+        launchReasoningEffortByWorkspace: {},
+      },
     ])
     expect(query('[data-dsh-ideas-launch-default]')?.textContent).toContain('DeepSeek · Reasoner')
     expect(query('#dsh-ideas-model')).toBeNull()
@@ -401,8 +416,8 @@ describe('setting, changing and forgetting the default', () => {
   it('saves a changed default while the effort selector is on screen', async () => {
     // The reasoner declares levels, so re-picking the default happens with the
     // effort row rendered beside the model row. The two must not interfere: the
-    // save writes the MODEL target, and the effort is a per-run pin, not part of
-    // the stored default.
+    // save writes the MODEL target, and the effort travels WITH it — the chat
+    // model declares none, so the effort half is written back unchanged.
     const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' })
     await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
     await openModal('cardless')
@@ -420,10 +435,115 @@ describe('setting, changing and forgetting the default', () => {
     await act(async () => { await Promise.resolve() })
 
     expect(transport.saved).toEqual([
-      { launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' } },
+      {
+        launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' },
+        launchReasoningEffortByWorkspace: {},
+      },
     ])
     expect(query('[data-dsh-ideas-launch-default]')?.textContent).toContain('DeepSeek · Chat')
     expect(query('#dsh-ideas-model')).toBeNull()
+  })
+
+  it('saves the effort WITH the model, so a launch that picks nothing uses both', async () => {
+    // The reported bug, end to end: the author set the effort while re-picking
+    // the default, saved, and launched — and the run came back on the model's
+    // own default, because the stored default carried the model only. The pair is
+    // now one setting, and a launch that picks nothing still lands on both.
+    const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' })
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    click(query('[data-dsh-ideas-change-default]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    const effort = query<HTMLSelectElement>('#dsh-ideas-reasoning-effort') as HTMLSelectElement
+    await act(async () => {
+      effort.value = 'low'
+      effort.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    click(query('[data-dsh-ideas-save-default]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    expect(transport.saved).toEqual([
+      {
+        launchModelByWorkspace: { ws1: 'deepseek/deepseek-reasoner' },
+        launchReasoningEffortByWorkspace: { ws1: 'low' },
+      },
+    ])
+    // The stored line NAMES the level the run will use.
+    expect(query('[data-dsh-ideas-launch-default]')?.textContent).toContain('Low')
+
+    // Launch: the picker is collapsed, so the request pins NOTHING — the Host
+    // resolves the very same pair one step later (the host-side half of that
+    // resolution has its own test). The launch itself still happens.
+    click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+    expect(transport.launches).toHaveLength(1)
+    expect(transport.launches[0].model).toBeUndefined()
+    expect(transport.launches[0].reasoningEffort).toBeUndefined()
+  })
+
+  it('opens the picker on the stored pair and clears the effort when the model declares none', async () => {
+    const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' }, { efforts: { ws1: 'low' } })
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    click(query('[data-dsh-ideas-change-default]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    // The picker opens on the PAIR that is stored, not on the model's own
+    // catalog default — otherwise the save would silently revert the level.
+    expect((query<HTMLSelectElement>('#dsh-ideas-reasoning-effort') as HTMLSelectElement).value).toBe('low')
+    expect((query('[data-dsh-ideas-save-default]') as HTMLButtonElement).disabled).toBe(true)
+
+    const modelSelect = query<HTMLSelectElement>('#dsh-ideas-model') as HTMLSelectElement
+    await act(async () => {
+      modelSelect.value = 'DeepSeek · Chat'
+      modelSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    click(query('[data-dsh-ideas-save-default]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    expect(transport.saved).toEqual([
+      {
+        launchModelByWorkspace: { ws1: 'deepseek/deepseek-chat' },
+        launchReasoningEffortByWorkspace: {},
+      },
+    ])
+  })
+
+  it('enables the save when only the effort changes', async () => {
+    // The save is a gesture on the PAIR: a model that is already the default is
+    // still a change once the effort differs, and refusing it would strand the
+    // author's pick with no way to store it.
+    const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' }, { efforts: { ws1: 'high' } })
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    click(query('[data-dsh-ideas-change-default]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    // Same model, same level: the pair is unchanged and the save says so.
+    expect((query('[data-dsh-ideas-save-default]') as HTMLButtonElement).disabled).toBe(true)
+
+    const effort = query<HTMLSelectElement>('#dsh-ideas-reasoning-effort') as HTMLSelectElement
+    await act(async () => {
+      effort.value = 'low'
+      effort.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect((query('[data-dsh-ideas-save-default]') as HTMLButtonElement).disabled).toBe(false)
+    expect(query('[data-dsh-ideas-default-why]')).toBeNull()
+
+    click(query('[data-dsh-ideas-save-default]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+
+    expect(transport.saved).toEqual([
+      {
+        launchModelByWorkspace: { ws1: 'deepseek/deepseek-reasoner' },
+        launchReasoningEffortByWorkspace: { ws1: 'low' },
+      },
+    ])
   })
 
   it('forgets a default, leaving an empty map when it was the last one', async () => {
@@ -434,7 +554,7 @@ describe('setting, changing and forgetting the default', () => {
     click(query('[data-dsh-ideas-forget-default]') as HTMLElement)
     await act(async () => { await Promise.resolve() })
 
-    expect(transport.saved).toEqual([{ launchModelByWorkspace: {} }])
+    expect(transport.saved).toEqual([{ launchModelByWorkspace: {}, launchReasoningEffortByWorkspace: {} }])
     // And the board is exactly the one that predates the feature: it asks again.
     expect(query('[data-dsh-ideas-launch-default]')).toBeNull()
     expect(query('#dsh-ideas-model')).not.toBeNull()
@@ -448,7 +568,9 @@ describe('setting, changing and forgetting the default', () => {
     click(query('[data-dsh-ideas-forget-default]') as HTMLElement)
     await act(async () => { await Promise.resolve() })
 
-    expect(transport.saved).toEqual([{ launchModelByWorkspace: { ws2: 'p/two' } }])
+    expect(transport.saved).toEqual([
+      { launchModelByWorkspace: { ws2: 'p/two' }, launchReasoningEffortByWorkspace: {} },
+    ])
   })
 
   it('offers no forget button on a deployment with no settings surface', async () => {

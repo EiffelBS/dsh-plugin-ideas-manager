@@ -1165,6 +1165,15 @@ export const WORKSPACE_SCOPE_MAX_LENGTH = 256
 export const IDEAS_LAUNCH_MODEL_MAX_LENGTH = 256
 
 /**
+ * Bound of a reasoning effort id. The ids are ADAPTER-OWNED strings read from
+ * the model catalog (never a fixed enumeration, see ReasoningEffortOption), so
+ * this is a length backstop and not a list: it guards the same two inputs the
+ * model bound does — the effort a launch pins explicitly and the per-workspace
+ * default the Host falls back to.
+ */
+export const IDEAS_REASONING_EFFORT_MAX_LENGTH = 64
+
+/**
  * How many workspaces may carry a default launch model. A board lives in a
  * handful of workspaces and each entry is two short strings, so the cap is a
  * backstop against a pathological document, not a budget a user ever meets.
@@ -1246,6 +1255,25 @@ export interface IdeasSettingsValue {
    * workspace that carries none changes nothing at all.
    */
   launchModelByWorkspace: Record<string, string>
+  /**
+   * Reasoning effort stored WITH the default launch model, keyed by the same
+   * stable workspace id: `{ "<workspaceId>": "<effortId>" }`.
+   *
+   * A SEPARATE map rather than a richer value in `launchModelByWorkspace`, and
+   * that is a compatibility decision: the model map keeps its exact
+   * `workspace -> "provider/model"` shape, so every document, backup and older
+   * build that already holds one keeps reading it unchanged, and a deployment
+   * that never touches the effort behaves as if the field did not exist.
+   *
+   * It qualifies the MODEL of the same workspace and nothing else: the Host
+   * applies it only on the path where it also resolves the model from this
+   * store (see IdeasHostService.launchIdea). An explicit model from the caller
+   * carries its own effort, and a workspace whose model is gone keeps its
+   * effort inert rather than pinning a level on a model nobody chose. The two
+   * maps are written together — one patch, one revision fence — and cleared
+   * together, so they cannot drift apart on any surface this plugin owns.
+   */
+  launchReasoningEffortByWorkspace: Record<string, string>
 }
 
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
@@ -1296,6 +1324,7 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   directRunPermission: 'workspace-write',
   staleAfterDays: 30,
   launchModelByWorkspace: {},
+  launchReasoningEffortByWorkspace: {},
 }
 
 /** Inclusive bounds of the tagRows option (settings row: 1..5). */
@@ -1381,6 +1410,30 @@ export function sanitizeLaunchModelByWorkspace(raw: unknown): Record<string, str
   return out
 }
 
+/**
+ * The reasoning-effort half of the per-workspace default: the same read policy
+ * and the same bounds as {@link sanitizeLaunchModelByWorkspace}, including the
+ * shared cap on how many workspaces may carry a default (the two maps are
+ * written together, so they never describe different workspace sets).
+ *
+ * A separate map rather than a richer model value — the model map keeps its
+ * published shape, see `IdeasSettingsValue.launchReasoningEffortByWorkspace`.
+ */
+export function sanitizeLaunchReasoningEffortByWorkspace(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return out
+  const entries = Object.entries(raw as Record<string, unknown>)
+  for (let index = 0; index < entries.length && Object.keys(out).length < LAUNCH_MODEL_BY_WORKSPACE_MAX; index++) {
+    const [key, value] = entries[index] as [string, unknown]
+    if (typeof value !== 'string') continue
+    const workspaceId = key.trim().slice(0, WORKSPACE_SCOPE_MAX_LENGTH)
+    const effort = value.trim().slice(0, IDEAS_REASONING_EFFORT_MAX_LENGTH)
+    if (workspaceId === '' || effort === '') continue
+    out[workspaceId] = effort
+  }
+  return out
+}
+
 /** Unknown -> one of `allowed`, else the fallback (enum fields). */
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : fallback
@@ -1420,6 +1473,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     directRunPermission: oneOf(row.directRunPermission, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission),
     staleAfterDays: clampStaleAfterDays(row.staleAfterDays),
     launchModelByWorkspace: sanitizeLaunchModelByWorkspace(row.launchModelByWorkspace),
+    launchReasoningEffortByWorkspace: sanitizeLaunchReasoningEffortByWorkspace(row.launchReasoningEffortByWorkspace),
   }
 }
 
@@ -1429,6 +1483,7 @@ const SETTINGS_PATCH_KEYS = [
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
   'language', 'openOrdering', 'runningFirst', 'columnMinWidth', 'columnMaxWidth',
   'directRunPermission', 'staleAfterDays', 'launchModelByWorkspace',
+  'launchReasoningEffortByWorkspace',
 ] as const
 
 /**
@@ -1477,7 +1532,7 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
     } else if (key === 'staleAfterDays') {
       if (typeof field !== 'number' || !Number.isFinite(field)) return undefined
       patch.staleAfterDays = clampStaleAfterDays(field)
-    } else if (key === 'launchModelByWorkspace') {
+    } else if (key === 'launchModelByWorkspace' || key === 'launchReasoningEffortByWorkspace') {
       // Write policy (stricter than the read): the value must be a plain
       // object of real strings, and it REPLACES the whole map rather than
       // merging into it. Both halves are deliberate — `null` is refused
@@ -1488,11 +1543,15 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
       // so a merge would have to be re-implemented per host). The revision
       // fence is what makes the replace safe: a client that read a stale map is
       // refused rather than allowed to drop another workspace's default.
+      //
+      // The effort map shares the policy verbatim: the panel writes the pair in
+      // ONE patch, so the same fence covers both and they cannot drift.
       if (typeof field !== 'object' || field === null || Array.isArray(field)) return undefined
       for (const entry of Object.values(field as Record<string, unknown>)) {
         if (typeof entry !== 'string') return undefined
       }
-      patch.launchModelByWorkspace = sanitizeLaunchModelByWorkspace(field)
+      if (key === 'launchModelByWorkspace') patch.launchModelByWorkspace = sanitizeLaunchModelByWorkspace(field)
+      else patch.launchReasoningEffortByWorkspace = sanitizeLaunchReasoningEffortByWorkspace(field)
     } else {
       patch.cardDensity = oneOf(field, IDEAS_DENSITIES, IDEAS_SETTINGS_DEFAULTS.cardDensity)
     }

@@ -245,6 +245,17 @@ export declare class IdeasHostService {
      */
     private workspaceLaunchModel;
     /**
+     * The reasoning effort stored WITH that workspace's default launch model, or
+     * undefined when the workspace carries none — which leaves the run on the
+     * model's own default, exactly as it behaved before the field existed.
+     *
+     * Read ONLY on the path that also resolves the model from this store (see
+     * {@link launchIdea}): an effort is meaningless without the model it
+     * qualifies, so a workspace whose model was forgotten must not pin a level on
+     * whatever model the run happens to land on.
+     */
+    private workspaceLaunchEffort;
+    /**
      * Direct-session launch: create the session, stamp the run, and register it
      * for settling. `runSessionId` is written with the stamp so a restarted Host
      * re-attaches (see {@link pollSessionRuns}).

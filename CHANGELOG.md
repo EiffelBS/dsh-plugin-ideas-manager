@@ -24,6 +24,14 @@ Versions before 0.3.0 predate this file.
   so on a card-backed idea the window shows the model picker but not the effort
   selector — better to omit a choice that could not be kept than to offer one.
 
+- **The workspace default remembers the reasoning effort too.** **Save as the
+  workspace default** stored the model alone, so an effort you had just chosen
+  was dropped the moment you saved: the next launch fell back to the model's own
+  default. The default now stores the pair — model *and* effort — and a launch
+  that picks nothing lands on both. The save is a gesture on the pair, so
+  changing only the effort is a real change and stays available, and the stored
+  line names the level the run will use.
+
 ### Fixed
 
 - **A refused button no longer looks like a broken one.** The launch window's

@@ -83,6 +83,15 @@ interface LegacySettingsFace {
 const launchModelByWorkspaceSchema: Schemastery<any, any> = z.dict(z.string())
 
 /**
+ * The reasoning-effort half of the same per-workspace default: same shape, and
+ * the annotation carries the same build reason as the model map above. A
+ * separate map so the model map keeps its published
+ * `workspace -> "provider/model"` shape, which is what lets every document and
+ * every older build that already holds one keep reading it unchanged.
+ */
+const launchReasoningEffortByWorkspaceSchema: Schemastery<any, any> = z.dict(z.string())
+
+/**
  * Display-settings schema: permissive types (clamped/sanitized at every
  * boundary — a ranged schema would reject a bad stored section AT
  * REGISTRATION and brick the namespace; see sanitizeSettings).
@@ -104,6 +113,9 @@ export const IdeasSettingsSchema = z.object({
   // One default launch model per workspace, keyed by the stable
   // workspace id (see launchModelByWorkspaceSchema above).
   launchModelByWorkspace: launchModelByWorkspaceSchema.default(IDEAS_SETTINGS_DEFAULTS.launchModelByWorkspace),
+  // The effort stored WITH that model, keyed by the same workspace id (see
+  // launchReasoningEffortByWorkspaceSchema above).
+  launchReasoningEffortByWorkspace: launchReasoningEffortByWorkspaceSchema.default(IDEAS_SETTINGS_DEFAULTS.launchReasoningEffortByWorkspace),
 })
 
 /**

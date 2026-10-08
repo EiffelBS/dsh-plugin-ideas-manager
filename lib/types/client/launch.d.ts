@@ -110,6 +110,37 @@ export declare function withWorkspaceLaunchModel(models: Readonly<Record<string,
  */
 export declare function withoutWorkspaceLaunchModel(models: Readonly<Record<string, string>> | undefined, workspaceId: string): Record<string, string>;
 /**
+ * The reasoning effort this workspace's default launch model carries, or
+ * undefined when it carries none.
+ *
+ * The client twin of the Host's own rule
+ * (`IdeasHostService.workspaceLaunchEffort`), same shape and same reason: the
+ * modal names what the run will use without a second source of truth. It is a
+ * DISPLAY of the setting, not the decision — the Host resolves the pair at
+ * launch time, so a browser that never rendered the modal gets the same run.
+ */
+export declare function launchReasoningEffortForWorkspace(efforts: Readonly<Record<string, string>> | undefined, workspaceId: string | undefined): string | undefined;
+/**
+ * The next map with `workspaceId`'s default effort SET to `effort` — the
+ * reasoning-effort half of the "remember this model for this workspace"
+ * gesture. A blank effort CLEARS the entry rather than storing an empty
+ * string: "the model's own default" is the honest spelling of "no effort
+ * pinned", and an empty string would read as a level the model may not have.
+ *
+ * Same read-modify-write discipline as the model map: the settings write
+ * replaces the map whole, so the client sends every other workspace's entry
+ * back, not just its own.
+ */
+export declare function withWorkspaceLaunchReasoningEffort(efforts: Readonly<Record<string, string>> | undefined, workspaceId: string, effort: string): Record<string, string>;
+/**
+ * The next map with `workspaceId`'s default effort REMOVED — what "forget this
+ * workspace default" writes. Cleared TOGETHER with the model: an effort is
+ * meaningless without the model it qualifies, so a workspace that loses its
+ * default must not keep a level that would pin itself on whatever model the run
+ * happens to land on.
+ */
+export declare function withoutWorkspaceLaunchReasoningEffort(efforts: Readonly<Record<string, string>> | undefined, workspaceId: string): Record<string, string>;
+/**
  * The Host backend: the HOST resolves which execution actually runs (mirrored
  * card, or fresh direct session), and this side only asks. Rejects with the
  * chosen backend's own message (`task is already running or missing`,

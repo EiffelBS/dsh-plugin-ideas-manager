@@ -499,12 +499,23 @@ export class IdeasHostService {
       // body parser already drops it, and doing the same here means the order
       // below holds for every caller (browser, agent tool, in-process).
       const explicit = model?.trim()
-      const target = explicit === undefined || explicit === '' ? this.workspaceLaunchModel(fresh) : explicit
+      const fromStore = explicit === undefined || explicit === ''
+      const target = fromStore ? this.workspaceLaunchModel(fresh) : explicit
+      // The effort qualifies a MODEL, and the caller's own effort OUTRANKS the
+      // stored one: a launch that says "run this on low" means it, whatever the
+      // workspace default pins. The stored effort only fills the gap — when the
+      // caller pinned none AND the model came from this store, the pair the panel
+      // saved is the pair the run uses. That is the whole reason the two maps are
+      // written in one patch.
+      const explicitEffort = reasoningEffort?.trim()
+      const effort = explicitEffort !== undefined && explicitEffort !== ''
+        ? explicitEffort
+        : fromStore ? this.workspaceLaunchEffort(fresh) : undefined
       // The effort reaches ONLY the direct-session backend: the card path patches
       // the card's `model` (model-only, frozen by design), so a reasoning effort
       // could never travel with it. Passing it to launchInSession is therefore
       // the whole delivery — the card path simply ignores it.
-      if (!viaCard) return await this.launchInSession(fresh, target, reasoningEffort)
+      if (!viaCard) return await this.launchInSession(fresh, target, effort)
       try {
         const taskId = await this.mirror!.launchTask(fresh, target)
         this.ledger.bindTaskBoardId(ideaId, taskId)
@@ -514,7 +525,7 @@ export class IdeasHostService {
         if (this.sessions === undefined || !(error instanceof TaskBoardUnavailableError)) throw error
         // The card could not run; the session can. Same route, same shape, and
         // the human sees a run rather than a 503 on a board that is simply gone.
-        return await this.launchInSession(fresh, target, reasoningEffort)
+        return await this.launchInSession(fresh, target, effort)
       }
     })
     const result: IdeasLaunchResult = { ok: true, runId: outcome.runId, runStatus: 'running' }
@@ -546,6 +557,23 @@ export class IdeasHostService {
     if (workspaceId === undefined || workspaceId === '') return undefined
     const target = this.settings?.()?.launchModelByWorkspace[workspaceId]
     return typeof target === 'string' && target.trim() !== '' ? target.trim() : undefined
+  }
+
+  /**
+   * The reasoning effort stored WITH that workspace's default launch model, or
+   * undefined when the workspace carries none — which leaves the run on the
+   * model's own default, exactly as it behaved before the field existed.
+   *
+   * Read ONLY on the path that also resolves the model from this store (see
+   * {@link launchIdea}): an effort is meaningless without the model it
+   * qualifies, so a workspace whose model was forgotten must not pin a level on
+   * whatever model the run happens to land on.
+   */
+  private workspaceLaunchEffort(idea: IdeaRecord): string | undefined {
+    const workspaceId = idea.workspaceId
+    if (workspaceId === undefined || workspaceId === '') return undefined
+    const effort = this.settings?.()?.launchReasoningEffortByWorkspace[workspaceId]
+    return typeof effort === 'string' && effort.trim() !== '' ? effort.trim() : undefined
   }
 
   /**

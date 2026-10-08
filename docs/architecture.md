@@ -1499,6 +1499,34 @@ either branch would be a fallback one backend silently does not honour. The
 third call site (the card-unavailable catch) matters for the same reason: a
 backend fallback must not change the model.
 
+### The effort is stored with the model, as a second map
+
+The reasoning-effort selector made the default a **pair**, and the pair is stored
+as two maps rather than one richer value:
+`IdeasSettingsValue.launchReasoningEffortByWorkspace` holds
+`workspaceId -> effortId` beside the model map, keyed by the same workspace id.
+
+- **Why a second map.** The model map keeps its published
+  `workspaceId -> provider/model` shape, so every document, backup and older
+  build that already holds one keeps reading it unchanged, and a deployment that
+  never touches the effort behaves as if the field did not exist. A richer value
+  (`string | { model, reasoningEffort? }`) would have forced the sanitizer to
+  accept both shapes and every reader to branch, for a compatibility gain that
+  only a downgrade produces.
+- **Why they cannot drift.** The panel writes both in **one** patch, under the
+  one revision fence, and clears both together. An effort is meaningless without
+  the model it qualifies, so a workspace that loses its model must not keep a
+  level that would pin itself on whatever model the run happens to land on.
+- **Why the Host applies the stored effort only on the stored-model path.**
+  `launchIdea` resolves the effort the way it resolves the model: the caller's
+  explicit effort outranks the stored one, and the stored effort is read only
+  when the model also came from the store. A caller that names its own model
+  takes that model's own default rather than a level saved for another.
+
+The picker preselects the stored effort — not the model's catalog default —
+while it still shows the stored model, so reopening **Change…** over a saved
+default shows the pair the run will actually use.
+
 ### A dead model fails loudly, and never quietly retries
 
 A stored target that no longer resolves is **not** validated here. Both

@@ -12,11 +12,13 @@ import {
   sanitizeLaunchModelByWorkspace,
   sanitizeSettings,
   IDEAS_LAUNCH_MODEL_MAX_LENGTH,
+  IDEAS_REASONING_EFFORT_MAX_LENGTH,
   IDEAS_SETTINGS_DEFAULTS,
   LAUNCH_MODEL_BY_WORKSPACE_MAX,
   TAG_ROWS_MAX,
   TAG_ROWS_MIN,
   WORKSPACE_SCOPE_MAX_LENGTH,
+  sanitizeLaunchReasoningEffortByWorkspace,
 } from '../src/protocol.ts'
 
 describe('clampTagRows', () => {
@@ -286,5 +288,89 @@ describe('launchModelByWorkspace', () => {
     expect(IDEAS_LAUNCH_MODEL_MAX_LENGTH).toBe(256)
     expect(parseSettingsBody({ patch: { launchModelByWorkspace: { ws1: 'p/'.concat('m'.repeat(IDEAS_LAUNCH_MODEL_MAX_LENGTH)) } } })?.patch.launchModelByWorkspace?.ws1)
       .toHaveLength(IDEAS_LAUNCH_MODEL_MAX_LENGTH)
+  })
+})
+
+describe('launchReasoningEffortByWorkspace', () => {
+  it('is empty by default, so an untouched deployment keeps today\'s behaviour', () => {
+    expect(IDEAS_SETTINGS_DEFAULTS.launchReasoningEffortByWorkspace).toEqual({})
+    // A section written before the field existed has no key at all.
+    expect(sanitizeSettings({ tagRows: 2 }).launchReasoningEffortByWorkspace).toEqual({})
+  })
+
+  it('keeps a legal map and bounds both halves of every entry', () => {
+    const value = sanitizeSettings({
+      launchReasoningEffortByWorkspace: {
+        ws1: 'low',
+        [`${'w'.repeat(1000)}`]: `${'e'.repeat(1000)}`,
+      },
+    })
+    expect(value.launchReasoningEffortByWorkspace.ws1).toBe('low')
+    const longKey = Object.keys(value.launchReasoningEffortByWorkspace).find(key => key.length === WORKSPACE_SCOPE_MAX_LENGTH) ?? ''
+    expect(longKey).toHaveLength(WORKSPACE_SCOPE_MAX_LENGTH)
+    expect(value.launchReasoningEffortByWorkspace[longKey]).toHaveLength(IDEAS_REASONING_EFFORT_MAX_LENGTH)
+  })
+
+  it('drops a malformed ENTRY, never the whole map', () => {
+    const value = sanitizeSettings({
+      launchReasoningEffortByWorkspace: {
+        keep: 'low',
+        blankKeyIsImpossible: '',
+        ws2: '   ',
+        ws3: 42,
+        ws4: null,
+        ws5: ['a'],
+      },
+    })
+    // One bad value must not cost the human every OTHER workspace's effort.
+    expect(value.launchReasoningEffortByWorkspace).toEqual({ keep: 'low' })
+  })
+
+  it('answers an empty map for anything that is not a plain object', () => {
+    for (const raw of ['junk', 42, null, undefined, [1, 2], true]) {
+      expect(sanitizeLaunchReasoningEffortByWorkspace(raw)).toEqual({})
+    }
+  })
+
+  it('shares the workspace cap with the model map, so the pair never drifts', () => {
+    const many: Record<string, string> = {}
+    for (let index = 0; index < LAUNCH_MODEL_BY_WORKSPACE_MAX + 10; index++) {
+      many[`ws${index}`] = 'low'
+    }
+    expect(Object.keys(sanitizeLaunchReasoningEffortByWorkspace(many))).toHaveLength(LAUNCH_MODEL_BY_WORKSPACE_MAX)
+  })
+
+  it('REPLACES the map on a write, exactly like the model map', () => {
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: { ws1: 'low' } } })?.patch.launchReasoningEffortByWorkspace)
+      .toEqual({ ws1: 'low' })
+    // Clearing one workspace is "send the map without it", never a null value.
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: {} } })?.patch.launchReasoningEffortByWorkspace).toEqual({})
+  })
+
+  it('refuses a malformed write instead of half-storing it', () => {
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: 'low' } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: null } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: ['low'] } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: { ws1: null } } })).toBeUndefined()
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: { ws1: 7 } } })).toBeUndefined()
+    // Bounded, but not refused: an over-long id is cut, like every other
+    // string field on this wire.
+    expect(parseSettingsBody({ patch: { launchReasoningEffortByWorkspace: { ws1: 'e'.repeat(1000) } } })?.patch.launchReasoningEffortByWorkspace?.ws1)
+      .toHaveLength(IDEAS_REASONING_EFFORT_MAX_LENGTH)
+  })
+
+  it('is patchable on the same wire as the model map, under the same fence', () => {
+    // The panel writes the pair in ONE patch: both keys must be accepted
+    // together, or the effort could never reach the store.
+    const parsed = parseSettingsBody({
+      patch: {
+        launchModelByWorkspace: { ws1: 'p/m' },
+        launchReasoningEffortByWorkspace: { ws1: 'low' },
+      },
+      expectedRevision: 4,
+    })
+    expect(parsed?.patch.launchModelByWorkspace).toEqual({ ws1: 'p/m' })
+    expect(parsed?.patch.launchReasoningEffortByWorkspace).toEqual({ ws1: 'low' })
+    expect(parsed?.expectedRevision).toBe(4)
   })
 })

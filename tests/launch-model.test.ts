@@ -86,6 +86,7 @@ class FakeGateway implements HostSessionGateway {
  */
 async function serve(options: {
   launchModels?: Record<string, string>
+  launchReasoningEfforts?: Record<string, string>
   directRunPermission?: string
   withMirror?: boolean
   autoMirror?: boolean
@@ -115,6 +116,7 @@ async function serve(options: {
   const value: IdeasSettingsValue = sanitizeSettings({
     ...IDEAS_SETTINGS_DEFAULTS,
     ...(options.launchModels === undefined ? {} : { launchModelByWorkspace: options.launchModels }),
+    ...(options.launchReasoningEfforts === undefined ? {} : { launchReasoningEffortByWorkspace: options.launchReasoningEfforts }),
     ...(options.directRunPermission === undefined ? {} : { directRunPermission: options.directRunPermission }),
   })
   service.setSettingsReader(() => value)
@@ -284,6 +286,65 @@ describe('the reasoning effort reaches the session, never the card', () => {
       sessionId: 'session-1',
       provider: 'deepseek',
       model: 'deepseek-chat',
+    })
+  })
+
+  it('applies the effort stored with the default when the caller pins neither', async () => {
+    // The whole reason the pair is ONE setting: a launch that picks nothing at
+    // all still lands on the level the author saved, because the effort
+    // qualifies the model it was stored beside. Before the pair existed this
+    // launch silently fell back to the model's own default.
+    const { service, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      launchReasoningEfforts: { ws1: 'low' },
+      withMirror: false,
+      autoMirror: false,
+    })
+
+    await service.launchIdea('idea-1')
+
+    expect(gateway.selectModelArgs()).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      reasoningEffort: 'low',
+    })
+  })
+
+  it('lets an explicit effort outrank the stored one', async () => {
+    const { service, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      launchReasoningEfforts: { ws1: 'low' },
+      withMirror: false,
+      autoMirror: false,
+    })
+
+    await service.launchIdea('idea-1', undefined, undefined, 'high')
+
+    expect(gateway.selectModelArgs()).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      reasoningEffort: 'high',
+    })
+  })
+
+  it('applies no effort when the caller pins a model but no effort', async () => {
+    // The stored effort qualifies the STORED model. A caller that names its own
+    // model takes that model's own default rather than a level saved for another.
+    const { service, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      launchReasoningEfforts: { ws1: 'low' },
+      withMirror: false,
+      autoMirror: false,
+    })
+
+    await service.launchIdea('idea-1', 'deepseek/deepseek-reasoner')
+
+    expect(gateway.selectModelArgs()).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',
     })
   })
 

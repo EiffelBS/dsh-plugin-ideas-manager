@@ -521,6 +521,14 @@ export declare const WORKSPACE_SCOPE_MAX_LENGTH = 256;
  */
 export declare const IDEAS_LAUNCH_MODEL_MAX_LENGTH = 256;
 /**
+ * Bound of a reasoning effort id. The ids are ADAPTER-OWNED strings read from
+ * the model catalog (never a fixed enumeration, see ReasoningEffortOption), so
+ * this is a length backstop and not a list: it guards the same two inputs the
+ * model bound does — the effort a launch pins explicitly and the per-workspace
+ * default the Host falls back to.
+ */
+export declare const IDEAS_REASONING_EFFORT_MAX_LENGTH = 64;
+/**
  * How many workspaces may carry a default launch model. A board lives in a
  * handful of workspaces and each entry is two short strings, so the cap is a
  * backstop against a pathological document, not a budget a user ever meets.
@@ -600,6 +608,25 @@ export interface IdeasSettingsValue {
      * workspace that carries none changes nothing at all.
      */
     launchModelByWorkspace: Record<string, string>;
+    /**
+     * Reasoning effort stored WITH the default launch model, keyed by the same
+     * stable workspace id: `{ "<workspaceId>": "<effortId>" }`.
+     *
+     * A SEPARATE map rather than a richer value in `launchModelByWorkspace`, and
+     * that is a compatibility decision: the model map keeps its exact
+     * `workspace -> "provider/model"` shape, so every document, backup and older
+     * build that already holds one keeps reading it unchanged, and a deployment
+     * that never touches the effort behaves as if the field did not exist.
+     *
+     * It qualifies the MODEL of the same workspace and nothing else: the Host
+     * applies it only on the path where it also resolves the model from this
+     * store (see IdeasHostService.launchIdea). An explicit model from the caller
+     * carries its own effort, and a workspace whose model is gone keeps its
+     * effort inert rather than pinning a level on a model nobody chose. The two
+     * maps are written together — one patch, one revision fence — and cleared
+     * together, so they cannot drift apart on any surface this plugin owns.
+     */
+    launchReasoningEffortByWorkspace: Record<string, string>;
 }
 /** Patch accepted by POST /api/ideas/config (exact keys, values sanitized). */
 export type IdeasSettingsPatch = Partial<IdeasSettingsValue>;
@@ -687,6 +714,16 @@ export declare function clampStaleAfterDays(value: unknown): number;
  * did before the field existed.
  */
 export declare function sanitizeLaunchModelByWorkspace(raw: unknown): Record<string, string>;
+/**
+ * The reasoning-effort half of the per-workspace default: the same read policy
+ * and the same bounds as {@link sanitizeLaunchModelByWorkspace}, including the
+ * shared cap on how many workspaces may carry a default (the two maps are
+ * written together, so they never describe different workspace sets).
+ *
+ * A separate map rather than a richer model value — the model map keeps its
+ * published shape, see `IdeasSettingsValue.launchReasoningEffortByWorkspace`.
+ */
+export declare function sanitizeLaunchReasoningEffortByWorkspace(raw: unknown): Record<string, string>;
 /**
  * Sanitize a raw section into a COMPLETE legal value: both read paths (host
  * viewOf, client loadConfig) run every field through its guard, so a

@@ -62,6 +62,7 @@ export declare const IdeasSettingsSchema: z<Schemastery.ObjectS<{
     directRunPermission: z<string, string>;
     staleAfterDays: z<number, number>;
     launchModelByWorkspace: z<any, any>;
+    launchReasoningEffortByWorkspace: z<any, any>;
 }>, Schemastery.ObjectT<{
     tagRows: z<number, number>;
     defaultTab: z<string, string>;
@@ -77,6 +78,7 @@ export declare const IdeasSettingsSchema: z<Schemastery.ObjectS<{
     directRunPermission: z<string, string>;
     staleAfterDays: z<number, number>;
     launchModelByWorkspace: z<any, any>;
+    launchReasoningEffortByWorkspace: z<any, any>;
 }>>;
 /**
  * Refusal raised by the plugin-owned store when the caller's revision fence is
