@@ -6,6 +6,18 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Fixed
+
+- **The launch window now says why the reasoning effort is missing.** The effort
+  selector is offered only when the run reaches a fresh session, so an idea that
+  runs through its TaskBoard card shows the model picker and no effort selector —
+  a card pins the model and nothing else. That omission was silent, and on a
+  board whose ideas all carry a card it read as a broken feature. The window now
+  names the reason where the choice would have been, and the default line no
+  longer prints a stored level beside a model when the run cannot use it.
+
 ## 0.10.1 - 2026-10-08
 
 ### Added

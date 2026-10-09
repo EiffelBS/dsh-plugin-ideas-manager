@@ -1420,8 +1420,11 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   // The effort stored WITH that default, named from the catalog when it knows
   // the model and spelled raw when it does not — the same honesty rule as the
   // model label above. Named at all because a default that pins a level the
-  // run will silently use is worth saying out loud.
-  const defaultEffortLabel = workspaceDefaultEffort === undefined
+  // run will silently use is worth saying out loud — and withheld when the run
+  // CANNOT use it: on a card-backed idea the card pins the model alone, so
+  // naming a level here would claim a run the card will not make. The note
+  // under the field says why, so the stored level is not simply lost to sight.
+  const defaultEffortLabel = !reasoningEffortEnabled || workspaceDefaultEffort === undefined
     ? undefined
     : picker.modelChoices.find(choice => modelTargetIdOf(choice) === workspaceDefault)
       ?.reasoningEfforts?.find(effort => effort.id === workspaceDefaultEffort)?.name
@@ -1589,6 +1592,19 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             {client.configError !== undefined && (
               <div className={classes.error}>{`${t('settings.saveFailed')}${client.configError}`}</div>
             )}
+          </div>
+        )}
+        {/* The effort selector is withheld on a card-backed idea, and a
+            selector that is simply absent reads as a bug — the author of this
+            plugin asked exactly that question about his own board, where every
+            open idea carries a card. Naming the reason where the choice would
+            have been costs one line and turns a silent omission into a stated
+            limitation of the card backend. */}
+        {!reasoningEffortEnabled && (
+          <div className={classes.field}>
+            <div className={classes.fieldHint} data-dsh-ideas-effort-unavailable="card">
+              {t('launch.effortCardBacked')}
+            </div>
           </div>
         )}
         {/* Setting the default is a gesture of its own, next to the pick it

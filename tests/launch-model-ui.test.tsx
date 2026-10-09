@@ -27,6 +27,7 @@ import {
   withoutWorkspaceLaunchModel,
 } from '../src/client/launch.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
+import { t } from '../src/client/locales.ts'
 import type { ModelChoice } from '../src/client/session-queue.ts'
 import {
   IDEAS_SCHEMA_VERSION,
@@ -695,9 +696,45 @@ describe('the reasoning effort selector', () => {
 
     expect(query('#dsh-ideas-model')).not.toBeNull()
     expect(query('#dsh-ideas-reasoning-effort')).toBeNull()
+    // And it SAYS so. A selector that is merely absent is indistinguishable
+    // from a broken one — which is exactly how it was read on a real board,
+    // where every open idea carries a card and the feature was therefore
+    // invisible.
+    expect(query('[data-dsh-ideas-effort-unavailable]')?.textContent).toBe(t('launch.effortCardBacked'))
 
     click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
     await act(async () => { await Promise.resolve() })
     expect(transport.launches).toEqual([{ ideaId: 'launchable', model: 'deepseek/deepseek-reasoner' }])
+  })
+
+  it('keeps that note off a cardless idea, where the selector IS offered', async () => {
+    const transport = new FakeTransport()
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    expect(query('#dsh-ideas-reasoning-effort')).not.toBeNull()
+    expect(query('[data-dsh-ideas-effort-unavailable]')).toBeNull()
+  })
+
+  it('does not name a stored level in the default line of a card-backed idea', async () => {
+    // The pair is stored for ws1, but this idea runs through its card, which
+    // pins the model alone: printing "Reasoner · Low" would promise a level the
+    // run cannot use. The note below the field carries the explanation instead.
+    const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' }, { efforts: { ws1: 'low' } })
+    await renderBoard(transport, REASONING_CATALOG, snapshot())
+    await openModal('launchable')
+
+    const line = query('[data-dsh-ideas-launch-default]')
+    expect(line?.textContent).toBe('DeepSeek · Reasoner')
+    expect(query('[data-dsh-ideas-effort-unavailable]')).not.toBeNull()
+  })
+
+  it('still names the stored level on a cardless idea, which the run will use', async () => {
+    const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' }, { efforts: { ws1: 'low' } })
+    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
+    await openModal('cardless')
+
+    expect(query('[data-dsh-ideas-launch-default]')?.textContent).toBe('DeepSeek · Reasoner · Low')
+    expect(query('[data-dsh-ideas-effort-unavailable]')).toBeNull()
   })
 })

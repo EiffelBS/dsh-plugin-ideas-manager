@@ -266,6 +266,7 @@ export declare const fr: {
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
     'launch.defaultUnchanged': string;
+    'launch.effortCardBacked': string;
     'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
@@ -676,6 +677,7 @@ export declare const en: {
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
     'launch.defaultUnchanged': string;
+    'launch.effortCardBacked': string;
     'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
@@ -1072,6 +1074,7 @@ export declare const zh: {
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
     'launch.defaultUnchanged': string;
+    'launch.effortCardBacked': string;
     'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
