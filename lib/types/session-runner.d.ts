@@ -31,7 +31,14 @@
  *    backend deliberately does not;
  *  - a finished run leaves a delivery note: `readDeliveryNote`
  *    walks back to its last assistant message so the review gate has something
- *    to decide on. Best-effort like the rest of this file.
+ *    to decide on. Best-effort like the rest of this file;
+ *  - every call names the Peer it speaks for. A Host that enforces the rule
+ *    refuses a call that names none, so this backend owns exactly ONE
+ *    in-process owner Peer, created from the Host connection service, and
+ *    hands its identity to every `session/*` request. One peer per backend
+ *    (per service), never disposed by us: the Context that read
+ *    `createPeer` disposes it when the plugin goes away, and a disposed peer
+ *    answers `gateway/peer-disposed` for the rest of its life.
  */
 import type { IdeaRecord } from './core/ideas.ts';
 /**
@@ -45,9 +52,34 @@ export interface HostSessionGateway {
         namespace: string;
         method: string;
         args?: unknown;
+        /** The Peer this call speaks for; required by Hosts that enforce it. */
+        peer?: HostPeerFace;
         signal?: AbortSignal;
     }): Promise<unknown>;
 }
+/** The principal this plugin speaks as when it starts a run on the author's behalf. */
+export interface HostPeerPrincipal {
+    readonly kind: 'owner';
+}
+/** The live Peer slice the gateway reads — every call touches `peer.signal`. */
+export interface HostPeerFace {
+    readonly signal: AbortSignal;
+}
+/**
+ * The slice of the Host connection service this backend uses, duck-typed on
+ * purpose (the face is a cordis SERVICE read through `ctx.get('connection')`,
+ * never an import). The documented contract: `createPeer(options)` creates one
+ * in-process Peer owned by the Context that read this service, disposed with
+ * that Context and not before.
+ */
+export interface HostConnectionFace {
+    createPeer?(options: {
+        readonly principal: HostPeerPrincipal;
+    }): HostPeerFace;
+}
+/** Resolves a host service face AT CALL TIME — cordis answers `undefined` until
+ *  the owning fiber is active, so this is a function, never a captured object. */
+export type HostServiceReader = (name: string) => unknown;
 /**
  * Runs one command line in a live session — here, the Host's `/permission`
  * preset command. Duck-typed and optional: a Host that serves no command
@@ -66,7 +98,44 @@ export declare class SessionLaunchError extends Error {
 export declare class SessionRunner {
     private readonly gateway;
     private readonly dispatch?;
-    constructor(gateway: HostSessionGateway, dispatch?: HostCommandDispatcher | undefined);
+    /** Reads host services at CALL time (`ctx.get(name)`) — never a captured face. */
+    private readonly readService?;
+    constructor(gateway: HostSessionGateway, dispatch?: HostCommandDispatcher | undefined, 
+    /** Reads host services at CALL time (`ctx.get(name)`) — never a captured face. */
+    readService?: HostServiceReader | undefined);
+    /** The ONE owner peer this backend speaks as. Created on first use, never disposed here. */
+    private peer;
+    /** Set only when the mount probe proves this host will not accept a named peer. */
+    private peerRefused;
+    /** One diagnostic per kind: a warning that repeats teaches the reader to ignore it. */
+    private warnedNoConnection;
+    private warnedNoPeer;
+    /**
+     * The Peer this backend speaks as, created ONCE from the Host connection
+     * service through its documented face (`createPeer({ principal })`), disposed
+     * WITH the Context that read that service — so we never dispose it here and
+     * it is never disposed before the end of that context. A peer answers every
+     * call by its `signal`, so a face without one is not usable: that case says
+     * so once and leaves direct launch to fail on the host's own rule, not on a
+     * silent default we cannot supply.
+     */
+    private ownerPeer;
+    /**
+     * Ask the host ONCE, at mount, whether it takes a named Peer. The probe is
+     * `session/list` — a read that creates nothing and mutates nothing. A host
+     * below the peer rule ignores an extra field on the request, so naming a peer
+     * there costs nothing; a host that requires one is satisfied by the peer this
+     * backend now owns. Only a refusal that NAMES the peer flips the decision,
+     * and it is memoized for every later call: a launch that keeps sending a
+     * peer the host has already refused would fail on every step.
+     */
+    probePeer(): Promise<void>;
+    /**
+     * One gateway call, named with this backend's own Peer. The peer is attached at
+     * THE ONE point where request arguments are built (see `invokeWireArgs`), so no
+     * endpoint can be added to this file without carrying it: a missing peer is not
+     * a degraded feature, it is every call failing before any session exists.
+     */
     private invoke;
     /**
      * Start the idea's execution in a FRESH session of its workspace: create,

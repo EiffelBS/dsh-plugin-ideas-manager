@@ -118,15 +118,38 @@ function applyImpl(ctx: Context, config?: Config): void {
   // is requested reactively rather than declared in `inject` — a Host that
   // serves no session gateway simply never fires this, and the board keeps
   // working with the card backend alone. No hard import of another plugin.
-  ctx.inject(['typertGateway'], (gatewayCtx) => {
+  // `connection` rides along for one reason: since DSH core added the rule that
+  // EVERY call names the Peer it speaks for (required on both `invoke` and
+  // `wireStream.open()`, never defaulted), a launch that names no peer dies
+  // before any session is created. So this backend owns exactly ONE in-process
+  // owner peer, made through the connection service's own documented face, and
+  // hands it to every call; see SessionRunner. The face is read at CALL time —
+  // a mount-time snapshot of `ctx.get('connection')` is undefined on a Host
+  // whose connection fiber has not finished booting, and that verdict would be
+  // cached for the whole session.
+  ctx.inject(['typertGateway', 'connection'], (gatewayCtx) => {
     const gateway = (gatewayCtx as unknown as { typertGateway?: unknown }).typertGateway
     if (typeof gateway !== 'object' || gateway === null || typeof (gateway as HostSessionGateway).invoke !== 'function') return
-    host.attachSessions(new SessionRunner(gateway as HostSessionGateway, (sessionId, line) => {
+    const readService = (name: string): unknown => {
+      // The service accessor, not a property: cordis refuses an undeclared
+      // property read, and `connection` is not readable this way on every core.
+      const get = (gatewayCtx as unknown as { get?: unknown }).get
+      if (typeof get !== 'function') return undefined
+      return (get as (name: string) => unknown).call(gatewayCtx, name)
+    }
+    const runner = new SessionRunner(gateway as HostSessionGateway, (sessionId, line) => {
       // Forwarded through a mutable cell rather than captured directly: the
       // command service below may arrive after this runner was built.
       if (directDispatch === undefined) throw new Error('the host serves no command service')
       return directDispatch(sessionId, line)
-    }))
+    }, readService)
+    host.attachSessions(runner)
+    // Feature detection at mount: ask the Host once, through a call that
+    // creates nothing, whether it accepts a named peer. No version comparison —
+    // this plugin is compatible from 0.1.5-rc.1 and every supported core has to
+    // answer for itself. A probe failure says nothing here: the runner warns on
+    // its own face, and a launch surfaces whatever the Host refused.
+    void runner.probePeer()
   })
 
   // The direct-launch elevation rides on the Host's OWN command service — the

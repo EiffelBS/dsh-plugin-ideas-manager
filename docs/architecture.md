@@ -108,6 +108,54 @@ backend's own default) — see *Default launch model per workspace* below.
 - The wire quirk worth remembering: `session/list` takes `{_request}` on this
   RPC surface while every other method takes `{request}` (`invokeWireArgs`).
 
+### The Peer every call names
+
+DSH core added a rule with no default: every RPC call names the Peer it speaks
+for, on `InvokeRemoteRequest.peer` and on the peer argument of `wireStream.open()`.
+The gateway's first act is to read that peer — it touches `peer.signal` before any
+session exists, so an unnamed direct launch dies as a raw
+`TypeError: Cannot read properties of undefined (reading 'signal')`, not as a
+feature that degrades. The fix is the peer, and only the peer:
+
+- **One in-process owner Peer per backend.** `connection.createPeer({ principal: { kind: 'owner' } })`
+  is the documented face, so the runner owns exactly one, created on first use and
+  reused across launches, polls and delivery-note reads. An owner principal skips
+  the remote-access decision (`ctx.remoteAccess.decide` is consulted for non-owner
+  peers), which is what makes an in-process peer usable at all. We never dispose it:
+  cordis disposes it with the Context that read `createPeer`, i.e. when this plugin
+  goes away, and a disposed peer answers `gateway/peer-disposed` for the rest of its
+  life — disposing early is the one way to make a working launch fail later.
+- **The face is read at CALL time, never captured at mount.** Same lesson as
+  `panel-navigation.ts`: `ctx.get(name)` answers `undefined` until the owning fiber
+  is active, and the connection service boots behind this plugin's own injection. A
+  resolver that ran once would cache "no peer" for the whole session on a healthy
+  Host — the silent-dead-feature failure mode, in a new place.
+- **The peer rides at THE ONE point where request args are built** (`invokeWireArgs`),
+  so an endpoint added to this file cannot escape it. The `_request` / `request` wire
+  key is unchanged by that — see the quirk above.
+- **Feature detection, never version comparison.** The compat floor
+  (`dsh.engines.dsh`, from 0.1.5-rc.1) means a Host below the rule simply ignores an
+  extra field on the request envelope, so naming a peer costs nothing there; and this
+  plugin may not vendor or fork core code to know what a given build enforces. The
+  probe is `session/list` — a read that creates and mutates nothing — run once at
+  mount, with the decision memoized: a Host that refuses a peer it was not asked to
+  speak for (`remote-access/denied`, or any refusal naming the peer) gets no peer on
+  every later call. A probe failure of any other kind (a booting runtime) says
+  nothing about peers and is not allowed to flip the decision. When there is no
+  connection service, both warnings say so once: a wrong name must be tellable from
+  an unsupported deployment.
+- **The stream rule applies to this file only in principle.** `wireStream.open()`
+  takes its peer positionally, never defaulted; this backend has no stream path (all
+  six endpoints are unary), and the browser half calls generated `remote.session`
+  namespaces through the connection's own shared peer. If a follow-up adds a host-side
+  stream, name that peer symmetrically — the same "never assume a default" rule.
+- **The test witness is shaped like the core.** `tests/launch-peer.test.ts` enforces
+  the rule in the gateway's order (it reads `peer.signal` before answering) and hands
+  the connection face as a cordis-shaped `get` service, not a plain object. On the
+  pre-fix code all five tests fail with exactly the core's crash; that is what makes
+  this file the test that would have caught the break, rather than a test written to
+  suit the fix.
+
 ### Reasoning effort: one parameter, two backends, one honest gate
 
 The model catalog exposes per-model reasoning efforts (`reasoning.efforts` with

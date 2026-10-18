@@ -10,6 +10,16 @@ Versions before 0.3.0 predate this file.
 
 ### Fixed
 
+- **A launch that runs in a fresh session reaches the session again.** On a newer
+  DSH host, clicking **Launch** on an idea with no TaskBoard card failed before any
+  session existed: the host requires every request to name who is speaking, and this
+  plugin's direct-session path named nobody. The launch window showed the raw failure
+  text and the idea stayed in the backlog, with nothing started. It now speaks as one
+  owner of its own — created once for the whole board and kept for the life of the
+  plugin, never retired early — so the session is created, named after the idea,
+  given the chosen model and prompted, on a host that enforces this rule and on one
+  that never asked for it. Card-backed launches are unchanged, and nothing about the
+  board's data changed.
 - **The launch window now says why the reasoning effort is missing.** The effort
   selector is offered only when the run reaches a fresh session, so an idea that
   runs through its TaskBoard card shows the model picker and no effort selector —
