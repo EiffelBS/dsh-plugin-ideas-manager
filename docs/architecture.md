@@ -156,6 +156,43 @@ feature that degrades. The fix is the peer, and only the peer:
   this file the test that would have caught the break, rather than a test written to
   suit the fix.
 
+### Isolated recipe that proves it
+
+Run against a scratch `DSH_HOME` and never the live one, because the ledger lives
+under that home: copy the profile into the scratch tree, boot it there, and the
+live board is untouched (its ledger keeps its own revision and mtime). The
+recipe, as executed:
+
+1. **Boot a core that enforces the rule.** The gateway that reads `peer.signal`
+   first is 0.2.1-rc.2 and later; a CLI of that version installed into the scratch
+   tree is enough (`npm install --prefix <scratch>/cli @deepseek-ai/dsh@0.2.1-rc.2`),
+   then `node <cli>/lib/bin.js --profile <name> --port <free> --no-open`. The
+   **profile name selects the app** — `web` is a profile, not an argument, and
+   passing it as one is refused. That is also how the isolated ledger is born: the
+   plugin logs `no ideas ledger yet, created an empty one at <scratch>/ideas/...`.
+2. **Give the Host a workspace and a provider.** `session/create` needs a real
+   workspace record in `$DSH_HOME/storages/workspace.json` (`createdAt`/`updatedAt`
+   are required by the storage schema, and a record missing them makes the whole
+   workspace domain fail to open, which parks the session controller), and the
+   prompt needs an *available* model: with no authenticated provider the launch
+   still reaches the Host and is refused there with "Select an available model
+   before sending a message" — a provider refusal, not a peer one, which is the
+   distinction this recipe exists to make. The provider block of the profile's
+   patch layer is what supplies the catalog.
+3. **Observe the launch.** `POST /api/ideas/launch` answers 200
+   `{ok:true, runId, runStatus:'running'}` where the pre-fix code died before any
+   session. The session log then carries, in order: `session/title` = the idea
+   title, `permission/preset` + `command/run name:"permission"` (the elevation,
+   applied before the prompt), `model/selection` with the pinned
+   `{provider, model}`, and `agent/inbox/spliced` holding the run prompt. That log
+   is a sequence of zstd frames appended one per record, so a reader that decodes
+   only the first frame sees a 246-byte header and none of this: walk every frame.
+4. **Then install the task-board plugin into the same scratch profile** and check
+   passivity: capture/update/triage set no `runStatus`, open no session and never
+   move the mirrored card to `running`; flipping the card to `done` through the
+   board's import path makes the plugin's own poll move the idea to `underReview`.
+   The `done` transition is the observation, never a mutation.
+
 ### Reasoning effort: one parameter, two backends, one honest gate
 
 The model catalog exposes per-model reasoning efforts (`reasoning.efforts` with
