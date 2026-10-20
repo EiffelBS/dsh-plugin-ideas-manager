@@ -1761,6 +1761,12 @@ carries none, and the bridge is a loopback HTTP client that may not import the
 other plugin's types. Hyphenated spelling is accepted too, for the day the
 board rewords the noun.
 
+The decision is re-made on EVERY click: nothing about a fallback is stored — no
+"board is disabled" flag, no cached backend choice. Re-enabling the board
+therefore restores card-backed launches immediately, with no restart and no
+setting to undo (pinned by a test), which is what makes this a rule of the
+backend chain rather than a mode a human has to manage.
+
 Two consequences:
 
 - Mirror writes scheduled by idea mutations keep failing and logging while the

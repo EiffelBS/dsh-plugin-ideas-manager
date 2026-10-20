@@ -86,9 +86,12 @@ class DeadTaskBoard implements TaskBoardTransport {
  * refused with the board's own master-switch gate — the exact shape of a
  * deployment that disabled the task-board plugin row without unmounting its
  * routes. `sessionDefaultPermission` lives at the TOP level, like the DSH-2
- * board cohort serves it.
+ * board cohort serves it. `disabled` is mutable so a test can prove the
+ * fallback unlatches when the human turns the board back on.
  */
 class DisabledTaskBoard implements TaskBoardTransport {
+  disabled = true
+
   constructor(
     private readonly cardId = 'card-1',
     private readonly cardStatus = 'backlog',
@@ -108,6 +111,7 @@ class DisabledTaskBoard implements TaskBoardTransport {
   }
 
   async postAction() {
+    if (!this.disabled) return { status: 200 }
     return { status: 400, body: { ok: false, error: 'task board is disabled' } }
   }
 }
@@ -495,6 +499,36 @@ describe('direct-session launch and settle (host service)', () => {
     expect(result).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
     // Nothing was bound: a card that could not be minted is not a binding.
     expect(service.snapshot().ideas[0]?.taskBoardId).toBeUndefined()
+    service.dispose()
+  })
+
+  it('uses the card again as soon as the board is re-enabled (the fallback does not latch)', async () => {
+    // Nothing about a fallback is remembered: every launch asks the card
+    // backend first, so turning the board back on restores card-backed runs
+    // with no restart, no setting and no migration. That is what keeps the
+    // disabled-board handling a rule of the backend chain, not a state.
+    const gateway = new FakeGateway()
+    gateway.roster = [{ sessionId: 'session-1', running: true }]
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws-1' } })
+    const board = new DisabledTaskBoard()
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: board }),
+      sessions: new SessionRunner(gateway),
+    })
+
+    const fallback = await service.launchIdea('idea-1')
+    expect(fallback.taskId).toBeUndefined()
+    expect(gateway.methods.filter(method => method === 'create')).toHaveLength(1)
+
+    board.disabled = false
+    const cardRun = await service.launchIdea('idea-1')
+
+    expect(cardRun.taskId).toBe('idea-idea-1')
+    // No second session was created: the card backend ran it this time.
+    expect(gateway.methods.filter(method => method === 'create')).toHaveLength(1)
+    expect(service.snapshot().ideas[0]?.taskBoardId).toBe('idea-idea-1')
     service.dispose()
   })
 
