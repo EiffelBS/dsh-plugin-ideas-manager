@@ -322,11 +322,13 @@ export declare class TaskBoardMirror {
      *  3. `run` — the bare envelope; the task-board pins the model on the fresh
      *     session and queues the shared run prompt.
      *
-     * Throws `TaskBoardUnavailableError` when the plugin is absent and a plain
-     * Error carrying the task-board's own `body.error` message on a gate refusal
-     * (`task is already running or missing`, `archived task is read-only`,
-     * `confirmation-required: ...`, `task board is disabled`) — the caller
-     * surfaces it instead of swallowing it.
+     * Throws `TaskBoardUnavailableError` when the plugin is absent,
+     * `TaskBoardDisabledError` when it answers but its own master switch is off
+     * (every action is refused with `task board is disabled`), and a plain Error
+     * carrying the task-board's own `body.error` message on any other gate
+     * refusal (`task is already running or missing`, `archived task is
+     * read-only`, `confirmation-required: ...`) — the caller surfaces the last
+     * one instead of swallowing it.
      *
      * @returns the launched task id.
      */
@@ -391,4 +393,17 @@ export declare class TaskBoardMirror {
 /** Thrown when the task-board plugin is absent; the service logs and moves on. */
 export declare class TaskBoardUnavailableError extends Error {
     constructor();
+}
+/**
+ * Thrown when the task-board plugin answers but its own master switch is OFF:
+ * every ACTION is refused with `task board is disabled`.
+ *
+ * Deliberately distinct from a gate refusal: a gate refusal is the board
+ * telling the human what to fix (`confirmation-required`, `task is already
+ * running`), while a disabled board refuses everything. The launch path treats
+ * this like an absent board — the card backend cannot run, the direct session
+ * can — instead of surfacing a red failure for a backend it can route around.
+ */
+export declare class TaskBoardDisabledError extends Error {
+    constructor(message: string);
 }

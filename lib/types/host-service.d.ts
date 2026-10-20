@@ -200,6 +200,18 @@ export declare class IdeasHostService {
      * only, and stops only when the stamp clears, so a non-open idea is never
      * newly watched (no churn on the closed columns).
      *
+     * A DIRECT-SESSION run is the run of record for its idea for as long as its
+     * session lives. The card that idea may still be bound to is not that run —
+     * in fact a launch only falls back to a session BECAUSE the card backend
+     * could not execute (an absent board, or a board whose master switch is
+     * off). Copying the frozen card's status onto such an idea would clear the
+     * `running` stamp mid-run (re-arming the Launch button), stamp an older
+     * card execution's session pointer over the direct one (the "Open session"
+     * link would point at the wrong chat, and a Host restart would re-attach to
+     * it), or settle the idea `done` while the session still runs. So every
+     * card-derived run fact is skipped while the session roster owns it; the
+     * card STATUS itself still mirrors, because it is what the card shows.
+     *
      * Best-effort: any failure is ignored.
      */
     private pollCardRuns;
@@ -207,7 +219,10 @@ export declare class IdeasHostService {
      * Launch the idea's execution through the resolved execution
      * backend: the mirrored card whenever the task-board plugin is present (the
      * card is created when the idea has none yet), otherwise a FRESH direct
-     * session — the Host-serves-no-task-board case. Both paths are AWAITED,
+     * session — the Host-serves-no-task-board case. A card backend that cannot
+     * execute anything at launch time (the plugin is gone, or its own master
+     * switch is off) degrades to that same fresh session rather than failing the
+     * click; see the fallback in the card branch. Both paths are AWAITED,
      * ordered writes: they run on the idea's mirror chain (so a queued
      * create/update can never interleave between the model patch and the run),
      * and the caller gets the outcome instead of a fire-and-forget log line. The
@@ -223,9 +238,11 @@ export declare class IdeasHostService {
      *   ignored on the card path.
      *
      * @throws when the plugin is disabled, no backend is available, the idea is
-     *   unknown, or the backend refuses the run (the message carries its own
-     *   reason: `task is already running or missing`, `workspace not found`,
-     *   `session selectModel rejected: ...`).
+     *   unknown, or the chosen backend refuses the run (the message carries its
+     *   own reason: `task is already running or missing`, `workspace not found`,
+     *   `session selectModel rejected: ...`). A card backend that is merely
+     *   ABSENT or DISABLED does not throw when a session gateway exists: the run
+     *   falls back to a fresh session (see the card branch below).
      */
     launchIdea(ideaId: string, model?: string, requestId?: string, reasoningEffort?: string): Promise<IdeasLaunchResult>;
     /**
@@ -262,16 +279,30 @@ export declare class IdeasHostService {
      */
     private launchInSession;
     /**
+     * Re-seed the direct-session tracker from the ledger ONCE per process —
+     * `runStatus: 'running'` + `runSessionId` is the pair a launch persists, and
+     * adopting it is what makes a direct run survive a Host restart.
+     *
+     * Two callers, on purpose: `pollCardRuns` calls it after reading the card
+     * snapshot (and before applying any card-derived run fact), `pollSessionRuns`
+     * calls it again as a no-op — a deployment without a task-board has no card
+     * poll to seed it. The snapshot matters because a CARD-backed run reports its
+     * session pointer from the card's own execution list (`pollCardRuns` writes
+     * it), and the card owns that run's settle. Adopting that pointer would let
+     * the session roster settle a still-running card — a card runner may have
+     * closed its session while the card itself is fine. The discriminator is
+     * read off the snapshot: a direct launch always creates a NEW session, so
+     * only a card run's pointer equals its card's recorded one.
+     */
+    private reattachSessionRuns;
+    /**
      * Settle the direct-session runs in flight, from ONE roster read per tick.
      * A session that stops running settles `done`; one that disappeared settles
      * `failed` (the Host closed it under us — the closest observable there is to
      * a cancelled run). An unknown roster (booting or unavailable runtime)
      * settles nothing: the run stays `running` rather than being invented as
-     * finished. Card-backed runs never come through here.
-     *
-     * On the first tick after a restart, the in-memory tracker is re-seeded from
-     * the ledger (`runStatus: 'running'` + `runSessionId`), which is what makes a
-     * direct run survive the Host restarting mid-execution.
+     * finished. Card-backed runs are kept out of the tracker by
+     * {@link reattachSessionRuns} and never come through here.
      */
     private pollSessionRuns;
     /**
