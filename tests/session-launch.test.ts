@@ -2,11 +2,12 @@
  * Direct-session execution — host-side tests.
  *
  * The card backend is the default; this covers the fallback for a Host that
- * serves no task-board plugin (or a deployment that turned the mirror off):
- * a FRESH session is created, named, given the chosen model and prompted with
- * the very same `runPromptOf` the card would carry, and the run is settled by
- * the poll from the session roster — which is what makes the launch survive a
- * closed browser tab and a Host restart.
+ * serves no task-board plugin, for a deployment that turned the mirror off,
+ * and for a task-board that is mounted but DISABLED (its read route answers
+ * while every action is refused): a FRESH session is created, named, given the
+ * chosen model and prompted with the very same `runPromptOf` the card would
+ * carry, and the run is settled by the poll from the session roster — which is
+ * what makes the launch survive a closed browser tab and a Host restart.
  */
 
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -14,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createIdea, type IdeaRecord } from '../src/core/ideas.ts'
+import { IdeasHostLedger } from '../src/host-ledger.ts'
 import { IdeasHostService } from '../src/host-service.ts'
 import { runPromptOf } from '../src/run-prompt.ts'
 import { SessionLaunchError, SessionRunner, type HostSessionGateway } from '../src/session-runner.ts'
@@ -75,6 +77,38 @@ class DeadTaskBoard implements TaskBoardTransport {
 
   async postAction() {
     return { status: 503, body: { error: 'task board unavailable' } }
+  }
+}
+
+/**
+ * A task-board that ANSWERS but cannot execute anything: its read route serves
+ * a DSH-2 snapshot (so availability detection says yes), while every action is
+ * refused with the board's own master-switch gate — the exact shape of a
+ * deployment that disabled the task-board plugin row without unmounting its
+ * routes. `sessionDefaultPermission` lives at the TOP level, like the DSH-2
+ * board cohort serves it.
+ */
+class DisabledTaskBoard implements TaskBoardTransport {
+  constructor(
+    private readonly cardId = 'card-1',
+    private readonly cardStatus = 'backlog',
+  ) {}
+
+  async getState() {
+    return {
+      status: 200,
+      body: {
+        schemaVersion: 6,
+        revision: 3,
+        tasks: [{ id: this.cardId, status: this.cardStatus }],
+        power: { platform: 'win32', phase: 'disabled', enabled: false, runningSessions: 0, armedSchedules: 0, sessionStateKnown: false },
+        sessionDefaultPermission: 'workspace-write',
+      },
+    }
+  }
+
+  async postAction() {
+    return { status: 400, body: { ok: false, error: 'task board is disabled' } }
   }
 }
 
@@ -383,6 +417,97 @@ describe('direct-session launch and settle (host service)', () => {
     const result = await service.launchIdea('idea-1')
     expect(result).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
     expect(service.snapshot().ideas[0]?.runSessionId).toBe('session-1')
+    service.dispose()
+  })
+
+  it('falls back to a session when the card board is present but DISABLED', async () => {
+    // The deployment kept the task-board plugin row loaded (its read route
+    // answers, so availability detection says yes) but turned its master
+    // switch off: every action is refused `task board is disabled`. The click
+    // must still produce a run — this is the direct-session fallback, not a
+    // red failure on a backend the Host can route around.
+    const gateway = new FakeGateway()
+    gateway.roster = [{ sessionId: 'session-1', running: true }]
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws-1' } })
+    ledger.bindTaskBoardId('idea-1', 'card-1')
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: new DisabledTaskBoard() }),
+      sessions: new SessionRunner(gateway),
+    })
+
+    const result = await service.launchIdea('idea-1')
+
+    expect(result).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
+    expect(service.snapshot().ideas[0]?.runSessionId).toBe('session-1')
+    // The card was never touched: the fallback is a run, not a card mint.
+    expect(service.snapshot().ideas[0]?.taskBoardId).toBe('card-1')
+    service.dispose()
+  })
+
+  it('a direct run keeps its stamp and pointer while its frozen card says backlog', async () => {
+    // The disabled board still answers its status poll. That frozen card must
+    // not speak for the direct run: a card tick would clear `running` (and
+    // re-arm the Launch button mid-run), overwrite the session pointer and, if
+    // the frozen card were `done`, settle the idea while the session runs.
+    const gateway = new FakeGateway()
+    gateway.roster = [{ sessionId: 'session-1', running: true }]
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws-1' } })
+    ledger.bindTaskBoardId('idea-1', 'card-1')
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: new DisabledTaskBoard() }),
+      sessions: new SessionRunner(gateway),
+    })
+    await service.launchIdea('idea-1')
+
+    await service.pollRunTransitions()
+    const running = service.snapshot().ideas[0]
+    expect(running?.runStatus).toBe('running')
+    expect(running?.runSessionId).toBe('session-1')
+
+    // The session roster owns the settle: done -> review gate, card untouched.
+    gateway.roster = [{ sessionId: 'session-1', running: false }]
+    await service.pollRunTransitions()
+    const settled = service.snapshot().ideas[0]
+    expect(settled?.runStatus).toBe('done')
+    expect(settled?.status).toBe('underReview')
+    service.dispose()
+  })
+
+  it('falls back to a session when a DISABLED board cannot mint the card either', async () => {
+    // A freshly captured idea has no card yet: the card backend would have to
+    // CREATE one, and a disabled board refuses that too. Same fallback.
+    const gateway = new FakeGateway()
+    gateway.roster = [{ sessionId: 'session-1', running: true }]
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws-1' } })
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: new DisabledTaskBoard() }),
+      sessions: new SessionRunner(gateway),
+    })
+
+    const result = await service.launchIdea('idea-1')
+
+    expect(result).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
+    // Nothing was bound: a card that could not be minted is not a binding.
+    expect(service.snapshot().ideas[0]?.taskBoardId).toBeUndefined()
+    service.dispose()
+  })
+
+  it("keeps the board's own refusal when there is no session gateway to fall back to", async () => {
+    const ledger = new IdeasHostLedger({ dir: freshDir() })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws-1' } })
+    ledger.bindTaskBoardId('idea-1', 'card-1')
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: new DisabledTaskBoard() }),
+    })
+
+    await expect(service.launchIdea('idea-1')).rejects.toThrow(/task board is disabled/)
     service.dispose()
   })
 

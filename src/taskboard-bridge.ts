@@ -565,11 +565,13 @@ export class TaskBoardMirror {
    *  3. `run` — the bare envelope; the task-board pins the model on the fresh
    *     session and queues the shared run prompt.
    *
-   * Throws `TaskBoardUnavailableError` when the plugin is absent and a plain
-   * Error carrying the task-board's own `body.error` message on a gate refusal
-   * (`task is already running or missing`, `archived task is read-only`,
-   * `confirmation-required: ...`, `task board is disabled`) — the caller
-   * surfaces it instead of swallowing it.
+   * Throws `TaskBoardUnavailableError` when the plugin is absent,
+   * `TaskBoardDisabledError` when it answers but its own master switch is off
+   * (every action is refused with `task board is disabled`), and a plain Error
+   * carrying the task-board's own `body.error` message on any other gate
+   * refusal (`task is already running or missing`, `archived task is
+   * read-only`, `confirmation-required: ...`) — the caller surfaces the last
+   * one instead of swallowing it.
    *
    * @returns the launched task id.
    */
@@ -634,11 +636,18 @@ export class TaskBoardMirror {
    */
   private rememberSnapshot(body: unknown): void {
     if (typeof body !== 'object' || body === null) return
+    // The deployment default lives at the TOP level of the snapshot on the
+    // DSH-2 board cohort and nested under `board` on the older one. Probing
+    // both keeps a card minted under either shape at the deployment's own
+    // level: reading only the old shape on a DSH-2 board silently stamps
+    // every new card `read-only`, so its first run starts fenced.
+    const topLevel = (body as { sessionDefaultPermission?: unknown }).sessionDefaultPermission
     const board = (body as { board?: unknown }).board
-    if (typeof board === 'object' && board !== null) {
-      const value = (board as { sessionDefaultPermission?: unknown }).sessionDefaultPermission
-      if (isTaskPermission(value)) this.boardDefaultPermission = value
-    }
+    const nested = typeof board === 'object' && board !== null
+      ? (board as { sessionDefaultPermission?: unknown }).sessionDefaultPermission
+      : undefined
+    const value = isTaskPermission(topLevel) ? topLevel : nested
+    if (isTaskPermission(value)) this.boardDefaultPermission = value
     const tasks = (body as { tasks?: unknown }).tasks
     if (Array.isArray(tasks)) this.snapshotTasks = tasks as ReadonlyArray<Record<string, unknown>>
   }
@@ -718,7 +727,16 @@ export class TaskBoardMirror {
     const result = await this.options.transport.postAction({ requestId, action })
     if (result.status < 200 || result.status >= 300) {
       const detail = actionErrorOf(result.body)
-      throw new Error(`task-board ${action.kind} -> ${result.status}${detail === undefined ? '' : `: ${detail}`}`)
+      const message = `task-board ${action.kind} -> ${result.status}${detail === undefined ? '' : `: ${detail}`}`
+      // The board's master switch being off is not a refusal of THIS action:
+      // every action is refused, while the read routes the availability probe
+      // uses keep answering. Feature detection therefore cannot see it, and
+      // classifying it here is what lets a launch route around a card backend
+      // that cannot execute anything (see TaskBoardDisabledError).
+      if (detail !== undefined && isTaskBoardDisabledDetail(detail)) {
+        throw new TaskBoardDisabledError(message)
+      }
+      throw new Error(message)
     }
   }
 }
@@ -743,4 +761,30 @@ export class TaskBoardUnavailableError extends Error {
   constructor() {
     super('task-board plugin is not available')
   }
+}
+
+/**
+ * Thrown when the task-board plugin answers but its own master switch is OFF:
+ * every ACTION is refused with `task board is disabled`.
+ *
+ * Deliberately distinct from a gate refusal: a gate refusal is the board
+ * telling the human what to fix (`confirmation-required`, `task is already
+ * running`), while a disabled board refuses everything. The launch path treats
+ * this like an absent board — the card backend cannot run, the direct session
+ * can — instead of surfacing a red failure for a backend it can route around.
+ */
+export class TaskBoardDisabledError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TaskBoardDisabledError'
+  }
+}
+
+/**
+ * Whether a task-board refusal is the board's own "master switch is off" gate.
+ * The board has no code for it, so its sentence is the contract; accept the
+ * hyphenated spelling too if a future board rewords the noun.
+ */
+function isTaskBoardDisabledDetail(detail: string): boolean {
+  return /task[ -]?board is disabled/i.test(detail)
 }

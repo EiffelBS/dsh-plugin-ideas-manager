@@ -66,6 +66,8 @@ class FakeTaskBoard implements TaskBoardTransport {
   stateStatus = 200
   stateTasks: Array<{ id: string; status: string }> = []
   answers = new Map<string, { status: number; body?: unknown }>()
+  /** When set, EVERY action is refused with this answer (a disabled board). */
+  refusal: { status: number; body?: unknown } | undefined
 
   async getState() {
     return {
@@ -76,16 +78,27 @@ class FakeTaskBoard implements TaskBoardTransport {
 
   async postAction(envelope: TaskBoardActionEnvelope) {
     this.posts.push(envelope)
-    return this.answers.get(envelope.action.kind) ?? { status: 200 }
+    return this.refusal ?? this.answers.get(envelope.action.kind) ?? { status: 200 }
   }
 }
 
-async function serve(options: { autoMirror?: boolean; withMirror?: boolean; stateStatus?: number; sessions?: SessionRunner } = {}): Promise<{ base: string; taskBoard: FakeTaskBoard; service: IdeasHostService }> {
+async function serve(options: {
+  autoMirror?: boolean
+  withMirror?: boolean
+  stateStatus?: number
+  sessions?: SessionRunner
+  /** Refuse every action, like a task-board whose master switch is off. */
+  refusal?: { status: number; body?: unknown }
+  /** Refuse only the `run` verb: a per-card gate, not a disabled board. */
+  runRefusal?: { status: number; body?: unknown }
+} = {}): Promise<{ base: string; taskBoard: FakeTaskBoard; service: IdeasHostService }> {
   dir = join(tmpdir(), `ideas-launch-route-${process.pid}-${randomUUID()}`)
   mkdirSync(dir, { recursive: true })
   const taskBoard = new FakeTaskBoard()
   taskBoard.stateStatus = options.stateStatus ?? 200
   taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'backlog' }]
+  taskBoard.refusal = options.refusal
+  if (options.runRefusal !== undefined) taskBoard.answers.set('run', options.runRefusal)
   const mirror = new TaskBoardMirror({ transport: taskBoard })
   service = new IdeasHostService({
     dir,
@@ -197,6 +210,39 @@ describe('POST /api/ideas/launch', () => {
     const refused = await post(`${absent.base}${LAUNCH}`, { ideaId: 'idea-1' })
     expect(refused.status).toBe(503)
     expect(await refused.json()).toEqual({ ok: false, error: 'taskboard-unavailable' })
+  })
+
+  it('serves a card-backed idea from a fresh session when the TaskBoard is DISABLED', async () => {
+    // The board is mounted (its snapshot answers) but its master switch is off,
+    // so every action is refused `task board is disabled`. That is not a 400
+    // for the human: the Host can still run the idea, in a fresh session.
+    const gateway = new FakeGateway()
+    const { base } = await serve({
+      refusal: { status: 400, body: { ok: false, error: 'task board is disabled' } },
+      sessions: new SessionRunner(gateway),
+    })
+
+    const response = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1' })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true, runId: 'session-1', runStatus: 'running' })
+    expect(gateway.methods).toContain('create')
+  })
+
+  it('still relays a genuine gate refusal as a 400, never a silent reroute', async () => {
+    // A per-card refusal is the board telling the human what to fix: it stays
+    // visible instead of being rerouted to a different backend.
+    const gateway = new FakeGateway()
+    const { base } = await serve({
+      sessions: new SessionRunner(gateway),
+      runRefusal: { status: 400, body: { error: 'task is already running or missing' } },
+    })
+
+    const response = await post(`${base}${LAUNCH}`, { ideaId: 'idea-1' })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ ok: false, error: 'task-board run -> 400: task is already running or missing' })
+    expect(gateway.methods).not.toContain('create')
   })
 
   it('serves a card-less idea from a direct session, without a taskId', async () => {

@@ -132,9 +132,10 @@ have to hunt the card back in the Overview to start a run.
    offered only when the run reaches a fresh session, because a TaskBoard card
    carries the model and nothing else.
 2. **With the TaskBoard plugin installed**, the run goes through that idea's
-   board card. **Without it**, DSH opens a brand-new chat session in the idea's
-   workspace instead. Either way you get a real execution, and the board needs no
-   extra plugin for the feature to work.
+   board card. **Without it — or with the TaskBoard's own master switch off** —
+   DSH opens a brand-new chat session in the idea's workspace instead. Either way
+   you get a real execution, and the board needs no extra plugin for the feature
+   to work.
 3. The run happens in the **background**: closing the tab, or restarting the web
    instance, does not lose it and DSH keeps watching it for you.
 4. While it runs, the card shows a blue **Running** pill and an
@@ -470,7 +471,11 @@ When the TaskBoard plugin
 repo: [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web)) is
 present, the Ideas manager mirrors its ledger onto TaskBoard's `backlog` so
 both tools stay in sync — **one-way** (Ideas → TaskBoard). If TaskBoard is
-absent, the Ideas manager simply works standalone.
+absent, or your deployment has turned its own master switch off, the Ideas
+manager simply works standalone: card sync stops, and **Launch execution** runs
+the idea in a fresh session instead of failing on the disabled board. A card
+that refuses only ONE run (already running, archived, a permission to confirm)
+keeps showing that reason.
 
 | Ideas action | TaskBoard mirror |
 |---|---|

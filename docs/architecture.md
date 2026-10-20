@@ -74,6 +74,7 @@ different things:
 |---|---|
 | task-board present and the mirror is on | **card** (minting the deterministic `idea-<id>` card when the idea has none) |
 | no task-board, mirror off, or the board turns out to be absent at click time | **direct session** |
+| task-board present but DISABLED (its read routes answer, every action refuses `task board is disabled`) | **direct session** (same runtime fallback) |
 
 - Card path: `ensureTask` → a **model-only** patch → `run`. The patch is
   model-only on purpose: once a card has run, a content patch is refused with
@@ -82,6 +83,21 @@ different things:
 - Session path: `session/create` → `rename` → `selectModel` → `prompt` through the
   optional `typertGateway` service. One fresh session per launch, no reuse. A
   rejected model fails loudly rather than silently falling back.
+
+The card/session choice is a chain with two outcomes, not a single verdict. A
+card backend can fail in two ways, and only one of them belongs to the human:
+
+- a **gate refusal** (`task is already running or missing`,
+  `archived task is read-only`, `confirmation-required: …`) is the board telling
+  the human what to fix. It is surfaced verbatim, never rerouted.
+- an **unusable backend** — the plugin went away since boot, or its own master
+  switch is off so every action refuses `task board is disabled` — cannot run
+  anything. When the Host serves a session gateway the launch falls through to a
+  fresh session; with no gateway the board's own sentence stays loud instead of
+  becoming a generic 503. The disabled case is invisible to the availability
+  probe, because a disabled board still answers its read routes (see *Card
+  mirror* below).
+
 
 Both paths are **host-side**, so a run survives a closed browser tab. The settle
 is host-side too: the card path polls the task-board snapshot, the session path
@@ -1727,6 +1743,57 @@ Two consequences of this contract are worth knowing without any tooling:
 - Editing an idea whose card binding is missing self-heals the mirror by
   **creating** its card, whatever the idea status. A bulk edit of many ideas
   therefore also mints cards for closed ideas, in `backlog`.
+
+### A DISABLED board hides from the probe
+
+The availability probe is `GET /api/task-board/state`, and a board whose master
+switch is off keeps answering it: the snapshot is the one read a disabled board
+still serves. Every ACTION is refused instead (`400 {error: 'task board is
+disabled'}`). So a feature-detected board can be present and unable to execute
+anything, which is why the launch fallback cannot be decided at probe time: the
+bridge classifies the refusal at the one place actions are posted
+(`TaskBoardMirror.post` throws `TaskBoardDisabledError`), and the service treats
+it exactly like an absent board — a fresh session — while a board that is
+merely gating ONE card keeps its own message.
+
+The classification is by the board's sentence, not by a code: the disabled gate
+carries none, and the bridge is a loopback HTTP client that may not import the
+other plugin's types. Hyphenated spelling is accepted too, for the day the
+board rewords the noun.
+
+Two consequences:
+
+- Mirror writes scheduled by idea mutations keep failing and logging while the
+  board is off. That is the mirror contract — best-effort, never a rollback, and
+  every idea stays committed. A launch that falls back does NOT clear the card
+  binding either: the idea keeps its card for the day the board is back.
+- A fallback run coexists with a card that keeps answering status polls. The
+  card poll therefore skips every card-derived RUN fact for an idea whose run is
+  a live direct session — the `running` stamp, the session pointer and the
+  `done → underReview` transition. Otherwise a frozen `backlog` card would clear
+  the badge (re-arming Launch mid-run), an older card execution's `sessionId`
+  would overwrite the direct session's link (and a Host restart would re-attach
+  to the wrong chat), and a frozen `done` card could settle the idea while the
+  session still runs. The card STATUS itself still mirrors: it is what the card
+  shows.
+- A restarted Host re-seeds the direct-run tracker from the persisted
+  `running` + `runSessionId` pair, but it must NOT adopt a card run's pointer:
+  that pointer came from the card's own execution list, and a card runner may
+  have closed its session while the card is still fine. The first poll reads the
+  card snapshot BEFORE applying any card-derived run fact, then seeds the
+  tracker only for pointers that are not the card's recorded one — a direct
+  launch always creates a NEW session, so the two cannot collide. A card run
+  therefore stays the card's after a restart, and a direct run still answers to
+  the roster.
+
+### The snapshot shape moved: probe by NAME, never by path
+
+DSH 2's board cohort serves the deployment's session default at the TOP level of
+the snapshot (`sessionDefaultPermission`), where the shape it replaced nested it
+under `board`. Reading only the old path does not fail: it silently falls back to
+`read-only`, so every newly minted card starts fenced and its first run cannot
+write. Both places are probed, current first; the conservative fallback still
+covers a board that reports neither.
 
 ### An unavailable task-board is REPORTED once, not on every probe
 

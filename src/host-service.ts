@@ -29,7 +29,7 @@
 import { IdeasHostLedger, type LedgerApplyResult, type LedgerRestoreResult, type LedgerRestoreSource } from './host-ledger.ts'
 import { IDEAS_SNAPSHOT_RETENTION, type SnapshotFile } from './backup.ts'
 import { SessionRunner, SessionLaunchError } from './session-runner.ts'
-import { TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
+import { TaskBoardDisabledError, TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts'
 import { buildIdeasStats, type IdeasStatsOptions } from './core/ideas-stats.ts'
 import {
@@ -368,6 +368,18 @@ export class IdeasHostService {
    * only, and stops only when the stamp clears, so a non-open idea is never
    * newly watched (no churn on the closed columns).
    *
+   * A DIRECT-SESSION run is the run of record for its idea for as long as its
+   * session lives. The card that idea may still be bound to is not that run —
+   * in fact a launch only falls back to a session BECAUSE the card backend
+   * could not execute (an absent board, or a board whose master switch is
+   * off). Copying the frozen card's status onto such an idea would clear the
+   * `running` stamp mid-run (re-arming the Launch button), stamp an older
+   * card execution's session pointer over the direct one (the "Open session"
+   * link would point at the wrong chat, and a Host restart would re-attach to
+   * it), or settle the idea `done` while the session still runs. So every
+   * card-derived run fact is skipped while the session roster owns it; the
+   * card STATUS itself still mirrors, because it is what the card shows.
+   *
    * Best-effort: any failure is ignored.
    */
   private async pollCardRuns(): Promise<void> {
@@ -377,21 +389,30 @@ export class IdeasHostService {
       statuses = await this.mirror.fetchTaskStatuses()
     } catch (error) {
       console.error(`[dsh-plugin-ideas-manager] run poll failed: ${error instanceof Error ? error.message : String(error)}`)
-      return
     }
+    // Seed the direct-run tracker from the card snapshot just read, and BEFORE
+    // any card-derived run fact is applied: on the first tick after a restart
+    // the card poll would otherwise clear a direct run's `running` stamp before
+    // the tracker had adopted it (see reattachSessionRuns).
+    this.reattachSessionRuns()
     if (statuses === undefined) return
+    // Idea ids whose run is a live direct session (see the class comment above:
+    // the card must not speak for those).
+    const sessionRunIdeas = new Set(this.sessionRuns.values())
     for (const idea of this.ledger.snapshot().ideas) {
       if (idea.taskBoardId === undefined) continue
       const observed = statuses.get(idea.taskBoardId)
+      const viaSession = sessionRunIdeas.has(idea.id)
       // The chat the run happened in belongs on the card, whatever the column
       // it sits in. The card reports it as soon as its runner has an execution
       // (running or finished), the snapshot this tick already read carries it,
       // and `setRunSession` is a no-op when nothing changed — so this is free
       // for the settled majority and lands the pointer one poll early for a run
       // in flight. An archived or declined idea keeps its pointer: being off the
-      // backlog is not a reason to forget where the work happened.
+      // backlog is not a reason to forget where the work happened. Skipped for
+      // a direct run: that pointer is the session roster's fact, not the card's.
       const cardSession = this.mirror.cardSessionOf(idea.taskBoardId)
-      if (cardSession !== undefined && cardSession !== idea.runSessionId) {
+      if (!viaSession && cardSession !== undefined && cardSession !== idea.runSessionId) {
         try {
           this.ledger.setRunSession(idea.id, cardSession)
         } catch (error) {
@@ -406,14 +427,14 @@ export class IdeasHostService {
           console.error(`[dsh-plugin-ideas-manager] task status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      if (tracking && observed !== undefined && observed !== idea.runStatus) {
+      if (!viaSession && tracking && observed !== undefined && observed !== idea.runStatus) {
         try {
           this.ledger.setRunStatus(idea.id, runStatusOf(observed))
         } catch (error) {
           console.error(`[dsh-plugin-ideas-manager] run status sync failed for ${idea.id}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
-      if (idea.status !== 'open' || observed !== 'done') continue
+      if (viaSession || idea.status !== 'open' || observed !== 'done') continue
       try {
         // Same settle helper as the direct-session backend, so the review gate
         // reads identically for a finished run whatever ran it. The card
@@ -432,7 +453,10 @@ export class IdeasHostService {
    * Launch the idea's execution through the resolved execution
    * backend: the mirrored card whenever the task-board plugin is present (the
    * card is created when the idea has none yet), otherwise a FRESH direct
-   * session — the Host-serves-no-task-board case. Both paths are AWAITED,
+   * session — the Host-serves-no-task-board case. A card backend that cannot
+   * execute anything at launch time (the plugin is gone, or its own master
+   * switch is off) degrades to that same fresh session rather than failing the
+   * click; see the fallback in the card branch. Both paths are AWAITED,
    * ordered writes: they run on the idea's mirror chain (so a queued
    * create/update can never interleave between the model patch and the run),
    * and the caller gets the outcome instead of a fire-and-forget log line. The
@@ -448,9 +472,11 @@ export class IdeasHostService {
    *   ignored on the card path.
    *
    * @throws when the plugin is disabled, no backend is available, the idea is
-   *   unknown, or the backend refuses the run (the message carries its own
-   *   reason: `task is already running or missing`, `workspace not found`,
-   *   `session selectModel rejected: ...`).
+   *   unknown, or the chosen backend refuses the run (the message carries its
+   *   own reason: `task is already running or missing`, `workspace not found`,
+   *   `session selectModel rejected: ...`). A card backend that is merely
+   *   ABSENT or DISABLED does not throw when a session gateway exists: the run
+   *   falls back to a fresh session (see the card branch below).
    */
   async launchIdea(ideaId: string, model?: string, requestId?: string, reasoningEffort?: string): Promise<IdeasLaunchResult> {
     if (!this.active) throw new Error('ideas plugin is disabled')
@@ -522,9 +548,25 @@ export class IdeasHostService {
         this.ledger.setRunStatus(ideaId, 'running')
         return { runId: taskId, taskId }
       } catch (error) {
-        if (this.sessions === undefined || !(error instanceof TaskBoardUnavailableError)) throw error
+        // A card backend that cannot run is a RUNTIME absence, not a refusal
+        // to surface. Two shapes share the same answer:
+        //  - the plugin is gone since boot (TaskBoardUnavailableError), and
+        //  - the plugin answers its read routes but its own master switch is
+        //    off, so every action is refused with `task board is disabled`
+        //    (TaskBoardDisabledError) — a board feature detection cannot see.
+        // With a session gateway both fall through to a fresh run instead of
+        // a red dead end on a backend the Host can route around. With no
+        // gateway there is nothing to route to, so the board's own sentence
+        // stays loud.
+        const cardBackendDown = error instanceof TaskBoardUnavailableError
+          || error instanceof TaskBoardDisabledError
+        if (this.sessions === undefined || !cardBackendDown) throw error
+        if (error instanceof TaskBoardDisabledError) {
+          console.warn(`[dsh-plugin-ideas-manager] the task-board is disabled; idea ${ideaId} runs in a fresh session`)
+        }
         // The card could not run; the session can. Same route, same shape, and
-        // the human sees a run rather than a 503 on a board that is simply gone.
+        // the human sees a run rather than a 503 on a board that is simply gone
+        // (or a 400 on a board that refuses every action).
         return await this.launchInSession(fresh, target, effort)
       }
     })
@@ -591,27 +633,43 @@ export class IdeasHostService {
   }
 
   /**
+   * Re-seed the direct-session tracker from the ledger ONCE per process —
+   * `runStatus: 'running'` + `runSessionId` is the pair a launch persists, and
+   * adopting it is what makes a direct run survive a Host restart.
+   *
+   * Two callers, on purpose: `pollCardRuns` calls it after reading the card
+   * snapshot (and before applying any card-derived run fact), `pollSessionRuns`
+   * calls it again as a no-op — a deployment without a task-board has no card
+   * poll to seed it. The snapshot matters because a CARD-backed run reports its
+   * session pointer from the card's own execution list (`pollCardRuns` writes
+   * it), and the card owns that run's settle. Adopting that pointer would let
+   * the session roster settle a still-running card — a card runner may have
+   * closed its session while the card itself is fine. The discriminator is
+   * read off the snapshot: a direct launch always creates a NEW session, so
+   * only a card run's pointer equals its card's recorded one.
+   */
+  private reattachSessionRuns(): void {
+    if (this.sessionRunsReattached) return
+    this.sessionRunsReattached = true
+    for (const idea of this.ledger.snapshot().ideas) {
+      if (idea.runStatus !== 'running' || idea.runSessionId === undefined) continue
+      if (idea.taskBoardId !== undefined && this.mirror?.cardSessionOf(idea.taskBoardId) === idea.runSessionId) continue
+      this.sessionRuns.set(idea.runSessionId, idea.id)
+    }
+  }
+
+  /**
    * Settle the direct-session runs in flight, from ONE roster read per tick.
    * A session that stops running settles `done`; one that disappeared settles
    * `failed` (the Host closed it under us — the closest observable there is to
    * a cancelled run). An unknown roster (booting or unavailable runtime)
    * settles nothing: the run stays `running` rather than being invented as
-   * finished. Card-backed runs never come through here.
-   *
-   * On the first tick after a restart, the in-memory tracker is re-seeded from
-   * the ledger (`runStatus: 'running'` + `runSessionId`), which is what makes a
-   * direct run survive the Host restarting mid-execution.
+   * finished. Card-backed runs are kept out of the tracker by
+   * {@link reattachSessionRuns} and never come through here.
    */
   private async pollSessionRuns(): Promise<void> {
     if (this.sessions === undefined || this.disposed) return
-    if (!this.sessionRunsReattached) {
-      this.sessionRunsReattached = true
-      for (const idea of this.ledger.snapshot().ideas) {
-        if (idea.runStatus === 'running' && idea.runSessionId !== undefined) {
-          this.sessionRuns.set(idea.runSessionId, idea.id)
-        }
-      }
-    }
+    this.reattachSessionRuns()
     if (this.sessionRuns.size === 0) return
     let roster: ReadonlyMap<string, boolean>
     try {

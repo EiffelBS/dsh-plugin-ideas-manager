@@ -6,6 +6,30 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Fixed
+
+- **Launch works again when the TaskBoard itself is disabled.** Turning the
+  TaskBoard's master switch off hides its board but not its API: the ideas plugin
+  kept choosing the card backend, and every **Launch** click died on the board's
+  `task board is disabled` refusal — a red error, nothing started. A board that
+  refuses every action is now treated like a board that is not installed: the idea
+  runs in a fresh session instead. A refusal that concerns ONE card (a run already
+  in flight, an archived card, a permission confirmation) still shows the board's
+  own reason, and the idea keeps its card, so a re-enabled board is used again on
+  the next launch.
+- **A fresh run is no longer overwritten by its old card.** While such a fallback
+  run is in flight, the card the idea still carries no longer clears the running
+  badge, replaces the session link with an older card execution, or opens the
+  review gate from a frozen card status. The session owns the run until it
+  settles; the card keeps mirroring its status for display.
+- **Mirrored cards follow the deployment's permission again on newer DSH hosts.**
+  A newer DSH host reports the TaskBoard's session default at a new place in its
+  snapshot. Reading only the old place did not fail: it silently made every newly
+  mirrored card `read-only`, so its first run started without write access. Both
+  places are read now, newest first.
+
 ## 0.10.2 - 2026-10-18
 
 ### Fixed

@@ -49,16 +49,29 @@ class FakeTransport implements TaskBoardTransport {
   stateTasks: Array<{ id: string; status: string; permission?: string; executions?: Array<{ sessionId?: string }> }> | undefined
   /** Optional board view served by getState (its session default permission). */
   stateBoardDefaultPermission: string | undefined
+  /** The DSH-2 shape: the same default served at the TOP level of the snapshot. */
+  stateTopLevelPermission: string | undefined
   async getState() {
     this.getStateCalls += 1
     const board = this.stateBoardDefaultPermission === undefined
       ? undefined
       : { sessionDefaultPermission: this.stateBoardDefaultPermission }
+    const topLevel = this.stateTopLevelPermission === undefined
+      ? undefined
+      : { sessionDefaultPermission: this.stateTopLevelPermission }
     return {
       status: this.stateStatus,
-      ...(this.stateTasks === undefined && board === undefined
+      ...(this.stateTasks === undefined && board === undefined && topLevel === undefined
         ? {}
-        : { body: { schemaVersion: 3, revision: 1, ...board === undefined ? {} : { board }, tasks: this.stateTasks ?? [] } }),
+        : {
+            body: {
+              schemaVersion: 3,
+              revision: 1,
+              ...board === undefined ? {} : { board },
+              ...(topLevel ?? {}),
+              tasks: this.stateTasks ?? [],
+            },
+          }),
     }
   }
   async postAction(envelope: TaskBoardActionEnvelope) {
@@ -270,6 +283,18 @@ describe('mirrored card permission follows the deployment default', () => {
   it('stamps the board default reported by the snapshot', async () => {
     const transport = new FakeTransport()
     transport.stateBoardDefaultPermission = 'workspace-write'
+    const mirror = new TaskBoardMirror({ transport })
+    await mirror.mirrorCreate(idea())
+    const input = (transport.posts[0]!.action as { input: { permission: string } }).input
+    expect(input.permission).toBe('workspace-write')
+  })
+
+  it('reads the session default the DSH-2 board serves at the TOP level', async () => {
+    // The DSH-2 board cohort moved `sessionDefaultPermission` out of the
+    // `board` view and onto the snapshot root. Reading only the old shape
+    // silently stamps every new card read-only, so its first run starts fenced.
+    const transport = new FakeTransport()
+    transport.stateTopLevelPermission = 'workspace-write'
     const mirror = new TaskBoardMirror({ transport })
     await mirror.mirrorCreate(idea())
     const input = (transport.posts[0]!.action as { input: { permission: string } }).input

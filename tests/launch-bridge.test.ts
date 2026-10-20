@@ -21,7 +21,9 @@ import {
 } from '../src/host-service.ts'
 import { runPromptOf } from '../src/run-prompt.ts'
 import { parseActionEnvelope, parseLaunchBody } from '../src/protocol.ts'
+import { SessionRunner, type HostSessionGateway } from '../src/session-runner.ts'
 import {
+  TaskBoardDisabledError,
   TaskBoardMirror,
   TaskBoardUnavailableError,
   type TaskBoardAction,
@@ -52,7 +54,7 @@ function freshDir(): string {
 class FakeTaskBoard implements TaskBoardTransport {
   posts: TaskBoardActionEnvelope[] = []
   stateStatus = 200
-  stateTasks: Array<{ id: string; status: string }> = []
+  stateTasks: Array<{ id: string; status: string; executions?: Array<{ sessionId?: string }> }> = []
   /** Per-kind canned answer; default 200 with no body. */
   answers = new Map<string, { status: number; body?: unknown }>()
   async getState() {
@@ -69,6 +71,16 @@ class FakeTaskBoard implements TaskBoardTransport {
 
   get actions(): TaskBoardAction[] {
     return this.posts.map(entry => entry.action)
+  }
+}
+
+/** Minimal session gateway: the roster is empty, every other call is accepted. */
+class FakeGateway implements HostSessionGateway {
+  methods: string[] = []
+  async invoke(request: { namespace: string; method: string; args?: unknown }): Promise<unknown> {
+    this.methods.push(request.method)
+    if (request.method === 'list') return { items: [] }
+    return { sessionId: 'session-1', ok: true }
   }
 }
 
@@ -182,6 +194,34 @@ describe('TaskBoardMirror.launchTask', () => {
     coded.answers.set('run', { status: 409, body: { code: 'confirmation-required' } })
     await expect(new TaskBoardMirror({ transport: coded }).launchTask(idea()))
       .rejects.toThrow(/confirmation-required/)
+  })
+
+  it('classifies the board-disabled gate so a launch can route around it', async () => {
+    // The DSH-2 shape: the task-board plugin is mounted (its read route answers,
+    // so availability detection says yes) but its master switch is off, so
+    // every action is refused. That is not a gate the human can satisfy — the
+    // launch must treat it like an absent board and use a fresh session.
+    const taskBoard = new FakeTaskBoard()
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'backlog' }]
+    taskBoard.answers.set('run', { status: 400, body: { ok: false, error: 'task board is disabled' } })
+    const mirror = new TaskBoardMirror({ transport: taskBoard })
+
+    const error = await mirror.launchTask(idea({ taskBoardId: 'idea-idea-1' })).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(TaskBoardDisabledError)
+    expect((error as Error).message).toBe('task-board run -> 400: task board is disabled')
+  })
+
+  it('leaves every other gate refusal a plain error, never the disabled class', async () => {
+    const taskBoard = new FakeTaskBoard()
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'running' }]
+    taskBoard.answers.set('run', { status: 400, body: { error: 'task is already running or missing' } })
+    const mirror = new TaskBoardMirror({ transport: taskBoard })
+
+    const error = await mirror.launchTask(idea({ taskBoardId: 'idea-idea-1' })).catch((caught: unknown) => caught)
+
+    expect(error).not.toBeInstanceOf(TaskBoardDisabledError)
+    expect((error as Error).message).toContain('task is already running or missing')
   })
 
   it('throws TaskBoardUnavailableError when the plugin is not there', async () => {
@@ -375,6 +415,60 @@ describe('run poll lifecycle', () => {
     await service.flushMirror()
     return { service, taskBoard }
   }
+
+  it('re-attaches a card-backed run to its card, not to the session roster', async () => {
+    // A card run in flight when the Host restarted: the ledger carries the
+    // `running` stamp and the session pointer the card's own execution recorded.
+    // Re-attaching that pointer to the direct-session tracker would let an
+    // empty roster settle a healthy card run `failed` — the card is the backend
+    // and stays the authority.
+    const dir = freshDir()
+    const ledger = new IdeasHostLedger({ dir })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws' } })
+    ledger.bindTaskBoardId('idea-1', 'idea-idea-1')
+    ledger.setRunStatus('idea-1', 'running')
+    ledger.setRunSession('idea-1', 'card-session')
+    const taskBoard = new FakeTaskBoard()
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'running', executions: [{ sessionId: 'card-session' }] }]
+    const gateway = new FakeGateway()
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: taskBoard }),
+      sessions: new SessionRunner(gateway),
+    })
+
+    await service.pollRunTransitions()
+
+    // No roster read at all: the card is the run of record.
+    expect(gateway.methods).not.toContain('list')
+    expect(service.snapshot().ideas[0]?.runStatus).toBe('running')
+    service.dispose()
+  })
+
+  it('still re-attaches a DIRECT run from the same persisted pair', async () => {
+    // The twin case: the pointer equals no card execution, so it is a direct
+    // session and the roster owns the settle (an empty roster settles failed).
+    const dir = freshDir()
+    const ledger = new IdeasHostLedger({ dir })
+    ledger.applyRequest('seed-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws' } })
+    ledger.bindTaskBoardId('idea-1', 'idea-idea-1')
+    ledger.setRunStatus('idea-1', 'running')
+    ledger.setRunSession('idea-1', 'session-1')
+    const taskBoard = new FakeTaskBoard()
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'backlog', executions: [{ sessionId: 'card-session' }] }]
+    const gateway = new FakeGateway()
+    const service = new IdeasHostService({
+      ledger,
+      mirror: new TaskBoardMirror({ transport: taskBoard }),
+      sessions: new SessionRunner(gateway),
+    })
+
+    await service.pollRunTransitions()
+
+    expect(gateway.methods).toContain('list')
+    expect(service.snapshot().ideas[0]?.runStatus).toBe('failed')
+    service.dispose()
+  })
 
   it('follows running -> done and opens the review gate', async () => {
     const { service, taskBoard } = await startedService('running')
