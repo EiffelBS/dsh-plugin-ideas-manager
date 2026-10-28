@@ -69,6 +69,26 @@ export interface AiLaunchResult {
     accepted: boolean;
 }
 /**
+ * Shows a just-started analyst session to the human — the shell switches its
+ * main view to that conversation, exactly like the "Open session" link on a
+ * launched card, or like the shell's own New Session does.
+ *
+ * Not cosmetic, and the reason it exists: a current DSH host groups Sessions
+ * per Workspace in the session tree and draws only a bounded window of each
+ * group (a handful of rows, raised for the CURRENT session and for running ones
+ * within a cap). A session created in the background behind the board can fall
+ * past that window and stay invisible while it runs for minutes — the capture
+ * looked dead, the human clicked again, and each click started another analyst
+ * (and another near-duplicate card). The reveal is also the only way to read the
+ * analyst's report, which has no other home than that session.
+ *
+ * A CALLBACK rather than a resolved shell service: the launcher is built before
+ * the shell's workspace UI may exist, so the caller passes a function that
+ * reads the navigation face at call time and a page that provides
+ * `uiWorkspace` late still reveals the sessions it starts.
+ */
+export type SessionReveal = (sessionId: string) => void;
+/**
  * The existing idea handed back to the analyst for a RE-ANALYZE run:
  * a fresh DSH session re-reads the stored card and overwrites it with a
  * new analysis through the same write channel (update + triage on the SAME
@@ -386,11 +406,16 @@ export declare function pickModelTarget(choices: readonly ModelChoice[], target:
  * undefined when the "sessions" service is absent or does not expose the
  * create/scope/sessionOf surface — callers then keep the manual Create.
  *
+ * `reveal` is optional and best-effort: it is how the human gets to SEE the
+ * session the capture just created (the shell switches its main view to it).
+ * A deployment whose shell serves no navigation face still launches the
+ * analysis; the human then finds the session in the session tree, as before.
+ *
  * The model picker is best-effort: the catalog and selection come from the
  * same `sessions` face when it also carries `modelCatalog`/`selectModel`,
  * otherwise from the generated `remote.session` namespace (the official
  * selector surface). When neither is available the picker hides and the
  * analysing session uses its Host default.
  */
-export declare function resolveSessionLauncher(ctx: LauncherClientContext): SessionLauncher | undefined;
+export declare function resolveSessionLauncher(ctx: LauncherClientContext, reveal?: SessionReveal): SessionLauncher | undefined;
 export {};

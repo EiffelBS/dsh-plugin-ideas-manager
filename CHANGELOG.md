@@ -6,6 +6,24 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Fixed
+
+- **The AI capture is now something you can see.** Clicking **AI capture**
+  closed the window and then looked like nothing had happened. The analyst
+  session *was* created — it ran for minutes and created the card — but on a
+  current DSH host the session tree groups conversations per workspace and draws
+  only a short window of each group. The analyst runs in the **idea's**
+  workspace, not the one you were looking at, so its session landed out of
+  sight; the natural reaction (clicking again) started more analysts in
+  parallel, and each one wrote another card that then had to be merged away. The
+  board now **switches to the analyst session** as soon as the analysis is
+  queued, exactly like **Open session** on a launched card. **Re-analyze** and
+  **Find similar** do the same — their report is the thing you asked for. A
+  shell that cannot navigate still starts the analysis (its console says so),
+  and a failed launch never opens an empty session.
+
 ## 0.10.3 - 2026-10-20
 
 ### Fixed

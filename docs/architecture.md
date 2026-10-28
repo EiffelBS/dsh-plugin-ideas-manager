@@ -2071,6 +2071,23 @@ survive a reload and cover agent writes.
   that serves no selection source skips the check rather than inventing a
   failure. This is the rule in `AGENTS.md` ("warn when nothing resolves") applied
   to a second resolver that had been silently swallowing both answers.
+- **A created analyst session is REVEALED; a background session is not enough.**
+  The capture / re-analyze / find-similar launchers create their session in the
+  IDEA's workspace and queue the prompt, and nothing used to navigate to it. A
+  current DSH host groups the session tree per Workspace and draws only a bounded
+  window of each group (five rows, raised for the current session and for running
+  ones within a cap): the new session is appended after the group's saved manual
+  order and is not current, so in a workspace with enough sessions it is simply
+  not drawn while it runs for minutes. That symptom is indistinguishable from a
+  failed launch — the modal closes and nothing happens — so the human clicks
+  again and starts another analyst, which writes another near-duplicate card. The
+  launcher now takes a reveal callback (wired to `uiWorkspace.openSession`, the
+  same face the **Open session** link uses) and calls it once the prompt is
+  **queued**, never before: revealing a session that received no prompt would
+  show an empty conversation instead of the board. Navigation stays best-effort
+  in both directions — no navigation face still launches the analysis, a throwing
+  reveal cannot fail an already-queued run — but a failed reveal warns once per
+  launcher instead of disappearing.
 - A launch refused by the TaskBoard **permission gate** is the one refusal with a
   destination: the card's effective permission sits above the session default, and
   only a human may confirm that binding. The modal now deep-links to **our own**

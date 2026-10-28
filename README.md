@@ -24,8 +24,10 @@ TaskBoard: **zero hard dependency** on it.
 - **Capture** an idea with the *New idea* button or the **quick-add** row at the
   top of the Open column — a Title is the only required field.
 - Optional description (markdown), **tags**, workspace and a **Suggested rank**.
-- The **AI capture** button opens a session that analyzes the draft,
-  creates/merges the idea in the backlog, and reports the retained ranking.
+- The **AI capture** button hands the draft to a fresh analyst session and
+  **switches you to it**, so the analysis runs in front of you: it creates/merges
+  the idea in the backlog and reports the retained ranking in that session.
+  Re-analyze and Find similar do the same — their verdict is the reason to look.
 - **Find similar** (on an open idea, next to *Re-analyze*) asks whether the idea
   duplicates something you already have: the board lists the open ideas of the
   same workspace whose title and tags look close, and an analyst session then

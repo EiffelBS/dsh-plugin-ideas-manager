@@ -83,15 +83,22 @@ export function apply(ctx: ClientContext): void {
     // and the capture default stays the board scope (else generic).
     const activeWorkspace = resolveActiveWorkspaceSource(ctx)
     const client = new IdeasClient(new HttpIdeasHostTransport(), workspaces, activeWorkspace)
-    // Phase 3: the AI-capture launcher rides the same "sessions" service;
-    // absent/malformed degrades to the plain manual Create.
-    client.sessionLauncher = resolveSessionLauncher(ctx)
     // The jump back into the run a card was worked on. The navigation
     // face is optional, so the resolver degrades to undefined — and a missing
     // face is WARNED, never swallowed: a link that is absent because the name is
     // wrong looks exactly like a link that is absent because the deployment does
     // not support it, and only one of those is a bug.
     client.sessionOpener = resolveSessionOpener(ctx)
+    // Phase 3: the AI-capture launcher rides the same "sessions" service;
+    // absent/malformed degrades to the plain manual Create. It also REVEALS the
+    // session the capture just started, and that is the whole difference between
+    // a feature that works and one that looks dead: a current host groups the
+    // session tree per Workspace and draws only a bounded window of each group,
+    // so a session created in the background behind the board can stay invisible
+    // while it runs for minutes and creates the card. The reveal reads the
+    // opener at CALL time, because the shell can provide `uiWorkspace` after
+    // this half mounts (see the re-probe below).
+    client.sessionLauncher = resolveSessionLauncher(ctx, sessionId => { client.sessionOpener?.open(sessionId) })
     // The probe is REPEATED on every state update, and that is not belt-and-braces:
     // the shell provides `uiWorkspace` when the workspace UI loads, which can be
     // AFTER this half mounts. A one-shot probe at mount therefore reported the

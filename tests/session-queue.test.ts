@@ -220,6 +220,87 @@ describe('resolveSessionLauncher', () => {
     expect((seenPrompt?.content[0] as { text: string }).text).toContain('ws-1')
   })
 
+  it('reveals the session it just started, once the run is queued', async () => {
+    // The bug this pins: the analyst session is created in the IDEA's
+    // workspace and is not the current session. A current host groups the
+    // session tree per Workspace and draws only a bounded window of each group,
+    // so without a reveal the session can be invisible while it runs for
+    // minutes — the capture looked dead, the human clicked again, and every
+    // retry started another analyst (and another near-duplicate card).
+    const revealed: string[] = []
+    const controller = {
+      create: async (): Promise<string> => 'session-1',
+      scope: (id: string): unknown => ({ id }),
+      sessionOf: (): unknown => ({ prompt: async () => ({ ok: true, value: { accepted: true } }) }),
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }, sessionId => { revealed.push(sessionId) }) as SessionLauncher
+    const result = await launcher.launch({ workspaceId: 'ws-1', workspaceTitle: 'Alpha', title: 'T', body: 'B', tags: ['a'] })
+    expect(result).toEqual({ accepted: true })
+    expect(revealed).toEqual(['session-1'])
+  })
+
+  it('reveals the re-analyze and find-similar sessions too: their report has no other home', async () => {
+    const revealed: string[] = []
+    const controller = {
+      create: async (): Promise<string> => 'session-2',
+      scope: (id: string): unknown => ({ id }),
+      sessionOf: (): unknown => ({ prompt: async () => ({ ok: true, value: { accepted: true } }) }),
+    }
+    const launcher = resolveSessionLauncher({ get: () => controller }, sessionId => { revealed.push(sessionId) }) as SessionLauncher
+    await launcher.launchReanalyze({ workspaceId: 'ws-1', workspaceTitle: 'Alpha', ideaId: 'i-1', title: 'T', status: 'open', tags: [] })
+    await launcher.launchFindSimilar({
+      workspaceId: 'ws-1', workspaceTitle: 'Alpha', ideaId: 'i-1', title: 'T', status: 'open', tags: [], candidates: [], scanned: 0,
+    })
+    expect(revealed).toEqual(['session-2', 'session-2'])
+  })
+
+  it('never reveals a session whose launch failed: an empty room is worse than nothing', async () => {
+    const revealed: string[] = []
+    const refused = resolveSessionLauncher({
+      get: () => ({
+        create: async (): Promise<string> => 's',
+        scope: (): unknown => ({}),
+        sessionOf: (): unknown => ({ prompt: async () => ({ ok: false, error: { code: 'session/agent-busy' } }) }),
+      }),
+    }, sessionId => { revealed.push(sessionId) }) as SessionLauncher
+    await expect(refused.launch({ workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [] }))
+      .rejects.toThrow(/session-prompt-rejected/)
+    expect(revealed).toEqual([])
+
+    const noCreate = resolveSessionLauncher({
+      get: () => ({ create: async (): Promise<string> => { throw new Error('gateway-down') }, scope: () => ({}), sessionOf: () => ({}) }),
+    }, sessionId => { revealed.push(sessionId) }) as SessionLauncher
+    await expect(noCreate.launch({ workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [] }))
+      .rejects.toThrow('gateway-down')
+    expect(revealed).toEqual([])
+  })
+
+  it('a failing reveal never fails an already-queued launch, and is reported once per launcher', async () => {
+    // Navigation is not part of the run: a shell whose navigation face throws
+    // must not turn a queued analysis into a failed launch. It is reported, not
+    // swallowed — and once, because a broken face would repeat per click.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let revealAttempts = 0
+      const controller = {
+        create: async (): Promise<string> => 'session-3',
+        scope: (id: string): unknown => ({ id }),
+        sessionOf: (): unknown => ({ prompt: async () => ({ ok: true, value: { accepted: true } }) }),
+      }
+      const launcher = resolveSessionLauncher({ get: () => controller }, () => {
+        revealAttempts += 1
+        throw new Error('no navigation face')
+      }) as SessionLauncher
+      const capture = { workspaceId: 'w', workspaceTitle: 'T', title: 'x', body: '', tags: [] }
+      await expect(launcher.launch(capture)).resolves.toEqual({ accepted: true })
+      await expect(launcher.launch(capture)).resolves.toEqual({ accepted: true })
+      expect(revealAttempts).toBe(2)
+      expect(warn.mock.calls.filter(([line]) => String(line).includes('could not reveal it'))).toHaveLength(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('rejects when the prompt is refused by the session controller', async () => {
     const controller = {
       create: async (): Promise<string> => 's',

@@ -218,7 +218,16 @@ session instead of creating it manually:
 2. The plugin calls `sessions.create({ workspaceId })` then
    `session.prompt([{ type: 'text', text }], 'queue')` on the resolved session
    face (`scope` → `sessionOf`), both duck-typed and optional — an absent
-   service keeps the plain manual Create.
+   service keeps the plain manual Create. Once the run is queued the plugin
+   **reveals the session** through the shell's navigation face
+   (`uiWorkspace.openSession`, the same one the "Open session" link uses).
+   That is not decoration: a current DSH host groups the session tree per
+   Workspace and draws only a bounded window of each group, and the analyst
+   session is created in the IDEA's workspace — not the one the board is open
+   in — so without a reveal it can run for minutes, create the card and never
+   be seen. The reveal is best-effort (a shell with no navigation face still
+   launches the analysis) and it happens only after a successful queue, so a
+   failed launch never opens an empty conversation.
 3. The launch prompt is MINIMAL: it carries only what the skill cannot know —
    the captured idea, the workspace (title + id), the priority hints, the
    server **origin** (dynamic per instance), and a bounded summary selector

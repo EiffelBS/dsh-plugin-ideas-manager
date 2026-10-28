@@ -75,6 +75,27 @@ export interface AiLaunchResult {
 }
 
 /**
+ * Shows a just-started analyst session to the human — the shell switches its
+ * main view to that conversation, exactly like the "Open session" link on a
+ * launched card, or like the shell's own New Session does.
+ *
+ * Not cosmetic, and the reason it exists: a current DSH host groups Sessions
+ * per Workspace in the session tree and draws only a bounded window of each
+ * group (a handful of rows, raised for the CURRENT session and for running ones
+ * within a cap). A session created in the background behind the board can fall
+ * past that window and stay invisible while it runs for minutes — the capture
+ * looked dead, the human clicked again, and each click started another analyst
+ * (and another near-duplicate card). The reveal is also the only way to read the
+ * analyst's report, which has no other home than that session.
+ *
+ * A CALLBACK rather than a resolved shell service: the launcher is built before
+ * the shell's workspace UI may exist, so the caller passes a function that
+ * reads the navigation face at call time and a page that provides
+ * `uiWorkspace` late still reveals the sessions it starts.
+ */
+export type SessionReveal = (sessionId: string) => void
+
+/**
  * The existing idea handed back to the analyst for a RE-ANALYZE run:
  * a fresh DSH session re-reads the stored card and overwrites it with a
  * new analysis through the same write channel (update + triage on the SAME
@@ -561,12 +582,18 @@ export function pickModelTarget(choices: readonly ModelChoice[], target: string 
  * taken retention is ALWAYS released (missing face, prompt success or
  * failure). A model rejection is best-effort (the analyst still runs, on the
  * session default).
+ *
+ * `reveal` gets the session AFTER the run is queued, never before: a created
+ * session that received no prompt is an empty room, and switching the human to
+ * it would trade "nothing happened" for "an empty conversation happened". The
+ * reveal itself is the caller's wrapper and cannot fail this function.
  */
 async function launchAnalystSession(
   controller: DshSessionsController,
   modelSource: Partial<DshSessionsController> | undefined,
   input: { workspaceId: string; model?: ModelChoice },
   prompt: string,
+  reveal?: SessionReveal,
 ): Promise<AiLaunchResult> {
   const sessionId = await controller.create({ workspaceId: input.workspaceId })
   if (input.model !== undefined) {
@@ -618,6 +645,11 @@ async function launchAnalystSession(
     retained?.release?.() // always release the retention, success or failure
   }
   if (result.ok !== true) throw new Error('session-prompt-rejected')
+  // The run is queued: hand the human the conversation it happens in. Skipping
+  // this is what made a working capture look dead on a host whose session tree
+  // draws only a bounded window per workspace — the session existed, ran for
+  // minutes and created the card, with nothing on screen to say so.
+  reveal?.(sessionId)
   return { accepted: true }
 }
 
@@ -626,13 +658,18 @@ async function launchAnalystSession(
  * undefined when the "sessions" service is absent or does not expose the
  * create/scope/sessionOf surface — callers then keep the manual Create.
  *
+ * `reveal` is optional and best-effort: it is how the human gets to SEE the
+ * session the capture just created (the shell switches its main view to it).
+ * A deployment whose shell serves no navigation face still launches the
+ * analysis; the human then finds the session in the session tree, as before.
+ *
  * The model picker is best-effort: the catalog and selection come from the
  * same `sessions` face when it also carries `modelCatalog`/`selectModel`,
  * otherwise from the generated `remote.session` namespace (the official
  * selector surface). When neither is available the picker hides and the
  * analysing session uses its Host default.
  */
-export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLauncher | undefined {
+export function resolveSessionLauncher(ctx: LauncherClientContext, reveal?: SessionReveal): SessionLauncher | undefined {
   try {
     const service = ctx.get(SESSIONS_SERVICE)
     if (typeof service !== 'object' || service === null) return undefined
@@ -641,6 +678,24 @@ export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLaunc
       return undefined
     }
     const controller = face as DshSessionsController
+    // Reveal is best-effort in BOTH directions: a shell without a navigation
+    // face must not keep the analysis from running, and a navigation that
+    // throws must not turn an already-queued run into a failed launch. It is
+    // not silent either — a session that exists and is never shown is exactly
+    // the bug that made a working capture look dead — and the warning is once
+    // per launcher (per page), because a broken face would repeat it per click.
+    let warnedAboutReveal = false
+    const revealSafely: SessionReveal | undefined = reveal === undefined
+      ? undefined
+      : (sessionId: string): void => {
+          try {
+            reveal(sessionId)
+          } catch (error) {
+            if (warnedAboutReveal) return
+            warnedAboutReveal = true
+            console.warn('[dsh-plugin-ideas-manager] the analyst session was created but the shell could not reveal it:', error)
+          }
+        }
     // Model source: the action face when it also carries the model RPCs,
     // otherwise the generated remote.session namespace (the official selector
     // surface). Either `modelCatalog` (list) or `selectModel` (choose) may be
@@ -665,19 +720,22 @@ export function resolveSessionLauncher(ctx: LauncherClientContext): SessionLaunc
         // the manual Create; nothing stays pending. The fresh session analyses
         // the idea, creates or merges it in the target workspace through the
         // loopback write channel, applies a per-workspace rank and reports the
-        // ranking decision to the human in the session.
-        launchAnalystSession(controller, modelSource, input, buildAnalysisPrompt(input, pageOrigin())),
+        // ranking decision to the human in the session. The session is revealed
+        // as soon as the run is queued: the report has no other home, and a
+        // background session is easy to miss in a Workspace-grouped tree.
+        launchAnalystSession(controller, modelSource, input, buildAnalysisPrompt(input, pageOrigin()), revealSafely),
       launchReanalyze: async (input: ReanalyzeInput): Promise<AiLaunchResult> =>
         // re-run the analyst on an EXISTING idea — same session
         // mechanics, dedicated prompt (the overrides carry the no-create /
         // no-recursion rules and the ai-reanalyze initiator).
-        launchAnalystSession(controller, modelSource, input, buildReanalysisPrompt(input, pageOrigin())),
+        launchAnalystSession(controller, modelSource, input, buildReanalysisPrompt(input, pageOrigin()), revealSafely),
       launchFindSimilar: async (input: FindSimilarInput): Promise<AiLaunchResult> =>
         // Find similar: a fresh session judges a BOUNDED candidate set and
         // reports. Same session mechanics, dedicated prompt (the overrides
         // carry the write-nothing / no-merge rules), so it can never mutate
-        // the board on its own.
-        launchAnalystSession(controller, modelSource, input, buildFindSimilarPrompt(input, pageOrigin())),
+        // the board on its own. Its verdict lives in the session too, so it is
+        // revealed the same way.
+        launchAnalystSession(controller, modelSource, input, buildFindSimilarPrompt(input, pageOrigin()), revealSafely),
       listModels: () => modelSource === undefined ? Promise.resolve([]) : modelChoicesOf(modelSource),
       // The current host session's model: read straight from its
       // `modelSelection` projection (defensively). The board preselects the
