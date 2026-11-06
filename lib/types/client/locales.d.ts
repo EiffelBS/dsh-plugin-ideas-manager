@@ -58,6 +58,8 @@ export declare const fr: {
     'settings.densityCompact': string;
     'settings.directRunPermission': string;
     'settings.directRunPermissionDesc': string;
+    'settings.useTaskBoard': string;
+    'settings.useTaskBoardDesc': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
     'settings.openOrderingCreatedAt': string;
@@ -250,6 +252,7 @@ export declare const fr: {
     'launch.title': string;
     'launch.hint': string;
     'launch.sessionHint': string;
+    'launch.taskBoardOff': string;
     'launch.blockedHint': string;
     'launch.blockedBelowHint': string;
     'launch.submit': string;
@@ -266,7 +269,6 @@ export declare const fr: {
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
     'launch.defaultUnchanged': string;
-    'launch.effortCardBacked': string;
     'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
@@ -459,6 +461,8 @@ export declare const en: {
     'settings.densityCompact': string;
     'settings.directRunPermission': string;
     'settings.directRunPermissionDesc': string;
+    'settings.useTaskBoard': string;
+    'settings.useTaskBoardDesc': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
     'settings.openOrderingCreatedAt': string;
@@ -661,6 +665,7 @@ export declare const en: {
     'launch.title': string;
     'launch.hint': string;
     'launch.sessionHint': string;
+    'launch.taskBoardOff': string;
     'launch.blockedHint': string;
     'launch.blockedBelowHint': string;
     'launch.submit': string;
@@ -677,7 +682,6 @@ export declare const en: {
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
     'launch.defaultUnchanged': string;
-    'launch.effortCardBacked': string;
     'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;
@@ -866,6 +870,8 @@ export declare const zh: {
     'settings.densityCompact': string;
     'settings.directRunPermission': string;
     'settings.directRunPermissionDesc': string;
+    'settings.useTaskBoard': string;
+    'settings.useTaskBoardDesc': string;
     'settings.openOrdering': string;
     'settings.openOrderingDesc': string;
     'settings.openOrderingCreatedAt': string;
@@ -1058,6 +1064,7 @@ export declare const zh: {
     'launch.title': string;
     'launch.hint': string;
     'launch.sessionHint': string;
+    'launch.taskBoardOff': string;
     'launch.blockedHint': string;
     'launch.blockedBelowHint': string;
     'launch.submit': string;
@@ -1074,7 +1081,6 @@ export declare const zh: {
     'launch.rememberDefault': string;
     'launch.saveDefault': string;
     'launch.defaultUnchanged': string;
-    'launch.effortCardBacked': string;
     'launch.defaultNeedsModel': string;
     'followUp.title': string;
     'followUp.parent': string;

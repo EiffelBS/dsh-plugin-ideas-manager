@@ -75,14 +75,15 @@ different things:
 
 | Condition | Backend |
 |---|---|
-| task-board present and the mirror is on | **card** (minting the deterministic `idea-<id>` card when the idea has none) |
-| no task-board, mirror off, or the board turns out to be absent at click time | **direct session** |
+| task-board present and enabled (deployment `autoMirror` AND the user's `useTaskBoard` setting) | **card** (minting the deterministic `idea-<id>` card when the idea has none) |
+| no task-board, the mirror disabled, the user's switch off, or the board turns out to be absent at click time | **direct session** |
 | task-board present but DISABLED (its read routes answer, every action refuses `task board is disabled`) | **direct session** (same runtime fallback) |
 
-- Card path: `ensureTask` → a **model-only** patch → `run`. The patch is
-  model-only on purpose: once a card has run, a content patch is refused with
-  `task has already been executed`. The model travels as `provider/model` on the
-  task, never inside `run` (the task-board accepts exactly `['kind','taskId']`).
+- Card path: `ensureTask` → a **model + reasoning-effort** patch → `run`. The
+  patch carries only NON-CONTENT fields on purpose: once a card has run, a content
+  patch is refused with `task has already been executed`. The model travels as
+  `provider/model` on the task, never inside `run` (the task-board accepts exactly
+  `['kind','taskId']`).
 - Session path: `session/create` → `rename` → `selectModel` → `prompt` through the
   optional `typertGateway` service. One fresh session per launch, no reuse. A
   rejected model fails loudly rather than silently falling back.
@@ -229,15 +230,20 @@ that declare it, and nothing richer.
   `reasoningEffort?` field — additive, so the envelope and the default
   `GET /api/ideas/state` response do not change. A blank string is "no effort
   pinned", expressed by omitting the key (same discipline as `model`).
-- **The card backend cannot carry it.** The mirror patch is model-only (frozen
-  by design once a card has run), so a reasoning effort would only ever reach
-  the direct-session backend. The launch modal therefore gates the selector on
-  the idea having no card (`!idea.taskBoardId`) rather than offer a choice that
-  would be silently dropped. The analyst modals (capture / re-analyze /
-  find-similar) always run a fresh session, so their selector is always on.
-- **The effort rides the model's `selectModel` call.** It is sent only when a
-  model is pinned (the effort qualifies a model; it cannot travel alone), and
-  omitted when blank so the session keeps the model's own default.
+- **The card backend carries it too — on a current board.** A TaskBoard from
+  0.4.15 on stores `reasoningEffort` on the task next to `model`, and its runner
+  sends the level only when the model catalog declares it for the route the
+  execution runs at. The same non-content patch therefore pins both, and the
+  launch modal offers the selector on every idea. An OLDER board parses an update
+  patch with an exact-key allow-list and refuses the whole action as
+  `invalid-action`; `TaskBoardMirror.updateCard` retries that one case without
+  the level (nothing was applied), logs it once and remembers the verdict for the
+  process, so the run still starts on the chosen model.
+- **The effort rides the model's `selectModel` call on a session.** It is sent
+  only when a model is pinned (the effort qualifies a model; it cannot travel
+  alone), and omitted when blank so the session keeps the model's own default.
+  On a card the same rule holds: the patch carries the level only alongside the
+  model it qualifies.
 
 ### Delivery note harvest
 
@@ -1597,11 +1603,12 @@ catch (error) { … return await this.launchInSession(fresh, target) }
 ```
 
 This is the load-bearing part of the whole feature. The two backends take a
-model by completely different routes — a **model-only task patch** then `run`
-on the card, `selectModel` on a fresh session — and a fallback resolved inside
-either branch would be a fallback one backend silently does not honour. The
-third call site (the card-unavailable catch) matters for the same reason: a
-backend fallback must not change the model.
+model by completely different routes — a non-content task patch (model and, on a
+current board, the level) then `run` on the card, `selectModel` on a fresh
+session — and a fallback resolved inside either branch would be a fallback one
+backend silently does not honour. The third call site (the card-unavailable
+catch) matters for the same reason: a backend fallback must not change the
+model.
 
 ### The effort is stored with the model, as a second map
 
@@ -2178,6 +2185,32 @@ survive a reload and cover agent writes.
 work (lean list reads, deferred body, zero-emit idle polls);
 `scripts/perf-live.mjs` profiles a running test instance. Three perf gates run
 under `IDEAS_PERF=1`.
+
+## The TaskBoard bypass switch
+
+`useTaskBoard` (settings, default true) is the user's own choice to keep the
+ideas board standalone even while the TaskBoard is installed, active and
+answering. It is ANDed with the deployment's `autoMirror` config in ONE place,
+`IdeasHostService.taskBoardOn()`, read at every decision (mirror scheduling, the
+run poll, launch backend resolution) rather than cached at apply — a settings
+write lands on the next action with no restart.
+
+When it is false NOTHING crosses the bridge: no probe, no card read, no
+create/update/archive/restore, no card status poll, and a launch always opens a
+fresh direct session, including for an idea that still carries a `taskBoardId`.
+The binding is deliberately NOT cleared: the setting is a preference, never a
+ledger rewrite, so turning it back on resumes the mirror for every idea still
+linked. The client mirrors the same rule where the human sees it: `canLaunch`
+ignores a card's status when the switch is off (the card is no longer the run of
+record, so a `done` card cannot hide the Launch button) and the launch window
+says which backend will run.
+
+The poll-arming rule stays about backend AVAILABILITY rather than the live
+preference: a card-only deployment arms the timer whenever `autoMirror` and a
+mirror exist, because the user can flip the switch on at any time and a timer
+that was never armed could not notice. A tick with the switch off is one early
+return; `pollSessionRuns` still settles direct runs, which are the only runs
+that can exist while it is off.
 
 ## Settings storage
 

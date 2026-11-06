@@ -55,11 +55,18 @@ export const LAUNCHABLE_TASK_STATUSES: readonly string[] = ['backlog', 'todo', '
  * card status therefore only constrains a card that EXISTS — a card that is
  * `running` or `done` is the run of record, and starting a second, invisible
  * session next to it would be a lie, so the button stays hidden either way.
+ *
+ * `useTaskBoard` is the user's persisted bypass switch: when it is off the card
+ * is not the run of record at all, so its status stops gating the button — the
+ * launch opens a fresh session even on an idea that still carries a card id.
+ * @param idea - the idea whose Launch affordance is being decided.
+ * @param useTaskBoard - whether the ideas board uses the TaskBoard at all.
  */
-export function canLaunch(idea: LaunchTarget): boolean {
+export function canLaunch(idea: LaunchTarget, useTaskBoard = true): boolean {
   if (idea.status !== 'open') return false
   if (idea.workspaceId === undefined || idea.workspaceId === '') return false
   if (idea.runStatus === 'running') return false
+  if (!useTaskBoard) return true
   if (idea.taskBoardId === undefined || idea.taskBoardId === '') return true
   const status = idea.taskBoardStatus
   return status === undefined || LAUNCHABLE_TASK_STATUSES.includes(status)
@@ -241,9 +248,11 @@ export class HostLaunchBackend implements LaunchBackend {
 
   async launch(idea: LaunchTarget, model?: ModelChoice): Promise<LaunchOutcome> {
     if (this.transport.launch === undefined) throw new Error('launch-unavailable')
-    // The effort travels with the model; the Host drops it on the card backend
-    // (the mirror patch is model-only) and pins it via `selectModel` on a fresh
-    // session.
+    // The effort travels with the model and reaches BOTH backends: the Host
+    // pins it beside the model on a mirrored card, and hands it to
+    // `selectModel` on a fresh session. An older TaskBoard that does not store
+    // the field drops the level and keeps the model (the Host retries without
+    // it), so sending it is always safe.
     return await this.transport.launch(idea.id, modelTargetIdOf(model), model?.reasoningEffort)
   }
 }
@@ -259,8 +268,8 @@ export function launchBackends(transport: IdeasHostTransport): LaunchBackend[] {
 }
 
 /** The first backend able to run this idea, or undefined (no button). */
-export async function resolveLaunchBackend(idea: LaunchTarget, transport: IdeasHostTransport): Promise<LaunchBackend | undefined> {
-  if (!canLaunch(idea)) return undefined
+export async function resolveLaunchBackend(idea: LaunchTarget, transport: IdeasHostTransport, useTaskBoard = true): Promise<LaunchBackend | undefined> {
+  if (!canLaunch(idea, useTaskBoard)) return undefined
   for (const backend of launchBackends(transport)) {
     if (await backend.available(idea)) return backend
   }

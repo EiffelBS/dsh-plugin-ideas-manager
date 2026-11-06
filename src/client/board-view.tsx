@@ -319,13 +319,6 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly RankableI
  *  picker then reads as "the current default, which you may change". Held in a
  *  ref so a later settings write cannot restart the catalog load.
  *
- *  `reasoningEffortEnabled` gates the reasoning-effort half of the picker.
- *  It is true for the analyst modals (a fresh session always reaches
- *  `selectModel`) and for a card-less idea's launch; the launch modal turns it
- *  OFF for a card-backed idea, because the TaskBoard mirror patch is model-only
- *  and the chosen effort could never reach the run. When off, the picker
- *  preselects no effort and the selector is not rendered.
- *
  *  `initialEffort` is the reasoning effort stored WITH `initialTarget` (the
  *  launch modal passes the workspace default's pair). It only preselects while
  * the picker still shows that same model, so reopening the picker over a saved
@@ -334,7 +327,6 @@ function currentOpenRank(idea: IdeaRecord | undefined, ideas: readonly RankableI
 function useAnalystModelPicker(
   launcher: SessionLauncher | undefined,
   initialTarget?: string,
-  reasoningEffortEnabled = true,
   initialEffort?: string,
 ): {
   modelChoices: ModelChoice[]
@@ -411,35 +403,29 @@ function useAnalystModelPicker(
         ?? activeProviderChoices.find(choice => choice.label === selModelKey)
   // A model switch invalidates the previous effort choice: reseed the picker
   // with the newly selected model's own default (the catalog's `defaultEffort`),
-  // or with nothing when reasoning is gated off. Keyed on the matched choice's
-  // identity, so a re-render that keeps the same model never resets a pick the
-  // human is making.
+  // or with nothing when the model declares no levels. Keyed on the matched
+  // choice's identity, so a re-render that keeps the same model never resets a
+  // pick the human is making.
   //
   // The one exception is the model this workspace already defaults to: there the
   // effort STORED with that default wins over the model's own catalog default, so
   // reopening the picker shows the pair the run will actually use rather than
   // reverting to a level the human already replaced.
   useEffect(() => {
-    if (!reasoningEffortEnabled) {
-      setSelReasoningEffort('')
-      return
-    }
     const stored = initialEffortRef.current?.trim() ?? ''
     const defaultTarget = initialTargetRef.current?.trim()
     const showingDefault = stored !== '' && defaultTarget !== undefined && defaultTarget !== ''
       && modelTargetIdOf(matchedChoice) === defaultTarget
     setSelReasoningEffort(showingDefault ? stored : matchedChoice?.reasoningEffort ?? '')
-  }, [matchedChoice, reasoningEffortEnabled])
+  }, [matchedChoice])
   // The choice handed to the launch carries the effort the human actually
   // picked (the catalog default until they change it), and no effort at all
-  // when reasoning is gated off or they left the selector on "model default".
+  // when they left the selector on "model default".
   const selectedModel: ModelChoice | undefined = matchedChoice === undefined
     ? undefined
     : {
         ...matchedChoice,
-        reasoningEffort: reasoningEffortEnabled && selReasoningEffort !== ''
-          ? selReasoningEffort
-          : undefined,
+        reasoningEffort: selReasoningEffort !== '' ? selReasoningEffort : undefined,
       }
   return {
     modelChoices,
@@ -461,16 +447,12 @@ function useAnalystModelPicker(
 /** The model-picker field row (provider cascade + filter + model list), as
  *  rendered in the capture and re-analyze modals. Hidden by the caller when
  *  the catalog is empty. The reasoning-effort selector is a second row, shown
- *  only when the selected model declares effort levels AND the caller left
- *  `reasoningEffortEnabled` on (the launch modal turns it off for a card-backed
- *  idea, whose mirror patch is model-only). */
-function ModelPickerField({ picker, disabled, reasoningEffortEnabled = true }: {
+ *  when the selected model declares effort levels. */
+function ModelPickerField({ picker, disabled }: {
   picker: ReturnType<typeof useAnalystModelPicker>
   disabled: boolean
-  /** False hides the effort selector and pins no effort (the card backend cannot carry it). */
-  reasoningEffortEnabled?: boolean
 }) {
-  const showEffort = reasoningEffortEnabled && picker.reasoningEfforts.length > 0
+  const showEffort = picker.reasoningEfforts.length > 0
   const selectedEffort = picker.reasoningEfforts.find(effort => effort.id === picker.selReasoningEffort)
   return (
     <div className={classes.field}>
@@ -1395,16 +1377,13 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
   const workspaceDefault = launchModelForWorkspace(storedModels, workspaceId)
   const workspaceDefaultEffort = launchReasoningEffortForWorkspace(storedEfforts, workspaceId)
   const [changingDefault, setChangingDefault] = useState(false)
-  // The reasoning-effort selector only makes sense when the run reaches a fresh
-  // session's `selectModel`. A card-backed idea runs through the TaskBoard mirror
-  // patch, which is model-only (frozen by design once the card has run), so the
-  // chosen effort could never reach it — the launch modal therefore hides the
-  // selector there rather than offer a choice that would be silently dropped.
-  const reasoningEffortEnabled = idea.taskBoardId === undefined || idea.taskBoardId === ''
+  // Both execution backends carry the reasoning effort: a fresh session gets
+  // it through `selectModel`, and a TaskBoard card stores it next to the model
+  // (an older board simply ignores it and runs the model's own default). The
+  // selector therefore has no backend-specific hole to hide.
   const picker = useAnalystModelPicker(
     client.sessionLauncher,
     workspaceDefault,
-    reasoningEffortEnabled,
     workspaceDefaultEffort,
   )
   const [pending, setPending] = useState(false)
@@ -1419,12 +1398,9 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
     : pickModelTarget(picker.modelChoices, workspaceDefault)?.label ?? workspaceDefault
   // The effort stored WITH that default, named from the catalog when it knows
   // the model and spelled raw when it does not — the same honesty rule as the
-  // model label above. Named at all because a default that pins a level the
-  // run will silently use is worth saying out loud — and withheld when the run
-  // CANNOT use it: on a card-backed idea the card pins the model alone, so
-  // naming a level here would claim a run the card will not make. The note
-  // under the field says why, so the stored level is not simply lost to sight.
-  const defaultEffortLabel = !reasoningEffortEnabled || workspaceDefaultEffort === undefined
+  // model label above. Named at all because a default that pins a level the run
+  // will silently use is worth saying out loud.
+  const defaultEffortLabel = workspaceDefaultEffort === undefined
     ? undefined
     : picker.modelChoices.find(choice => modelTargetIdOf(choice) === workspaceDefault)
       ?.reasoningEfforts?.find(effort => effort.id === workspaceDefaultEffort)?.name
@@ -1549,8 +1525,19 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             </div>
           </div>
         )}
+        {/* The TaskBoard switch changes what this run MEANS: with it off the
+            launch opens a fresh session even on an idea that still carries a
+            card, so say so where the human decides rather than letting an
+            unannounced backend choice surprise them. */}
+        {!client.config.value.useTaskBoard && (
+          <div className={classes.field}>
+            <div className={classes.fieldHint} data-dsh-ideas-taskboard-off="">
+              {t('launch.taskBoardOff')}
+            </div>
+          </div>
+        )}
         {picker.modelChoices.length > 0 && (workspaceDefault === undefined || changingDefault)
-          ? <ModelPickerField picker={picker} disabled={pending} reasoningEffortEnabled={reasoningEffortEnabled} />
+          ? <ModelPickerField picker={picker} disabled={pending} />
           : null}
         {/* The remembered default. With no catalog the picker is
             hidden anyway, so this stays visible: the run's model is worth
@@ -1592,19 +1579,6 @@ function LaunchModal({ client, idea, workspaceTitle, onLaunch, onClose }: {
             {client.configError !== undefined && (
               <div className={classes.error}>{`${t('settings.saveFailed')}${client.configError}`}</div>
             )}
-          </div>
-        )}
-        {/* The effort selector is withheld on a card-backed idea, and a
-            selector that is simply absent reads as a bug — the author of this
-            plugin asked exactly that question about his own board, where every
-            open idea carries a card. Naming the reason where the choice would
-            have been costs one line and turns a silent omission into a stated
-            limitation of the card backend. */}
-        {!reasoningEffortEnabled && (
-          <div className={classes.field}>
-            <div className={classes.fieldHint} data-dsh-ideas-effort-unavailable="card">
-              {t('launch.effortCardBacked')}
-            </div>
           </div>
         )}
         {/* Setting the default is a gesture of its own, next to the pick it
@@ -2581,9 +2555,11 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   }
 
   /**
-   * Launch: hand the launch to the Host, which owns the mirrored card
-   * (ensure card -> model-only patch -> run). The picked model becomes the
-   * task-board's `provider/model` target; no pick keeps the session default.
+   * Launch: hand the launch to the Host, which owns the backend (a mirrored
+   * card: ensure card -> model/effort patch -> run; otherwise a fresh session
+   * whose `selectModel` carries the same pair). The picked model becomes the
+   * task-board's `provider/model` target and its level the card's
+   * `reasoningEffort`; no pick keeps the session default.
    * The modal closes on success; a refusal keeps it open with the message.
    */
   const launchIdea = (idea: ReanalyzeSource, model: ModelChoice | undefined): Promise<void> =>
@@ -3149,7 +3125,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                   {t('card.findSimilar')}
                                 </button>
                               )}
-                              {idea.status === 'open' && canLaunch(idea) && (
+                              {idea.status === 'open' && canLaunch(idea, client.config.value.useTaskBoard) && (
                                 <button
                                   type="button"
                                   className={classes.actionButton}
@@ -3362,7 +3338,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           onFollowUp={(idea) => { setFollowUp(idea) }}
           onReanalyze={canReanalyze(editing) ? (idea) => { setReanalyzing(idea) } : undefined}
           onFindSimilar={canFindSimilarHere(editing) ? (idea) => { setFindingSimilar(idea) } : undefined}
-          onLaunch={editing.status === 'open' && canLaunch(editing) ? (idea) => { setLaunching(idea) } : undefined}
+          onLaunch={editing.status === 'open' && canLaunch(editing, client.config.value.useTaskBoard) ? (idea) => { setLaunching(idea) } : undefined}
         />
       )}
       {findingSimilar !== undefined && (

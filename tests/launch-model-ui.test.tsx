@@ -100,7 +100,7 @@ class FakeTransport implements IdeasHostTransport {
 
   constructor(
     launchModels: Record<string, string> = {},
-    options: { available?: boolean; efforts?: Record<string, string> } = {},
+    options: { available?: boolean; efforts?: Record<string, string>; useTaskBoard?: boolean } = {},
   ) {
     this.view = {
       available: options.available ?? true,
@@ -108,6 +108,7 @@ class FakeTransport implements IdeasHostTransport {
         ...IDEAS_SETTINGS_DEFAULTS,
         launchModelByWorkspace: launchModels,
         launchReasoningEffortByWorkspace: options.efforts ?? {},
+        ...(options.useTaskBoard === undefined ? {} : { useTaskBoard: options.useTaskBoard }),
       }),
       revision: 1,
     }
@@ -687,46 +688,51 @@ describe('the reasoning effort selector', () => {
     expect(query('#dsh-ideas-reasoning-effort')).toBeNull()
   })
 
-  it('shows no selector on a card-backed idea, and pins no level', async () => {
+  it('offers the selector on a card-backed idea too, and pins the level with the model', async () => {
     const transport = new FakeTransport()
-    // A reasoning model AND a card: the mirror patch is model-only, so the
-    // window must not offer a choice the run could not keep.
+    // A reasoning model AND a card: a current TaskBoard stores the effort next
+    // to the model and applies it when it selects the execution model, so the
+    // window offers the same choice as a direct launch.
     await renderBoard(transport, REASONING_CATALOG, snapshot())
     await openModal('launchable')
 
     expect(query('#dsh-ideas-model')).not.toBeNull()
-    expect(query('#dsh-ideas-reasoning-effort')).toBeNull()
-    // And it SAYS so. A selector that is merely absent is indistinguishable
-    // from a broken one — which is exactly how it was read on a real board,
-    // where every open idea carries a card and the feature was therefore
-    // invisible.
-    expect(query('[data-dsh-ideas-effort-unavailable]')?.textContent).toBe(t('launch.effortCardBacked'))
+    expect(query('#dsh-ideas-reasoning-effort')).not.toBeNull()
+    expect(query('[data-dsh-ideas-effort-unavailable]')).toBeNull()
 
     click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
     await act(async () => { await Promise.resolve() })
-    expect(transport.launches).toEqual([{ ideaId: 'launchable', model: 'deepseek/deepseek-reasoner' }])
+    expect(transport.launches).toEqual([
+      { ideaId: 'launchable', model: 'deepseek/deepseek-reasoner', reasoningEffort: 'high' },
+    ])
   })
 
-  it('keeps that note off a cardless idea, where the selector IS offered', async () => {
-    const transport = new FakeTransport()
-    await renderBoard(transport, REASONING_CATALOG, cardlessSnapshot())
-    await openModal('cardless')
-
-    expect(query('#dsh-ideas-reasoning-effort')).not.toBeNull()
-    expect(query('[data-dsh-ideas-effort-unavailable]')).toBeNull()
-  })
-
-  it('does not name a stored level in the default line of a card-backed idea', async () => {
-    // The pair is stored for ws1, but this idea runs through its card, which
-    // pins the model alone: printing "Reasoner · Low" would promise a level the
-    // run cannot use. The note below the field carries the explanation instead.
+  it('names a stored level on a card-backed idea, because the run will use it', async () => {
     const transport = new FakeTransport({ ws1: 'deepseek/deepseek-reasoner' }, { efforts: { ws1: 'low' } })
     await renderBoard(transport, REASONING_CATALOG, snapshot())
     await openModal('launchable')
 
     const line = query('[data-dsh-ideas-launch-default]')
-    expect(line?.textContent).toBe('DeepSeek · Reasoner')
-    expect(query('[data-dsh-ideas-effort-unavailable]')).not.toBeNull()
+    expect(line?.textContent).toBe('DeepSeek · Reasoner · Low')
+    expect(query('[data-dsh-ideas-effort-unavailable]')).toBeNull()
+  })
+
+  it('keeps Launch on a card whose status would otherwise hide it, and says why', async () => {
+    // The user switched the TaskBoard off. The card says `done`, which normally
+    // hides the Launch button (a second run next to the run of record would be
+    // a lie) — but with the board bypassed the card is not the run of record.
+    const board = snapshot()
+    board.ideas[0] = { ...board.ideas[0]!, taskBoardStatus: 'done' }
+    const transport = new FakeTransport({}, { useTaskBoard: false })
+    await renderBoard(transport, REASONING_CATALOG, board)
+    expect(launchButtonIn('launchable')).not.toBeNull()
+
+    await openModal('launchable')
+    expect(query('[data-dsh-ideas-taskboard-off]')?.textContent).toBe(t('launch.taskBoardOff'))
+
+    click(query('[data-dsh-ideas-launch-submit]') as HTMLElement)
+    await act(async () => { await Promise.resolve() })
+    expect(transport.launches).toEqual([{ ideaId: 'launchable', model: 'deepseek/deepseek-reasoner', reasoningEffort: 'high' }])
   })
 
   it('still names the stored level on a cardless idea, which the run will use', async () => {

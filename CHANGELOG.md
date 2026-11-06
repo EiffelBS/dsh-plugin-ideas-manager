@@ -30,12 +30,29 @@ Versions before 0.3.0 predate this file.
   the package now, so the plugin page can display it.
 - **The Ideas section carries a bulb glyph** in the Settings navigation rail on
   current DSH hosts, instead of the generic gear fallback.
+- **You can switch the TaskBoard off from the board's own settings.** A new
+  **Use the TaskBoard** option, on by default, keeps the historical behaviour.
+  Turn it off and the ideas board stays standalone **even though the TaskBoard is
+  installed and active**: no card is created, updated or archived, no card is
+  read, and **Launch** always opens a direct session — including for an idea that
+  still carries a card. Existing cards are left exactly as they are, and turning
+  the option back on resumes the mirror for the ideas still linked to one. The
+  launch window says which backend will run while the option is off.
+- **Reasoning effort now reaches TaskBoard runs too.** The launch window used to
+  withhold the effort selector on an idea backed by a card, because the card
+  carried only the model. A current TaskBoard stores the reasoning level on the
+  card next to the model and applies it when it starts the execution, so the
+  selector is offered everywhere and the chosen level travels with the run —
+  including the workspace default's pair.
 
 ### Compatibility
 
 - Everything above degrades on older Hosts: a DSH before 0.2.2 has no section
   icon and no Plugins-page display metadata, and the gear keeps using the label
-  fallback (now in all eight shipped languages).
+  fallback (now in all eight shipped languages). A TaskBoard from before the task
+  reasoning-effort field existed refuses that one patch field; the plugin then
+  pins the model alone (the level stays the model's own default) and remembers
+  the verdict, so launches keep working unchanged.
 
 ## 0.10.4 - 2026-10-28
 

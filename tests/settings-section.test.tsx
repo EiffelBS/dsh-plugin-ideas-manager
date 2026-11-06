@@ -344,6 +344,7 @@ describe('IdeasSettingsSection page', () => {
       t('settings.columnMinWidth'),
       t('settings.columnMaxWidth'),
       t('settings.staleAfterDays'),
+      t('settings.useTaskBoard'),
       t('settings.defaultTab'),
       t('settings.openOrdering'),
       t('settings.runningFirst'),
@@ -353,13 +354,13 @@ describe('IdeasSettingsSection page', () => {
     ])
     // Four number rows (tagRows + the two column-width bounds + the stale-days
     // threshold), five selects (density + language + direct-launch permission +
-    // open tab + open column order), five toggle switches.
+    // open tab + open column order), six toggle switches.
     expect(host.querySelectorAll(`.${classes.settingsNumber}`)).toHaveLength(4)
     expect(host.querySelectorAll(`.${classes.settingsSelect}`)).toHaveLength(5)
     const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
-    // renderMarkdown (on by default), then runningFirst (on by default), then
-    // the three shipped-off toggles.
-    expect(checks.map(box => box.checked)).toEqual([true, true, false, false, false])
+    // useTaskBoard, renderMarkdown and runningFirst are on by default; the
+    // remaining three ship off.
+    expect(checks.map(box => box.checked)).toEqual([true, true, true, false, false, false])
     for (const toggle of checks) {
       const heading = toggle.parentElement
       expect(heading?.classList.contains(classes.settingsRowHeading)).toBe(true)
@@ -372,14 +373,17 @@ describe('IdeasSettingsSection page', () => {
     const transport = new ConfigTransport()
     const client = makeClient(transport)
     await render(client)
-    const checks = Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[]
-    // rememberScope (third switch) is off by default; toggle it ON.
+    // The TaskBoard switch: on by default, and one click turns the whole card
+    // backend off for this profile.
+    const box = host.querySelector(`input[aria-label="${t('settings.useTaskBoard')}"]`) as HTMLInputElement
+    expect(box.checked).toBe(true)
     await act(async () => {
-      checks[2]!.click()
+      box.click()
       await new Promise(resolve => { setTimeout(resolve, 0) })
     })
-    expect(transport.saved).toEqual([{ rememberWorkspaceScope: true }])
-    expect((Array.from(host.querySelectorAll(`.${classes.settingsToggle}`)) as HTMLInputElement[])[2]!.checked).toBe(true)
+    expect(transport.saved).toEqual([{ useTaskBoard: false }])
+    const fresh = host.querySelector(`input[aria-label="${t('settings.useTaskBoard')}"]`) as HTMLInputElement
+    expect(fresh.checked).toBe(false)
   })
 
   it('saves the card density select on change', async () => {

@@ -735,9 +735,9 @@ export class IdeasClient {
    *
    * `model` is the `provider/model` target id, or undefined to let the run
    * keep the session default. `reasoningEffort` is an adapter-owned effort id
-   * for THIS run; it travels with the model and only reaches the direct-session
-   * backend (the card mirror patch is model-only), so it is ignored when the
-   * run has no model to pin or goes through a card.
+   * for THIS run; it travels with the model and reaches both backends: the
+   * fresh session gets it through `selectModel`, and a TaskBoard card stores it
+   * beside the model (an older board falls back to the model alone).
    *
    * @throws when the transport predates the launch route (`launch-unavailable`).
    */

@@ -130,14 +130,14 @@ have to hunt the card back in the Overview to start a run.
    **Model default** pins no effort at all. DSH tells you which of the two ways
    it will run before you commit. When this workspace already has a **default
    launch model**, the modal skips the question and just names the model the
-   run will use. The effort selector is honest about where it can go: it is
-   offered only when the run reaches a fresh session, because a TaskBoard card
-   carries the model and nothing else.
+   run will use. The effort travels with the run on **both** backends: a fresh
+   session receives it with the model, and a current TaskBoard stores it on the
+   card beside the model and applies it when the execution starts.
 2. **With the TaskBoard plugin installed**, the run goes through that idea's
-   board card. **Without it — or with the TaskBoard's own master switch off** —
-   DSH opens a brand-new chat session in the idea's workspace instead. Either way
-   you get a real execution, and the board needs no extra plugin for the feature
-   to work.
+   board card. **Without it — with its own master switch off, or with the
+   [Use the TaskBoard](#settings) option turned off** — DSH opens a brand-new
+   chat session in the idea's workspace instead. Either way you get a real
+   execution, and the board needs no extra plugin for the feature to work.
 3. The run happens in the **background**: closing the tab, or restarting the web
    instance, does not lose it and DSH keeps watching it for you.
 4. While it runs, the card shows a blue **Running** pill and an
@@ -446,13 +446,21 @@ On the **Display** tab:
   ideas whose run is in flight above whichever of the three orders is selected,
   without changing that order. A failed run keeps its red tag but stays where the
   selected order puts it.
+- **Use the TaskBoard** (`useTaskBoard`, on by default): while the TaskBoard
+  plugin is installed and active, ideas are mirrored onto it and **Launch
+  execution** runs through their cards. Turn this off to keep the ideas board
+  standalone even with the TaskBoard installed: nothing is mirrored or read,
+  every launch opens a direct session — including for an idea that still carries
+  a card — and existing cards are left exactly as they are. Turning it back on
+  resumes the mirror for the ideas still linked to a card.
 - **Direct-launch permission** (`directRunPermission`, default
-  `workspace-write`): the level granted to the fresh session when you launch an
-  idea that has **no TaskBoard card**. The run brief asks for implementation, so a
-  read-only session would only answer with a plan and settle the run having
-  written nothing. Card-backed ideas are not affected — a mirrored card carries
-  the TaskBoard's own deployment permission (never above it), so launching one
-  never asks for a confirmation.
+  `workspace-write`): the level granted to the fresh session when a run goes
+  through a direct session — an idea with no card, or every idea while **Use the
+  TaskBoard** is off. The run brief asks for implementation, so a read-only
+  session would only answer with a plan and settle the run having written
+  nothing. Card-backed ideas are not affected — a mirrored card carries the
+  TaskBoard's own deployment permission (never above it), so launching one never
+  asks for a confirmation.
 - **Stale after (days)** (`staleAfterDays`, default 30): how long an **open** idea
   may go without an update before it wears the quiet *Stale* badge on its Overview
   card and its Priorities row. `0` turns the marker off. A display setting like the
@@ -500,6 +508,11 @@ Triage (scores, rationale, rank) is **ideas-only** and is never mirrored — it'
 backlog opinion, not a board state. After a run, the card's content is frozen, so
 later edits to the idea no longer replicate to it.
 
+**The mirror is yours to switch off.** The board's settings carry a **Use the
+TaskBoard** option: turned off, an installed and active TaskBoard is ignored
+entirely — nothing is mirrored or read, and launches run in a fresh session.
+Turning it back on resumes the mirror for every idea still linked to a card.
+
 ---
 
 ## Host compatibility
@@ -513,6 +526,10 @@ later edits to the idea no longer replicate to it.
   icon, short guide) need DSH 0.2.2 or newer. An older Host shows the plugin
   under its package name, and the board's gear still opens the section through
   the label fallback.
+- A TaskBoard from before its task-level reasoning-effort field cannot store the
+  level: the plugin detects the refusal, relaunches the card patch with the model
+  alone (the level stays the model's own default) and remembers it for the rest
+  of the session, so launches keep working unchanged.
 
 ---
 

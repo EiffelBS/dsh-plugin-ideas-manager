@@ -68,6 +68,15 @@ describe('launch visibility', () => {
     expect(canLaunch(target({ taskBoardId: 'task-1', taskBoardStatus: 'done' }))).toBe(false)
   })
 
+  it('ignores the card status when the user switched the TaskBoard off', () => {
+    // With the board bypassed the card is not the run of record, so its state
+    // must not hide the Launch button — the run opens a fresh session.
+    expect(canLaunch(target({ taskBoardId: 'task-1', taskBoardStatus: 'done' }), false)).toBe(true)
+    expect(canLaunch(target({ taskBoardId: 'task-1', taskBoardStatus: 'running' }), false)).toBe(true)
+    // A direct run in flight still gates it: that IS the run of record now.
+    expect(canLaunch(target({ runStatus: 'running' }), false)).toBe(false)
+  })
+
   it('is hidden on every non-open column', () => {
     for (const status of ['underReview', 'archived', 'declined'] as const) {
       expect(canLaunch(target({ status }))).toBe(false)

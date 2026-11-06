@@ -10,10 +10,11 @@
  * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
  * passivity above is unchanged: no idea mutation ever starts a run, and `done`
  * stays runner-owned. Two execution backends share that one entry point: the
- * mirrored card when the task-board plugin is present, otherwise a FRESH direct
- * session (v2) started through the Host `typertGateway`. Both settle from this
- * service's run poll, so a launch keeps going — and keeps being observed — when
- * the browser tab is closed.
+ * mirrored card when the task-board plugin is present AND the board is enabled
+ * (deployment config and the user's `useTaskBoard` setting), otherwise a FRESH
+ * direct session (v2) started through the Host `typertGateway`. Both settle from
+ * this service's run poll, so a launch keeps going — and keeps being observed —
+ * when the browser tab is closed.
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -128,6 +129,29 @@ export class IdeasHostService {
    */
   isActive(): boolean {
     return this.active
+  }
+
+  /**
+   * Whether the TaskBoard backend may be used RIGHT NOW.
+   *
+   * Two independent switches, ANDed, and both are live:
+   * - `autoMirror` (deployment config) is the operator's kill switch; it can
+   *   only turn the mirror off.
+   * - `useTaskBoard` (persisted setting) is the USER's own choice, exposed in
+   *   the settings section: with it off the ideas board is standalone even
+   *   though the TaskBoard is installed, active and answering.
+   *
+   * Read at every decision (mirror scheduling, the card poll, launch backend
+   * selection) rather than cached at apply time, so a settings write takes
+   * effect on the very next action with no restart. A service whose settings
+   * reader is not bound yet sees `undefined`, which is the documented default
+   * (`true`). When this answers false, NO request reaches the TaskBoard: no
+   * probe, no card read, no card write, and a launch always opens a fresh
+   * direct session.
+   */
+  private taskBoardOn(): boolean {
+    if (!this.autoMirror || this.mirror === undefined) return false
+    return this.settings?.()?.useTaskBoard !== false
   }
 
   snapshot(): IdeasSnapshot {
@@ -297,7 +321,8 @@ export class IdeasHostService {
    * on the idea (a `failed` task leaves the idea in the backlog behind a "Task
    * failed" badge), the generic `runStatus` follows that same observation, and
    * any open idea whose card is `done` moves to `underReview` (the review
-   * gate). No-op when the mirror is absent or autoMirror is off.
+   * gate). The card half is a no-op when the board is absent, the deployment
+   * disabled the mirror, or the user turned `useTaskBoard` off.
    */
   /**
    * Arm the run poll. It is the ONE background timer of the service and it
@@ -307,7 +332,13 @@ export class IdeasHostService {
    */
   startUnderReviewPoll(intervalMs: number = UNDER_REVIEW_POLL_MS): void {
     if (this.reviewPoll !== undefined || this.disposed) return
-    if ((this.mirror === undefined || !this.autoMirror) && this.sessions === undefined) return
+    // Arm from BACKEND AVAILABILITY, not from the live preference: the user can
+    // turn the TaskBoard on again at any time, and a poll that was never armed
+    // could not notice. A tick with the card half switched off costs one early
+    // return; a deployment whose operator disabled the mirror AND that has no
+    // session gateway still runs no timer at all.
+    const cardBackendExists = this.autoMirror && this.mirror !== undefined
+    if (!cardBackendExists && this.sessions === undefined) return
     this.reviewPoll = setInterval(() => { void this.pollRunTransitions() }, intervalMs)
   }
 
@@ -383,7 +414,7 @@ export class IdeasHostService {
    * Best-effort: any failure is ignored.
    */
   private async pollCardRuns(): Promise<void> {
-    if (this.mirror === undefined || !this.autoMirror) return
+    if (this.mirror === undefined || !this.taskBoardOn()) return
     let statuses: Map<string, string> | undefined
     try {
       statuses = await this.mirror.fetchTaskStatuses()
@@ -467,9 +498,10 @@ export class IdeasHostService {
    *   "no model": the workspace default applies, then the backend's own
    *   default (see {@link workspaceLaunchModel}).
    * @param reasoningEffort - an adapter-owned effort id for THIS run, read from
-   *   the model catalog. It travels with the model and only the direct-session
-   *   backend can carry it (the card mirror patch is model-only), so it is
-   *   ignored on the card path.
+   *   the model catalog. It travels with the model: the card backend pins it on
+   *   the card next to the model (a current TaskBoard stores it; an older board
+   *   whose strict parser does not know the field falls back to the model
+   *   alone), and the session backend sends it with `selectModel`.
    *
    * @throws when the plugin is disabled, no backend is available, the idea is
    *   unknown, or the chosen backend refuses the run (the message carries its
@@ -496,15 +528,18 @@ export class IdeasHostService {
     // launch sees the idea as it is NOW, including a card id a previous op on
     // this chain just bound.
     const idea = this.ledger.idea(ideaId) ?? captured
-    // Backend resolution: the card wins whenever the task-board
-    // plugin is present AND the mirror is on — including for an idea that has
-    // no card YET, because `launchTask` mints it (that is what lets a freshly
-    // captured idea run, and it keeps the card as the single run of record).
-    // The direct session is the fallback, and it is a RUNTIME one: a board that
-    // turns out to be absent at launch time (plugin uninstalled since boot,
-    // bridge disabled) falls through to a fresh session instead of a dead end,
-    // as long as the Host serves a session gateway.
-    const viaCard = this.mirror !== undefined && this.autoMirror
+    // Backend resolution: the card wins whenever the task-board plugin is
+    // present AND the board is enabled for this plugin — the deployment's
+    // `autoMirror` AND the user's persisted `useTaskBoard` setting, both read
+    // here and now. That includes an idea with no card YET, because
+    // `launchTask` mints it (that is what lets a freshly captured idea run, and
+    // it keeps the card as the single run of record). With the user's switch
+    // OFF the card is not even considered, even on an idea that still carries a
+    // card id: the run opens a fresh session and the existing card is left
+    // untouched. The direct session is also the fallback when a board that was
+    // expected turns out to be absent at launch time (plugin uninstalled since
+    // boot), as long as the Host serves a session gateway.
+    const viaCard = this.taskBoardOn()
     if (!viaCard && this.sessions === undefined) throw new TaskBoardMirrorDisabledError()
     const outcome = await this.enqueueChain(ideaId, async (): Promise<{ runId: string; taskId?: string }> => {
       const fresh = this.ledger.idea(ideaId) ?? idea
@@ -537,13 +572,13 @@ export class IdeasHostService {
       const effort = explicitEffort !== undefined && explicitEffort !== ''
         ? explicitEffort
         : fromStore ? this.workspaceLaunchEffort(fresh) : undefined
-      // The effort reaches ONLY the direct-session backend: the card path patches
-      // the card's `model` (model-only, frozen by design), so a reasoning effort
-      // could never travel with it. Passing it to launchInSession is therefore
-      // the whole delivery — the card path simply ignores it.
+      // The effort qualifies the model and reaches BOTH backends: the session
+      // backend hands it to `selectModel`, the card backend patches it onto the
+      // card with the model. The resolution above is the one shared answer, so
+      // neither backend can silently run at a level the human did not pick.
       if (!viaCard) return await this.launchInSession(fresh, target, effort)
       try {
-        const taskId = await this.mirror!.launchTask(fresh, target)
+        const taskId = await this.mirror!.launchTask(fresh, target, effort)
         this.ledger.bindTaskBoardId(ideaId, taskId)
         this.ledger.setRunStatus(ideaId, 'running')
         return { runId: taskId, taskId }
@@ -809,7 +844,7 @@ export class IdeasHostService {
    * self-heal).
    */
   private scheduleMirror(action: IdeasAction, ideas: readonly IdeaRecord[]): void {
-    if (!this.autoMirror || this.mirror === undefined) return
+    if (!this.taskBoardOn()) return
     // The followUp verb creates a NEW open idea (the child): its card mirrors
     // as a fresh create, while the parent card is already done (nothing to
     // archive). Every other action mirrors on its own idea id.

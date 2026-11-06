@@ -586,6 +586,20 @@ export interface IdeasSettingsValue {
     /** Permission a direct (card-less) launch starts its fresh session at. */
     directRunPermission: IdeasRunPermission;
     /**
+     * Mirror ideas onto the TaskBoard and run them through their cards whenever
+     * that plugin is installed and active.
+     *
+     * `true` (the default) keeps the historical behaviour: capture/update/archive
+     * mirror onto the board, a launch starts the card, and the card's status
+     * drives the review gate. `false` is the user's own bypass, independent of
+     * whether the board is installed: nothing is mirrored, no card is read or
+     * written, a launch always opens a fresh direct session (even for an idea
+     * that still carries a card id), and existing cards are left untouched. It is
+     * a PREFERENCE, never a ledger mutation — turning it back on resumes the
+     * mirror for every idea that is still bound.
+     */
+    useTaskBoard: boolean;
+    /**
      * Days without an update after which an OPEN idea wears a quiet *stale*
      * badge. View only: it is computed at render time from the row's
      * own `updatedAt`, so it stores nothing on the idea and costs the Host no
@@ -773,9 +787,10 @@ export interface IdeasLaunchBody {
     /**
      * Adapter-owned reasoning effort id for THIS run, read from the model catalog
      * and never hardcoded. Absent pins no effort: the backend resolves the model's
-     * own default. Additive and backend-selective — only the direct-session
-     * backend can carry it (the card mirror patch is model-only), so the Host
-     * ignores it on the card path.
+     * own default. Additive — both execution backends carry it: the direct session
+     * sends it with `selectModel`, and a current TaskBoard stores it on the card
+     * beside the model (an older board refuses the field and the Host retries
+     * with the model alone).
      */
     reasoningEffort?: string;
 }

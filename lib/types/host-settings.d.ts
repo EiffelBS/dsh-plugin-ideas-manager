@@ -60,6 +60,7 @@ export declare const IdeasSettingsSchema: z<Schemastery.ObjectS<{
     openOrdering: z<string, string>;
     runningFirst: z<boolean, boolean>;
     directRunPermission: z<string, string>;
+    useTaskBoard: z<boolean, boolean>;
     staleAfterDays: z<number, number>;
     launchModelByWorkspace: z<any, any>;
     launchReasoningEffortByWorkspace: z<any, any>;
@@ -76,6 +77,7 @@ export declare const IdeasSettingsSchema: z<Schemastery.ObjectS<{
     openOrdering: z<string, string>;
     runningFirst: z<boolean, boolean>;
     directRunPermission: z<string, string>;
+    useTaskBoard: z<boolean, boolean>;
     staleAfterDays: z<number, number>;
     launchModelByWorkspace: z<any, any>;
     launchReasoningEffortByWorkspace: z<any, any>;

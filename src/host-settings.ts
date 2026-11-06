@@ -109,6 +109,7 @@ export const IdeasSettingsSchema = z.object({
   openOrdering: z.string().default(IDEAS_SETTINGS_DEFAULTS.openOrdering),
   runningFirst: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.runningFirst),
   directRunPermission: z.string().default(IDEAS_SETTINGS_DEFAULTS.directRunPermission),
+  useTaskBoard: z.boolean().default(IDEAS_SETTINGS_DEFAULTS.useTaskBoard),
   staleAfterDays: z.number().default(IDEAS_SETTINGS_DEFAULTS.staleAfterDays),
   // One default launch model per workspace, keyed by the stable
   // workspace id (see launchModelByWorkspaceSchema above).

@@ -435,6 +435,24 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
 
           <div className={classes.settingsCard}>
             <div className={classes.settingsGroup}>{t('settings.groupBehavior')}</div>
+            {/* The backend switch first: it decides whether a launch uses a
+                TaskBoard card at all, which is the premise of the direct-launch
+                permission further up the Display card. */}
+            <SettingsRow
+              title={t('settings.useTaskBoard')}
+              desc={t('settings.useTaskBoardDesc')}
+              controlOnTitle
+              control={(
+                <input
+                  className={classes.settingsToggle}
+                  type="checkbox"
+                  checked={value.useTaskBoard}
+                  disabled={disabled}
+                  aria-label={t('settings.useTaskBoard')}
+                  onChange={event => { save({ useTaskBoard: event.target.checked }) }}
+                />
+              )}
+            />
             <SettingsRow
               title={t('settings.defaultTab')}
               desc={t('settings.defaultTabDesc')}

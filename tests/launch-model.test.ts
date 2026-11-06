@@ -42,17 +42,21 @@ afterEach(() => {
 /** In-memory task-board: a mutable card list plus canned per-verb answers. */
 class FakeTaskBoard implements TaskBoardTransport {
   posts: TaskBoardActionEnvelope[] = []
+  stateReads = 0
   stateStatus = 200
   stateTasks: Array<{ id: string; status: string }> = []
   answers = new Map<string, { status: number; body?: unknown }>()
+  /** Optional per-post interceptor: an answer here wins over `answers`. */
+  onPost: ((envelope: TaskBoardActionEnvelope) => { status: number; body?: unknown } | undefined) | undefined
 
   async getState() {
+    this.stateReads += 1
     return { status: this.stateStatus, body: { schemaVersion: 3, revision: 1, tasks: this.stateTasks } }
   }
 
   async postAction(envelope: TaskBoardActionEnvelope) {
     this.posts.push(envelope)
-    return this.answers.get(envelope.action.kind) ?? { status: 200 }
+    return this.onPost?.(envelope) ?? this.answers.get(envelope.action.kind) ?? { status: 200 }
   }
 }
 
@@ -88,6 +92,7 @@ async function serve(options: {
   launchModels?: Record<string, string>
   launchReasoningEfforts?: Record<string, string>
   directRunPermission?: string
+  useTaskBoard?: boolean
   withMirror?: boolean
   autoMirror?: boolean
   boardAbsent?: boolean
@@ -118,6 +123,7 @@ async function serve(options: {
     ...(options.launchModels === undefined ? {} : { launchModelByWorkspace: options.launchModels }),
     ...(options.launchReasoningEfforts === undefined ? {} : { launchReasoningEffortByWorkspace: options.launchReasoningEfforts }),
     ...(options.directRunPermission === undefined ? {} : { directRunPermission: options.directRunPermission }),
+    ...(options.useTaskBoard === undefined ? {} : { useTaskBoard: options.useTaskBoard }),
   })
   service.setSettingsReader(() => value)
   service.apply('create-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws1' } })
@@ -249,11 +255,11 @@ describe('the same default must reach BOTH backends', () => {
   })
 })
 
-describe('the reasoning effort reaches the session, never the card', () => {
-  // The effort is an adapter-owned id that rides the model's selectModel call.
-  // It can ONLY reach the direct-session backend: the card mirror patch is
-  // model-only (frozen by design once the card has run), so a card-backed run
-  // ignores it. These tests pin both halves.
+describe('the reasoning effort reaches BOTH backends', () => {
+  // The effort is an adapter-owned id: it rides the model's selectModel call on
+  // a fresh session, and the same non-content card patch as the model on a
+  // mirrored card (a current TaskBoard stores it and applies it when it selects
+  // the execution model). These tests pin both halves.
   it('pins it on the fresh session through selectModel, alongside the model', async () => {
     const { service, taskBoard, gateway } = await serve({
       launchModels: { ws1: 'deepseek/deepseek-chat' },
@@ -348,18 +354,123 @@ describe('the reasoning effort reaches the session, never the card', () => {
     })
   })
 
-  it('ignores it on the card backend: the mirror patch stays model-only', async () => {
+  it('pins it on the card, in the same non-content patch as the model', async () => {
     const { service, taskBoard } = await serve({ launchModels: { ws1: 'deepseek/deepseek-chat' } })
 
     const result = await service.launchIdea('idea-1', undefined, undefined, 'high')
 
     expect(result.taskId).toBe('idea-idea-1')
-    // The card patch carries the model and nothing else — no effort key, which
-    // is exactly the frozen-by-design limit the board's selector is gated on.
+    // Model and level travel together, before the bare run: the task-board
+    // applies both when it selects the execution model.
+    expect(taskBoard.posts.map(entry => entry.action)).toEqual([
+      { kind: 'update', taskId: 'idea-idea-1', patch: { model: 'deepseek/deepseek-chat', reasoningEffort: 'high' } },
+      { kind: 'run', taskId: 'idea-idea-1' },
+    ])
+  })
+
+  it('retries the card patch without the level on an older board, and remembers it', async () => {
+    const { service, taskBoard } = await serve({ launchModels: { ws1: 'deepseek/deepseek-chat' } })
+    // A TaskBoard from before the reasoning-effort field parses an update patch
+    // with an exact-key allow-list: the whole action comes back 400
+    // `invalid-action`, and NOTHING was applied.
+    taskBoard.onPost = (envelope) => {
+      if (envelope.action.kind !== 'update') return undefined
+      const patch = (envelope.action as { patch?: { reasoningEffort?: string } }).patch
+      return patch?.reasoningEffort === undefined ? undefined : { status: 400, body: { error: 'invalid-action' } }
+    }
+
+    const result = await service.launchIdea('idea-1', undefined, undefined, 'high')
+
+    expect(result.taskId).toBe('idea-idea-1')
+    expect(taskBoard.posts.map(entry => entry.action)).toEqual([
+      { kind: 'update', taskId: 'idea-idea-1', patch: { model: 'deepseek/deepseek-chat', reasoningEffort: 'high' } },
+      { kind: 'update', taskId: 'idea-idea-1', patch: { model: 'deepseek/deepseek-chat' } },
+      { kind: 'run', taskId: 'idea-idea-1' },
+    ])
+
+    // The verdict is remembered: the next launch sends the model alone and pays
+    // no extra round trip.
+    taskBoard.posts = []
+    await service.launchIdea('idea-1', undefined, undefined, 'high')
     expect(taskBoard.posts.map(entry => entry.action)).toEqual([
       { kind: 'update', taskId: 'idea-idea-1', patch: { model: 'deepseek/deepseek-chat' } },
       { kind: 'run', taskId: 'idea-idea-1' },
     ])
+  })
+})
+
+describe('the user can bypass the TaskBoard even when it is installed', () => {
+  it('launches a BOUND idea in a fresh session and never touches the card', async () => {
+    const { service, taskBoard, gateway } = await serve({
+      launchModels: { ws1: 'deepseek/deepseek-chat' },
+      useTaskBoard: false,
+    })
+    // Both ideas already carry their deterministic card; the switch must ignore
+    // the binding rather than run the card.
+    const result = await service.launchIdea('idea-1')
+
+    expect(result.taskId).toBeUndefined()
+    expect(gateway.selectModelArgs()).toEqual({
+      sessionId: 'session-1',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    })
+    expect(taskBoard.posts).toHaveLength(0)
+  })
+
+  it('stops mirroring actions while it is off', async () => {
+    const { service, taskBoard } = await serve({ useTaskBoard: false })
+    service.apply('create-3', { kind: 'create', id: 'idea-3', input: { title: 'T3', body: 'B3', workspaceId: 'ws1' } })
+    await service.flushMirror()
+
+    expect(taskBoard.posts).toHaveLength(0)
+    expect(service.idea('idea-3')?.taskBoardId).toBeUndefined()
+  })
+
+  it('honours a flip at the very next action, with no restart', async () => {
+    // The setting is read per decision, not cached at apply: turning the switch
+    // off must stop the mirror on the next action and launch directly, and
+    // turning it back on must resume both without a restart.
+    const fresh = join(tmpdir(), `ideas-107-${process.pid}-${randomUUID()}`)
+    mkdirSync(fresh, { recursive: true })
+    const taskBoard = new FakeTaskBoard()
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'backlog' }]
+    const gateway = new FakeGateway()
+    const service = new IdeasHostService({
+      dir: fresh,
+      mirror: new TaskBoardMirror({ transport: taskBoard }),
+      sessions: new SessionRunner(gateway),
+    })
+    const value: IdeasSettingsValue = { ...IDEAS_SETTINGS_DEFAULTS }
+    service.setSettingsReader(() => value)
+    service.apply('create-1', { kind: 'create', id: 'idea-1', input: { title: 'T', body: 'B', workspaceId: 'ws1' } })
+    await service.flushMirror()
+    taskBoard.posts = []
+
+    value.useTaskBoard = false
+    const direct = await service.launchIdea('idea-1')
+    expect(direct.taskId).toBeUndefined()
+    expect(taskBoard.posts).toHaveLength(0)
+
+    value.useTaskBoard = true
+    const onCard = await service.launchIdea('idea-1')
+    expect(onCard.taskId).toBe('idea-idea-1')
+    expect(taskBoard.posts.map(entry => entry.action.kind)).toContain('run')
+  })
+
+  it('reads no card at all while it is off, even for an idea still bound to one', async () => {
+    const { service, taskBoard } = await serve({ useTaskBoard: false })
+    // A card bound BEFORE the switch was turned off stays on the idea (the
+    // setting is a preference, never a ledger rewrite) but is not consulted.
+    service.ledger.bindTaskBoardId('idea-1', 'idea-idea-1')
+    taskBoard.stateTasks = [{ id: 'idea-idea-1', status: 'done' }]
+    taskBoard.stateReads = 0
+
+    await service.pollRunTransitions()
+
+    expect(taskBoard.stateReads).toBe(0)
+    expect(service.idea('idea-1')?.status).toBe('open')
+    expect(service.idea('idea-1')?.taskBoardStatus).toBeUndefined()
   })
 })
 

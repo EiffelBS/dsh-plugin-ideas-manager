@@ -28,7 +28,12 @@ export interface Config {
      * Set false (default) to keep the board silent in prompts.
      */
     announceToAgent?: boolean;
-    /** Whether the TaskBoard mirror is attempted when the bridge is detected (P2). */
+    /**
+     * Deployment-level kill switch for the TaskBoard mirror (P2). False disables
+     * the bridge for every idea, whatever the user's `useTaskBoard` setting says;
+     * true leaves the choice to that setting (default on), which the settings
+     * section exposes.
+     */
     autoMirror?: boolean;
 }
 export declare const Config: z<Config>;

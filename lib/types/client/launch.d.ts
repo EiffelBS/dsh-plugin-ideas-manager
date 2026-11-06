@@ -51,8 +51,14 @@ export declare const LAUNCHABLE_TASK_STATUSES: readonly string[];
  * card status therefore only constrains a card that EXISTS — a card that is
  * `running` or `done` is the run of record, and starting a second, invisible
  * session next to it would be a lie, so the button stays hidden either way.
+ *
+ * `useTaskBoard` is the user's persisted bypass switch: when it is off the card
+ * is not the run of record at all, so its status stops gating the button — the
+ * launch opens a fresh session even on an idea that still carries a card id.
+ * @param idea - the idea whose Launch affordance is being decided.
+ * @param useTaskBoard - whether the ideas board uses the TaskBoard at all.
  */
-export declare function canLaunch(idea: LaunchTarget): boolean;
+export declare function canLaunch(idea: LaunchTarget, useTaskBoard?: boolean): boolean;
 /** What a backend answers after accepting a run. */
 export interface LaunchOutcome {
     /** Backend-neutral run handle (v1: the mirrored card id). */
@@ -169,7 +175,7 @@ export declare class HostLaunchBackend implements LaunchBackend {
  */
 export declare function launchBackends(transport: IdeasHostTransport): LaunchBackend[];
 /** The first backend able to run this idea, or undefined (no button). */
-export declare function resolveLaunchBackend(idea: LaunchTarget, transport: IdeasHostTransport): Promise<LaunchBackend | undefined>;
+export declare function resolveLaunchBackend(idea: LaunchTarget, transport: IdeasHostTransport, useTaskBoard?: boolean): Promise<LaunchBackend | undefined>;
 /**
  * A refused launch, split by what the board can do about it.
  *

@@ -19,6 +19,7 @@ import { IdeasSettingsStore } from '../src/host-settings.ts'
 import {
   IDEAS_API_PREFIX,
   IDEAS_SETTINGS_DEFAULTS,
+  type IdeasSettingsPatch,
   type IdeasSettingsView,
 } from '../src/protocol.ts'
 
@@ -85,8 +86,8 @@ function post(url: string, body: unknown, marker = true): Promise<Response> {
 }
 
 /** In-memory port recording the writes (optionally throwing a coded error). */
-function fakePort(fail?: 'conflict', stored?: { tagRows: number }): { port: IdeasConfigPort; writes: Array<{ patch: { tagRows?: number }; expectedRevision: number | undefined }> } {
-  const writes: Array<{ patch: { tagRows?: number }; expectedRevision: number | undefined }> = []
+function fakePort(fail?: 'conflict', stored?: { tagRows: number }): { port: IdeasConfigPort; writes: Array<{ patch: IdeasSettingsPatch; expectedRevision: number | undefined }> } {
+  const writes: Array<{ patch: IdeasSettingsPatch; expectedRevision: number | undefined }> = []
   const current = stored ?? { tagRows: 3 }
   const view = (revision: number): IdeasSettingsView => ({
     available: true,
@@ -157,6 +158,14 @@ describe('POST /api/ideas/config', () => {
       value: { ...IDEAS_SETTINGS_DEFAULTS, tagRows: 5 },
       revision: 5,
     })
+  })
+
+  it('carries the TaskBoard bypass switch to the settings port unchanged', async () => {
+    const { port, writes } = fakePort()
+    const base = await serve(() => port)
+    const response = await post(`${base}${IDEAS_API_PREFIX}/config`, { patch: { useTaskBoard: false } })
+    expect(response.status).toBe(200)
+    expect(writes).toEqual([{ patch: { useTaskBoard: false }, expectedRevision: undefined }])
   })
 
   it('reports 503 settings-unavailable without a settings face', async () => {

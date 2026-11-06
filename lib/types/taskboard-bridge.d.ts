@@ -79,10 +79,10 @@ export type TaskBoardAction = {
 }
 /**
  * Start an execution of the card. The task-board accepts EXACTLY
- * `['kind','taskId']` on this kind — the model can NOT travel with the run
- * (it is a task field, pinned by the runner through `session.selectModel`),
- * so {@link TaskBoardMirror.launchTask} patches `model` first and posts the
- * bare `run` after it.
+ * `['kind','taskId']` on this kind — the model and the reasoning effort can
+ * NOT travel with the run (they are task fields, pinned by the runner when it
+ * selects the execution model), so {@link TaskBoardMirror.launchTask} patches
+ * them onto the card first and posts the bare `run` after it.
  */
  | {
     kind: 'run';
@@ -126,11 +126,21 @@ export interface TaskBoardTaskPatch {
     permission?: TaskPermission;
     /**
      * `provider/model` target id. NOT a content field (`title`/`description`/
-     * `prompt` are): a model-only patch stays editable after the first execution
+     * `prompt` are): a model/effort patch stays editable after the first execution
      * and does not touch `permissionConfirmedAt`, which is what lets a launch
      * re-pin the model on a card that already ran.
      */
     model?: string;
+    /**
+     * The reasoning level pinned WITH {@link model}, in the same non-content
+     * patch. A current TaskBoard (0.4.15+) stores it and applies it when it
+     * selects the execution model; a board from before that field existed parses
+     * an update patch with an exact-key allow-list and refuses the whole action
+     * as `invalid-action`. {@link TaskBoardMirror.launchTask} handles that
+     * refusal by retrying the patch without the level, so the run still starts on
+     * the chosen model.
+     */
+    reasoningEffort?: string;
 }
 /** Local mirror of a task-board task row — only the fields the poll reads. */
 export interface TaskBoardTaskLite {
@@ -233,6 +243,14 @@ export declare class TaskBoardMirror {
     private boardDefaultPermission;
     /** Task rows of the last snapshot, read by the launch-time alignment. */
     private snapshotTasks;
+    /**
+     * Whether this board accepts `reasoningEffort` in an update patch.
+     * `undefined` until a launch sends one. A board that refuses the field proves
+     * itself older (its update parser is an exact-key allow-list) and the verdict
+     * is remembered for the process: later launches send the model alone and skip
+     * the wasted round trip.
+     */
+    private effortPatchSupported;
     constructor(options: TaskBoardMirrorOptions);
     /**
      * Feature-detect the task-board plugin. Positive probes are cached; a
@@ -309,18 +327,20 @@ export declare class TaskBoardMirror {
      *  1. `ensureTask` — reuses the whole duplicate guard, so the card is the
      *     deterministic `idea-<id>` one and is (re)created when it was deleted
      *     out-of-band. A launch is never a second card.
-     *  2. `update{model?, permission?}` — a NON-CONTENT patch, and only when
-     *     something actually has to change. Never `taskPatch()`: that sends
-     *     title/description/prompt, which the task-board rejects with `task has
-     *     already been executed` on any card that already ran. The permission is
-     *     raised to the deployment default when the card was minted under an
-     *     older, lower one (the cards 0.7.x created as `read-only`); a card the
-     *     human deliberately raised is left alone, and an unreadable one is
-     *     never written to. Nothing is raised above the deployment default, so
+     *  2. `update{model?, reasoningEffort?, permission?}` — a NON-CONTENT patch,
+     *     and only when something actually has to change. Never `taskPatch()`:
+     *     that sends title/description/prompt, which the task-board rejects with
+     *     `task has already been executed` on any card that already ran. The
+     *     permission is raised to the deployment default when the card was minted
+     *     under an older, lower one (the cards 0.7.x created as `read-only`); a
+     *     card the human deliberately raised is left alone, and an unreadable one
+     *     is never written to. Nothing is raised above the deployment default, so
      *     the task-board's confirmation gate stays silent and the run starts on
-     *     the first click.
-     *  3. `run` — the bare envelope; the task-board pins the model on the fresh
-     *     session and queues the shared run prompt.
+     *     the first click. The effort rides this same patch: a current board
+     *     stores it, an older one refuses the field and the patch is retried
+     *     without it (see {@link updateCard}).
+     *  3. `run` — the bare envelope; the task-board pins the model AND the
+     *     reasoning level on the fresh session and queues the shared run prompt.
      *
      * Throws `TaskBoardUnavailableError` when the plugin is absent,
      * `TaskBoardDisabledError` when it answers but its own master switch is off
@@ -332,7 +352,7 @@ export declare class TaskBoardMirror {
      *
      * @returns the launched task id.
      */
-    launchTask(idea: IdeaRecord, model?: string): Promise<string>;
+    launchTask(idea: IdeaRecord, model?: string, reasoningEffort?: string): Promise<string>;
     /** The task-board plugin is not registered or did not answer. */
     get isUnavailable(): boolean;
     /**
@@ -370,15 +390,30 @@ export declare class TaskBoardMirror {
     private decision;
     /**
      * The executable prompt, shared with the direct-session launch backend
-     * (see src/run-prompt.ts). `model` is intentionally NOT part of the card
-     * content: the card is created with no model, so the run starts on the
-     * session default unless a launch re-pins it through a model-only patch.
-     * `permission` IS stamped, at the deployment default clamped to
-     * `workspace-write` (see {@link mirrorPermissionFor}) — never a constant, so
-     * the card can run at whatever the deployment is configured with.
+     * (see src/run-prompt.ts). `model` and `reasoningEffort` are intentionally
+     * NOT part of the card content: the card is created with neither, so the run
+     * starts on the session default unless a launch re-pins them through a
+     * non-content patch. `permission` IS stamped, at the deployment default
+     * clamped to `workspace-write` (see {@link mirrorPermissionFor}) — never a
+     * constant, so the card can run at whatever the deployment is configured with.
      */
     private createCard;
     private taskPatch;
+    /**
+     * Apply a NON-CONTENT card patch, tolerating a board from before the
+     * reasoning-effort field existed.
+     *
+     * The task-board parses an update patch with an exact-key allow-list, so an
+     * older board refuses the WHOLE action as `invalid-action` (HTTP 400) when it
+     * sees `reasoningEffort`; nothing was applied. In that one case the patch is
+     * retried without the level — the run still starts, on the chosen model and
+     * the model's own default level — and the verdict is remembered so later
+     * launches do not pay the extra round trip. Every other refusal (archived
+     * card, permission gate, board disabled) is surfaced as before.
+     * @param taskId - the card to patch.
+     * @param patch - the non-content fields to apply.
+     */
+    private updateCard;
     /**
      * Post one action envelope and surface the task-board's own refusal.
      *
@@ -389,6 +424,10 @@ export declare class TaskBoardMirror {
      * message so the launch route can hand a readable reason to the board.
      */
     private post;
+    /** Send one action envelope without interpreting the answer. */
+    private send;
+    /** Throw the task-board's own refusal for one non-2xx answer. */
+    private refuse;
 }
 /** Thrown when the task-board plugin is absent; the service logs and moves on. */
 export declare class TaskBoardUnavailableError extends Error {

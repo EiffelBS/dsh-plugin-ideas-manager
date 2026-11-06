@@ -10,10 +10,11 @@
  * an explicit human request (`launchIdea` / POST /api/ideas/launch) — the
  * passivity above is unchanged: no idea mutation ever starts a run, and `done`
  * stays runner-owned. Two execution backends share that one entry point: the
- * mirrored card when the task-board plugin is present, otherwise a FRESH direct
- * session (v2) started through the Host `typertGateway`. Both settle from this
- * service's run poll, so a launch keeps going — and keeps being observed — when
- * the browser tab is closed.
+ * mirrored card when the task-board plugin is present AND the board is enabled
+ * (deployment config and the user's `useTaskBoard` setting), otherwise a FRESH
+ * direct session (v2) started through the Host `typertGateway`. Both settle from
+ * this service's run poll, so a launch keeps going — and keeps being observed —
+ * when the browser tab is closed.
  *
  * Mirror discipline (frozen design decision): the mirror is best-effort and
  * asynchronous — committed ideas never roll back, a failed mirror only logs,
@@ -89,6 +90,25 @@ export declare class IdeasHostService {
      * that is only true if both sides look at one value.
      */
     isActive(): boolean;
+    /**
+     * Whether the TaskBoard backend may be used RIGHT NOW.
+     *
+     * Two independent switches, ANDed, and both are live:
+     * - `autoMirror` (deployment config) is the operator's kill switch; it can
+     *   only turn the mirror off.
+     * - `useTaskBoard` (persisted setting) is the USER's own choice, exposed in
+     *   the settings section: with it off the ideas board is standalone even
+     *   though the TaskBoard is installed, active and answering.
+     *
+     * Read at every decision (mirror scheduling, the card poll, launch backend
+     * selection) rather than cached at apply time, so a settings write takes
+     * effect on the very next action with no restart. A service whose settings
+     * reader is not bound yet sees `undefined`, which is the documented default
+     * (`true`). When this answers false, NO request reaches the TaskBoard: no
+     * probe, no card read, no card write, and a launch always opens a fresh
+     * direct session.
+     */
+    private taskBoardOn;
     snapshot(): IdeasSnapshot;
     /** One full record for the deferred-body read; undefined when absent. */
     idea(id: string): IdeaRecord | undefined;
@@ -147,7 +167,8 @@ export declare class IdeasHostService {
      * on the idea (a `failed` task leaves the idea in the backlog behind a "Task
      * failed" badge), the generic `runStatus` follows that same observation, and
      * any open idea whose card is `done` moves to `underReview` (the review
-     * gate). No-op when the mirror is absent or autoMirror is off.
+     * gate). The card half is a no-op when the board is absent, the deployment
+     * disabled the mirror, or the user turned `useTaskBoard` off.
      */
     /**
      * Arm the run poll. It is the ONE background timer of the service and it
@@ -233,9 +254,10 @@ export declare class IdeasHostService {
      *   "no model": the workspace default applies, then the backend's own
      *   default (see {@link workspaceLaunchModel}).
      * @param reasoningEffort - an adapter-owned effort id for THIS run, read from
-     *   the model catalog. It travels with the model and only the direct-session
-     *   backend can carry it (the card mirror patch is model-only), so it is
-     *   ignored on the card path.
+     *   the model catalog. It travels with the model: the card backend pins it on
+     *   the card next to the model (a current TaskBoard stores it; an older board
+     *   whose strict parser does not know the field falls back to the model
+     *   alone), and the session backend sends it with `selectModel`.
      *
      * @throws when the plugin is disabled, no backend is available, the idea is
      *   unknown, or the chosen backend refuses the run (the message carries its

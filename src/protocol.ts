@@ -1233,6 +1233,20 @@ export interface IdeasSettingsValue {
   /** Permission a direct (card-less) launch starts its fresh session at. */
   directRunPermission: IdeasRunPermission
   /**
+   * Mirror ideas onto the TaskBoard and run them through their cards whenever
+   * that plugin is installed and active.
+   *
+   * `true` (the default) keeps the historical behaviour: capture/update/archive
+   * mirror onto the board, a launch starts the card, and the card's status
+   * drives the review gate. `false` is the user's own bypass, independent of
+   * whether the board is installed: nothing is mirrored, no card is read or
+   * written, a launch always opens a fresh direct session (even for an idea
+   * that still carries a card id), and existing cards are left untouched. It is
+   * a PREFERENCE, never a ledger mutation — turning it back on resumes the
+   * mirror for every idea that is still bound.
+   */
+  useTaskBoard: boolean
+  /**
    * Days without an update after which an OPEN idea wears a quiet *stale*
    * badge. View only: it is computed at render time from the row's
    * own `updatedAt`, so it stores nothing on the idea and costs the Host no
@@ -1322,6 +1336,7 @@ export const IDEAS_SETTINGS_DEFAULTS: IdeasSettingsValue = {
   columnMinWidth: COLUMN_MIN_WIDTH_DEFAULT,
   columnMaxWidth: COLUMN_MAX_WIDTH_DEFAULT,
   directRunPermission: 'workspace-write',
+  useTaskBoard: true,
   staleAfterDays: 30,
   launchModelByWorkspace: {},
   launchReasoningEffortByWorkspace: {},
@@ -1471,6 +1486,7 @@ export function sanitizeSettings(raw: unknown): IdeasSettingsValue {
     columnMinWidth: clampColumnMinWidth(row.columnMinWidth),
     columnMaxWidth: clampColumnMaxWidth(row.columnMaxWidth),
     directRunPermission: oneOf(row.directRunPermission, IDEAS_RUN_PERMISSIONS, IDEAS_SETTINGS_DEFAULTS.directRunPermission),
+    useTaskBoard: booleanOr(row.useTaskBoard, IDEAS_SETTINGS_DEFAULTS.useTaskBoard),
     staleAfterDays: clampStaleAfterDays(row.staleAfterDays),
     launchModelByWorkspace: sanitizeLaunchModelByWorkspace(row.launchModelByWorkspace),
     launchReasoningEffortByWorkspace: sanitizeLaunchReasoningEffortByWorkspace(row.launchReasoningEffortByWorkspace),
@@ -1482,7 +1498,7 @@ const SETTINGS_PATCH_KEYS = [
   'tagRows', 'defaultTab', 'renderMarkdown', 'rememberWorkspaceScope',
   'workspaceScope', 'confirmLifecycle', 'hideDeclinedColumn', 'cardDensity',
   'language', 'openOrdering', 'runningFirst', 'columnMinWidth', 'columnMaxWidth',
-  'directRunPermission', 'staleAfterDays', 'launchModelByWorkspace',
+  'directRunPermission', 'useTaskBoard', 'staleAfterDays', 'launchModelByWorkspace',
   'launchReasoningEffortByWorkspace',
 ] as const
 
@@ -1504,7 +1520,7 @@ export function parseSettingsBody(value: unknown): { patch: IdeasSettingsPatch; 
   for (const key of SETTINGS_PATCH_KEYS) {
     const field = raw[key]
     if (field === undefined) continue
-    if (key === 'renderMarkdown' || key === 'rememberWorkspaceScope' || key === 'confirmLifecycle' || key === 'hideDeclinedColumn') {
+    if (key === 'renderMarkdown' || key === 'rememberWorkspaceScope' || key === 'confirmLifecycle' || key === 'hideDeclinedColumn' || key === 'useTaskBoard') {
       if (typeof field !== 'boolean') return undefined
       patch[key] = field
     } else if (key === 'workspaceScope') {
@@ -1590,9 +1606,10 @@ export interface IdeasLaunchBody {
   /**
    * Adapter-owned reasoning effort id for THIS run, read from the model catalog
    * and never hardcoded. Absent pins no effort: the backend resolves the model's
-   * own default. Additive and backend-selective — only the direct-session
-   * backend can carry it (the card mirror patch is model-only), so the Host
-   * ignores it on the card path.
+   * own default. Additive — both execution backends carry it: the direct session
+   * sends it with `selectModel`, and a current TaskBoard stores it on the card
+   * beside the model (an older board refuses the field and the Host retries
+   * with the model alone).
    */
   reasoningEffort?: string
 }

@@ -153,6 +153,22 @@ describe('parseSettingsBody (extended option set)', () => {
   })
 })
 
+describe('useTaskBoard (the user bypass switch)', () => {
+  it('defaults to ON, so every existing profile keeps mirroring', () => {
+    expect(IDEAS_SETTINGS_DEFAULTS.useTaskBoard).toBe(true)
+    // A section written before the switch existed has no key at all.
+    expect(sanitizeSettings({ tagRows: 2 }).useTaskBoard).toBe(true)
+  })
+
+  it('takes the switch as a real boolean on read and write', () => {
+    expect(sanitizeSettings({ useTaskBoard: false }).useTaskBoard).toBe(false)
+    expect(sanitizeSettings({ useTaskBoard: 'nope' }).useTaskBoard).toBe(true)
+    expect(parseSettingsBody({ patch: { useTaskBoard: false } }))
+      .toEqual({ patch: { useTaskBoard: false }, expectedRevision: undefined })
+    expect(parseSettingsBody({ patch: { useTaskBoard: 'off' } })).toBeUndefined()
+  })
+})
+
 describe('openOrdering + runningFirst', () => {
   it('defaults to oldest-first, with the running float ON', () => {
     expect(IDEAS_SETTINGS_DEFAULTS.openOrdering).toBe('createdAt')
@@ -163,7 +179,6 @@ describe('openOrdering + runningFirst', () => {
     expect(legacy.openOrdering).toBe('createdAt')
     expect(legacy.runningFirst).toBe(true)
   })
-
   it('keeps the three legal members and falls back on anything else (read AND write)', () => {
     expect(sanitizeSettings({ openOrdering: 'createdAt' }).openOrdering).toBe('createdAt')
     expect(sanitizeSettings({ openOrdering: 'createdAtDesc' }).openOrdering).toBe('createdAtDesc')
