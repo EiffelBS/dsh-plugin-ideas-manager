@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Ideas board",
+    "description": "An idea backlog inside the DSH Web GUI: capture, score and rank ideas on a four-column board, then launch one as a real execution with a single click.",
+    "detail": "docs/plugin-detail/en.md"
+  }
+}

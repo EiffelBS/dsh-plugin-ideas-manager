@@ -52,6 +52,7 @@ import { t } from './locales.ts'
 import { AboutPanel } from './about-panel.tsx'
 import { BackupPanel } from './backup-panel.tsx'
 import { SettingsRow } from './settings-row.tsx'
+import { configureSettingsShortcut, readSettingsShortcutAria } from './settings-navigation.ts'
 
 /** One tab in the settings section. */
 export type SettingsTab = 'display' | 'backup' | 'about'
@@ -76,6 +77,39 @@ export const PLUGIN_METADATA = {
   license: 'MIT',
   compatibleVersions: '>=0.1.5-rc.1',
 } as const
+
+/**
+ * Nav-rail glyph of the Ideas settings section, contributed through
+ * `settings.section.icon` (DSH >= 0.2.2).
+ *
+ * Two jobs, one component: the shell gets a mark that belongs to this plugin
+ * instead of the generic gear fallback, and the gear in the board header gets
+ * a language-free way to find OUR nav row — the marker below is the only DOM
+ * node it can attribute to this plugin inside the shell-owned row. The shell
+ * stamps no per-section identifier, so without the marker the row is only
+ * findable by its localized label.
+ * @param props - the shell's icon share: square edge and selection state.
+ * @returns the decorative ideas glyph.
+ */
+export function IdeasSettingsIcon({ size = 16 }: { size?: number; active?: boolean }) {
+  return (
+    <svg
+      data-dsh-ideas-settings-icon=""
+      viewBox="0 0 16 16"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M8 1.5a4.3 4.3 0 0 0-2.1 8c.5.3.8.8.8 1.4v.6h2.6v-.6c0-.6.3-1.1.8-1.4A4.3 4.3 0 0 0 8 1.5Z" />
+      <path d="M6.6 13h2.8M6.9 14.5h2.2" />
+    </svg>
+  )
+}
 
 /** Structural face of the shell slot registry (no ui-slots dependency). */
 export interface SettingsSlotsFace {
@@ -528,27 +562,38 @@ export function registerIdeasSettingsSection(ctx: unknown, client: IdeasClient):
   const applyStyle = (): void => { applyTagChipRows(client.config.value.tagRows) }
   applyStyle()
   const offStyle = client.subscribe(applyStyle)
+  // The gear finds the Settings entry through the live shortcut catalog; the
+  // reader is wired once here and read at click time, so a rebound key follows
+  // the user. A deployment without the service falls back to the labels.
+  const offShortcut = configureSettingsShortcut(() => readSettingsShortcutAria(ctx))
   let offSection: (() => void) | undefined
+  let offIcon: (() => void) | undefined
   try {
     // The extraction itself is inside the try: an undeclared cordis service
     // getter THROWS ("cannot get property without inject") instead of
     // returning undefined, and this helper must never propagate.
     const slots = (ctx as SlotsCarrier | null | undefined)?.slots
-    if (slots === undefined || typeof slots.inject !== 'function' || typeof slots.register !== 'function') {
-      return offStyle
+    if (slots !== undefined && typeof slots.inject === 'function' && typeof slots.register === 'function') {
+      offSection = slots.inject('settings.section', () => slots.register({
+        name: 'settings.section',
+        id: 'ideas',
+        // 60, not 200: the Settings nav rail has no overflow while the panel is
+        // capped at 800px (~16 fully visible 44px rows), so a last-in-order row
+        // lands below the fold once the roster reaches ~18 sections (reproduced
+        // live: Ideas was the only hidden row). 60 sits in the free band between
+        // mcp-manager (50) and better-sidebar (100) -> row ~11, always visible.
+        order: 60,
+        label: () => t('settings.nav'),
+        inject: () => ({ client }),
+      }, IdeasSettingsSection))
+      // Nav-row glyph (DSH >= 0.2.2). On an older shell the slot is never
+      // declared and the inject controller simply waits, so this costs an old
+      // deployment nothing; the gear's label fallback still finds the row.
+      offIcon = slots.inject('settings.section.icon', () => slots.register({
+        name: 'settings.section.icon',
+        id: 'ideas',
+      }, IdeasSettingsIcon))
     }
-    offSection = slots.inject('settings.section', () => slots.register({
-      name: 'settings.section',
-      id: 'ideas',
-      // 60, not 200: the Settings nav rail has no overflow while the panel is
-      // capped at 800px (~16 fully visible 44px rows), so a last-in-order row
-      // lands below the fold once the roster reaches ~18 sections (reproduced
-      // live: Ideas was the only hidden row). 60 sits in the free band between
-      // mcp-manager (50) and better-sidebar (100) -> row ~11, always visible.
-      order: 60,
-      label: () => t('settings.nav'),
-      inject: () => ({ client }),
-    }, IdeasSettingsSection))
   } catch (error) {
     // A shell whose contract moved must not take the GUI down.
     console.error('[dsh-plugin-ideas-manager] settings section registration failed', error)
@@ -556,5 +601,7 @@ export function registerIdeasSettingsSection(ctx: unknown, client: IdeasClient):
   return () => {
     offStyle()
     offSection?.()
+    offIcon?.()
+    offShortcut()
   }
 }

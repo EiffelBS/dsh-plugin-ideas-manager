@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Tableau des idées",
+    "description": "Un backlog d'idées dans l'interface DSH : capturez, évaluez et classez vos idées sur un tableau à quatre colonnes, puis lancez-en une en exécution réelle d'un seul clic.",
+    "detail": "docs/plugin-detail/fr.md"
+  }
+}

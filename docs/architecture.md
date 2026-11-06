@@ -45,6 +45,9 @@ src/
   client/relations-view.tsx # the card's relation line + the editor section
   client/find-similar.ts   # the Find similar gate + launch input (pure, DOM-free)
   client/backup-panel.tsx  # the settings section's Backup tab (snapshot / restore / export)
+  client/settings-section.tsx # the Settings section, its nav icon, the tagRows CSS wiring
+  client/settings-navigation.ts # board gear -> Settings modal, language-free DOM navigation
+  locale/ + docs/plugin-detail/ # Plugins-page display metadata (title / description / guide / icon)
   client/             # shell panel registration + kanban + Priorities/Delivered + scoping
   client/activity-timeline.tsx  # the editor's read-only activity timeline
 scripts/              # mirror reconciliation, mirror cycle check, live perf profiler
@@ -2123,6 +2126,51 @@ survive a reload and cover agent writes.
   badge of a paint agrees on the instant and no wall-clock timer exists. It is
   re-evaluated on each poll/redraw, `staleAfterDays <= 0` means OFF, and it only
   ever judges `open` ideas (a closed idea has a state that says more than a date).
+- **The settings gear drives the Host's own DOM, and that chrome is localized.**
+  The shell exposes no open-section API, so `client/settings-navigation.ts`
+  clicks its way from the board's gear to our nav row. DSH now ships eight
+  languages, and the original lookup compared the Host's own button names
+  ("Settings"/"设置"): on a French UI the row said "Paramètres", nothing matched,
+  and the gear did nothing. The identities are now ordered by how little they
+  depend on the user's language:
+  1. **The live `settings.open` shortcut's accessible combination.**
+     `ctx.get('shortcuts').catalog.getSnapshot()` yields the effective binding,
+     and both Settings entry points paint it as `aria-keyshortcuts` (the sidebar
+     dialog trigger, and the Desktop account-menu Settings item). It is read at
+     CLICK time because the user can rebind the key while the page is open, and
+     it is structural: the string says nothing about language. The face is read
+     with `ctx.get(name)` for the same reason as the layout — an undeclared
+     property read throws — and a deployment without the service simply falls
+     through.
+  2. **Our own nav-row icon.** The section registers `settings.section.icon`
+     (DSH >= 0.2.2) and that glyph carries `data-dsh-ideas-settings-icon`; the
+     shell stamps no per-section identity on a nav button, so the one node it
+     asks US to render is the only reliable way to find our row. On an older
+     shell the slot is never declared, `slots.inject` waits, and the label
+     fallback still works.
+  3. **Text**, matching every language the shipped Host dictionaries carry
+     (en, zh, ja, es, fr, de, ru, pt) instead of English and Chinese alone. The
+     Desktop launcher also got a structural fact on the way: its anchor renders
+     `data-signed-out`, so opening the account menu no longer needs its
+     localized name.
+  The settings panel itself is recognized by `data-shortcut-modal="settings"`
+  (or `role="dialog"`), which also distinguishes "the panel is open and our row
+  is late" from "the panel is closed" — the two need different behaviour, not
+  the same blind click.
+- **Plugins-page display metadata is a second surface with its own traps.**
+  `locale/<language>.json` under the package root supplies `meta.title` and
+  `meta.description`; `meta.detail` names a Markdown document that replaces
+  README.md as the plugin page's long description (`dsh-plugin-detail`), and
+  `package.json`'s `icon` names the artwork. Three things fail silently:
+  (a) the Host resolves `<package>/locale/en.json` through Node's exports map,
+  so `"./locale/*.json"` must be exported or every field reads as absent;
+  (b) `files` decides what an installed copy contains, so `locale`, `docs` and
+  `assets` must be published or the document, icon and README images 404;
+  (c) a malformed `meta.detail` (absolute path, backslash, `..`, non-`.md`)
+  suppresses the document instead of falling back to the README. The English
+  file anchors the read — without it no other language is read at all — and the
+  board illustration must ship because the detail reader resolves relative
+  images beside the document. `tests/plugin-metadata.test.ts` pins all of it.
 
 ## Performance
 

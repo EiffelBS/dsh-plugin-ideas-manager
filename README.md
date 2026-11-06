@@ -418,7 +418,14 @@ view for reading, not a backup.
 
 The plugin contributes an **Ideas board** section to the DSH Settings modal.
 It has three tabs — **Display** (the options below), **Backup** (snapshots,
-restore and the portable export, described above) and **About**.
+restore and the portable export, described above) and **About**. The **gear in
+the board header** opens this section directly, in every interface language the
+Host offers. On current DSH hosts the section also carries its own bulb icon in
+the Settings navigation rail.
+
+DSH's own **Plugins** page lists this plugin too, with the Ideas board name, a
+one-line description, its icon and a short guide — in English, French or
+Simplified Chinese; other languages fall back to English.
 
 On the **Display** tab:
 
@@ -502,6 +509,10 @@ later edits to the idea no longer replicate to it.
   hosts; older combinations degrade rather than break (for example, a very old
   TaskBoard without a run action simply means runs are started as sessions, or
   no Launch button is offered at all when neither route is available).
+- The Settings nav icon and the localized Plugins-page card (name, description,
+  icon, short guide) need DSH 0.2.2 or newer. An older Host shows the plugin
+  under its package name, and the board's gear still opens the section through
+  the label fallback.
 
 ---
 

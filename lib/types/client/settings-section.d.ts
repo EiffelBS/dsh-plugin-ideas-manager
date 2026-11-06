@@ -41,6 +41,23 @@ export declare const PLUGIN_METADATA: {
     readonly license: "MIT";
     readonly compatibleVersions: ">=0.1.5-rc.1";
 };
+/**
+ * Nav-rail glyph of the Ideas settings section, contributed through
+ * `settings.section.icon` (DSH >= 0.2.2).
+ *
+ * Two jobs, one component: the shell gets a mark that belongs to this plugin
+ * instead of the generic gear fallback, and the gear in the board header gets
+ * a language-free way to find OUR nav row — the marker below is the only DOM
+ * node it can attribute to this plugin inside the shell-owned row. The shell
+ * stamps no per-section identifier, so without the marker the row is only
+ * findable by its localized label.
+ * @param props - the shell's icon share: square edge and selection state.
+ * @returns the decorative ideas glyph.
+ */
+export declare function IdeasSettingsIcon({ size }: {
+    size?: number;
+    active?: boolean;
+}): import("react").JSX.Element;
 /** Structural face of the shell slot registry (no ui-slots dependency). */
 export interface SettingsSlotsFace {
     inject(name: string, factory: () => unknown): () => void;

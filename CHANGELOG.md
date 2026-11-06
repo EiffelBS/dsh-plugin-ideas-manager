@@ -6,6 +6,37 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## Unreleased
+
+### Fixed
+
+- **The board's gear now opens the settings in every interface language.** DSH
+  ships eight languages now, and the gear found the Settings window by matching
+  the English and Chinese names of the Host's own buttons. On a French UI
+  ("Paramètres") it matched nothing and quietly did nothing. It now recognizes
+  both Settings entry points by facts that do not change with language — the
+  live **settings keyboard shortcut** and the account menu's own marker — and
+  the text fallback covers every language DSH ships. On DSH 0.2.2 and newer the
+  Ideas row also gets **its own icon** in the Settings sidebar, so the gear
+  finds the row without reading its label at all.
+
+### Added
+
+- **The plugin now introduces itself properly on DSH's Plugins page.** Its card
+  carries the **Ideas board** name, a one-line description and its own icon, plus
+  a short "Ideas board" guide instead of the full README. The name, description
+  and guide are translated into **English, French and Simplified Chinese**;
+  other languages fall back to English. The board illustration is shipped with
+  the package now, so the plugin page can display it.
+- **The Ideas section carries a bulb glyph** in the Settings navigation rail on
+  current DSH hosts, instead of the generic gear fallback.
+
+### Compatibility
+
+- Everything above degrades on older Hosts: a DSH before 0.2.2 has no section
+  icon and no Plugins-page display metadata, and the gear keeps using the label
+  fallback (now in all eight shipped languages).
+
 ## 0.10.4 - 2026-10-28
 
 ### Fixed

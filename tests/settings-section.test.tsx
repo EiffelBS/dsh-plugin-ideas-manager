@@ -15,6 +15,7 @@ import { IdeasClient as RealIdeasClient } from '../src/client/ideas-client.ts'
 import type { IdeasHostTransport } from '../src/client/host-api.ts'
 import {
   applyTagChipRows,
+  IdeasSettingsIcon,
   IdeasSettingsSection,
   registerIdeasSettingsSection,
   type SettingsSlotsFace,
@@ -125,9 +126,8 @@ describe('registerIdeasSettingsSection', () => {
     }
   })
 
-  it('registers the section under the settings.section slot with clear options', () => {
+  it('registers the section and its nav icon with clear options', () => {
     const client = makeClient()
-    const injected = vi.fn(() => ({ client }))
     const register = vi.fn((..._args: unknown[]) => () => {})
     const inject = vi.fn((_name: string, factory: () => unknown) => {
       // The factory must yield the registration (the shell calls it when the
@@ -138,16 +138,31 @@ describe('registerIdeasSettingsSection', () => {
     })
     const slots: SettingsSlotsFace = { inject, register }
     const off = registerIdeasSettingsSection({ slots }, client)
-    expect(inject).toHaveBeenCalledTimes(1)
+    expect(inject).toHaveBeenCalledTimes(2)
     expect(inject.mock.calls[0]![0]).toBe('settings.section')
-    expect(register).toHaveBeenCalledTimes(1)
+    // The nav glyph is a second, independent seat: a shell that declares the
+    // section but not the icon (DSH 0.2.0) still gets the section.
+    expect(inject.mock.calls[1]![0]).toBe('settings.section.icon')
+    expect(register).toHaveBeenCalledTimes(2)
     const [options, component] = register.mock.calls[0]! as unknown as [Record<string, unknown>, unknown]
     expect(options).toMatchObject({ name: 'settings.section', id: 'ideas', order: 60 })
     expect((options.label as () => string)()).toBe(t('settings.nav'))
     expect((options.inject as () => { client: IdeasClient })()).toEqual({ client })
     expect(typeof component).toBe('function')
+    const [iconOptions] = register.mock.calls[1]! as unknown as [Record<string, unknown>, unknown]
+    expect(iconOptions).toMatchObject({ name: 'settings.section.icon', id: 'ideas' })
     expect(typeof off).toBe('function')
     off()
+  })
+
+  it('renders the nav icon with the marker the gear navigates by', () => {
+    const host = document.createElement('div')
+    const iconRoot = createRoot(host)
+    act(() => { iconRoot.render(<IdeasSettingsIcon size={16} active />) })
+    const icon = host.querySelector('[data-dsh-ideas-settings-icon]')
+    expect(icon).not.toBeNull()
+    expect(icon?.getAttribute('width')).toBe('16')
+    act(() => { iconRoot.unmount() })
   })
 
   it('keeps the style subscriber alive across config loads until disposed', async () => {

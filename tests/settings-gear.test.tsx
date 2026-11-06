@@ -29,7 +29,7 @@ import {
   type IdeasListSnapshot,
   type IdeasSettingsView,
 } from '../src/protocol.ts'
-import { en, setLanguageOverride } from '../src/client/locales.ts'
+import { en, fr, setLanguageOverride } from '../src/client/locales.ts'
 
 // React 18 requires the act-environment flag in a plain jsdom setup.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -55,10 +55,10 @@ let triggerClicks = 0
 
 /** Fake host chrome: a Settings trigger that opens a dialog with one nav row
  *  carrying `rowLabel` (the label the HOST would have rendered). */
-function mountHostChrome(rowLabel: string): void {
+function mountHostChrome(rowLabel: string, triggerLabel = 'Settings'): void {
   trigger = document.createElement('button')
   trigger.setAttribute('aria-haspopup', 'dialog')
-  trigger.setAttribute('aria-label', 'Settings')
+  trigger.setAttribute('aria-label', triggerLabel)
   trigger.addEventListener('click', () => {
     triggerClicks += 1
     dialog = document.createElement('div')
@@ -141,6 +141,15 @@ describe('board gear opens the Settings modal on the Ideas section in every lang
   it('also matches a row rendered in the pinned language (both sides agree)', async () => {
     mountHostChrome('想法看板')
     await renderBoard('zh')
+    expect(selected).toBe(1)
+  })
+
+  it('opens a FRENCH Settings trigger and selects the French row', async () => {
+    // Reported live: the host now speaks French, so the trigger is labelled
+    // "Paramètres" — a gear that only knew "Settings"/"设置" did nothing at all.
+    mountHostChrome(fr['settings.nav'], 'Paramètres')
+    await renderBoard('fr')
+    expect(triggerClicks).toBe(1)
     expect(selected).toBe(1)
   })
 

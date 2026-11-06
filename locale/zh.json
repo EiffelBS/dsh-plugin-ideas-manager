@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "想法看板",
+    "description": "DSH 界面内的想法积压库：在四列看板上捕获、评估和排序想法，一键将想法作为真实执行任务启动。",
+    "detail": "docs/plugin-detail/zh.md"
+  }
+}

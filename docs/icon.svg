@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Ideas board">
+  <defs>
+    <linearGradient id="ideas-tile" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2f8ce0"/>
+      <stop offset="1" stop-color="#0f6fbe"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#ideas-tile)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 12c-9.4 0-17 7.4-17 16.5 0 5.8 3 10.9 7.6 13.9 1.9 1.2 3 3.2 3 5.4V50h12.8v-2.2c0-2.2 1.1-4.2 3-5.4 4.6-3 7.6-8.1 7.6-13.9C49 19.4 41.4 12 32 12Z"/>
+    <path d="M26.5 54.5h11"/>
+    <path d="M29 59h6"/>
+  </g>
+</svg>
