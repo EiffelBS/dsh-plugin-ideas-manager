@@ -15,6 +15,7 @@ import type { SessionLauncher } from './session-queue.ts';
 import type { ActiveWorkspaceSource } from './session-context.ts';
 import type { SessionOpener } from './session-opener.ts';
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts';
+import type { IdeasSyncExportRequest, IdeasSyncExportResponse, IdeasSyncImportRequest, IdeasSyncImportResponse, IdeasSyncMappingResponse, IdeasSyncOverview, IdeasSyncPlanRequest, IdeasSyncPlanResponse, IdeasSyncRefusal, IdeasSyncWorkspaceRequest } from '../sync.ts';
 /**
  * Client-side patch accepted by `updateIdea`.
  *
@@ -470,6 +471,18 @@ export declare class IdeasClient {
     restoreSnapshot(request: IdeasRestoreRequest): Promise<boolean>;
     /** Download URL of one snapshot (the portable export / a hand-off copy). */
     snapshotContentUrl(name: string): string | undefined;
+    /** Whether this deployment serves the independent synchronization surface. */
+    get syncAvailable(): boolean;
+    /** Read the Host-owned synchronization identities without creating a pairing. */
+    loadSyncOverview(): Promise<IdeasSyncOverview>;
+    /** Persist one literal human confirmation; names and paths are never matched. */
+    confirmSyncWorkspace(request: IdeasSyncWorkspaceRequest): Promise<IdeasSyncMappingResponse | IdeasSyncRefusal>;
+    /** Serialize one confirmed workspace through the Host, never a client projection. */
+    exportSyncWorkspace(request: IdeasSyncExportRequest): Promise<IdeasSyncExportResponse | IdeasSyncRefusal>;
+    /** Build a read-only preview, optionally fenced to the revision the reader saw. */
+    planSyncPackage(request: IdeasSyncPlanRequest): Promise<IdeasSyncPlanResponse | IdeasSyncRefusal>;
+    /** Apply a preview only when its revision and every explicit decision still hold. */
+    importSyncPackage(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse | IdeasSyncRefusal>;
     /**
      * Whether this deployment serves the backup surface at all.
      *

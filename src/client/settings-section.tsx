@@ -51,6 +51,7 @@ import { classes } from './style.ts'
 import { t } from './locales.ts'
 import { AboutPanel } from './about-panel.tsx'
 import { BackupPanel } from './backup-panel.tsx'
+import { SyncPanel } from './sync-panel.tsx'
 import { SettingsRow } from './settings-row.tsx'
 import { configureSettingsShortcut, readSettingsShortcutAria } from './settings-navigation.ts'
 
@@ -551,7 +552,12 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
         </>
       )}
 
-      {activeTab === 'backup' && <BackupPanel client={client} />}
+      {activeTab === 'backup' && (
+        <>
+          <BackupPanel client={client} />
+          <SyncPanel client={client} />
+        </>
+      )}
 
       {activeTab === 'about' && (
         <div className={classes.aboutPanel}>
@@ -560,6 +566,7 @@ export function IdeasSettingsSection({ client }: IdeasSettingsSectionProps) {
             version={PLUGIN_METADATA.version}
             license={PLUGIN_METADATA.license}
             compatibleVersions={PLUGIN_METADATA.compatibleVersions}
+            starUrl={PLUGIN_METADATA.repositoryUrl}
             onCheckUpdate={() => {
               window.open(`${PLUGIN_METADATA.repositoryUrl}/releases`, '_blank', 'noopener,noreferrer')
             }}

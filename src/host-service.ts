@@ -27,7 +27,7 @@
  * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
 
-import { IdeasHostLedger, type LedgerApplyResult, type LedgerRestoreResult, type LedgerRestoreSource } from './host-ledger.ts'
+import { IdeasHostLedger, type LedgerApplyResult, type LedgerRestoreResult, type LedgerRestoreSource, type LedgerSyncExportResult, type LedgerSyncMappingResult, type LedgerSyncPlanResult } from './host-ledger.ts'
 import { IDEAS_SNAPSHOT_RETENTION, type SnapshotFile } from './backup.ts'
 import { SessionRunner, SessionLaunchError } from './session-runner.ts'
 import { TaskBoardDisabledError, TaskBoardMirror, TaskBoardUnavailableError } from './taskboard-bridge.ts'
@@ -47,6 +47,16 @@ import {
   type IdeasSettingsValue,
   type IdeasStats,
 } from './protocol.ts'
+import type {
+  IdeasSyncConflictResolution,
+  IdeasSyncExportRequest,
+  IdeasSyncImportResponse,
+  IdeasSyncOverview,
+  IdeasSyncPackage,
+  IdeasSyncPlanRequest,
+  IdeasSyncRefusal,
+  IdeasSyncWorkspaceRequest,
+} from './sync.ts'
 
 /** How often the run poll re-reads the task-board card statuses. */
 const UNDER_REVIEW_POLL_MS = 30_000
@@ -301,6 +311,49 @@ export class IdeasHostService {
       // read; a partial restore must never be a silent one.
       unknownFields: result.unknownFields,
     }
+  }
+
+  // --- portable synchronization ---------------------------------------------
+
+  /** Additive overview; no workspace pairing is inferred from names or paths. */
+  syncOverview(): IdeasSyncOverview {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    return this.ledger.syncOverview()
+  }
+
+  /** Persist one explicit human-confirmed portable workspace pairing. */
+  confirmSyncWorkspace(request: IdeasSyncWorkspaceRequest): LedgerSyncMappingResult {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    return this.ledger.confirmSyncWorkspace(request)
+  }
+
+  /** Serialize one confirmed workspace from the Host-owned ledger document. */
+  exportSyncWorkspace(request: IdeasSyncExportRequest): LedgerSyncExportResult {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    return this.ledger.exportSyncWorkspace(request)
+  }
+
+  /** Plan a package without writing state or applying any transition. */
+  planSyncPackage(request: IdeasSyncPlanRequest): LedgerSyncPlanResult {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    return this.ledger.planSyncPackage(request)
+  }
+
+  /** Apply a conflict-free package through one atomic ledger commit. */
+  importSyncPackage(
+    parsed: IdeasSyncPackage,
+    resolutions: readonly IdeasSyncConflictResolution[] = [],
+    expectedRevision?: number,
+  ): IdeasSyncImportResponse | IdeasSyncRefusal {
+    if (!this.active) throw new Error('ideas plugin is disabled')
+    const result = this.ledger.importSyncPackage(parsed, resolutions, expectedRevision)
+    if (!result.ok) return result
+    if (result.displaced === undefined) {
+      const { displaced: _displaced, ...response } = result
+      void _displaced
+      return response
+    }
+    return { ...result, displaced: snapshotInfoOf(result.displaced) }
   }
 
   /**

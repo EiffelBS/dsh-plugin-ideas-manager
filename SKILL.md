@@ -45,8 +45,9 @@ mentions ideas / backlog / idees / notes:
    linked follow-up idea with `followUp` (child, `open`, whose body carries
    the parent summary + the justification, `followUpOfId` → parent) and
    archives the parent — or use `decline` (+ `decision`) when the review
-   rejects the idea outright. The ledger keeps a stable `#N` sequence per
-   idea (`ideaNumber`) — the stable human reference for a captured idea.
+   rejects the idea outright. The ledger keeps a local `#N` display sequence per
+   idea (`ideaNumber`) — the stable human reference while that idea lives on this
+   Host, never its cross-machine identity.
 5. **Duplicates**: two captures of the same work are reconciled with ONE
    `merge` (sourceId = the duplicate, targetId = the survivor, `mode` =
    `keepTargetRank` or `takeSourceRank`). Pick the survivor as the better-analysed
@@ -71,9 +72,10 @@ an archived card.
 
 So when your answer ends with "see idea #42":
 
-- **Quote the `#N`.** It is the stable reference: a board exported and imported
-  on another machine keeps its numbers, and an idea **id** does not survive that
-  trip. An id is accepted by the box, but never hand one to a human.
+- **Quote the `#N`.** It is the local human reference. A disaster-recovery
+  backup/restore keeps its numbers and ids; a portable sync package keeps every
+  idea **id** but assigns new local display numbers on the destination. An id is
+  accepted by the box, but never hand one to a human.
 - One line is enough. The human pastes the number; the board finds the card.
 - If the box reports that nothing matches, the number is not on THIS board —
   re-read it with `ideas_get` rather than re-typing the title.
@@ -307,15 +309,78 @@ document wholesale.
   is written as its own `pre-restore` snapshot first, and the answer names it in
   `displaced`. The revision only moves forward and the dedupe cache is never
   rewound, so a replayed `requestId` keeps meaning "this already ran".
-- The **JSON document is the portable artifact** and round-trips every field the
-  ledger holds (`events`, `runStatus`, `runSessionId`, `taskBoardId`,
-  `deliveryNote`, `analysisAudit`, tags with their `promptPrefix`, `ideaNumber`
-  and `ideaSequence`). Nothing is dropped. The `export` verb above stays the
-  markdown VIEW, which is generated and never parsed back.
+- The **JSON document is the disaster-recovery artifact** and round-trips every
+  field the ledger holds (`events`, `runStatus`, `runSessionId`, `taskBoardId`,
+  `deliveryNote`, `analysisAudit`, tags with their `promptPrefix`, `ideaNumber`,
+  `ideaSequence` and the machine-local `sync` identity/mapping state). Nothing is
+  dropped. The `export` verb above stays the markdown VIEW, which is generated and
+  never parsed back.
 - The escape hatch for "a second Host on the same `DSH_HOME` refuses to start":
   **never share the folder** (the lock exists because a shared home has already
   destroyed a ledger). Export on the machine that owns the board and import it on
   the machine that should.
+
+## Portable synchronization packages
+
+This is a **separate, versioned format**, not a snapshot and not an action verb.
+It exchanges one workspace additively; it does not replace the destination board.
+Planning is read-only and deterministic. The **Backup** tab exposes the complete
+export, preview, mapping, conflict-resolution and apply flow; these routes are
+the same contract. No background synchronization runs.
+
+| Route | Body | Answer / rule |
+|---|---|---|
+| `GET /api/ideas/sync` | — | `{ ok, deviceId, workspaces[] }`; known local workspaces and their confirmed keys. No name/path matching is performed. |
+| `POST /api/ideas/sync/workspaces` | `{ workspaceId, syncKey?, confirm: true }` | `{ ok, mapping }`; mints a key when omitted, or confirms a supplied portable key for this exact local workspace. |
+| `POST /api/ideas/sync/export` | `{ workspaceId }` | `{ ok, package }`; the workspace must already have a confirmed key. |
+| `POST /api/ideas/sync/plan` | `{ package, resolutions?, expectedRevision? }` | `{ ok, revision, plan }`; per-idea create/update/delete/unchanged/conflict operations, explicit conflicts, duplicate candidates and an optional unambiguous reorder. |
+| `POST /api/ideas/sync/import` | `{ package, resolutions?, expectedRevision? }` | `{ ok, snapshotId, syncKey, workspaceId, imported, skipped, revision, plan, displaced? }`; applies only a conflict-free plan at the previewed revision. |
+
+The envelope is
+`{ format: 'dsh-ideas-sync', version: 1, deviceId, snapshotId, baseSnapshotId,
+createdAt, workspace: { syncKey, sourceWorkspaceId }, ideas[] }`.
+`sourceWorkspaceId` is diagnostic only. The portable idea projection preserves
+`id`, content, lifecycle, ranks, tags, activity, analysis audit, delivery note,
+relations and follow-up references. It omits `workspaceId`, `ideaNumber`,
+`taskBoardId`, `taskBoardStatus`, `runStatus` and `runSessionId`; a package that
+carries those local fields is refused, not silently repaired.
+
+Plan and apply rules:
+
+- The Host resolves `baseSnapshotId` from a bounded local cache of snapshots
+  exchanged in either direction. If it is unavailable, `plan.mode` is `two-way`:
+  differing common fields are conflicts and absence is never treated as deletion.
+- Every idea id is preserved. New rows get unique **local** `ideaNumber` values;
+  source display numbers are never used as keys or copied.
+- A field changed on one side is accepted. Disjoint edits combine. Different
+  changes to the same field, deletion versus modification, and divergent
+  reorders are explicit conflicts. A conflict decision is
+  `{ conflictId, choice: 'local' | 'remote' | 'clear' }`; `clear` is valid only for
+  an optional field or relation. Unknown decision ids are refused.
+- Tags union by name and keep `promptPrefix`. Conflicting definitions and a union
+  that exceeds the tag limit require a decision. Activity logs are not unioned:
+  without stable event identity, different histories are an explicit conflict.
+- Relations and follow-up targets are reconciled after workspace mapping.
+  Missing targets, self-links, dependency/follow-up cycles and relation-limit
+  overflows refuse the apply unless explicitly resolved. `relatesTo` symmetry is
+  restored; cross-workspace reverse repairs appear as their own plan operations.
+- Rank is workspace-relative, not an ordinary scalar. Destination relative order
+  is preserved unless the incoming reorder is unambiguous. New rows append in
+  package order; destination-only anchors keep their slots.
+- Independently created near-duplicates appear in `duplicateCandidates` with a
+  proposed ordinary `merge`. Planning and applying never merge them
+  automatically.
+- Any unresolved conflict refuses the whole apply with **409** and returns the
+  plan. When `expectedRevision` is supplied, a changed ledger refuses both plan
+  and apply with **409** `sync-preview-stale`; the UI always sends the revision of
+  the preview it inspected. A successful apply writes a `pre-sync` snapshot,
+  reuses the ledger's ordinary delete/import/reorder transitions, and commits once
+  under the existing single-writer lock.
+- Re-importing an unchanged snapshot is idempotent. The destination records its
+  `snapshotId` as the mapping's `baseSnapshotId` for the next export.
+- The machine-local `sync` state and ancestor cache are persisted in the ledger
+  and therefore belong to the existing backup field surface, but they are never
+  copied into a portable sync package.
 
 ## TaskBoard mirror (P2)
 
@@ -422,6 +487,10 @@ src/core/ideas.ts        domain model, tag validation, activity log, near-duplic
                          relation model + the `blocks` cycle check
 src/core/ideas-stats.ts  the ONE definition of every backlog-health number
 src/backup.ts            the snapshot folder (atomic write, list, quarantine, retention)
+src/sync.ts              versioned portable package, field classification, validators,
+                         and the confirmed syncKey-to-workspace identity contract
+src/sync-merge.ts        pure deterministic three-way planner, explicit conflicts,
+                         relation reconciliation, order and duplicate candidates
 src/host-ledger.ts       persistence, dedupe cache, lock, activity log, internal taskBoardId bind,
                          snapshots + restore (strict validation, displaced-on-restore)
 src/client/backup-panel.tsx  the settings section's Backup tab (snapshots/restore/export/import)

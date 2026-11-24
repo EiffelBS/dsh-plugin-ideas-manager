@@ -16,6 +16,10 @@ src/
                       #   + snapshots / restore
   backup.ts           # the snapshot FOLDER only: atomic write, list, read, quarantine, retention
                       #   (knows nothing about the document — host-ledger validates that)
+  sync.ts             # versioned portable package, field classification, validators,
+                      #   + the confirmed syncKey-to-workspace identity contract
+  sync-merge.ts       # pure deterministic three-way planner, explicit conflicts,
+                      #   relation/order reconciliation and duplicate candidates
   host-routes.ts      # state (+ list / summary / detail), idea?id=, action, launch, events
   host-settings.ts    # the fenced /api/ideas/config route (settings dual-path)
                        #   + the per-workspace default launch model field
@@ -750,15 +754,20 @@ that already existed were extended rather than duplicated:
   the restore path needs the same repair and a private method is not reachable
   from a validator.
 
-### The snapshot IS the portable document
+### The snapshot IS the disaster-recovery document
 
 A snapshot is the ledger document **plus** a `snapshot: {version, createdAt,
 reason, ideas, revision}` stamp, written exactly as the ledger persists it. One
 serializer, one validator, one file format — so the download the panel hands the
-browser is byte-identical to what a restore adopts on the other machine, and
-there is no second "export format" that could drift from the first. The stamp is
-additive and ignored by the validator; the `export` VERB is untouched and stays
+browser is byte-identical to what a restore adopts on the other machine. The stamp
+is additive and ignored by the validator; the `export` VERB is untouched and stays
 the markdown view.
+
+This is deliberately **not** the portable synchronization format. A snapshot
+replaces the whole ledger, including machine-local execution pointers and display
+numbers. A sync package exchanges one workspace additively and has its own
+versioned envelope in `src/sync.ts`; keeping the two formats separate is what lets
+a destination-only card survive an exchange.
 
 The file **name** carries the same provenance (`snapshot-<epoch ms>-<8 hex>.json`,
 `export-…`, `displaced-…`) so the list can be built from `readdir` + `stat`
@@ -817,8 +826,8 @@ that plugin added. Two rules make that impossible to hit unawares:
   literal of every key the reader copies; anything present on a record and absent
   from it is collected per restore and returned as `unknownFields`, which the
   panel prints by name. This covers the case the schema gate cannot: a field
-  added **without** a bump (the established pattern — see `events` #92 and
-  `relatesTo`/`blocks` #106, where an old document simply lacks the key and the
+  added **without** a bump (the established pattern — see the activity log and
+  the relation fields, where an old document simply lacks the key and the
   first write that needs it creates it).
 
 The trade-off is deliberate and worth restating: **passing unknown keys through
@@ -843,6 +852,13 @@ that into a written release step for the next agent, because the failure it
 prevents is invisible in review: the field works, and the backup quietly stops
 carrying it.
 
+The document-level `sync` state has its own literal surface in
+`tests/sync.test.ts` (`SYNC_STATE_FIELDS` and `SYNC_MAPPING_FIELDS`). The same suite
+asserts that `IDEAS_SYNC_PORTABLE_IDEA_FIELDS` plus
+`IDEAS_SYNC_LOCAL_IDEA_FIELDS` equals `KNOWN_IDEA_FIELDS`, so a future persisted
+idea field cannot escape classification as portable content or machine-local
+state.
+
 ### Routes, not verbs
 
 `GET|POST /api/ideas/backup`, `GET /api/ideas/backup/content`, and
@@ -850,24 +866,172 @@ carrying it.
 the document and a restore replaces it wholesale, so neither may consume the
 persisted request-id cache — the same reason the launch route is dedicated. The
 frozen action envelope and the default `GET /state` response are untouched
-(`idea-95-backup-routes.test.ts` asserts both, and that `{kind:'snapshot'}` is
+(`tests/backup-routes.test.ts` asserts both, and that `{kind:'snapshot'}` is
 still an `invalid-action`).
+
+`GET /api/ideas/sync`, `POST /api/ideas/sync/workspaces`,
+`POST /api/ideas/sync/export`, `POST /api/ideas/sync/plan` and
+`POST /api/ideas/sync/import` are another dedicated family. They are absent from the action union and from the full state
+response; `tests/sync-routes.test.ts` pins that boundary.
 
 `readJson` in the client transport now prefers a refusal's `message` over its
 `error` code when both are present. It is inert for every pre-existing route
 (none sends `message`) and it is what lets the panel print the Host's own
 sentence rather than a code.
 
+### Portable synchronization identities
+
+The sync format exists to solve three identity problems without turning a
+portable export into another restore:
+
+1. `workspaceId` is a local DSH UUID. A workspace therefore carries an explicit,
+   human-confirmed `syncKey`; the Host stores the `syncKey -> workspaceId` pairing
+   in the ledger's machine-local `sync` state. No workspace name or path is ever
+   used as identity or matched automatically. The Host does not own the workspace
+   registry, so an empty local workspace has no idea row to discover; literal
+   confirmation of a registry-supplied id is sufficient to create that pairing.
+2. `idea.id` is the cross-machine identity and is preserved verbatim.
+   `ideaNumber` is only a local display number. Import allocates fresh numbers
+   from the destination's monotonic sequence and never keys a row by the source
+   number.
+3. `deviceId`, `snapshotId` and `baseSnapshotId` describe the exchange. The device
+   id is created once per ledger Home and persisted; every export gets a fresh
+   snapshot id; an import records that id as the destination mapping's base for
+   its next export. Each mapping also retains the four most recent snapshots
+   exchanged in either direction, because the source of a later package must be
+   able to resolve the ancestor it exported earlier.
+
+`src/sync.ts` owns the envelope and validators. The package discriminator is
+`format: 'dsh-ideas-sync'`, `version: 1`; it is independent of
+`IDEAS_SCHEMA_VERSION`, so adding a sync field does not force an old backup to be
+refused. `buildIdeasSyncPackage` receives full `IdeaRecord[]` from
+`IdeasHostLedger.exportSyncWorkspace`, never a list projection. The portable/local
+field literals partition `KNOWN_IDEA_FIELDS`; a package carrying a local field is
+refused instead of having it silently stripped.
+
+The local set is `workspaceId`, `ideaNumber`, `taskBoardId`, `taskBoardStatus`,
+`runStatus` and `runSessionId`. Everything else — including activity, analysis
+audit, delivery note, ranks, relations and follow-up lineage — is portable
+content. A live source run does not block export; its pointers simply do not
+travel. This is intentionally different from restore, which still refuses while a
+run is in flight and still adopts the complete ledger document.
+
+`src/sync-merge.ts` owns the pure planner. `POST /api/ideas/sync/plan` calls it
+with full Host records, the confirmed destination workspace and the incoming
+package; it does not persist identity state, write a snapshot or invoke a
+transition. The same inputs produce the same plan, including conflict ids and
+operation order. No wall-clock timestamp chooses content.
+
+### Common ancestor and conservative fallback
+
+The incoming `baseSnapshotId` is resolved only by exact id in the mapping's
+bounded `snapshots` cache. Export caches the snapshot it just produced; import
+caches the snapshot it adopted. An absent, evicted or unknown id produces
+`mode: 'two-way'`: destination-only rows are preserved, incoming-only rows are
+creations, and every differing common field is an explicit conflict. Absence is
+never interpreted as deletion without an ancestor.
+
+With an ancestor, each portable field is compared independently. A change on one
+side wins; equal changes agree; different changes to the same field conflict.
+`updatedAt` is derived metadata rather than a content winner. `events` is not
+unioned: bounded histories have no stable event identity, so divergent histories
+conflict until one side is explicitly chosen. Tags merge by name, preserving
+`promptPrefix`; conflicting definitions and an additive union beyond the tag
+limit require a decision. Deletion versus modification is a whole-idea conflict.
+The planner's `clear` decision is accepted only for optional fields and
+relations; required fields and whole-idea existence cannot be cleared.
+
+### Relations, order and duplicates
+
+The planner overlays the merged workspace onto the complete destination board.
+It sweeps relation edges to explicitly deleted ideas, then refuses dangling or
+self-referential edges, restores `relatesTo` symmetry and checks both `blocks`
+and follow-up lineage for cycles. A symmetry repair that would exceed the
+relation limit is also a conflict. Cross-workspace reverse repairs are emitted
+as ordinary update operations, so the plan names every row the apply can touch.
+The Host's existing import transition performs the same whole-document relation
+repair after the planned rows are staged.
+
+Rank is never merged as a portable scalar. The planner compares relative open
+backlog sequences against the ancestor. It keeps destination order unless the
+incoming side alone changed the sequence (or both sides made the same change).
+An accepted reorder replaces only slots occupied by ancestor ids known to both
+sides; destination-only anchors keep their slots and new rows append in package
+order. Divergent reorders conflict. The resulting complete order is applied with
+the existing `reorder` transition, not by writing rank values in a second
+mutation implementation.
+
+Independently created open rows on opposite sides are scored with the existing
+`ideaSimilarity` signal. Candidates carry the ordinary `merge` verb as a
+proposal, but planning never archives or folds either row.
+
+### Atomic apply
+
+`POST /api/ideas/sync/import` recomputes the plan under the ledger instance's
+existing single-writer lock. Any unresolved conflict or unknown decision returns
+**409** with the plan before identity persistence, snapshotting or mutation.
+When the caller supplies `expectedRevision`, a mismatch returns **409**
+`sync-preview-stale` before any of those steps; the browser always carries the
+revision returned by the preview it inspected. A ready plan writes a `pre-sync`
+snapshot through the same backup store, stages
+ordinary `delete`, `import` and (when present) `reorder` transitions with commit
+deferred, updates the mapping's base/cache, and commits once. New rows receive
+local numbers; existing rows retain local workspace and execution fields. A
+thrown transition or write restores the in-memory document and request cache,
+leaving the pre-sync snapshot as evidence. Replaying an unchanged package is a
+no-op.
+
+The `sync` state is part of the ledger document, so it is atomic with every other
+write and is carried by the existing backup/restore field surface. It is never
+included in a portable sync package. Older ledgers and backups lack the field;
+the boot reader creates a device id in memory without rewriting the file, and
+the first sync mutation or ordinary ledger write persists it without changing
+the schema version. Older mappings without `snapshots` remain readable and start
+with an empty cache. The strict restore reader refuses malformed sync state or
+ancestor entries rather than dropping pairings.
+
+### Synchronization screen
+
+`client/sync-panel.tsx` renders a distinct section beside the disaster-recovery
+controls on the Backup tab. `client/sync-state.ts` is a pure reducer for its
+mapping, preview, applying, success and refusal states; `IdeasClient` only adds
+thin transport wrappers around the shared Host service methods. The panel never
+constructs a package from list rows and never writes while previewing. A completed
+import announces its result beside the file picker, moves focus to the mapping,
+stale or preview card, and scrolls that card into view; the same reveal control is
+available without repeating the import. Mapping and preview cards render the
+portable key, source workspace id and destination workspace id together so the
+cross-machine association is visible without inferring it from names or paths.
+
+An unknown portable key opens an explicit destination picker with no default
+selection. The picker unions ledger-known workspaces with the live DSH registry,
+so an empty destination workspace can be paired without creating a placeholder
+idea. Workspace titles are display hints only. Conflict values are rendered in
+bounded side-by-side panes with an explicit truncation notice; the complete value
+still participates in the Host decision. Each choice re-plans, which can expose a
+new structural conflict, and stale decision ids are pruned by re-planning rather
+than sent to apply. Bulk incoming/local choices use the same resolution contract
+for every current conflict and require a second explicit confirmation; they never
+bypass a structural conflict that remains after re-planning.
+
+Apply requires a ready plan, an explicit confirmation, and the same ledger
+revision on both client and Host. Success reports the plan counts and names the
+`pre-sync` snapshot. Its rollback control calls the existing restore transition
+with that snapshot name and the same displaced-board safety behavior; it does not
+introduce a second restore implementation.
+
 ### The Backup tab, and the settings dual-path
 
 `client/backup-panel.tsx` is a third tab of the settings section and drives its
 **own** routes. That is the whole reason a deployment whose settings port is
 unavailable (`available: false`, no `settings.register`, no SettingsForms) still
-gets snapshots, restore and the portable export — the display options degrade to
-the spelled defaults, the backup surface does not. A host that serves no backup
-route at all (an older Host, a test fake) renders one explicit note instead of
-empty buttons: the capabilities are optional on the transport for the same
-reason `config` and `launch` are.
+gets snapshots, restore, portable export and synchronization — the display options
+degrade to the spelled defaults, those data surfaces do not. A host that serves no
+backup route at all (an older Host, a test fake) renders one explicit note instead
+of empty buttons: the capabilities are optional on the transport for the same
+reason `config` and `launch` are. The synchronization routes are independently
+optional too, so an older Host can keep the disaster-recovery panel while the sync
+section reports its own unavailable state.
 
 Two copy decisions worth keeping: the restore toggle and its confirmation button
 have **different** labels ("Restore…" vs "Replace the board") because two buttons
@@ -887,7 +1051,8 @@ risky change and the file that travels to another machine, which is exactly the
 argument for having one. `manual` and `pre-restore` remain valid reasons on the
 wire and in the list labels (a file the user drops in the folder is `manual`), so
 nothing about the stored data or the API changed — only the UI stopped offering
-the same write twice.
+the same write twice. `pre-sync` is the corresponding safety snapshot for an
+atomic synchronization apply and has its own list label.
 
 ## Column windowing
 
@@ -2128,6 +2293,15 @@ survive a reload and cover agent writes.
   `rememberWorkspaceScope` is on), because the board's transient `workspaceFilter`
   does not exist while the board is closed. A shell whose glyph span clipped its
   own overflow would silently drop the pill — cosmetic, never a broken row.
+- **Board navigation memory has two lifetimes.** The active tab is persisted in
+  `localStorage`, so the configured `defaultTab` is applied only when no legal tab
+  exists yet; later panel mounts keep the last visited tab. The workspace pick is
+  mirrored into a `WeakMap` keyed by the live `IdeasClient` instance on every human
+  scope change, so leaving for a session and reopening the board restores it
+  without making the opt-in `rememberWorkspaceScope` setting meaningless: that
+  setting still persists the scope in Host config across browser sessions. Deep
+  links deliberately do not overwrite either memory, because a link target is not
+  an opening preference.
 - The **stale badge** is render-time only: `client/staleness.ts` compares the
   row's `updatedAt` against a `now` the board passes in once per render, so every
   badge of a paint agrees on the instant and no wall-clock timer exists. It is

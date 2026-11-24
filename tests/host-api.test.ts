@@ -8,9 +8,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { HttpIdeasHostTransport, type IdeasHostTransport } from '../src/client/host-api.ts'
+import { HttpIdeasHostTransport, IdeasApiError, type IdeasHostTransport } from '../src/client/host-api.ts'
 import { IdeasClient } from '../src/client/ideas-client.ts'
 import { IDEAS_SCHEMA_VERSION, type IdeasEventPayload, type IdeasListSnapshot } from '../src/protocol.ts'
+import type { IdeasSyncPackage } from '../src/sync.ts'
 
 function snapshot(revision: number): IdeasListSnapshot {
   return { schemaVersion: IDEAS_SCHEMA_VERSION, revision, ideas: [] }
@@ -37,6 +38,42 @@ class FakeTransport implements IdeasHostTransport {
     return () => { active = false }
   }
 }
+
+describe('HttpIdeasHostTransport synchronization routes', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  it('posts the preview revision fence and returns the Host plan', async () => {
+    const pkg: IdeasSyncPackage = {
+      format: 'dsh-ideas-sync', version: 1, deviceId: 'device-a', snapshotId: 'snapshot-a',
+      baseSnapshotId: null, createdAt: 1, workspace: { syncKey: 'sync_12345678', sourceWorkspaceId: 'workspace-a' }, ideas: [],
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true, revision: 7, plan: { ready: true } }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const outcome = await new HttpIdeasHostTransport().syncPlan({ package: pkg, expectedRevision: 7 })
+    expect(outcome).toEqual({ ok: true, revision: 7, plan: { ready: true } })
+    expect(fetchMock).toHaveBeenCalledWith('/api/ideas/sync/plan', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ package: pkg, expectedRevision: 7 }),
+    }))
+  })
+
+  it('keeps a normal refusal code and complete answer for the client state machine', async () => {
+    const body = { ok: false, error: 'sync-preview-stale', message: 'refresh the preview' }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), {
+      status: 409, headers: { 'content-type': 'application/json' },
+    })))
+    const error = await new HttpIdeasHostTransport().syncImport({
+      package: {
+        format: 'dsh-ideas-sync', version: 1, deviceId: 'device-a', snapshotId: 'snapshot-a',
+        baseSnapshotId: null, createdAt: 1, workspace: { syncKey: 'sync_12345678', sourceWorkspaceId: 'workspace-a' }, ideas: [],
+      },
+      expectedRevision: 7,
+    }).catch((caught: unknown) => caught)
+    expect(error).toBeInstanceOf(IdeasApiError)
+    expect(error).toMatchObject({ code: 'sync-preview-stale', message: 'refresh the preview', body })
+  })
+})
 
 describe('HttpIdeasHostTransport.subscribe', () => {
   beforeEach(() => {

@@ -39,8 +39,10 @@ interface Fact {
   id: string
   /** Package whose client bundle carries the fact. */
   pkg: string
-  /** Substrings that must all be present. */
+  /** Substrings that must all be present in the original bundle formatting. */
   needles: readonly string[]
+  /** Equivalent substrings emitted by newer minified/backtick bundles. */
+  modernNeedles?: readonly string[]
   /** What to do when it is gone. */
   remedy: string
 }
@@ -54,6 +56,7 @@ const FACTS: readonly Fact[] = [
     id: 'the Settings dialog trigger: our primary (web) path',
     pkg: SETTINGS_GENERAL,
     needles: ['"aria-haspopup": "dialog"', '"aria-label": t("trigger")', '"trigger": "Settings"', '"trigger": "设置"'],
+    modernNeedles: ['"aria-haspopup":`dialog`', '"aria-label":t(`trigger`)', '"aria-keyshortcuts":shortcut?.aria', 'actions.open()'],
     remedy: 'settings-navigation.ts must learn the shell\'s new settings launcher',
   },
   {
@@ -65,6 +68,11 @@ const FACTS: readonly Fact[] = [
     needles: [
       'className: SettingsRoot_module_css_default.nav,',
       'className: SettingsRoot_module_css_default.navList',
+      'SettingsRoot_module_css_default.navCell',
+    ],
+    modernNeedles: [
+      'className:SettingsRoot_module_css_default.nav,',
+      'className:SettingsRoot_module_css_default.navList',
       'SettingsRoot_module_css_default.navCell',
     ],
     remedy: 'findIdeasSettingsNavRow() queries "nav button" and will no longer match',
@@ -79,6 +87,14 @@ const FACTS: readonly Fact[] = [
       'menu: "账号菜单"',
       'settings: "Settings"',
       'settings: "设置"',
+    ],
+    modernNeedles: [
+      'ctx.slots.inject(`settings.launcher`',
+      '"aria-haspopup":`menu`',
+      '"data-signed-out":!signedIn',
+      'id:`settings`,label:t(`settings`)',
+      'menu:`Account menu`',
+      'settings:`Settings`',
     ],
     remedy: 'the gear must be taught the new launcher labels/shape',
   },
@@ -136,6 +152,15 @@ function readFromAsar(pkg: string): string | undefined {
   }
 }
 
+/** Missing substrings, accepting either the original or modern bundle spelling. */
+function missingFactNeedles(text: string, fact: Fact): string[] {
+  const original = fact.needles.filter(needle => !text.includes(needle))
+  if (original.length === 0) return []
+  if (fact.modernNeedles === undefined) return original
+  const modern = fact.modernNeedles.filter(needle => !text.includes(needle))
+  return modern.length === 0 ? [] : [...original, ...modern]
+}
+
 /** Assert every fact against one bundle, naming the source in any failure. */
 function checkFacts(source: string, text: string | undefined, facts: readonly Fact[]): void {
   for (const fact of facts) {
@@ -144,7 +169,7 @@ function checkFacts(source: string, text: string | undefined, facts: readonly Fa
       continue
     }
     it(`${fact.id} [${source}]`, () => {
-      const missing = fact.needles.filter((needle) => !text.includes(needle))
+      const missing = missingFactNeedles(text, fact)
       expect(
         missing,
         `${source} / ${fact.pkg}: ${fact.remedy}` +
@@ -163,7 +188,7 @@ describe('shell contract: cross-panel navigation hooks', () => {
           // Not a failure: a machine without that profile simply proves nothing.
           return
         }
-        const missing = fact.needles.filter((needle) => !text.includes(needle))
+        const missing = missingFactNeedles(text, fact)
         expect(missing, `web / ${fact.pkg}: ${fact.remedy}`).toEqual([])
       })
     }

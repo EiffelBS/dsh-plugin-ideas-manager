@@ -6,6 +6,52 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.11.0 - 2026-11-24
+
+### Added
+
+- **The board returns to where you left it.** The last visited tab is kept across
+  panel navigation, and the selected workspace is remembered for the current
+  board session. The configured start tab is now only a first-access default.
+- **A quiet GitHub star invitation in About.** The About tab includes a small,
+  optional link to the repository page, followed by a yellow star icon, without
+  interrupting normal settings use.
+- **Portable synchronization identities and workspace mapping.** A separate,
+  versioned sync package can exchange one workspace between machines without
+  replacing the destination board. Each Home has a stable device identity, and
+  each workspace pairing uses an explicitly confirmed portable sync key. Idea
+  ids, relations and follow-up links survive the exchange; display numbers are
+  allocated locally. Live run, session and task-card pointers are never adopted
+  on the other machine. Existing backup and restore behavior is unchanged.
+- **Three-way synchronization merge planning.** The sync API now builds a
+  read-only, deterministic per-idea plan against a cached common ancestor. It
+  combines one-sided and disjoint edits, reports same-field and delete/edit
+  conflicts explicitly, unions tags while preserving prompt instructions, and
+  validates relation symmetry, references and dependency cycles. Missing
+  ancestors select conservative two-way mode without inferred deletions.
+  Destination backlog order is preserved unless a remote reorder is
+  unambiguous, and independently created near-duplicates are only proposed for
+  the existing merge action. Applying requires every conflict to be resolved,
+  keeps a pre-sync board snapshot, and commits once through the ledger's
+  existing transitions. A stale preview is refused if the board changes before
+  apply, and no background synchronization runs.
+- **Synchronization screen in the Backup tab.** **Export for synchronization**
+  downloads one workspace's Host-generated package. **Import and compare** shows
+  a read-only plan with creation, update, deletion, unchanged, workspace-pairing,
+  duplicate and conflict counts. A ready notice appears beside the file picker
+  and the panel scrolls to the detailed preview, with a **Show preview** shortcut.
+  Import and preview both show the source workspace, destination workspace and
+  portable key together, making the cross-machine pairing explicit. Unknown
+  workspace keys require an explicit local pairing; conflicting fields are shown
+  side by side with local, incoming and clear choices where safe, and delete/edit
+  conflicts require an explicit side. **Use incoming for all** and **Keep local
+  for all** provide confirmed bulk decisions and re-check the plan without
+  bypassing remaining structural conflicts. Apply stays disabled until every
+  decision is made and the preview is current. A successful apply names the
+  automatic pre-sync snapshot and offers a direct rollback to it. The existing
+  disaster-recovery restore remains a separate flow, with its wording and safety
+  behavior unchanged.
+
 ## 0.10.5 - 2026-11-07
 
 ### Fixed

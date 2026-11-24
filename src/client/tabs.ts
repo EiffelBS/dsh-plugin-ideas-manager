@@ -18,6 +18,9 @@ export const DEFAULT_TAB: BoardTab = 'overview'
 /** Storage key of the persisted active tab. */
 export const ACTIVE_TAB_STORAGE_KEY = 'dsh.ideas.activeTab'
 
+/** Panel-lifetime workspace memory, keyed by the live IdeasClient instance. */
+const workspaceScopeMemory = new WeakMap<object, string>()
+
 /** Narrow an unknown value to a board tab. */
 export function isBoardTab(value: unknown): value is BoardTab {
   return typeof value === 'string' && (BOARD_TABS as readonly string[]).includes(value)
@@ -29,15 +32,20 @@ export interface TabStorage {
   setItem(key: string, value: string): void
 }
 
-/** Read the persisted active tab; any hiccup falls back to the default. */
-export function readActiveTab(storage: TabStorage | undefined): BoardTab {
-  if (storage === undefined) return DEFAULT_TAB
+/** Read the persisted active tab, or undefined when no legal tab is stored. */
+export function readPersistedActiveTab(storage: TabStorage | undefined): BoardTab | undefined {
+  if (storage === undefined) return undefined
   try {
     const raw = storage.getItem(ACTIVE_TAB_STORAGE_KEY)
-    return raw !== null && isBoardTab(raw) ? raw : DEFAULT_TAB
+    return raw !== null && isBoardTab(raw) ? raw : undefined
   } catch {
-    return DEFAULT_TAB
+    return undefined
   }
+}
+
+/** Read the persisted active tab; any hiccup falls back to the default. */
+export function readActiveTab(storage: TabStorage | undefined): BoardTab {
+  return readPersistedActiveTab(storage) ?? DEFAULT_TAB
 }
 
 /** Persist the active tab; storage failures are ignored (never throw). */
@@ -48,4 +56,14 @@ export function writeActiveTab(storage: TabStorage | undefined, tab: BoardTab): 
   } catch {
     // Private browsing, quota, or a disabled storage must not break the tabs.
   }
+}
+
+/** Read the last workspace scope chosen for this live client instance. */
+export function readSessionWorkspaceScope(owner: object): string | undefined {
+  return workspaceScopeMemory.get(owner)
+}
+
+/** Remember the workspace scope across panel navigations for this client. */
+export function writeSessionWorkspaceScope(owner: object, scope: string): void {
+  workspaceScopeMemory.set(owner, scope)
 }

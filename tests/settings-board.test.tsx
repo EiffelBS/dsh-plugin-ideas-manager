@@ -28,6 +28,7 @@ import {
   type IdeasSnapshot,
 } from '../src/protocol.ts'
 import type { IdeaRecord } from '../src/core/ideas.ts'
+import { ACTIVE_TAB_STORAGE_KEY } from '../src/client/tabs.ts'
 
 // React 18 requires the act-environment flag in a plain jsdom setup.
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -86,6 +87,7 @@ beforeEach(() => {
   host = document.createElement('div')
   document.body.appendChild(host)
   localStorage.clear()
+  sessionStorage.clear()
 })
 afterEach(() => {
   if (root !== undefined) {
@@ -151,6 +153,42 @@ describe('board settings application', () => {
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('false')
     expect(tabs[2]!.getAttribute('aria-selected')).toBe('true')
     expect(host.querySelector('[data-dsh-ideas-delivered]')).not.toBeNull()
+  })
+
+  it('keeps the last visited tab instead of reapplying the first-access default', async () => {
+    localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, 'priorities')
+    const transport = new ConfigTransport()
+    transport.loaded = {
+      available: true,
+      value: { ...IDEAS_SETTINGS_DEFAULTS, defaultTab: 'delivered' },
+      revision: 1,
+    }
+    await renderBoard(transport)
+    const tabs = tabButtons()
+    expect(tabs[1]!.getAttribute('aria-selected')).toBe('true')
+    expect(tabs[2]!.getAttribute('aria-selected')).toBe('false')
+  })
+
+  it('restores the last workspace across panel navigation even when persistence is off', async () => {
+    const client = await renderBoard(new ConfigTransport())
+    const scope = host.querySelector(`.${classes.workspaceSelect}`) as HTMLSelectElement
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(scope, 'ws2')
+      scope.dispatchEvent(new Event('change', { bubbles: true }))
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    act(() => { root!.unmount() })
+    root = undefined
+    await act(async () => {
+      root = createRoot(host)
+      root.render(<IdeasBoard client={client} />)
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    })
+    const reopened = host.querySelector(`.${classes.workspaceSelect}`) as HTMLSelectElement
+    expect(reopened.value).toBe('ws2')
+    expect(host.textContent ?? '').toContain('Open two')
+    expect(host.textContent ?? '').not.toContain('Open one')
   })
 
   it('restores the remembered workspace scope (option rememberWorkspaceScope)', async () => {

@@ -682,7 +682,7 @@ function hasForbiddenImportField(value: unknown): boolean {
   return Object.entries(row).some(([key, nested]) => FORBIDDEN_IMPORT_FIELDS.has(key.toLowerCase()) || hasForbiddenImportField(nested))
 }
 
-function importedIdea(value: unknown): IdeaRecord | undefined {
+export function parseImportedIdea(value: unknown): IdeaRecord | undefined {
   const input = record(value)
   if (input === undefined || hasForbiddenImportField(input)) return undefined
   const row = { ...input }
@@ -872,7 +872,7 @@ function parseActionOnly(value: unknown): { action: IdeasAction } | undefined {
       if (!exactKeys(action, ['kind', 'sourceId', 'ideas'])) return undefined
       if (typeof action.sourceId !== 'string' || action.sourceId === '' || !Array.isArray(action.ideas)) return undefined
       {
-        const ideas = action.ideas.map(importedIdea)
+        const ideas = action.ideas.map(parseImportedIdea)
         return ideas.every((idea): idea is IdeaRecord => idea !== undefined)
           ? { action: { kind: 'import', sourceId: action.sourceId, ideas } }
           : undefined
@@ -967,12 +967,12 @@ export function ideaFromInput(id: string, input: NewIdeaInput, now: number): Ide
 
 /**
  * Why a snapshot exists: taken by hand, taken to be exported to another
- * machine, or displaced by a restore (the board a restore replaced). Spelled
- * here, in the protocol module, because the browser half renders it and
+ * machine, displaced by a restore, or kept before a synchronization apply.
+ * Spelled here, in the protocol module, because the browser half renders it and
  * `protocol.ts` is the one module both halves share — importing the Node-side
  * store here would drag `node:fs` into the browser bundle.
  */
-export type IdeasSnapshotReason = 'manual' | 'export' | 'pre-restore'
+export type IdeasSnapshotReason = 'manual' | 'export' | 'pre-restore' | 'pre-sync'
 
 /** One snapshot of the backup folder, as the list route reports it. */
 export interface IdeasSnapshotInfo {

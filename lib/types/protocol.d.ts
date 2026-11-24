@@ -343,6 +343,7 @@ export interface FollowUpInput {
     title: string;
     body: string;
 }
+export declare function parseImportedIdea(value: unknown): IdeaRecord | undefined;
 /**
  * Strict parser for the action envelope `{ requestId, action, initiator? }`.
  *
@@ -358,12 +359,12 @@ export declare function parseActionEnvelope(value: unknown): IdeasActionEnvelope
 export declare function ideaFromInput(id: string, input: NewIdeaInput, now: number): IdeaRecord;
 /**
  * Why a snapshot exists: taken by hand, taken to be exported to another
- * machine, or displaced by a restore (the board a restore replaced). Spelled
- * here, in the protocol module, because the browser half renders it and
+ * machine, displaced by a restore, or kept before a synchronization apply.
+ * Spelled here, in the protocol module, because the browser half renders it and
  * `protocol.ts` is the one module both halves share — importing the Node-side
  * store here would drag `node:fs` into the browser bundle.
  */
-export type IdeasSnapshotReason = 'manual' | 'export' | 'pre-restore';
+export type IdeasSnapshotReason = 'manual' | 'export' | 'pre-restore' | 'pre-sync';
 /** One snapshot of the backup folder, as the list route reports it. */
 export interface IdeasSnapshotInfo {
     /** File name inside the backup folder (the only accepted restore selector). */

@@ -56,6 +56,7 @@ function reasonLabel(snapshot: IdeasSnapshotInfo): string {
   if (snapshot.foreign) return t('backup.item.foreign')
   if (snapshot.reason === 'export') return t('backup.item.export')
   if (snapshot.reason === 'pre-restore') return t('backup.item.preRestore')
+  if (snapshot.reason === 'pre-sync') return t('backup.item.preSync')
   return t('backup.item.manual')
 }
 

@@ -67,6 +67,26 @@ describe('AboutPanel', () => {
     expect(host.textContent).toContain('>=0.1.5-rc.1')
   })
 
+  it('renders a discreet GitHub star invitation when a star URL is provided', () => {
+    makeHost()
+    const starUrl = 'https://github.com/EiffelBS/dsh-plugin-ideas-manager'
+    act(() => { root.render(<AboutPanel {...makeProps({ starUrl })} />) })
+    const support = host.querySelector('.dsh-plugin-about-support') as HTMLElement
+    expect(support.textContent).toContain(t('about.support'))
+    const link = support.querySelector('a') as HTMLAnchorElement
+    expect(link.textContent).toBe(t('about.star'))
+    expect(link.getAttribute('href')).toBe(starUrl)
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+    expect(support.querySelector('.dsh-plugin-about-star-icon')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('omits the star invitation when no star URL is provided', () => {
+    makeHost()
+    act(() => { root.render(<AboutPanel {...makeProps()} />) })
+    expect(host.querySelector('.dsh-plugin-about-support')).toBeNull()
+  })
+
   it('calls onCheckUpdate when the check-update button is clicked', () => {
     makeHost()
     const onCheckUpdate = vi.fn()

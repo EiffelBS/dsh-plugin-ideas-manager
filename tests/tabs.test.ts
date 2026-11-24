@@ -5,7 +5,17 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { ACTIVE_TAB_STORAGE_KEY, DEFAULT_TAB, isBoardTab, readActiveTab, writeActiveTab, type TabStorage } from '../src/client/tabs.ts'
+import {
+  ACTIVE_TAB_STORAGE_KEY,
+  DEFAULT_TAB,
+  isBoardTab,
+  readActiveTab,
+  readPersistedActiveTab,
+  readSessionWorkspaceScope,
+  writeActiveTab,
+  writeSessionWorkspaceScope,
+  type TabStorage,
+} from '../src/client/tabs.ts'
 
 function fakeStorage(): TabStorage & { map: Map<string, string> } {
   const map = new Map<string, string>()
@@ -42,6 +52,15 @@ describe('readActiveTab', () => {
     expect(readActiveTab(storage)).toBe('priorities')
   })
 
+  it('distinguishes no persisted tab from the overview default', () => {
+    const storage = fakeStorage()
+    expect(readPersistedActiveTab(storage)).toBeUndefined()
+    storage.setItem(ACTIVE_TAB_STORAGE_KEY, 'overview')
+    expect(readPersistedActiveTab(storage)).toBe('overview')
+    storage.setItem(ACTIVE_TAB_STORAGE_KEY, 'bogus')
+    expect(readPersistedActiveTab(storage)).toBeUndefined()
+  })
+
   it('degrades to the default when the storage accessor throws', () => {
     const broken: TabStorage = {
       getItem: () => { throw new Error('storage blocked') },
@@ -63,5 +82,18 @@ describe('writeActiveTab / readActiveTab round trip', () => {
 
   it('is a harmless no-op without storage', () => {
     expect(() => writeActiveTab(undefined, 'priorities')).not.toThrow()
+  })
+})
+
+describe('panel workspace scope memory', () => {
+  it('round-trips a concrete scope and the all-workspaces empty scope per owner', () => {
+    const owner = {}
+    const otherOwner = {}
+    expect(readSessionWorkspaceScope(owner)).toBeUndefined()
+    writeSessionWorkspaceScope(owner, 'ws1')
+    expect(readSessionWorkspaceScope(owner)).toBe('ws1')
+    expect(readSessionWorkspaceScope(otherOwner)).toBeUndefined()
+    writeSessionWorkspaceScope(owner, '')
+    expect(readSessionWorkspaceScope(owner)).toBe('')
   })
 })

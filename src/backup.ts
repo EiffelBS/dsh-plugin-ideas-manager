@@ -55,6 +55,7 @@ const REASON_STEMS: Record<SnapshotReason, string> = {
   manual: 'snapshot',
   export: 'export',
   'pre-restore': 'displaced',
+  'pre-sync': 'presync',
 }
 
 /**

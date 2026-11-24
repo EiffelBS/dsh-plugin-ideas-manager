@@ -30,12 +30,34 @@ import {
   type IdeasSettingsView,
   type IdeasSnapshotReason,
 } from './protocol.ts'
+import {
+  parseIdeasSyncExportRequest,
+  parseIdeasSyncImportRequest,
+  parseIdeasSyncPlanRequest,
+  parseIdeasSyncWorkspaceRequest,
+  type IdeasSyncErrorCode,
+} from './sync.ts'
 
 const ACTION_LIMIT = 64 * 1024
 const IMPORT_LIMIT = 2 * 1024 * 1024
 const HEARTBEAT_MS = 15_000
 /** Cap of the snapshot-download route (a local file, read once per download). */
 const SNAPSHOT_CONTENT_LIMIT = 64 * 1024 * 1024
+/** Sync packages carry full bodies and share the restore route's document budget. */
+const SYNC_PACKAGE_LIMIT = IDEAS_RESTORE_LIMIT
+/** State refusals: retrying unchanged fails until the human changes the mapping or content. */
+const SYNC_CONFLICT_CODES = new Set<IdeasSyncErrorCode>([
+  'sync-workspace-unconfirmed',
+  'sync-key-conflict',
+  'sync-workspace-conflict',
+  'sync-preview-stale',
+  'sync-idea-conflict',
+  'sync-reference-missing',
+  'sync-relation-invalid',
+  'sync-resolution-invalid',
+  'sync-snapshot-failed',
+  'sync-apply-failed',
+])
 
 /**
  * Harness browser-auth cookie prefix (dsh-client-connection): the
@@ -475,5 +497,139 @@ function parseSnapshotReason(value: unknown): IdeasSnapshotReason {
       }
     },
   }
-  return [state, ideaBody, action, events, config, launch, backup, snapshotContent, restore]
+  /**
+   * Additive portable-sync route family. None of these routes belongs to the
+   * frozen action envelope, and none replaces the disaster-recovery snapshot.
+   */
+  const syncOverview: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/sync`,
+    handler: (req, res): void => {
+      if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      try {
+        writeJson(res, 200, service.syncOverview(), { 'cache-control': 'no-store' })
+      } catch (error) {
+        const message = messageOf(error)
+        writeJson(res, message === 'ideas plugin is disabled' ? 409 : 500, { ok: false, error: message }, { 'cache-control': 'no-store' })
+      }
+    },
+  }
+  const syncWorkspaces: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/sync/workspaces`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string, message?: string): void => {
+        writeJson(res, status, { ok: false, error, ...(message === undefined ? {} : { message }) }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { value: unknown; byteLength: number }
+      try {
+        body = await readBody(req, ACTION_LIMIT)
+      } catch (error) {
+        const message = messageOf(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      const request = parseIdeasSyncWorkspaceRequest(body.value)
+      if (request === undefined) return deny(400, 'invalid-sync-workspace')
+      try {
+        const outcome = service.confirmSyncWorkspace(request)
+        if (outcome.ok) return writeJson(res, 200, outcome, { 'cache-control': 'no-store' })
+        writeJson(res, SYNC_CONFLICT_CODES.has(outcome.error) ? 409 : 400, outcome, { 'cache-control': 'no-store' })
+      } catch (error) {
+        const message = messageOf(error)
+        deny(message === 'ideas plugin is disabled' ? 409 : 400, message)
+      }
+    },
+  }
+  const syncExport: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/sync/export`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string, message?: string): void => {
+        writeJson(res, status, { ok: false, error, ...(message === undefined ? {} : { message }) }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { value: unknown; byteLength: number }
+      try {
+        body = await readBody(req, ACTION_LIMIT)
+      } catch (error) {
+        const message = messageOf(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      const request = parseIdeasSyncExportRequest(body.value)
+      if (request === undefined) return deny(400, 'invalid-sync-export')
+      try {
+        const outcome = service.exportSyncWorkspace(request)
+        if (outcome.ok) return writeJson(res, 200, outcome, { 'cache-control': 'no-store' })
+        writeJson(res, SYNC_CONFLICT_CODES.has(outcome.error) ? 409 : 400, outcome, { 'cache-control': 'no-store' })
+      } catch (error) {
+        const message = messageOf(error)
+        deny(message === 'ideas plugin is disabled' ? 409 : 400, message)
+      }
+    },
+  }
+  const syncPlan: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/sync/plan`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string, message?: string): void => {
+        writeJson(res, status, { ok: false, error, ...(message === undefined ? {} : { message }) }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { value: unknown; byteLength: number }
+      try {
+        body = await readBody(req, SYNC_PACKAGE_LIMIT)
+      } catch (error) {
+        const message = messageOf(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      const request = parseIdeasSyncPlanRequest(body.value)
+      if (request === undefined) return deny(400, 'invalid-sync-package')
+      try {
+        const outcome = service.planSyncPackage(request)
+        if (outcome.ok) return writeJson(res, 200, outcome, { 'cache-control': 'no-store' })
+        writeJson(res, SYNC_CONFLICT_CODES.has(outcome.error) ? 409 : 400, outcome, { 'cache-control': 'no-store' })
+      } catch (error) {
+        const message = messageOf(error)
+        deny(message === 'ideas plugin is disabled' ? 409 : 400, message)
+      }
+    },
+  }
+  const syncImport: WebRoute = {
+    kind: 'exact',
+    path: `${IDEAS_API_PREFIX}/sync/import`,
+    handler: async (req, res): Promise<void> => {
+      const deny = (status: number, error: string, message?: string): void => {
+        writeJson(res, status, { ok: false, error, ...(message === undefined ? {} : { message }) }, { 'cache-control': 'no-store' })
+      }
+      if (req.method !== 'POST') return deny(405, 'method-not-allowed')
+      if (!guard(req, res)) return
+      if (!(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) return deny(415, 'json-required')
+      let body: { value: unknown; byteLength: number }
+      try {
+        body = await readBody(req, SYNC_PACKAGE_LIMIT)
+      } catch (error) {
+        const message = messageOf(error)
+        return deny(message === 'body-too-large' ? 413 : 400, message)
+      }
+      const request = parseIdeasSyncImportRequest(body.value)
+      if (request === undefined) return deny(400, 'invalid-sync-package')
+      try {
+        const outcome = service.importSyncPackage(request.package, request.resolutions ?? [], request.expectedRevision)
+        if (outcome.ok) return writeJson(res, 200, outcome, { 'cache-control': 'no-store' })
+        writeJson(res, SYNC_CONFLICT_CODES.has(outcome.error) ? 409 : 400, outcome, { 'cache-control': 'no-store' })
+      } catch (error) {
+        const message = messageOf(error)
+        deny(message === 'ideas plugin is disabled' ? 409 : 400, message)
+      }
+    },
+  }
+  return [state, ideaBody, action, events, config, launch, backup, snapshotContent, restore, syncOverview, syncWorkspaces, syncExport, syncPlan, syncImport]
 }

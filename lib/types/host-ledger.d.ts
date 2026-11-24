@@ -22,6 +22,7 @@ import type { IdeasStatsSource } from './core/ideas-stats.ts';
 import { IdeasBackupStore, type SnapshotFile, type SnapshotRead, type SnapshotReason } from './backup.ts';
 import { type IdeasExport } from './export-markdown.ts';
 import { IDEAS_SCHEMA_VERSION, type IdeasAction } from './protocol.ts';
+import { type IdeasSyncConflictResolution, type IdeasSyncExportRequest, type IdeasSyncImportResponse, type IdeasSyncMappingResponse, type IdeasSyncOverview, type IdeasSyncPackage, type IdeasSyncPlanRequest, type IdeasSyncPlanResponse, type IdeasSyncRefusal, type IdeasSyncWorkspaceRequest } from './sync.ts';
 export declare const IDEAS_LEDGER_DIR_NAME = "ideas";
 export declare const IDEAS_LEDGER_FILE_NAME = "ledger-v2.json";
 export declare const IDEAS_LOCK_FILE_NAME = "ledger-v2.lock";
@@ -101,6 +102,16 @@ export interface LedgerSnapshotResult {
     /** How many older snapshots the retention policy removed. */
     pruned: number;
 }
+/** Additive synchronization results. A refusal never mutates the document. */
+export type LedgerSyncMappingResult = IdeasSyncMappingResponse | IdeasSyncRefusal;
+export type LedgerSyncExportResult = {
+    ok: true;
+    package: IdeasSyncPackage;
+} | IdeasSyncRefusal;
+export type LedgerSyncPlanResult = IdeasSyncPlanResponse | IdeasSyncRefusal;
+export type LedgerSyncImportResult = (Omit<IdeasSyncImportResponse, 'displaced'> & {
+    displaced?: SnapshotFile;
+}) | IdeasSyncRefusal;
 /**
  * Structural repair of ONE persisted idea row: `ok: false` carries the reason
  * it could not be repaired, which is what a strict reader (a restore) reports
@@ -148,6 +159,8 @@ export declare class IdeasHostLedger {
      */
     private readonly backups;
     private disposed;
+    /** False until the additive sync identity has been written to this ledger. */
+    private syncPersisted;
     constructor(options?: {
         dir?: string;
         now?: () => number;
@@ -229,6 +242,31 @@ export declare class IdeasHostLedger {
      *     it ran on is gone.
      */
     restore(source: LedgerRestoreSource): LedgerRestoreResult;
+    /**
+     * Additive overview of known workspaces and their confirmed portable keys.
+     * Reading it never guesses a pairing from a workspace name or path.
+     */
+    syncOverview(): IdeasSyncOverview;
+    /**
+     * Confirm a portable sync key for one local workspace. The caller must pass
+     * `confirm: true`; no name/path heuristic can create this mapping.
+     */
+    confirmSyncWorkspace(request: IdeasSyncWorkspaceRequest): LedgerSyncMappingResult;
+    /** Export one confirmed workspace and retain the snapshot as a future ancestor. */
+    exportSyncWorkspace(request: IdeasSyncExportRequest): LedgerSyncExportResult;
+    /** Build a merge plan without persisting identity state, snapshots, or decisions. */
+    planSyncPackage(request: IdeasSyncPlanRequest): LedgerSyncPlanResult;
+    private planForMapping;
+    private unresolvedSyncRefusal;
+    /**
+     * Apply one resolved plan through the existing delete/import/reorder
+     * transitions, staged in memory and committed once. The ledger lock is held by
+     * this instance for the whole operation; a pre-sync snapshot is written before
+     * the first transition and any failure restores the in-memory document.
+     */
+    importSyncPackage(parsed: IdeasSyncPackage, resolutions?: readonly IdeasSyncConflictResolution[], expectedRevision?: number): LedgerSyncImportResult;
+    /** Persist the additive identity before the first sync mutation. */
+    private ensureSyncPersisted;
     /**
      * Serialize the document exactly as it is persisted, plus the snapshot stamp
      * that says what the file is. The stamp is additive and ignored by the

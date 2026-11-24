@@ -7,6 +7,7 @@
  */
 import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshot, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasStats, type IdeasStatsQuery, type LaunchResponse } from '../protocol.ts';
 import type { IdeaRecord } from '../core/ideas.ts';
+import type { IdeasSyncExportRequest, IdeasSyncExportResponse, IdeasSyncImportRequest, IdeasSyncImportResponse, IdeasSyncMappingResponse, IdeasSyncOverview, IdeasSyncPlanRequest, IdeasSyncPlanResponse, IdeasSyncWorkspaceRequest } from '../sync.ts';
 /**
  * The Host answered 404 WITHOUT a JSON body — i.e. no route of ours is
  * registered on the running instance.
@@ -21,6 +22,12 @@ export declare class IdeasRouteMissingError extends Error {
     /** The status that proved it (always 404). */
     readonly status = 404;
     constructor();
+}
+/** A normal Host refusal, keeping its stable code and complete answer. */
+export declare class IdeasApiError extends Error {
+    readonly code: string;
+    readonly body: unknown;
+    constructor(message: string, code: string, body: unknown);
 }
 export interface IdeasHostTransport {
     /**
@@ -98,6 +105,12 @@ export interface IdeasHostTransport {
      * file they are, so an export is restorable on the machine it lands on.
      */
     snapshotContentUrl?(name: string): string;
+    /** Portable synchronization capabilities, independent of backup/restore. */
+    syncOverview?(): Promise<IdeasSyncOverview>;
+    syncWorkspaces?(request: IdeasSyncWorkspaceRequest): Promise<IdeasSyncMappingResponse>;
+    syncExport?(request: IdeasSyncExportRequest): Promise<IdeasSyncExportResponse>;
+    syncPlan?(request: IdeasSyncPlanRequest): Promise<IdeasSyncPlanResponse>;
+    syncImport?(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse>;
     /**
      * The bounded backlog-health aggregate. Optional capability, like
      * `backups`: a transport without it (an older Host, a test fake) shows no
@@ -125,6 +138,11 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     takeSnapshot(reason?: IdeasSnapshotReason): Promise<IdeasSnapshotTaken>;
     restoreSnapshot(request: IdeasRestoreRequest): Promise<IdeasRestoreResponse>;
     snapshotContentUrl(name: string): string;
+    syncOverview(): Promise<IdeasSyncOverview>;
+    syncWorkspaces(request: IdeasSyncWorkspaceRequest): Promise<IdeasSyncMappingResponse>;
+    syncExport(request: IdeasSyncExportRequest): Promise<IdeasSyncExportResponse>;
+    syncPlan(request: IdeasSyncPlanRequest): Promise<IdeasSyncPlanResponse>;
+    syncImport(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse>;
     /**
      * The health aggregate: its own small GET, never folded into the
      * board poll. The scope mirrors the board's workspace selector — omitted for

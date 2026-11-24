@@ -20,7 +20,13 @@ export interface TabStorage {
     getItem(key: string): string | null;
     setItem(key: string, value: string): void;
 }
+/** Read the persisted active tab, or undefined when no legal tab is stored. */
+export declare function readPersistedActiveTab(storage: TabStorage | undefined): BoardTab | undefined;
 /** Read the persisted active tab; any hiccup falls back to the default. */
 export declare function readActiveTab(storage: TabStorage | undefined): BoardTab;
 /** Persist the active tab; storage failures are ignored (never throw). */
 export declare function writeActiveTab(storage: TabStorage | undefined, tab: BoardTab): void;
+/** Read the last workspace scope chosen for this live client instance. */
+export declare function readSessionWorkspaceScope(owner: object): string | undefined;
+/** Remember the workspace scope across panel navigations for this client. */
+export declare function writeSessionWorkspaceScope(owner: object, scope: string): void;

@@ -19,6 +19,10 @@ export declare const IDEAS_GUIDANCE = "dsh-plugin-ideas-manager is installed (ge
 export { IDEAS_SETTINGS_NAMESPACE } from './host-settings.ts';
 export { buildIdeasReadSnapshot, ideasReadSearchParams, parseIdeasReadQuery, IDEAS_API_PREFIX, IDEAS_READ_DEFAULT_LIMIT, IDEAS_READ_MAX_BODY_BYTES, IDEAS_READ_MAX_LIMIT, IDEAS_READ_MAX_RESPONSE_BYTES, } from './protocol.ts';
 export type { IdeasReadField, IdeasReadMetadata, IdeasReadQuery, IdeasReadRow, IdeasReadSnapshot, IdeasReadView, NormalizedIdeasReadQuery, } from './protocol.ts';
+export { IDEAS_SYNC_FORMAT, IDEAS_SYNC_ID_MAX_LENGTH, IDEAS_SYNC_LOCAL_IDEA_FIELDS, IDEAS_SYNC_MAPPING_LIMIT, IDEAS_SYNC_PORTABLE_IDEA_FIELDS, IDEAS_SYNC_SNAPSHOT_CACHE_LIMIT, IDEAS_SYNC_SNAPSHOT_MAX_BYTES, IDEAS_SYNC_VERSION, IDEAS_SYNC_WORKSPACE_ID_MAX_LENGTH, buildIdeasSyncPackage, cacheIdeasSyncSnapshot, parseIdeasSyncConflictResolutions, parseIdeasSyncExportRequest, parseIdeasSyncImportRequest, parseIdeasSyncPackage, parseIdeasSyncPlanRequest, parseIdeasSyncState, parseIdeasSyncWorkspaceRequest, portableIdeaOf, } from './sync.ts';
+export type { IdeasSyncConflictResolution, IdeasSyncErrorCode, IdeasSyncExportRequest, IdeasSyncExportResponse, IdeasSyncImportRequest, IdeasSyncImportResponse, IdeasSyncIdea, IdeasSyncMappingResponse, IdeasSyncOverview, IdeasSyncPackage, IdeasSyncPlanRequest, IdeasSyncPlanResponse, IdeasSyncRefusal, IdeasSyncSnapshotCache, IdeasSyncState, IdeasSyncWorkspaceMapping, IdeasSyncWorkspaceRequest, IdeasSyncWorkspaceView, } from './sync.ts';
+export { ideasSyncAncestor, planIdeasSyncMerge } from './sync-merge.ts';
+export type { IdeasSyncConflict, IdeasSyncConflictKind, IdeasSyncDuplicateCandidate, IdeasSyncMergeField, IdeasSyncMergeInput, IdeasSyncMergeMode, IdeasSyncMergePlan, IdeasSyncPlanAction, IdeasSyncPlanOperation, } from './sync-merge.ts';
 /** Plugin config, validated by the same-named schemastery schema. */
 export interface Config {
     /** Master switch for the plugin (browser half + host routes). */

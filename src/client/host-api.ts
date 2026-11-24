@@ -30,6 +30,17 @@ import {
   type LaunchResponse,
 } from '../protocol.ts'
 import type { IdeaRecord } from '../core/ideas.ts'
+import type {
+  IdeasSyncExportRequest,
+  IdeasSyncExportResponse,
+  IdeasSyncImportRequest,
+  IdeasSyncImportResponse,
+  IdeasSyncMappingResponse,
+  IdeasSyncOverview,
+  IdeasSyncPlanRequest,
+  IdeasSyncPlanResponse,
+  IdeasSyncWorkspaceRequest,
+} from '../sync.ts'
 
 const REQUEST_TIMEOUT_MS = 15_000
 /** Poll cadence replacing the SSE subscription (see subscribe doc). */
@@ -56,6 +67,19 @@ export class IdeasRouteMissingError extends Error {
   constructor() {
     super('the running Host does not serve this route')
     this.name = 'IdeasRouteMissingError'
+  }
+}
+
+/** A normal Host refusal, keeping its stable code and complete answer. */
+export class IdeasApiError extends Error {
+  readonly code: string
+  readonly body: unknown
+
+  constructor(message: string, code: string, body: unknown) {
+    super(message)
+    this.name = 'IdeasApiError'
+    this.code = code
+    this.body = body
   }
 }
 
@@ -91,7 +115,8 @@ async function readJson<T>(response: Response): Promise<T> {
     // and a Host-written `message`; the sentence is what the panel shows, so it
     // wins. Every other route sends no `message` and this is inert for them.
     if (body.error === undefined) throw new Error(`ideas request failed: ${response.status}`)
-    throw new Error(typeof body.message === 'string' && body.message !== '' ? body.message : body.error)
+    const message = typeof body.message === 'string' && body.message !== '' ? body.message : body.error
+    throw new IdeasApiError(message, body.error, body)
   }
   if (body === undefined) throw unreadableAnswer(response.status)
   return body
@@ -173,6 +198,12 @@ export interface IdeasHostTransport {
    * file they are, so an export is restorable on the machine it lands on.
    */
   snapshotContentUrl?(name: string): string
+  /** Portable synchronization capabilities, independent of backup/restore. */
+  syncOverview?(): Promise<IdeasSyncOverview>
+  syncWorkspaces?(request: IdeasSyncWorkspaceRequest): Promise<IdeasSyncMappingResponse>
+  syncExport?(request: IdeasSyncExportRequest): Promise<IdeasSyncExportResponse>
+  syncPlan?(request: IdeasSyncPlanRequest): Promise<IdeasSyncPlanResponse>
+  syncImport?(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse>
   /**
    * The bounded backlog-health aggregate. Optional capability, like
    * `backups`: a transport without it (an older Host, a test fake) shows no
@@ -240,6 +271,42 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
 
   snapshotContentUrl(name: string): string {
     return `${IDEAS_API_PREFIX}/backup/content?name=${encodeURIComponent(name)}`
+  }
+
+  async syncOverview(): Promise<IdeasSyncOverview> {
+    return await this.request<IdeasSyncOverview>(`${IDEAS_API_PREFIX}/sync`, { cache: 'no-store' })
+  }
+
+  async syncWorkspaces(request: IdeasSyncWorkspaceRequest): Promise<IdeasSyncMappingResponse> {
+    return await this.request<IdeasSyncMappingResponse>(`${IDEAS_API_PREFIX}/sync/workspaces`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+  }
+
+  async syncExport(request: IdeasSyncExportRequest): Promise<IdeasSyncExportResponse> {
+    return await this.request<IdeasSyncExportResponse>(`${IDEAS_API_PREFIX}/sync/export`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+  }
+
+  async syncPlan(request: IdeasSyncPlanRequest): Promise<IdeasSyncPlanResponse> {
+    return await this.request<IdeasSyncPlanResponse>(`${IDEAS_API_PREFIX}/sync/plan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
+  }
+
+  async syncImport(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse> {
+    return await this.request<IdeasSyncImportResponse>(`${IDEAS_API_PREFIX}/sync/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(request),
+    })
   }
 
   /**

@@ -19,6 +19,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import {
   existsSync,
   mkdirSync,
@@ -35,6 +36,33 @@ import { IdeasBackupStore, IDEAS_BACKUP_DIR_NAME, type SnapshotFile, type Snapsh
 import { dshHome } from './dsh-home.ts'
 import { buildIdeasExport, type IdeasExport } from './export-markdown.ts'
 import { IDEAS_SCHEMA_VERSION, type FollowUpInput, type IdeaUpdatePatch, type IdeasAction } from './protocol.ts'
+import {
+  buildIdeasSyncPackage,
+  cacheIdeasSyncSnapshot,
+  createIdeasSyncState,
+  normalizeIdeasSyncState,
+  parseIdeasSyncState,
+  portableIdeaOf,
+  type IdeasSyncConflictResolution,
+  type IdeasSyncExportRequest,
+  type IdeasSyncImportResponse,
+  type IdeasSyncIdea,
+  type IdeasSyncMappingResponse,
+  type IdeasSyncOverview,
+  type IdeasSyncPackage,
+  type IdeasSyncPlanRequest,
+  type IdeasSyncPlanResponse,
+  type IdeasSyncRefusal,
+  type IdeasSyncState,
+  type IdeasSyncWorkspaceMapping,
+  type IdeasSyncWorkspaceRequest,
+  type IdeasSyncWorkspaceView,
+} from './sync.ts'
+import {
+  ideasSyncAncestor,
+  planIdeasSyncMerge,
+  type IdeasSyncMergePlan,
+} from './sync-merge.ts'
 
 export const IDEAS_LEDGER_DIR_NAME = 'ideas'
 export const IDEAS_LEDGER_FILE_NAME = 'ledger-v2.json'
@@ -55,6 +83,8 @@ interface LedgerDocument {
   recentRequests: PersistedRequest[]
   /** Next capture sequence — the stable "#N" idea number (1-based). */
   ideaSequence: number
+  /** Machine-local portable workspace identities; never included in a sync package. */
+  sync: IdeasSyncState
 }
 
 /** On-disk document with an unknown schema until the load branches decide. */
@@ -139,6 +169,12 @@ export interface LedgerSnapshotResult {
   /** How many older snapshots the retention policy removed. */
   pruned: number
 }
+
+/** Additive synchronization results. A refusal never mutates the document. */
+export type LedgerSyncMappingResult = IdeasSyncMappingResponse | IdeasSyncRefusal
+export type LedgerSyncExportResult = { ok: true; package: IdeasSyncPackage } | IdeasSyncRefusal
+export type LedgerSyncPlanResult = IdeasSyncPlanResponse | IdeasSyncRefusal
+export type LedgerSyncImportResult = (Omit<IdeasSyncImportResponse, 'displaced'> & { displaced?: SnapshotFile }) | IdeasSyncRefusal
 
 interface LockRecord {
   token: string
@@ -408,6 +444,10 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function syncRefusal(error: IdeasSyncRefusal['error'], message: string): IdeasSyncRefusal {
+  return { ok: false, error, message }
+}
+
 /** JSON.parse without the throw (a snapshot that is not JSON is a refusal). */
 function parseJson(text: string): unknown {
   try {
@@ -489,6 +529,13 @@ function validateLedgerDocument(parsed: unknown): LedgerValidation {
   if (!Array.isArray(row.ideas)) {
     return { ok: false, reason: 'snapshot-shape', message: 'the ledger document carries no idea list' }
   }
+  if (row.sync !== undefined && parseIdeasSyncState(row.sync) === undefined) {
+    return {
+      ok: false,
+      reason: 'snapshot-shape',
+      message: 'the ledger document has an unreadable synchronization identity or workspace mapping',
+    }
+  }
   for (const key of ['revision', 'ideaSequence'] as const) {
     const value = row[key]
     if (value === undefined) continue
@@ -541,6 +588,7 @@ function normalizeParsedDocument(parsed: ParsedLedgerDocument): LedgerDocument {
     ideaSequence: Number.isSafeInteger(parsed.ideaSequence) && (parsed.ideaSequence ?? -1) >= 0
       ? parsed.ideaSequence as number
       : 0,
+    sync: normalizeIdeasSyncState(parsed.sync, randomUUID()),
     importedSources: Array.isArray(parsed.importedSources)
       ? parsed.importedSources.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
       : [],
@@ -574,6 +622,8 @@ export class IdeasHostLedger {
    */
   private readonly backups: IdeasBackupStore
   private disposed = false
+  /** False until the additive sync identity has been written to this ledger. */
+  private syncPersisted = false
 
   constructor(options: { dir?: string; now?: () => number; backups?: IdeasBackupStore } = {}) {
     this.now = options.now ?? Date.now
@@ -802,6 +852,286 @@ export class IdeasHostLedger {
     }
   }
 
+  // --- portable synchronization --------------------------------------------
+
+  /**
+   * Additive overview of known workspaces and their confirmed portable keys.
+   * Reading it never guesses a pairing from a workspace name or path.
+   */
+  syncOverview(): IdeasSyncOverview {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    const counts = new Map<string, number>()
+    for (const idea of this.document.ideas) {
+      if (idea.workspaceId === undefined) continue
+      counts.set(idea.workspaceId, (counts.get(idea.workspaceId) ?? 0) + 1)
+    }
+    const mappings = new Map(this.document.sync.workspaces.map(mapping => [mapping.workspaceId, mapping]))
+    const workspaceIds = new Set([...counts.keys(), ...mappings.keys()])
+    return {
+      ok: true,
+      deviceId: this.document.sync.deviceId,
+      workspaces: [...workspaceIds].sort().map((workspaceId): IdeasSyncWorkspaceView => {
+        const mapping = mappings.get(workspaceId)
+        if (mapping === undefined) return { workspaceId, ideaCount: counts.get(workspaceId) ?? 0, confirmed: false }
+        return {
+          workspaceId,
+          ideaCount: counts.get(workspaceId) ?? 0,
+          syncKey: mapping.syncKey,
+          confirmed: true,
+          confirmedAt: mapping.confirmedAt,
+          baseSnapshotId: mapping.baseSnapshotId,
+        }
+      }),
+    }
+  }
+
+  /**
+   * Confirm a portable sync key for one local workspace. The caller must pass
+   * `confirm: true`; no name/path heuristic can create this mapping.
+   */
+  confirmSyncWorkspace(request: IdeasSyncWorkspaceRequest): LedgerSyncMappingResult {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    if (request.confirm !== true) return syncRefusal('invalid-sync-workspace', 'the workspace pairing must be explicitly confirmed')
+    this.ensureSyncPersisted()
+    const workspaceId = request.workspaceId.trim()
+    // The Host does not own the DSH workspace registry. An empty local workspace
+    // therefore has no idea row to discover, but the browser can still offer its
+    // registry id here. Literal confirmation is the authority for that pairing;
+    // no name or path heuristic is involved.
+    const existing = this.document.sync.workspaces.find(mapping => mapping.workspaceId === workspaceId)
+    if (existing !== undefined) {
+      if (request.syncKey === undefined || request.syncKey === existing.syncKey) {
+        return { ok: true, mapping: { ...existing } }
+      }
+      return syncRefusal('sync-workspace-conflict', 'this local workspace already has a different confirmed sync key')
+    }
+    const usedKeys = new Set(this.document.sync.workspaces.map(mapping => mapping.syncKey))
+    let syncKey = request.syncKey
+    if (syncKey !== undefined && usedKeys.has(syncKey)) {
+      return syncRefusal('sync-key-conflict', 'this sync key is already confirmed for another local workspace')
+    }
+    if (syncKey === undefined) {
+      do { syncKey = `sync_${randomUUID()}` } while (usedKeys.has(syncKey))
+    }
+    const mapping = {
+      syncKey,
+      workspaceId,
+      confirmedAt: this.now(),
+      baseSnapshotId: null,
+      snapshots: [],
+    }
+    this.document.sync = {
+      ...this.document.sync,
+      workspaces: [...this.document.sync.workspaces, mapping],
+    }
+    this.commit()
+    return { ok: true, mapping: { ...mapping } }
+  }
+
+  /** Export one confirmed workspace and retain the snapshot as a future ancestor. */
+  exportSyncWorkspace(request: IdeasSyncExportRequest): LedgerSyncExportResult {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    this.ensureSyncPersisted()
+    const mapping = this.document.sync.workspaces.find(candidate => candidate.workspaceId === request.workspaceId)
+    if (mapping === undefined) {
+      return syncRefusal('sync-workspace-unconfirmed', 'confirm a sync key for this local workspace before exporting it')
+    }
+    const snapshotId = randomUUID()
+    const pkg = buildIdeasSyncPackage({
+      ideas: this.document.ideas,
+      mapping,
+      deviceId: this.document.sync.deviceId,
+      snapshotId,
+      createdAt: this.now(),
+    })
+    let snapshots: ReturnType<typeof cacheIdeasSyncSnapshot>
+    try {
+      snapshots = cacheIdeasSyncSnapshot(mapping, snapshotId, pkg.ideas)
+    } catch (error) {
+      return syncRefusal('invalid-sync-export', `the workspace is too large to exchange as one sync package (${messageOf(error)})`)
+    }
+    this.document.sync = {
+      ...this.document.sync,
+      workspaces: this.document.sync.workspaces.map(item => item.workspaceId === mapping.workspaceId
+        ? { ...item, snapshots }
+        : item),
+    }
+    this.commit()
+    return { ok: true, package: pkg }
+  }
+
+  /** Build a merge plan without persisting identity state, snapshots, or decisions. */
+  planSyncPackage(request: IdeasSyncPlanRequest): LedgerSyncPlanResult {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    if (request.expectedRevision !== undefined && request.expectedRevision !== this.document.revision) {
+      return syncRefusal('sync-preview-stale', 'the board changed after this preview was made; refresh the preview before applying it')
+    }
+    const mapping = this.document.sync.workspaces.find(candidate => candidate.syncKey === request.package.workspace.syncKey)
+    if (mapping === undefined) {
+      return syncRefusal('sync-workspace-unconfirmed', 'confirm this package sync key for a local workspace before planning it')
+    }
+    return {
+      ok: true,
+      revision: this.document.revision,
+      plan: this.planForMapping(mapping, request.package, request.resolutions ?? []),
+    }
+  }
+
+  private planForMapping(
+    mapping: IdeasSyncWorkspaceMapping,
+    incoming: IdeasSyncPackage,
+    resolutions: readonly IdeasSyncConflictResolution[],
+  ): IdeasSyncMergePlan {
+    return planIdeasSyncMerge({
+      localIdeas: this.document.ideas,
+      workspaceId: mapping.workspaceId,
+      incoming,
+      ancestorIdeas: ideasSyncAncestor(mapping.snapshots, incoming),
+      resolutions,
+    })
+  }
+
+  private unresolvedSyncRefusal(plan: IdeasSyncMergePlan): IdeasSyncRefusal {
+    if (plan.invalidResolutions.length > 0) {
+      return {
+        ok: false,
+        error: 'sync-resolution-invalid',
+        message: `unknown conflict decision(s): ${plan.invalidResolutions.join(', ')}`,
+        plan,
+      }
+    }
+    const reference = plan.conflicts.find(conflict => conflict.kind === 'reference-missing' || conflict.kind === 'self-reference')
+    const relation = plan.conflicts.find(conflict => conflict.kind === 'dependency-cycle' || conflict.kind === 'follow-up-cycle')
+    return {
+      ok: false,
+      error: reference !== undefined ? 'sync-reference-missing' : relation !== undefined ? 'sync-relation-invalid' : 'sync-idea-conflict',
+      message: reference?.message ?? relation?.message ?? plan.conflicts[0]?.message ?? 'the synchronization plan has unresolved conflicts',
+      plan,
+    }
+  }
+
+  /**
+   * Apply one resolved plan through the existing delete/import/reorder
+   * transitions, staged in memory and committed once. The ledger lock is held by
+   * this instance for the whole operation; a pre-sync snapshot is written before
+   * the first transition and any failure restores the in-memory document.
+   */
+  importSyncPackage(
+    parsed: IdeasSyncPackage,
+    resolutions: readonly IdeasSyncConflictResolution[] = [],
+    expectedRevision?: number,
+  ): LedgerSyncImportResult {
+    if (this.disposed) throw new Error('ideas ledger is disposed')
+    if (expectedRevision !== undefined && expectedRevision !== this.document.revision) {
+      return syncRefusal('sync-preview-stale', 'the board changed after this preview was made; refresh the preview before applying it')
+    }
+    const mapping = this.document.sync.workspaces.find(candidate => candidate.syncKey === parsed.workspace.syncKey)
+    if (mapping === undefined) {
+      return syncRefusal('sync-workspace-unconfirmed', 'confirm this package sync key for a local workspace before importing it')
+    }
+    const plan = this.planForMapping(mapping, parsed, resolutions)
+    if (!plan.ready) return this.unresolvedSyncRefusal(plan)
+
+    const imported = plan.operations.filter(operation => operation.action === 'create').length
+    const skipped = parsed.ideas.length - imported
+    const cached = mapping.snapshots.some(snapshot => snapshot.snapshotId === parsed.snapshotId)
+    const ideasChanged = plan.reorder !== null
+      || plan.operations.some(operation => operation.action === 'create' || operation.action === 'update' || operation.action === 'delete')
+    if (!ideasChanged && mapping.baseSnapshotId === parsed.snapshotId && cached) {
+      return {
+        ok: true,
+        snapshotId: parsed.snapshotId,
+        syncKey: mapping.syncKey,
+        workspaceId: mapping.workspaceId,
+        imported,
+        skipped,
+        revision: this.document.revision,
+        plan,
+      }
+    }
+
+    try {
+      this.ensureSyncPersisted()
+    } catch (error) {
+      return syncRefusal('sync-apply-failed', `the synchronization identity could not be persisted (${messageOf(error)}), so nothing was applied`)
+    }
+    const at = this.now()
+    let displaced: SnapshotFile
+    try {
+      displaced = this.backups.write(this.serializeDocument('pre-sync', at), 'pre-sync', at)
+    } catch (error) {
+      return syncRefusal('sync-snapshot-failed', `the current board could not be kept as a snapshot (${messageOf(error)}), so nothing was applied`)
+    }
+
+    const beforeDocument = JSON.parse(JSON.stringify(this.document)) as LedgerDocument
+    const beforeCache = new Map(this.requestCache)
+    try {
+      for (const operation of plan.operations) {
+        if (operation.action === 'delete' && this.document.ideas.some(idea => idea.id === operation.ideaId)) {
+          this.apply({ kind: 'delete', ideaId: operation.ideaId }, 'human', true)
+        }
+      }
+      const existing = new Map(this.document.ideas.map(idea => [idea.id, idea]))
+      let sequence = this.document.ideas.reduce((maximum, idea) => Math.max(maximum, idea.ideaNumber ?? 0), this.document.ideaSequence)
+      const changedIds = new Set(plan.operations
+        .filter(operation => operation.action === 'create' || operation.action === 'update')
+        .map(operation => operation.ideaId))
+      const records: IdeaRecord[] = plan.ideas.filter(idea => changedIds.has(idea.id)).map(idea => {
+        const current = existing.get(idea.id)
+        if (current === undefined) sequence += 1
+        return {
+          ...JSON.parse(JSON.stringify(idea)) as IdeasSyncIdea,
+          workspaceId: current?.workspaceId ?? mapping.workspaceId,
+          ideaNumber: current?.ideaNumber ?? sequence,
+        }
+      })
+      if (records.length > 0) {
+        this.apply({
+          kind: 'import',
+          sourceId: `sync:${parsed.snapshotId}:${beforeDocument.revision}`,
+          ideas: records,
+        }, 'human', true)
+      }
+      if (plan.reorder !== null) {
+        this.apply({ kind: 'reorder', orderedIds: plan.reorder.orderedIds }, 'human', true)
+      }
+      this.document.sync = {
+        ...this.document.sync,
+        workspaces: this.document.sync.workspaces.map(item => item.syncKey === mapping.syncKey
+          ? {
+              ...item,
+              baseSnapshotId: parsed.snapshotId,
+              snapshots: cacheIdeasSyncSnapshot(item, parsed.snapshotId, parsed.ideas),
+            }
+          : item),
+      }
+      this.commit()
+    } catch (error) {
+      this.document = beforeDocument
+      this.requestCache.clear()
+      for (const [requestId, fingerprint] of beforeCache) this.requestCache.set(requestId, fingerprint)
+      return syncRefusal('sync-apply-failed', `the synchronization could not be applied (${messageOf(error)}); the board is unchanged`)
+    }
+    return {
+      ok: true,
+      snapshotId: parsed.snapshotId,
+      syncKey: mapping.syncKey,
+      workspaceId: mapping.workspaceId,
+      imported,
+      skipped,
+      revision: this.document.revision,
+      plan,
+      displaced,
+    }
+  }
+
+  /** Persist the additive identity before the first sync mutation. */
+  private ensureSyncPersisted(): void {
+    if (this.syncPersisted) return
+    this.writeAtomic(this.document)
+    this.syncPersisted = true
+  }
+
   /**
    * Serialize the document exactly as it is persisted, plus the snapshot stamp
    * that says what the file is. The stamp is additive and ignored by the
@@ -994,7 +1324,7 @@ export class IdeasHostLedger {
     return true
   }
 
-  private apply(action: IdeasAction, actor: string): LedgerApplyResult {
+  private apply(action: IdeasAction, actor: string, deferCommit = false): LedgerApplyResult {
     const now = this.now()
     const beforeIdeas = this.document.ideas
     // Activity entries this mutation will append. Filled per case
@@ -1383,7 +1713,7 @@ export class IdeasHostLedger {
         }
       })
     }
-    if (this.document.ideas !== beforeIdeas) this.commit()
+    if (!deferCommit && this.document.ideas !== beforeIdeas) this.commit()
     return { state: this.snapshot() }
   }
 
@@ -1452,6 +1782,7 @@ export class IdeasHostLedger {
       if (parsed.schemaVersion !== IDEAS_SCHEMA_VERSION || !Array.isArray(parsed.ideas)) {
         throw new Error('unsupported ledger schema')
       }
+      this.syncPersisted = parseIdeasSyncState(parsed.sync) !== undefined
       return this.normalizeDocument(parsed)
     } catch (error) {
       return this.recoverCorrupt(existed, error)
@@ -1486,9 +1817,11 @@ export class IdeasHostLedger {
       importedSources: [],
       recentRequests: [],
       ideaSequence: 0,
+      sync: createIdeasSyncState(randomUUID()),
     }
     try {
       this.writeAtomic(document)
+      this.syncPersisted = true
     } catch {
       // A write failure must not hide the startup error below.
     }
@@ -1537,6 +1870,7 @@ export class IdeasHostLedger {
       fingerprint,
     })).slice(-MAX_REQUEST_CACHE)
     this.writeAtomic(this.document)
+    this.syncPersisted = true
     // Re-parse so later mutations start from the same plain values they read.
     this.document = JSON.parse(JSON.stringify(this.document)) as LedgerDocument
     this.notify()

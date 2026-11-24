@@ -41,11 +41,23 @@ import { setLanguageOverride } from './locales.ts'
 import { IDEAS_PANEL_ID, TASK_BOARD_PANEL_ID, type PanelNavigator } from './panel-navigation.ts'
 import { focusReadQuery, parseIdeaRef, resolveIdeaRef, type FocusableIdea } from './deeplink.ts'
 import type { IdeasHostTransport } from './host-api.ts'
-import { IdeasRouteMissingError } from './host-api.ts'
+import { IdeasApiError, IdeasRouteMissingError } from './host-api.ts'
 import type { SessionLauncher } from './session-queue.ts'
 import type { ActiveWorkspaceSource } from './session-context.ts'
 import type { SessionOpener } from './session-opener.ts'
 import type { WorkspacesSource, WorkspaceViewLite } from './workspaces.ts'
+import type {
+  IdeasSyncExportRequest,
+  IdeasSyncExportResponse,
+  IdeasSyncImportRequest,
+  IdeasSyncImportResponse,
+  IdeasSyncMappingResponse,
+  IdeasSyncOverview,
+  IdeasSyncPlanRequest,
+  IdeasSyncPlanResponse,
+  IdeasSyncRefusal,
+  IdeasSyncWorkspaceRequest,
+} from '../sync.ts'
 
 function uuid(): string {
   return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
@@ -867,6 +879,45 @@ export class IdeasClient {
     return this.transport.snapshotContentUrl?.(name)
   }
 
+  /** Whether this deployment serves the independent synchronization surface. */
+  get syncAvailable(): boolean {
+    return this.transport.syncOverview !== undefined
+      && this.transport.syncWorkspaces !== undefined
+      && this.transport.syncExport !== undefined
+      && this.transport.syncPlan !== undefined
+      && this.transport.syncImport !== undefined
+  }
+
+  /** Read the Host-owned synchronization identities without creating a pairing. */
+  async loadSyncOverview(): Promise<IdeasSyncOverview> {
+    if (this.transport.syncOverview === undefined) throw new Error('sync-unavailable')
+    return await this.transport.syncOverview()
+  }
+
+  /** Persist one literal human confirmation; names and paths are never matched. */
+  async confirmSyncWorkspace(request: IdeasSyncWorkspaceRequest): Promise<IdeasSyncMappingResponse | IdeasSyncRefusal> {
+    if (this.transport.syncWorkspaces === undefined) throw new Error('sync-unavailable')
+    return await syncAnswer(() => this.transport.syncWorkspaces!(request))
+  }
+
+  /** Serialize one confirmed workspace through the Host, never a client projection. */
+  async exportSyncWorkspace(request: IdeasSyncExportRequest): Promise<IdeasSyncExportResponse | IdeasSyncRefusal> {
+    if (this.transport.syncExport === undefined) throw new Error('sync-unavailable')
+    return await syncAnswer(() => this.transport.syncExport!(request))
+  }
+
+  /** Build a read-only preview, optionally fenced to the revision the reader saw. */
+  async planSyncPackage(request: IdeasSyncPlanRequest): Promise<IdeasSyncPlanResponse | IdeasSyncRefusal> {
+    if (this.transport.syncPlan === undefined) throw new Error('sync-unavailable')
+    return await syncAnswer(() => this.transport.syncPlan!(request))
+  }
+
+  /** Apply a preview only when its revision and every explicit decision still hold. */
+  async importSyncPackage(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse | IdeasSyncRefusal> {
+    if (this.transport.syncImport === undefined) throw new Error('sync-unavailable')
+    return await syncAnswer(() => this.transport.syncImport!(request))
+  }
+
   /**
    * Whether this deployment serves the backup surface at all.
    *
@@ -1245,6 +1296,20 @@ export class IdeasClient {
     this.statsScope = undefined
     this.statsRequestSeq += 1
     this.emit()
+  }
+}
+
+/** Turn a normal sync-route refusal back into its structured wire answer. */
+async function syncAnswer<T>(run: () => Promise<T>): Promise<T | IdeasSyncRefusal> {
+  try {
+    return await run()
+  } catch (error) {
+    if (!(error instanceof IdeasApiError)) throw error
+    const body = error.body
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) throw error
+    const row = body as Record<string, unknown>
+    if (row.ok === false && typeof row.error === 'string') return row as unknown as IdeasSyncRefusal
+    throw error
   }
 }
 

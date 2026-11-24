@@ -56,7 +56,16 @@ import { ActivityTimeline } from './activity-timeline.tsx'
 import { RelationChips, RelationsEditor } from './relations-view.tsx'
 import { openBlockersOf, relationListChanged, relationIndexOf } from './relations.ts'
 import { IdeaTitle } from './idea-title.tsx'
-import { ACTIVE_TAB_STORAGE_KEY, readActiveTab, writeActiveTab, type BoardTab, type TabStorage } from './tabs.ts'
+import {
+  ACTIVE_TAB_STORAGE_KEY,
+  readActiveTab,
+  readPersistedActiveTab,
+  readSessionWorkspaceScope,
+  writeActiveTab,
+  writeSessionWorkspaceScope,
+  type BoardTab,
+  type TabStorage,
+} from './tabs.ts'
 import { clampColumnWidth, readColumnWidths, writeColumnWidths, type ColumnWidths } from './column-widths.ts'
 import {
   EMPTY_SELECTION,
@@ -1835,7 +1844,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [filter, setFilter] = useState('')
   const [tagFilter, setTagFilter] = useState<string[]>([])
   // '': all workspaces; a concrete id scopes the columns + search to it.
-  const [workspaceFilter, setWorkspaceFilter] = useState('')
+  const [workspaceFilter, setWorkspaceFilter] = useState(() => readSessionWorkspaceScope(client) ?? '')
   const [showNew, setShowNew] = useState(false)
   const [editing, setEditing] = useState<IdeaRecord | undefined>(undefined)
   // The under-review parent a review-rejected follow-up is being raised for.
@@ -1923,18 +1932,31 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // stores nothing, and it re-evaluates on the poll that redraws the board.
   const renderedAt = Date.now()
   // Apply the persisted preferences ONCE, at the first SETTLED config load:
-  // the chosen open tab, the markdown default and (when remembered) the
-  // workspace scope. Session switches stay free afterwards, and a later
-  // settings write never resets what the user picked inside the board.
+  // the first-access tab default, the markdown default and (when no tab-local
+  // scope exists) the remembered workspace scope. Session switches stay free
+  // afterwards, and a later settings write never resets what the user picked.
   const settingsApplied = useRef(false)
   useEffect(() => {
     if (settingsApplied.current || !client.configLoaded) return
     settingsApplied.current = true
     if (!settings.available) return
-    switchTab(cfg.defaultTab)
+    // The configured tab is only the first-access default. A tab already
+    // chosen in this DSH instance outranks it on every later panel mount.
+    if (readPersistedActiveTab(activeTabStorage()) === undefined) switchTab(cfg.defaultTab)
     setMdMode(cfg.renderMarkdown)
-    if (cfg.rememberWorkspaceScope) setWorkspaceFilter(cfg.workspaceScope)
+    const sessionScope = readSessionWorkspaceScope(client)
+    if (sessionScope !== undefined) setWorkspaceFilter(sessionScope)
+    else if (cfg.rememberWorkspaceScope) setWorkspaceFilter(cfg.workspaceScope)
   }, [settings, client, cfg.defaultTab, cfg.renderMarkdown, cfg.rememberWorkspaceScope, cfg.workspaceScope])
+
+  const chooseWorkspaceScope = (scope: string): void => {
+    client.clearFocus()
+    setWorkspaceFilter(scope)
+    writeSessionWorkspaceScope(client, scope)
+    // The opt-in setting still persists the scope across browser sessions;
+    // session memory only covers panel navigations in the current tab.
+    if (cfg.rememberWorkspaceScope) void client.saveConfig({ workspaceScope: scope })
+  }
 
   /* --- deep-link to an idea ---------------------------------
    * The board is the CONSUMER of a focus request: it owns the workspace scope,
@@ -2597,12 +2619,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
           aria-label={t('board.workspace')}
           title={t('board.workspaceHint')}
           onChange={event => {
-            client.clearFocus()
-            setWorkspaceFilter(event.target.value)
-            // Remembered-scope option: persist the pick so the next open
-            // restores it. The flag sanitizes to OFF without a settings
-            // surface, so a settings-less deployment never reaches this write.
-            if (cfg.rememberWorkspaceScope) void client.saveConfig({ workspaceScope: event.target.value })
+            chooseWorkspaceScope(event.target.value)
           }}
         >
           <option value="">{t('board.allWorkspaces')}</option>
@@ -3056,7 +3073,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                                     type="button"
                                     className={classes.workspaceChip}
                                     title={t('card.workspaceHint', { workspace: workspaceTitle(workspaceId) })}
-                                    onClick={() => { setWorkspaceFilter(workspaceId) }}
+                                    onClick={() => { chooseWorkspaceScope(workspaceId) }}
                                   >
                                     {workspaceTitle(workspaceId)}
                                   </button>

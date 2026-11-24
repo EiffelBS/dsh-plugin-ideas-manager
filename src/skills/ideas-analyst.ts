@@ -289,11 +289,16 @@ Rules, in order of importance:
 2. **Both endpoints must exist and be resolved.** Use the stable ids from the
    summary rows you already loaded, never a title, a number or a guessed id. The
    gate drops ids it cannot resolve, and a silently dropped edge is invisible.
-3. **Same workspace only**, like every other read and write on this channel.
-4. **At most 3 relations per run**, related to the analyzed card.
-5. **Send the complete list** when you add one: the patch replaces the stored
+3. **Only consider open ideas.** When proposing relatesTo or blocks,
+   restrict candidate targets to ideas with status open in the loaded summary
+   rows. Do not propose relations to archived or declined ideas.
+   Deduplication still uses open and archived (see bounded loading), but
+   relation proposals must stay within the backlog.
+4. **Same workspace only**, like every other read and write on this channel.
+5. **At most 3 relations per run**, related to the analyzed card.
+6. **Send the complete list** when you add one: the patch replaces the stored
    list, so the entries already there must be included or they are erased.
-6. **Never on a capture of a fresh idea with no analysed neighbour**, and never
+7. **Never on a capture of a fresh idea with no analysed neighbour**, and never
    invented to look thorough. An empty relation graph is a normal, correct state.
 
 If you add a relation, name it in the final report as one line ("related to #12

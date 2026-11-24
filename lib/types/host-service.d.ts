@@ -26,12 +26,13 @@
  * The bound card id is persisted on the idea through the ledger's internal
  * `bindTaskBoardId` path (the wire gate never accepts taskBoardId).
  */
-import { IdeasHostLedger } from './host-ledger.ts';
+import { IdeasHostLedger, type LedgerSyncExportResult, type LedgerSyncMappingResult, type LedgerSyncPlanResult } from './host-ledger.ts';
 import { SessionRunner } from './session-runner.ts';
 import { TaskBoardMirror } from './taskboard-bridge.ts';
 import type { IdeaRecord, IdeaRunStatus } from './core/ideas.ts';
 import { type IdeasStatsOptions } from './core/ideas-stats.ts';
 import { type IdeasAction, type IdeasBackupView, type IdeasEventPayload, type IdeasRestoreRequest, type IdeasRestoreResponse, type IdeasSnapshotReason, type IdeasSnapshotTaken, type IdeasSnapshot, type IdeasSettingsValue, type IdeasStats } from './protocol.ts';
+import type { IdeasSyncConflictResolution, IdeasSyncExportRequest, IdeasSyncImportResponse, IdeasSyncOverview, IdeasSyncPackage, IdeasSyncPlanRequest, IdeasSyncRefusal, IdeasSyncWorkspaceRequest } from './sync.ts';
 /** Answer of a launch: backend-neutral on purpose, so the card
  *  backend and the direct-session backend serve the same route with the same
  *  shape. */
@@ -155,6 +156,16 @@ export declare class IdeasHostService {
      * board is untouched in every refusal case.
      */
     restoreBoard(request: IdeasRestoreRequest): IdeasRestoreResponse;
+    /** Additive overview; no workspace pairing is inferred from names or paths. */
+    syncOverview(): IdeasSyncOverview;
+    /** Persist one explicit human-confirmed portable workspace pairing. */
+    confirmSyncWorkspace(request: IdeasSyncWorkspaceRequest): LedgerSyncMappingResult;
+    /** Serialize one confirmed workspace from the Host-owned ledger document. */
+    exportSyncWorkspace(request: IdeasSyncExportRequest): LedgerSyncExportResult;
+    /** Plan a package without writing state or applying any transition. */
+    planSyncPackage(request: IdeasSyncPlanRequest): LedgerSyncPlanResult;
+    /** Apply a conflict-free package through one atomic ledger commit. */
+    importSyncPackage(parsed: IdeasSyncPackage, resolutions?: readonly IdeasSyncConflictResolution[], expectedRevision?: number): IdeasSyncImportResponse | IdeasSyncRefusal;
     /**
      * Test seam: wait for every scheduled mirror op to settle. The production
      * path never awaits mirrors (they are fire-and-forget), so this blocks only
