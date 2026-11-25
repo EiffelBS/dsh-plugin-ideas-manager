@@ -179,30 +179,34 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
   snapshot entirely, so the board's poll pays nothing for it.
 - `meta` always reports `matched`, `returned`, `rowTruncated`, `nextOffset`,
   `bodyTruncated`, and `omittedFields`. A response never exceeds 512 KiB.
-- `GET /api/ideas/state?view=stats` → the **bounded backlog-health aggregate**
-  , a separate contract that is NOT one of the row views and accepts
-  no row query key. It takes `workspaceId` only: **absent** = every workspace,
-  **blank** = the ideas with no workspace, a real id = that workspace; anything
-  else is `400 invalid-query`. It is a READ — no `requestId`, no mutation — and
-  it is never part of the board's poll. It answers one object per scope:
+- `GET /api/ideas/state?view=stats` → the **bounded backlog-health dashboard
+  aggregate**, a separate contract that is NOT one of the row views and accepts
+  no row query key. It takes `workspaceId` (**absent** = every workspace,
+  **blank** = no workspace, real id = that workspace) and `range` (`month`,
+  `30d`, `90d`, `all`; omitted = `month`); anything else is `400 invalid-query`.
+  It is a READ — no `requestId`, no mutation — and never part of the board's
+  poll. Schema version 2 answers one object per scope and period:
 
   | field | meaning |
   |---|---|
-  | `revision` | the ledger revision the numbers were derived from |
+  | `revision`, `computedAt`, `range` | provenance of the aggregate |
   | `scope` | `{kind: 'all' \| 'generic' \| 'workspace', workspaceId?, ideas}` |
-  | `window` | `{kind: 'calendarMonth', start, end}` — the Host's LOCAL month, so the label is checkable |
-  | `openTotal`, `openByWorkspace[]`, `workspacesTotal` | open backlog, busiest first, capped at 8 rows |
+  | `window` | `{kind: 'calendarMonth' \| 'rollingDays' \| 'allTime', start, end, days?}` |
+  | `openTotal`, `workflow` | open volume plus `{open, underReview, running, blocked}` signals |
+  | `aging` | `{upTo7, upTo30, upTo90, over90, oldestMs}` for OPEN ideas |
+  | `openByWorkspace[]`, `workspacesTotal` | busiest first, capped at 8 rows |
   | `deliveredInWindow` | deliveries stamped inside `window` |
-  | `delivery` | `{sample, withoutStamp, inconsistent, medianMs, minSamples}` |
+  | `delivery` | `{sample, withoutStamp, inconsistent, medianMs, minSamples, buckets[]}`; eight bounded bars |
+  | `activity` | fixed 84-day local heatmap plus created/delivered/active-day totals |
   | `topTags[]`, `tagsTotal` | most used labels of the OPEN backlog, capped at 8 |
-  | `triage` | `{open, missingRank, missingValue}` — work to do, never a score |
+  | `triage` | `{open, missingRank, missingValue, unique}` — each idea counted once |
+  | `quality` | `{withoutStamp, inconsistent, withoutWorkspace}` |
 
   **`delivery.medianMs` is `null` — and only `null` — when `sample <
-  minSamples`.** The median is taken over every idea carrying a real
-  `deliveredAt` (never one that precedes its own `createdAt`); ideas archived
-  without a stamp are counted in `withoutStamp` and excluded, and that count is
-  the honest explanation for a missing median. Never infer a median from a thin
-  sample, and never report a missing one as `0`.
+  minSamples`.** The sample and median cover the selected `window`; only a real
+  `deliveredAt` that does not precede its own `createdAt` participates. Ideas
+  archived without a stamp are counted in `withoutStamp` and excluded. Never
+  infer a median from a thin sample, and never report a missing one as `0`.
 - `GET /api/ideas/events` → SSE frames `{ revision }` (no full list).
 - `POST /api/ideas/action` verbs:
 
@@ -331,7 +335,7 @@ the same contract. No background synchronization runs.
 | Route | Body | Answer / rule |
 |---|---|---|
 | `GET /api/ideas/sync` | — | `{ ok, deviceId, workspaces[] }`; known local workspaces and their confirmed keys. No name/path matching is performed. |
-| `POST /api/ideas/sync/workspaces` | `{ workspaceId, syncKey?, confirm: true }` | `{ ok, mapping }`; mints a key when omitted, or confirms a supplied portable key for this exact local workspace. |
+| `POST /api/ideas/sync/workspaces` | `{ workspaceId, syncKey?, confirm: true, replaceExisting? }` | `{ ok, mapping }`; mints a key when omitted, or confirms a supplied portable key for this exact local workspace. `replaceExisting: true` is required to replace a different existing key and resets that mapping's ancestor cache. |
 | `POST /api/ideas/sync/export` | `{ workspaceId }` | `{ ok, package }`; the workspace must already have a confirmed key. |
 | `POST /api/ideas/sync/plan` | `{ package, resolutions?, expectedRevision? }` | `{ ok, revision, plan }`; per-idea create/update/delete/unchanged/conflict operations, explicit conflicts, duplicate candidates and an optional unambiguous reorder. |
 | `POST /api/ideas/sync/import` | `{ package, resolutions?, expectedRevision? }` | `{ ok, snapshotId, syncKey, workspaceId, imported, skipped, revision, plan, displaced? }`; applies only a conflict-free plan at the previewed revision. |

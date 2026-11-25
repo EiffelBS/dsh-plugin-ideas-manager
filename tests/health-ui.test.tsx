@@ -2,7 +2,7 @@
 /**
  * the Health tab as the board renders it.
  *
- * The aggregate and its wire are pinned in `idea-110-stats.test.ts`. What is
+ * The aggregate and its wire are pinned in `stats.test.ts`. What is
  * under test HERE is the part that can quietly lie: a panel that recomputes, a
  * panel that shows a median it should have refused, and a panel whose feature
  * quietly grew the poll it was supposed to leave alone.
@@ -17,7 +17,7 @@
  *    because none of them can narrow an aggregate.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { IdeasBoard } from '../src/client/board-view.tsx'
@@ -148,6 +148,13 @@ function tab(name: string): HTMLButtonElement {
   return found
 }
 
+function healthRange(name: string): HTMLButtonElement {
+  const found = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-range-tab')]
+    .find(button => button.textContent === name)
+  if (found === undefined) throw new Error(`no health range ${name}`)
+  return found
+}
+
 function click(element: Element): void {
   act(() => { element.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 }
@@ -197,7 +204,7 @@ describe('the Health tab', () => {
     expect(transport.statsQueries).toHaveLength(0)
 
     await act(async () => { click(tab('Health')) })
-    expect(transport.statsQueries).toEqual([{}])
+    expect(transport.statsQueries).toEqual([{ range: 'month' }])
     expect(health()?.textContent).toContain('all workspaces')
   })
 
@@ -212,7 +219,7 @@ describe('the Health tab', () => {
       select!.value = 'ws-a'
       select!.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(transport.statsQueries).toEqual([{}, { workspaceId: 'ws-a' }])
+    expect(transport.statsQueries).toEqual([{ range: 'month' }, { workspaceId: 'ws-a', range: 'month' }])
     expect(health()?.textContent).toContain('ws-a')
   })
 
@@ -247,13 +254,15 @@ describe('the Health tab', () => {
 })
 
 describe('the median honesty rule reaches the screen', () => {
-  it('prints the duration when the sample is above the floor', async () => {
+  it('prints the duration when the selected all-time sample is above the floor', async () => {
     const transport = new FakeTransport()
     await mount(transport)
     await act(async () => { click(tab('Health')) })
+    await act(async () => { click(healthRange('All')) })
+    expect(transport.statsQueries.at(-1)).toEqual({ range: 'all' })
 
     const text = health()!.textContent ?? ''
-    expect(text).toContain('Median time to deliver')
+    expect(text).toContain('Median lead time')
     // Six deliveries, lead times 1..6 days -> median 3.5 days, rounded to 4.
     expect(text).toContain('4 d')
     expect(text).not.toContain('Not enough deliveries yet')
@@ -265,27 +274,27 @@ describe('the median honesty rule reaches the screen', () => {
     const transport = new FakeTransport(thin)
     await mount(transport)
     await act(async () => { click(tab('Health')) })
+    await act(async () => { click(healthRange('All')) })
 
     const text = health()!.textContent ?? ''
     expect(text).toContain(`Not enough deliveries yet (${IDEAS_STATS_MEDIAN_MIN_SAMPLES - 2} / ${IDEAS_STATS_MEDIAN_MIN_SAMPLES})`)
     expect(text).toContain('a median is only printed from')
-    // No duration anywhere: a wrong number is worse than no number.
     expect(text).not.toMatch(/\b\d+ (min|h|d)\b/)
   })
 
-  it('says how many ideas left the backlog without a delivery stamp', async () => {
+  it('reports archives without a delivery stamp in the quality card', async () => {
     const unstamped = [...OPEN, ...DELIVERED.slice(0, 3), record('u1', { status: 'archived', archivedAt: NOW })]
     const transport = new FakeTransport(unstamped)
     await mount(transport)
     await act(async () => { click(tab('Health')) })
+    await act(async () => { click(healthRange('All')) })
 
     const text = health()!.textContent ?? ''
-    expect(text).toContain('left the backlog with no delivery stamp')
-    // And the median stays refused, because those rows are not deliveries.
+    expect(text).toContain('Archives without a delivery timestamp')
     expect(text).toContain('Not enough deliveries yet')
   })
 
-  it('names the calendar month the window measured, not a vague "recent"', async () => {
+  it('names the calendar month the default window measured, not a vague "recent"', async () => {
     const transport = new FakeTransport()
     await mount(transport)
     await act(async () => { click(tab('Health')) })
@@ -293,27 +302,34 @@ describe('the median honesty rule reaches the screen', () => {
     expect(health()?.textContent).toContain(month)
   })
 
-  it('presents the triage gaps as work to do, never as a quality score', async () => {
+  it('presents triage gaps as work to do and counts each idea once', async () => {
     const transport = new FakeTransport()
     await mount(transport)
     await act(async () => { click(tab('Health')) })
     const text = health()!.textContent ?? ''
-    expect(text).toContain('triage point(s) to fill in')
-    expect(text).toContain('work to do on your ideas, never a quality score')
+    expect(text).toContain('Remaining work, never a quality score')
+    expect(text).toContain('Ideas concerned2')
+    expect(text).toContain('No rank1')
+    expect(text).toContain('No value2')
   })
 
-  it('makes no claim about how many figures it prints', async () => {
-    // The hint once said "five figures" while the tab paints four figures and
-    // two lists. A health view that overstates itself is the failure this whole
-    // feature exists to avoid, so the copy claims nothing countable and the
-    // figure count is pinned instead.
+  it('renders four KPI cards and the graphical dashboard sections', async () => {
     const transport = new FakeTransport()
     await mount(transport)
     await act(async () => { click(tab('Health')) })
     const text = health()!.textContent ?? ''
-    expect(text).toContain('computed by the host, never recounted by the board')
+    expect(text).toContain('A graphical reading of flow, remaining work and data quality.')
     expect(text).not.toMatch(/five figures|cinq chiffres/)
     expect(host.querySelectorAll('[data-dsh-ideas-health-figures] > *')).toHaveLength(4)
+    expect(host.querySelector('.dsh-ideas-health-donut')).not.toBeNull()
+    expect(host.querySelector('.dsh-ideas-health-progress-ring')).not.toBeNull()
+    expect(host.querySelector('.dsh-ideas-health-bar-chart')).not.toBeNull()
+    expect(host.querySelector('.dsh-ideas-health-heatmap')?.children).toHaveLength(84)
+    expect((host.querySelector('.dsh-ideas-health-heatmap') as HTMLElement).tabIndex).toBe(0)
+    expect(host.querySelector('.dsh-ideas-health-heat-readout')?.textContent).toContain('2026-')
+    expect(host.querySelectorAll('.dsh-ideas-health-sr-only tbody tr')).toHaveLength(92)
+    expect((host.querySelector('.dsh-ideas-health-bar') as HTMLElement).style.height).toBe('0%')
+    expect(host.querySelector('.dsh-ideas-health-heat-cell')?.hasAttribute('tabindex')).toBe(false)
   })
 })
 
@@ -353,7 +369,87 @@ describe('stale figures say so', () => {
     expect(note?.textContent).toContain('host exploded')
     // The last good figures are still readable: a failed refresh is not a reason
     // to blank a screen the reader is looking at.
-    expect(health()?.textContent).toContain('Median time to deliver')
+    expect(health()?.textContent).toContain('Median lead time')
+  })
+
+  it('reveals chart details on hover and exposes tooltip data for assistive technology', async () => {
+    const transport = new FakeTransport()
+    await mount(transport)
+    await act(async () => { click(tab('Health')) })
+
+    const openSegment = host.querySelector('.dsh-ideas-health-donut-open') as SVGCircleElement
+    await act(async () => { openSegment.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+    expect(host.querySelector('.dsh-ideas-health-donut-label')?.textContent).toBe('Open')
+    expect(host.querySelector('.dsh-ideas-health-donut-value')?.textContent).toBe('3')
+    await act(async () => { openSegment.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })) })
+    expect(host.querySelector('.dsh-ideas-health-donut-label')?.textContent).toBe('active ideas')
+
+    expect(host.querySelector('.dsh-ideas-health-bar')?.getAttribute('data-tooltip')).toContain('· 0')
+    expect(host.querySelector('.dsh-ideas-health-rank-row')?.getAttribute('title')).toContain('ws-a')
+    expect(host.querySelector('.dsh-ideas-health-heat-cell')?.getAttribute('data-tooltip')).toContain('2026-')
+  })
+
+  it('navigates heatmap days with the keyboard and keeps a visible readout', async () => {
+    const transport = new FakeTransport()
+    await mount(transport)
+    await act(async () => { click(tab('Health')) })
+    const heatmap = host.querySelector('.dsh-ideas-health-heatmap') as HTMLElement
+    const first = heatmap.getAttribute('aria-activedescendant')
+    await act(async () => { heatmap.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })) })
+    const second = heatmap.getAttribute('aria-activedescendant')
+    expect(second).not.toBe(first)
+    expect(host.querySelector('.dsh-ideas-health-heat-readout')?.textContent).toContain(second?.replace('health-heat-', '') ?? '')
+    await act(async () => { heatmap.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })) })
+    expect(heatmap.getAttribute('aria-activedescendant')).toMatch(/2026-10-14$/)
+  })
+
+  it('keeps keyboard focus when a stats refresh restarts the animations', async () => {
+    const transport = new FakeTransport()
+    const client = await mount(transport)
+    await act(async () => { click(tab('Health')) })
+    const bar = host.querySelector('.dsh-ideas-health-bar') as HTMLElement
+    act(() => { bar.focus() })
+    expect(document.activeElement).toBe(bar)
+    transport.revision = 2
+    await act(async () => { await client.refresh() })
+    await act(async () => { await vi.waitFor(() => { expect(client.stats?.revision).toBe(2) }, { timeout: 5_000 }) })
+    expect(document.activeElement).toBe(bar)
+  })
+
+  it('turns a workspace bar into a scoped Overview and a tag bar into a filter', async () => {
+    const transport = new FakeTransport()
+    await mount(transport)
+    await act(async () => { click(tab('Health')) })
+    const workspaceRow = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-rank-row')]
+      .find(row => row.textContent?.startsWith('ws-a'))
+    if (workspaceRow === undefined) throw new Error('no ws-a health row')
+    await act(async () => { click(workspaceRow) })
+    expect(tab('Overview').getAttribute('aria-selected')).toBe('true')
+    expect((host.querySelector('select') as HTMLSelectElement).value).toBe('ws-a')
+
+    await act(async () => { click(tab('Health')) })
+    const tagRow = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-rank-row')]
+      .find(row => row.textContent?.includes('perf'))
+    if (tagRow === undefined) throw new Error('no perf health row')
+    await act(async () => { click(tagRow) })
+    expect(tab('Overview').getAttribute('aria-selected')).toBe('true')
+    expect(host.querySelector('.dsh-ideas-tag-filter-chips')?.textContent).toContain('perf')
+
+    await act(async () => { click(tab('Health')) })
+    const activeTagRow = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-rank-row')]
+      .find(row => row.textContent?.includes('perf'))
+    if (activeTagRow === undefined) throw new Error('no perf health row on return')
+    await act(async () => { click(activeTagRow) })
+    expect(host.querySelector('.dsh-ideas-tag-filter-chips')?.textContent).toContain('perf')
+  })
+
+  it('sends the triage action to Priorities', async () => {
+    const transport = new FakeTransport()
+    await mount(transport)
+    await act(async () => { click(tab('Health')) })
+    const cta = host.querySelector('.dsh-ideas-health-triage-cta') as HTMLButtonElement
+    await act(async () => { click(cta) })
+    expect(tab('Priorities').getAttribute('aria-selected')).toBe('true')
   })
 
   it('shows no staleness note when the board has not moved', async () => {

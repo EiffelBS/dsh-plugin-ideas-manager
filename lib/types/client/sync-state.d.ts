@@ -19,6 +19,7 @@ export interface SyncUiState {
     mappingWorkspaceId: string;
     exportConsent: boolean;
     mappingConsent: boolean;
+    replaceConsent: boolean;
     applyConsent: boolean;
     rollbackConsent: boolean;
     bulkChoice: 'local' | 'remote' | undefined;
@@ -50,6 +51,9 @@ export type SyncUiAction = {
     workspaceId: string;
 } | {
     type: 'mapping-consent';
+    consent: boolean;
+} | {
+    type: 'replace-consent';
     consent: boolean;
 } | {
     type: 'preview';

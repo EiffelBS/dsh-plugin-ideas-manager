@@ -30,6 +30,7 @@ export interface SyncUiState {
   mappingWorkspaceId: string
   exportConsent: boolean
   mappingConsent: boolean
+  replaceConsent: boolean
   applyConsent: boolean
   rollbackConsent: boolean
   bulkChoice: 'local' | 'remote' | undefined
@@ -48,6 +49,7 @@ export type SyncUiAction =
   | { type: 'mapping-required'; incoming: IdeasSyncPackage; name: string; syncKey: string }
   | { type: 'mapping-workspace'; workspaceId: string }
   | { type: 'mapping-consent'; consent: boolean }
+  | { type: 'replace-consent'; consent: boolean }
   | { type: 'preview'; preview: IdeasSyncPlanResponse; resolutions: IdeasSyncConflictResolution[]; incoming: IdeasSyncPackage; name: string }
   | { type: 'stale-import'; incoming: IdeasSyncPackage; name: string }
   | { type: 'pending'; pending: boolean }
@@ -77,6 +79,7 @@ export function initialSyncUiState(): SyncUiState {
     mappingWorkspaceId: '',
     exportConsent: false,
     mappingConsent: false,
+    replaceConsent: false,
     applyConsent: false,
     rollbackConsent: false,
     bulkChoice: undefined,
@@ -114,15 +117,18 @@ export function syncUiReducer(state: SyncUiState, action: SyncUiAction): SyncUiS
         mappingWorkspaceId: '',
         exportConsent: false,
         mappingConsent: false,
+        replaceConsent: false,
         applyConsent: false,
         stale: false,
         error: undefined,
         result: undefined,
       }
     case 'mapping-workspace':
-      return { ...state, mappingWorkspaceId: action.workspaceId, mappingConsent: false }
+      return { ...state, mappingWorkspaceId: action.workspaceId, mappingConsent: false, replaceConsent: false }
     case 'mapping-consent':
       return { ...state, mappingConsent: action.consent }
+    case 'replace-consent':
+      return { ...state, replaceConsent: action.consent }
     case 'preview':
       return {
         ...state,
@@ -133,6 +139,7 @@ export function syncUiReducer(state: SyncUiState, action: SyncUiAction): SyncUiS
         incomingName: action.name,
         incomingSyncKey: action.incoming.workspace.syncKey,
         exportConsent: false,
+        replaceConsent: false,
         applyConsent: false,
         bulkChoice: undefined,
         stale: false,
@@ -195,6 +202,7 @@ export function syncUiReducer(state: SyncUiState, action: SyncUiAction): SyncUiS
         mappingWorkspaceId: '',
         exportConsent: false,
         mappingConsent: false,
+        replaceConsent: false,
         applyConsent: false,
         rollbackConsent: false,
         stale: false,

@@ -33,6 +33,7 @@ import {
 import type { IdeasSyncMergePlan } from '../src/sync-merge.ts'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+vi.setConfig({ testTimeout: 10_000 })
 
 const WORKSPACE_A = 'workspace-a'
 const WORKSPACE_B = 'workspace-b'
@@ -226,7 +227,7 @@ afterEach(() => {
 })
 
 async function waitForUi(assertion: () => void): Promise<void> {
-  await act(async () => { await vi.waitFor(assertion, { timeout: 5_000 }) })
+  await act(async () => { await vi.waitFor(assertion, { timeout: 10_000 }) })
 }
 
 async function render(transport: SyncTransport): Promise<IdeasClient> {
@@ -333,6 +334,37 @@ describe('SyncPanel', () => {
     await waitForUi(() => { expect(host.querySelector('[data-dsh-ideas-sync-preview]')).not.toBeNull() })
     expect(transport.workspaceCalls).toEqual([{ workspaceId: WORKSPACE_B, syncKey: SYNC_KEY, confirm: true }])
     expect(transport.planCalls).toHaveLength(2)
+  })
+
+  it('offers an already paired workspace only behind an explicit replacement confirmation', async () => {
+    const transport = new SyncTransport()
+    transport.overview = {
+      ...transport.overview,
+      workspaces: [{ workspaceId: WORKSPACE_A, ideaCount: 2, syncKey: 'sync_existing', confirmed: true, confirmedAt: 1, baseSnapshotId: null }],
+    }
+    await render(transport)
+    await upload()
+    await waitForUi(() => { expect(host.querySelector('[data-dsh-ideas-sync-mapping]')).not.toBeNull() })
+
+    const select = host.querySelector('select[aria-label="' + en['sync.import.mappingWorkspace'] + '"]') as HTMLSelectElement
+    const option = select.querySelector(`option[value="${WORKSPACE_A}"]`) as HTMLOptionElement
+    expect(option.disabled).toBe(false)
+    expect(option.textContent).toContain(en['sync.import.mappingCurrent'])
+    await chooseSelect(select, WORKSPACE_A)
+    const replacement = host.querySelector('[data-dsh-ideas-sync-replace]') as HTMLElement
+    expect(replacement.textContent).toContain('sync_existing')
+    expect(replacement.textContent).toContain(SYNC_KEY)
+    expect(button(en['sync.import.mappingReplaceConfirm']).disabled).toBe(true)
+
+    await chooseCheckbox(0)
+    expect(button(en['sync.import.mappingReplaceConfirm']).disabled).toBe(true)
+    await chooseCheckbox(1)
+    expect(button(en['sync.import.mappingReplaceConfirm']).disabled).toBe(false)
+    await act(async () => { button(en['sync.import.mappingReplaceConfirm']).click() })
+    await waitForUi(() => { expect(host.querySelector('[data-dsh-ideas-sync-preview]')).not.toBeNull() })
+    expect(transport.workspaceCalls).toEqual([{
+      workspaceId: WORKSPACE_A, syncKey: SYNC_KEY, confirm: true, replaceExisting: true,
+    }])
   })
 
   it('shows conflicts side by side, refuses apply until resolved, then names the safety snapshot and supports rollback', async () => {

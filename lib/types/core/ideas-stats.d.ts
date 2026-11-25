@@ -1,72 +1,37 @@
 /**
  * Backlog health — the ONE definition of every number the health
- * view prints.
+ * dashboard prints.
  *
  * Framework-free and pure, exactly like `core/ideas.ts`: the Host route, the
- * browser transport and any future surface read this module, so an aggregate
- * can never be computed two different ways in two places. That is the one
- * failure mode a dashboard has and a test does not always catch.
+ * browser transport and every future surface read this module, so an aggregate
+ * can never be computed two different ways in two places.
  *
- * Four decisions live here, and each one is load-bearing rather than a
- * convenience:
- *
- *  1. **The median refuses to print on a thin sample.** `deliveredAt` is
- *     stamped by the `deliver` verb and is only as honest as the way the
- *     backlog is closed, so the sample is the set of ideas that carry a REAL
- *     stamp. Below {@link IDEAS_STATS_MEDIAN_MIN_SAMPLES} the response answers
- *     `medianMs: null` and says how many rows it had — never a zero, never a
- *     number computed on one row. The floor and the sample size both travel in
- *     the payload so the UI cannot render a different rule than the Host used.
- *  2. **"Delivered this month" is the Host's LOCAL CALENDAR month**, reported
- *     as an explicit `{start, end}` pair so the user-facing label can be
- *     checked against the data it claims. A rolling window would need a
- *     different label ("last 30 days"); the words on the card mean this one.
- *  3. **The view is SCOPED, not global.** It follows the board's workspace
- *     selector, like every other tab, so a number never answers a different
- *     question than the one on screen. `scope.kind` says which scope it is.
- *  4. **"No rank, no value" is triage WORK, not a score.** It counts OPEN ideas
- *     in scope and is named as a to-do; it is never a judgement about whoever
- *     wrote the idea.
- *
- * The response is bounded by construction: the workspace breakdown and the tag
- * list are hard-capped, so the whole aggregate stays a few kilobytes whatever
- * the ledger weighs (the board's full snapshot is over a megabyte).
+ * The dashboard is deliberately made of signals rather than one opaque score:
+ * workflow volume, delivery flow, triage work, age, activity and data quality.
+ * Every array is hard-capped, so the response stays small whatever the ledger
+ * weighs.
  */
 import type { IdeaRecord } from './ideas.ts';
 /** Wire version of the health aggregate (independent of the snapshot schema). */
-export declare const IDEAS_STATS_SCHEMA_VERSION: 1;
-/**
- * How many ideas must carry a real `deliveredAt` before a median time-to-deliver
- * is printed at all.
- *
- * Five is the smallest sample where the middle of the distribution means
- * something: below it, one delivery decides the "typical" lead time, and a
- * dashboard that shows a confident number computed from two rows is worse than
- * one that admits it has nothing to say. The floor is deliberately a constant
- * rather than a percentage: a percentage would let a small board print a
- * median off two rows while a big one stayed silent, which is exactly the
- * confident-wrong-number failure this view exists to avoid.
- */
+export declare const IDEAS_STATS_SCHEMA_VERSION: 2;
+/** Minimum real deliveries before a median is printed. */
 export declare const IDEAS_STATS_MEDIAN_MIN_SAMPLES = 5;
-/** Hard cap of the per-workspace open breakdown. */
+/** Hard caps keep the aggregate bounded. */
 export declare const IDEAS_STATS_MAX_WORKSPACES = 8;
-/** Hard cap of the top-tags list. */
 export declare const IDEAS_STATS_MAX_TAGS = 8;
-/** One day in milliseconds — the unit {@link durationParts} falls back on. */
+export declare const IDEAS_STATS_DELIVERY_BUCKETS = 8;
+export declare const IDEAS_STATS_ACTIVITY_DAYS = 84;
+/** One day in milliseconds. */
 export declare const IDEAS_STATS_DAY_MS = 86400000;
-/**
- * Which workspace population the numbers cover. `generic` is the ideas with no
- * workspace at all — the same group the board's "— without workspace —"
- * selector shows, and the same one `rankGroupKey` ranks together.
- */
+/** Period selected by the dashboard. */
+export type IdeasStatsRange = 'month' | '30d' | '90d' | 'all';
+/** Which workspace population the numbers cover. */
 export type IdeasStatsScopeKind = 'all' | 'generic' | 'workspace';
 /** One row of the open-per-workspace breakdown. */
 export interface IdeasStatsWorkspaceRow {
     /** Absent for the workspace-less (generic) group. */
     workspaceId?: string;
-    /** Open ideas in this group. */
     open: number;
-    /** Every idea in this group, any status. */
     total: number;
 }
 /** One row of the top-tags list. */
@@ -74,130 +39,127 @@ export interface IdeasStatsTagRow {
     name: string;
     count: number;
 }
-/**
- * Delivery honesty, the whole point of this view.
- *
- * `medianMs` is `null` — and only `null` — when the sample is thinner than
- * {@link IDEAS_STATS_MEDIAN_MIN_SAMPLES}. `sample` is the median's actual
- * population, `withoutStamp` is how many ideas left the backlog WITHOUT a
- * delivery stamp (dragged to Archived rather than delivered: work to do, and
- * the reason a backlog can have no honest median at all), and `inconsistent`
- * counts stamps that precede their own creation — reachable only through a
- * hand-edited or imported document, and never silently averaged away.
- */
-export interface IdeasStatsDelivery {
-    /** Ideas carrying a usable `deliveredAt` (the median's sample). */
-    sample: number;
-    /** Archived ideas with no delivery stamp: excluded from the median. */
-    withoutStamp: number;
-    /** Stamps that precede their own creation: a data problem, never averaged. */
-    inconsistent: number;
-    /** Median time to deliver in milliseconds, or null below the sample floor. */
-    medianMs: number | null;
-    /** The floor `sample` had to reach for `medianMs` to be printed. */
-    minSamples: number;
+/** Active workflow signals. Running and blocked overlap the status columns. */
+export interface IdeasStatsWorkflow {
+    open: number;
+    underReview: number;
+    running: number;
+    blocked: number;
 }
-/** Triage work to do among the OPEN ideas in scope. Never a quality score. */
+/** Age buckets for OPEN ideas only. */
+export interface IdeasStatsAging {
+    upTo7: number;
+    upTo30: number;
+    upTo90: number;
+    over90: number;
+    oldestMs: number | null;
+}
+/** One local calendar day in the fixed activity heatmap. */
+export interface IdeasStatsActivityDay {
+    /** Local Host date, `YYYY-MM-DD`. */
+    date: string;
+    created: number;
+    delivered: number;
+}
+/** Fixed 12-week activity heatmap. */
+export interface IdeasStatsActivity {
+    days: IdeasStatsActivityDay[];
+    created: number;
+    delivered: number;
+    activeDays: number;
+}
+/** One delivery bar in the selected period. */
+export interface IdeasStatsDeliveryBucket {
+    start: number;
+    end: number;
+    count: number;
+}
+/** Delivery honesty and the selected-period distribution. */
+export interface IdeasStatsDelivery {
+    /** Usable deliveries inside the selected window. */
+    sample: number;
+    /** Archived ideas with no delivery stamp, all time. */
+    withoutStamp: number;
+    /** Stamps that precede their own creation, all time. */
+    inconsistent: number;
+    /** Median lead time inside the selected window, or null below the floor. */
+    medianMs: number | null;
+    minSamples: number;
+    /** Eight bounded bars covering the selected period. */
+    buckets: IdeasStatsDeliveryBucket[];
+}
+/** Triage work among OPEN ideas. `unique` never double-counts a row. */
 export interface IdeasStatsTriage {
     open: number;
     missingRank: number;
     missingValue: number;
+    unique: number;
 }
-/** The "delivered this month" window, spelled so a label can be checked. */
+/** Data-quality facts kept separate from workflow judgements. */
+export interface IdeasStatsQuality {
+    withoutStamp: number;
+    inconsistent: number;
+    withoutWorkspace: number;
+}
+/** The measured window, spelled so the UI can label it honestly. */
 export interface IdeasStatsWindow {
-    kind: 'calendarMonth';
-    /** Inclusive first instant of the Host's local calendar month. */
+    kind: 'calendarMonth' | 'rollingDays' | 'allTime';
     start: number;
-    /** Inclusive instant the aggregate was measured at. */
     end: number;
+    /** Present only for a rolling window. */
+    days?: 30 | 90;
 }
 /** Which scope the numbers cover, plus how many ideas it holds. */
 export interface IdeasStatsScope {
     kind: IdeasStatsScopeKind;
-    /** Present only when `kind` is `workspace`. */
     workspaceId?: string;
-    /** Ideas in scope, any status. */
     ideas: number;
 }
-/**
- * The whole health aggregate, as `GET /api/ideas/state?view=stats` serves it.
- * Every array in it is hard-capped, so the response stays bounded no matter how
- * large the ledger is.
- */
+/** Whole bounded health aggregate served by `GET /api/ideas/state?view=stats`. */
 export interface IdeasStats {
     schemaVersion: typeof IDEAS_STATS_SCHEMA_VERSION;
-    /** Ledger revision these numbers were derived from. */
     revision: number;
-    /** Instant the window was measured at (the Host clock). */
     computedAt: number;
+    range: IdeasStatsRange;
     scope: IdeasStatsScope;
     window: IdeasStatsWindow;
-    /** Open ideas in scope. */
     openTotal: number;
-    /** Bounded open-per-workspace breakdown, busiest first. */
+    workflow: IdeasStatsWorkflow;
+    aging: IdeasStatsAging;
     openByWorkspace: IdeasStatsWorkspaceRow[];
-    /** Workspace groups found before the cap was applied. */
     workspacesTotal: number;
-    /** Ideas delivered inside the window. */
     deliveredInWindow: number;
     delivery: IdeasStatsDelivery;
-    /** Bounded top labels of the OPEN backlog, most used first. */
+    activity: IdeasStatsActivity;
     topTags: IdeasStatsTagRow[];
-    /** Distinct labels found before the cap was applied. */
     tagsTotal: number;
     triage: IdeasStatsTriage;
+    quality: IdeasStatsQuality;
 }
-/**
- * The slice of the snapshot the aggregate reads. Structural on purpose: the
- * aggregate imports the domain model and nothing else, so it can be handed the
- * Host snapshot, a test fixture or a plain array without an adapter.
- */
+/** Read-only seam the Host hands to the pure aggregate. */
 export interface IdeasStatsSource {
     revision: number;
     ideas: readonly IdeaRecord[];
 }
-/** Scope and clock of one aggregate. */
+/** Scope, period and clock of one aggregate. */
 export interface IdeasStatsOptions {
-    /**
-     * Workspace scope: omitted = every workspace, `''` = the workspace-less
-     * (generic) group, a real id = that workspace. The board's selector maps its
-     * three values straight onto these.
-     */
+    /** Omitted = all, `''` = workspace-less, real id = one workspace. */
     workspaceId?: string;
-    /** Instant the window is measured from (defaults to the Host clock). */
+    /** Selected dashboard period; defaults to the current calendar month. */
+    range?: IdeasStatsRange;
+    /** Instant the window is measured at (defaults to the Host clock). */
     now?: number;
 }
-/** Unit the median is rendered in. The words belong to the locale, not here. */
+/** Unit the median is rendered in. */
 export type IdeasDurationUnit = 'minutes' | 'hours' | 'days';
-/**
- * First instant of the Host's LOCAL calendar month containing `at`.
- *
- * Local, not UTC, and deliberately: "delivered this month" is a sentence a
- * reader checks against their own wall clock, and a UTC month boundary would
- * put the last delivery of a month in the wrong bucket for most of the day.
- */
+/** First instant of the Host's LOCAL calendar month containing `at`. */
 export declare function calendarMonthStart(at: number): number;
-/**
- * Split a duration into a value and a unit the panel can label. Pure and
- * locale-free on purpose: the definition of "how long" belongs here, the words
- * for it belong to the dictionary.
- *
- * Rounding never produces a zero: a lead time of zero is a real answer, and
- * printing "0 days" for half a day would be the rounding talking, not the data.
- */
+/** First instant of the Host's LOCAL calendar day containing `at`. */
+export declare function calendarDayStart(at: number): number;
+/** Split a duration into a value and a unit the panel can label. */
 export declare function durationParts(ms: number): {
     value: number;
     unit: IdeasDurationUnit;
 };
-/**
- * Build the health aggregate for one scope.
- *
- * One pass over the ideas in scope, no allocation proportional to the ledger:
- * the only structures that grow are the workspace groups and the label counts,
- * and both are cut to their cap before the response is built.
- *
- * @param source - the current snapshot (revision + rows).
- * @param options - the workspace scope and the clock.
- * @returns the bounded aggregate; never throws on a partial or odd ledger.
- */
+/** Build the bounded health aggregate for one scope and period. */
 export declare function buildIdeasStats(source: IdeasStatsSource, options?: IdeasStatsOptions): IdeasStats;

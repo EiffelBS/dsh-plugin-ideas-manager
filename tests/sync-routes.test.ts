@@ -138,6 +138,25 @@ describe('POST /api/ideas/sync/workspaces', () => {
     expect(overview.workspaces.find(row => row.workspaceId === emptyWorkspace)).toMatchObject({ confirmed: true, ideaCount: 0 })
   })
 
+  it('replaces an existing key only through an explicit replaceExisting confirmation', async () => {
+    const { base, workspaceId } = await serve()
+    await post(`${base}${WORKSPACES}`, { workspaceId, syncKey: 'sync_existing', confirm: true })
+    const refused = await post(`${base}${WORKSPACES}`, { workspaceId, syncKey: 'sync_incoming', confirm: true })
+    expect(refused.status).toBe(409)
+    expect((await refused.json() as { error: string }).error).toBe('sync-workspace-conflict')
+    expect((await post(`${base}${WORKSPACES}`, {
+      workspaceId, syncKey: 'sync_incoming', confirm: true, replaceExisting: 'true',
+    })).status).toBe(400)
+    const replaced = await post(`${base}${WORKSPACES}`, {
+      workspaceId, syncKey: 'sync_incoming', confirm: true, replaceExisting: true,
+    })
+    expect(replaced.status).toBe(200)
+    const body = await replaced.json() as { ok: boolean; mapping: { syncKey: string; baseSnapshotId: null; snapshots: unknown[] } }
+    expect(body).toMatchObject({ ok: true, mapping: { syncKey: 'sync_incoming', baseSnapshotId: null, snapshots: [] } })
+    const overview = await (await get(`${base}${SYNC}`)).json() as { workspaces: Array<{ workspaceId: string; syncKey: string }> }
+    expect(overview.workspaces.find(row => row.workspaceId === workspaceId)?.syncKey).toBe('sync_incoming')
+  })
+
   it('keeps the fence, method, content-type and body discipline', async () => {
     const { base, workspaceId } = await serve()
     expect((await post(`${base}${WORKSPACES}`, { workspaceId, confirm: true }, false)).status).toBe(403)

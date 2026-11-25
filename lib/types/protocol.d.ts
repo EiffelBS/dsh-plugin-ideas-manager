@@ -6,13 +6,14 @@
  * sibling families without importing any of their code.
  */
 import { type IdeaMergeMode, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type IdeaTag, type NewIdeaInput } from './core/ideas.ts';
+import type { IdeasStatsRange } from './core/ideas-stats.ts';
 /**
  * The backlog-health aggregate lives in its own module so the
  * definition of every number it prints has exactly one home. The types are
  * re-exported here because `protocol.ts` is the ONE module both halves share,
  * and the browser bundle must reach the shape without importing the Host half.
  */
-export { IDEAS_STATS_DAY_MS, IDEAS_STATS_MAX_TAGS, IDEAS_STATS_MAX_WORKSPACES, IDEAS_STATS_MEDIAN_MIN_SAMPLES, IDEAS_STATS_SCHEMA_VERSION, calendarMonthStart, durationParts, type IdeasDurationUnit, type IdeasStats, type IdeasStatsDelivery, type IdeasStatsOptions, type IdeasStatsScope, type IdeasStatsScopeKind, type IdeasStatsTagRow, type IdeasStatsTriage, type IdeasStatsWindow, type IdeasStatsWorkspaceRow, } from './core/ideas-stats.ts';
+export { IDEAS_STATS_ACTIVITY_DAYS, IDEAS_STATS_DAY_MS, IDEAS_STATS_DELIVERY_BUCKETS, IDEAS_STATS_MAX_TAGS, IDEAS_STATS_MAX_WORKSPACES, IDEAS_STATS_MEDIAN_MIN_SAMPLES, IDEAS_STATS_SCHEMA_VERSION, calendarDayStart, calendarMonthStart, durationParts, type IdeasDurationUnit, type IdeasStats, type IdeasStatsActivity, type IdeasStatsActivityDay, type IdeasStatsAging, type IdeasStatsDelivery, type IdeasStatsDeliveryBucket, type IdeasStatsOptions, type IdeasStatsQuality, type IdeasStatsRange, type IdeasStatsScope, type IdeasStatsScopeKind, type IdeasStatsTagRow, type IdeasStatsTriage, type IdeasStatsWindow, type IdeasStatsWorkflow, type IdeasStatsWorkspaceRow, } from './core/ideas-stats.ts';
 export declare const IDEAS_SCHEMA_VERSION: 1;
 export declare const IDEAS_API_PREFIX = "/api/ideas";
 /** Snapshot served by GET /api/ideas/state. */
@@ -180,6 +181,8 @@ export declare function ideasReadSearchParams(query: IdeasReadQuery): URLSearchP
  */
 export interface IdeasStatsQuery {
     workspaceId?: string;
+    /** Dashboard period; omitted = current calendar month. */
+    range?: IdeasStatsRange;
 }
 /**
  * Parse and bound the health query. Unknown keys reject rather than being

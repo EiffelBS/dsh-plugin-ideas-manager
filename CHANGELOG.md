@@ -6,6 +6,31 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.12.0 - 2026-11-25
+
+### Added
+
+- **The Health tab is now a graphical backlog dashboard.** A KPI band, backlog
+  flow donut, triage ring, delivery histogram, age segments, workspace and label
+  bars, 12-week activity heatmap and data-quality card make the existing Host
+  aggregate actionable. Period tabs cover this month, 30 days, 90 days and all
+  time; workspace and label bars jump back to the scoped or filtered board, and
+  the triage action opens Priorities. Cards, rings, bars and heatmap cells animate
+  in on display and refresh, with hover/focus details, keyboard navigation for the
+  activity heatmap and reduced-motion support. There is still no global health score.
+- **The health aggregate now carries workflow, age, activity and quality
+  signals.** Running and dependency-blocked ideas, unique triage counts, age
+  buckets, bounded delivery bars and a fixed 84-day heatmap are computed once on
+  the Host. The response remains bounded and separate from the board poll.
+
+### Fixed
+
+- **A workspace can be re-paired when its portable key was created by mistake.**
+  The destination picker no longer disables a workspace that already has another
+  key. Selecting it shows both keys and requires a second explicit confirmation
+  before replacing the pairing; the old synchronization history is cleared while
+  the ideas remain untouched.
+
 ## 0.11.0 - 2026-11-24
 
 ### Added

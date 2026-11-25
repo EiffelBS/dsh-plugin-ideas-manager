@@ -162,6 +162,8 @@ export interface IdeasSyncWorkspaceRequest {
     syncKey?: string;
     /** Must be literally true: names and paths are never matched automatically. */
     confirm: true;
+    /** Replace a different existing key for this workspace and reset its sync history. */
+    replaceExisting?: boolean;
 }
 /** Request body of POST /api/ideas/sync/export. */
 export interface IdeasSyncExportRequest {

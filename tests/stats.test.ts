@@ -4,9 +4,8 @@
  * Three contracts are under test, and the third one is the reason the feature
  * exists at all.
  *
- *  1. **The aggregate answers the five questions.** Open per workspace,
- *     delivered in the window, median time to deliver, top labels, and the
- *     triage gaps.
+ *  1. **The aggregate answers the dashboard signals.** Workflow, triage,
+ *     delivery flow, age, activity, workspace/label distribution and data quality.
  *  2. **The median refuses to print on a thin sample.** Below the floor the
  *     answer is `null` plus the counts that explain it — never a zero, never a
  *     number computed off one or two rows — and the floor itself travels in the
@@ -32,7 +31,9 @@ import {
   buildIdeasStats,
   calendarMonthStart,
   durationParts,
+  IDEAS_STATS_ACTIVITY_DAYS,
   IDEAS_STATS_DAY_MS,
+  IDEAS_STATS_DELIVERY_BUCKETS,
   IDEAS_STATS_MAX_TAGS,
   IDEAS_STATS_MAX_WORKSPACES,
   IDEAS_STATS_MEDIAN_MIN_SAMPLES,
@@ -76,7 +77,7 @@ function delivered(id: string, leadDays: number, extra: Partial<IdeaRecord> = {}
   return idea({ id, status: 'archived', createdAt, updatedAt: NOW, archivedAt: NOW, deliveredAt: createdAt + leadDays * DAY, ...extra })
 }
 
-describe('the health aggregate answers the five questions', () => {
+describe('the health dashboard aggregate', () => {
   it('counts the open backlog per workspace, busiest first, with a generic group', () => {
     const result = stats([
       idea({ id: 'a1', status: 'open', workspaceId: 'ws-a', rank: 1, value: 3 }),
@@ -116,21 +117,17 @@ describe('the health aggregate answers the five questions', () => {
     expect(result.deliveredInWindow).toBe(2)
   })
 
-  it('takes the median over EVERY timestamped delivery, not only this month', () => {
+  it('takes the median over the selected all-time range, not only this month', () => {
     const long = { createdAt: NOW - 200 * DAY, deliveredAt: NOW - 120 * DAY }
     const result = stats([
       ...[1, 2, 3, 4, 5].map(days => delivered(`d${days}`, days)),
-      // Two more deliveries from previous months, both short: they belong to the
-      // median of the whole board, which is what "how long does this take here"
-      // actually means.
       delivered('old-1', 5, long),
       delivered('old-2', 5, long),
-    ])
+    ], { range: 'all' })
     expect(result.delivery.sample).toBe(7)
     // Sorted: 1,2,3,4,5,80,80 -> the middle value of an odd sample.
     expect(result.delivery.medianMs).toBe(4 * DAY)
-    // ...while "this month" still counts only the recent ones.
-    expect(result.deliveredInWindow).toBe(0)
+    expect(result.deliveredInWindow).toBe(7)
   })
 
   it('names the top labels of the OPEN backlog, most used first', () => {
@@ -153,21 +150,60 @@ describe('the health aggregate answers the five questions', () => {
       idea({ id: 'a', status: 'open' }),
       idea({ id: 'b', status: 'open', rank: 1 }),
       idea({ id: 'c', status: 'open', rank: 2, value: 3 }),
-      // A closed idea without a score is not backlog triage: nothing to decide.
       idea({ id: 'd', status: 'archived' }),
     ])
-    expect(result.triage).toEqual({ open: 3, missingRank: 1, missingValue: 2 })
+    expect(result.triage).toEqual({ open: 3, missingRank: 1, missingValue: 2, unique: 2 })
+  })
+
+  it('builds workflow, age, activity, delivery buckets and quality signals', () => {
+    const result = stats([
+      idea({ id: 'fresh', status: 'open', createdAt: NOW - 2 * DAY, rank: 1, value: 2, runStatus: 'running', workspaceId: 'ws-a' }),
+      idea({ id: 'review', status: 'underReview', createdAt: NOW - 10 * DAY, workspaceId: 'ws-a' }),
+      idea({ id: 'blocker', status: 'open', createdAt: NOW - 10 * DAY, workspaceId: 'ws-a', blocks: ['review'] }),
+      idea({ id: 'mid', status: 'open', createdAt: NOW - 45 * DAY, workspaceId: 'ws-a' }),
+      idea({ id: 'old', status: 'open', createdAt: NOW - 100 * DAY, workspaceId: 'ws-a' }),
+      idea({ id: 'unstamped', status: 'archived', createdAt: NOW - 20 * DAY, archivedAt: NOW - DAY }),
+      idea({ id: 'delivered', status: 'archived', createdAt: NOW - 10 * DAY, deliveredAt: NOW - DAY, workspaceId: 'ws-a' }),
+    ])
+    expect(result.workflow).toEqual({ open: 4, underReview: 1, running: 1, blocked: 1 })
+    expect(result.aging).toEqual({ upTo7: 1, upTo30: 1, upTo90: 1, over90: 1, oldestMs: 100 * DAY })
+    expect(result.triage.unique).toBe(3)
+    expect(result.delivery.sample).toBe(1)
+    expect(result.delivery.buckets).toHaveLength(IDEAS_STATS_DELIVERY_BUCKETS)
+    expect(result.delivery.buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(1)
+    expect(result.activity.days).toHaveLength(IDEAS_STATS_ACTIVITY_DAYS)
+    expect(result.activity.created).toBe(6)
+    expect(result.activity.delivered).toBe(1)
+    expect(result.quality).toEqual({ withoutStamp: 1, inconsistent: 0, withoutWorkspace: 1 })
+  })
+
+  it('changes the measured window and median sample with the selected period', () => {
+    const ideas = [
+      delivered('inside', 2, { deliveredAt: NOW - DAY }),
+      delivered('last-month', 4, { deliveredAt: calendarMonthStart(NOW) - DAY }),
+      delivered('old', 80, { createdAt: NOW - 200 * DAY, deliveredAt: NOW - 120 * DAY }),
+      delivered('old-2', 6, { createdAt: NOW - 200 * DAY, deliveredAt: NOW - 120 * DAY }),
+      delivered('old-3', 8, { createdAt: NOW - 200 * DAY, deliveredAt: NOW - 120 * DAY }),
+    ]
+    const month = stats(ideas, { range: 'month' })
+    const all = stats(ideas, { range: 'all' })
+    expect(month.window.kind).toBe('calendarMonth')
+    expect(month.delivery.sample).toBe(1)
+    expect(month.delivery.medianMs).toBeNull()
+    expect(all.window.kind).toBe('allTime')
+    expect(all.delivery.sample).toBe(5)
+    expect(all.delivery.medianMs).toBe(80 * DAY)
   })
 })
 
 describe('the median refuses to print on a thin sample', () => {
   it('answers null — never a number — below the floor, and carries the floor', () => {
-    const thin = stats([1, 2, 3, 4].map(days => delivered(`d${days}`, days)))
+    const thin = stats([1, 2, 3, 4].map(days => delivered(`d${days}`, days)), { range: 'all' })
     expect(thin.delivery.sample).toBe(4)
     expect(thin.delivery.medianMs).toBeNull()
     expect(thin.delivery.minSamples).toBe(IDEAS_STATS_MEDIAN_MIN_SAMPLES)
 
-    const enough = stats([1, 2, 3, 4, 5].map(days => delivered(`d${days}`, days)))
+    const enough = stats([1, 2, 3, 4, 5].map(days => delivered(`d${days}`, days)), { range: 'all' })
     expect(enough.delivery.sample).toBe(IDEAS_STATS_MEDIAN_MIN_SAMPLES)
     expect(enough.delivery.medianMs).toBe(3 * DAY)
   })
@@ -187,7 +223,7 @@ describe('the median refuses to print on a thin sample', () => {
     const mixed = stats([
       ...[1, 2, 3, 4, 5].map(days => delivered(`d${days}`, days)),
       ...['x', 'y', 'z'].map(id => idea({ id, status: 'archived', archivedAt: NOW })),
-    ])
+    ], { range: 'all' })
     expect(mixed.delivery.sample).toBe(5)
     expect(mixed.delivery.withoutStamp).toBe(3)
     expect(mixed.delivery.medianMs).toBe(3 * DAY)
@@ -196,9 +232,8 @@ describe('the median refuses to print on a thin sample', () => {
   it('never averages a stamp that precedes its own creation, and reports it', () => {
     const result = stats([
       ...[1, 2, 3, 4, 5].map(days => delivered(`d${days}`, days)),
-      // Only reachable through a hand-edited or imported document.
       idea({ id: 'broken', status: 'archived', createdAt: NOW, deliveredAt: NOW - 10 * DAY }),
-    ])
+    ], { range: 'all' })
     expect(result.delivery.inconsistent).toBe(1)
     expect(result.delivery.sample).toBe(5)
     expect(result.delivery.medianMs).toBe(3 * DAY)
@@ -218,7 +253,7 @@ describe('the median refuses to print on a thin sample', () => {
     // `restore` clears `archivedAt` alone, so a delivered idea can be reopened
     // and later declined while keeping the stamp. The delivery happened; the
     // median has every right to count it.
-    const result = stats([{ ...delivered('x', 4), status: 'declined' as IdeaStatus }])
+    const result = stats([{ ...delivered('x', 4), status: 'declined' as IdeaStatus }], { range: 'all' })
     expect(result.delivery.sample).toBe(1)
     expect(result.delivery.medianMs).toBeNull()
   })
@@ -307,24 +342,28 @@ describe('durationParts is the one formatting rule', () => {
 const MINUTE_MS = 60_000
 
 describe('the stats query parser', () => {
-  it('reads the three scopes the board selector can ask for', () => {
+  it('reads the three scopes and four dashboard periods', () => {
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats'))).toEqual({})
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId=ws-a'))).toEqual({ workspaceId: 'ws-a' })
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId='))).toEqual({ workspaceId: '' })
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId=%20'))).toEqual({ workspaceId: '' })
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&range=30d'))).toEqual({ range: '30d' })
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId=ws-a&range=all'))).toEqual({ workspaceId: 'ws-a', range: 'all' })
   })
 
-  it('refuses another view, an unknown key and an oversized workspace id', () => {
+  it('refuses another view, an unknown key, a bad range and an oversized workspace id', () => {
     expect(parseIdeasStatsQuery(new URLSearchParams('view=summary'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&limit=10'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&fields=body'))).toBeUndefined()
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&range=7d'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams(`view=stats&workspaceId=${'x'.repeat(257)}`))).toBeUndefined()
   })
 
-  it('round-trips through the browser serializer', () => {
+  it('round-trips scope and period through the browser serializer', () => {
     expect(ideasStatsSearchParams().toString()).toBe('view=stats')
-    const params = ideasStatsSearchParams({ workspaceId: 'ws-a' })
-    expect(parseIdeasStatsQuery(params)).toEqual({ workspaceId: 'ws-a' })
+    expect(ideasStatsSearchParams({ workspaceId: 'ws-a', range: '90d' }).toString()).toBe('view=stats&workspaceId=ws-a&range=90d')
+    const params = ideasStatsSearchParams({ workspaceId: 'ws-a', range: '90d' })
+    expect(parseIdeasStatsQuery(params)).toEqual({ workspaceId: 'ws-a', range: '90d' })
   })
 })
 
@@ -392,13 +431,18 @@ describe('GET /api/ideas/state?view=stats', () => {
     // aggregate from one that predates the board it is painted under.
     expect(scopedPayload.revision).toBe(payload.revision)
 
+    const allTime = await get(`${base}${IDEAS_API_PREFIX}/state?view=stats&range=all`)
+    const allTimePayload = await allTime.json() as IdeasStats
+    expect(allTimePayload.range).toBe('all')
+    expect(allTimePayload.window.kind).toBe('allTime')
+
     const refused = await get(`${base}${IDEAS_API_PREFIX}/state?view=stats`, false)
     expect(refused.status).toBe(403)
   })
 
   it('refuses a bad query rather than answering a different question', async () => {
     const base = await serve()
-    for (const query of ['view=stats&limit=5', 'view=stats&fields=body', `view=stats&workspaceId=${'x'.repeat(300)}`]) {
+    for (const query of ['view=stats&limit=5', 'view=stats&fields=body', 'view=stats&range=7d', `view=stats&workspaceId=${'x'.repeat(300)}`]) {
       const response = await get(`${base}${IDEAS_API_PREFIX}/state?${query}`)
       expect({ query, status: response.status }).toEqual({ query, status: 400 })
       expect(await response.json()).toMatchObject({ ok: false, error: 'invalid-query' })
@@ -473,7 +517,8 @@ describe('the view is ADDITIVE: the frozen wire did not move', () => {
     service!.apply('d1', { kind: 'deliver', ideaId: 'idea-1' })
 
     const document = await (await get(`${base}${IDEAS_API_PREFIX}/state`)).text() as string
-    const before = stats(JSON.parse(document).ideas as IdeaRecord[], {}, JSON.parse(document).revision as number)
+    const snapshot = JSON.parse(document) as IdeasSnapshot
+    const before = buildIdeasStats(snapshot, { range: 'all', now: Date.now() })
     expect(before.delivery.sample).toBe(1)
 
     const adopted = await fetch(`${base}${IDEAS_API_PREFIX}/backup/restore`, {
@@ -483,7 +528,7 @@ describe('the view is ADDITIVE: the frozen wire did not move', () => {
     })
     expect(adopted.status).toBe(200)
 
-    const after = buildIdeasStats(service!.snapshot())
+    const after = buildIdeasStats(service!.snapshot(), { range: 'all', now: Date.now() })
     // Same deliveries, therefore the same median decision — the aggregate is
     // derived, so a ledger that round-tripped is provably intact.
     expect(after.delivery.sample).toBe(before.delivery.sample)
@@ -518,15 +563,17 @@ describe('the browser transport asks for it separately from the poll', () => {
     await transport.stats()
     await transport.stats({ workspaceId: 'ws-a' })
     await transport.stats({ workspaceId: '' })
+    await transport.stats({ workspaceId: 'ws-a', range: '90d' })
     await transport.state()
 
-    expect(urls.slice(0, 3)).toEqual([
+    expect(urls.slice(0, 4)).toEqual([
       '/api/ideas/state?view=stats',
       '/api/ideas/state?view=stats&workspaceId=ws-a',
       '/api/ideas/state?view=stats&workspaceId=',
+      '/api/ideas/state?view=stats&workspaceId=ws-a&range=90d',
     ])
     // The 2.5 s poll is byte-identical to what it has always requested: this
     // feature has no reason to appear in it.
-    expect(urls[3]).toBe('/api/ideas/state?view=list')
+    expect(urls[4]).toBe('/api/ideas/state?view=list')
   })
 })

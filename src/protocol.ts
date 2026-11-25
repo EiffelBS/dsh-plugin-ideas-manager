@@ -24,6 +24,7 @@ import {
   type IdeaTag,
   type NewIdeaInput,
 } from './core/ideas.ts'
+import type { IdeasStatsRange } from './core/ideas-stats.ts'
 
 /**
  * The backlog-health aggregate lives in its own module so the
@@ -32,22 +33,32 @@ import {
  * and the browser bundle must reach the shape without importing the Host half.
  */
 export {
+  IDEAS_STATS_ACTIVITY_DAYS,
   IDEAS_STATS_DAY_MS,
+  IDEAS_STATS_DELIVERY_BUCKETS,
   IDEAS_STATS_MAX_TAGS,
   IDEAS_STATS_MAX_WORKSPACES,
   IDEAS_STATS_MEDIAN_MIN_SAMPLES,
   IDEAS_STATS_SCHEMA_VERSION,
+  calendarDayStart,
   calendarMonthStart,
   durationParts,
   type IdeasDurationUnit,
   type IdeasStats,
+  type IdeasStatsActivity,
+  type IdeasStatsActivityDay,
+  type IdeasStatsAging,
   type IdeasStatsDelivery,
+  type IdeasStatsDeliveryBucket,
   type IdeasStatsOptions,
+  type IdeasStatsQuality,
+  type IdeasStatsRange,
   type IdeasStatsScope,
   type IdeasStatsScopeKind,
   type IdeasStatsTagRow,
   type IdeasStatsTriage,
   type IdeasStatsWindow,
+  type IdeasStatsWorkflow,
   type IdeasStatsWorkspaceRow,
 } from './core/ideas-stats.ts'
 
@@ -334,9 +345,12 @@ export function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams {
  */
 export interface IdeasStatsQuery {
   workspaceId?: string
+  /** Dashboard period; omitted = current calendar month. */
+  range?: IdeasStatsRange
 }
 
-const STATS_QUERY_KEYS = new Set(['view', 'workspaceId'])
+const STATS_QUERY_KEYS = new Set(['view', 'workspaceId', 'range'])
+const STATS_RANGES = new Set<IdeasStatsRange>(['month', '30d', '90d', 'all'])
 
 /**
  * Parse and bound the health query. Unknown keys reject rather than being
@@ -349,10 +363,18 @@ const STATS_QUERY_KEYS = new Set(['view', 'workspaceId'])
 export function parseIdeasStatsQuery(params: URLSearchParams): IdeasStatsQuery | undefined {
   if ([...params.keys()].some(key => !STATS_QUERY_KEYS.has(key))) return undefined
   if (params.get('view') !== 'stats') return undefined
-  if (!params.has('workspaceId')) return {}
-  const workspaceId = params.get('workspaceId')?.trim() ?? ''
-  if (workspaceId.length > 256) return undefined
-  return { workspaceId }
+  const query: IdeasStatsQuery = {}
+  if (params.has('workspaceId')) {
+    const workspaceId = params.get('workspaceId')?.trim() ?? ''
+    if (workspaceId.length > 256) return undefined
+    query.workspaceId = workspaceId
+  }
+  if (params.has('range')) {
+    const range = params.get('range')
+    if (range === null || !STATS_RANGES.has(range as IdeasStatsRange)) return undefined
+    query.range = range as IdeasStatsRange
+  }
+  return query
 }
 
 /** Serialize the health query for the browser transport. */
@@ -360,6 +382,7 @@ export function ideasStatsSearchParams(query: IdeasStatsQuery = {}): URLSearchPa
   const params = new URLSearchParams()
   params.set('view', 'stats')
   if (query.workspaceId !== undefined) params.set('workspaceId', query.workspaceId)
+  if (query.range !== undefined) params.set('range', query.range)
   return params
 }
 

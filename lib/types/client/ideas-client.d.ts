@@ -5,7 +5,7 @@
  * registration at the edge owns the DOM.
  */
 import type { IdeaRecord, IdeaSimilarReport, IdeaStatus, IdeaTag } from '../core/ideas.ts';
-import { type IdeasBackupView, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasSnapshotInfo, type IdeasSnapshotReason, type IdeasStats } from '../protocol.ts';
+import { type IdeasBackupView, type IdeasListSnapshot, type IdeasReadQuery, type IdeasReadSnapshot, type IdeasRestoreRequest, type IdeasSettingsPatch, type IdeasSettingsView, type IdeasSnapshotInfo, type IdeasSnapshotReason, type IdeasStats, type IdeasStatsRange } from '../protocol.ts';
 import { type BulkItemResult } from './bulk.ts';
 import { type UndoEntry, type UndoKind, type UndoRefusal } from './undo.ts';
 import { type PanelNavigator } from './panel-navigation.ts';
@@ -188,6 +188,8 @@ export declare class IdeasClient {
      * = every workspace; `''` = the workspace-less group.
      */
     statsScope: string | undefined;
+    /** Period {@link stats} was computed for. */
+    statsRange: IdeasStatsRange;
     /** Whether a stats request is in flight (the view shows it is refreshing). */
     statsPending: boolean;
     /** Last stats failure, verbatim; cleared on success. */
@@ -640,8 +642,9 @@ export declare class IdeasClient {
      * new label: a stale scope reads as "no data yet" until its own fetch lands.
      *
      * @param workspaceId - the scope; undefined = every workspace.
+     * @param range - the dashboard period; defaults to the current month.
      */
-    loadStats(workspaceId?: string): Promise<void>;
+    loadStats(workspaceId?: string, range?: IdeasStatsRange): Promise<void>;
     /** Forget the aggregate (the Health tab was left): the next open refetches. */
     dropStats(): void;
 }

@@ -249,6 +249,11 @@ export function SyncPanel({ client }: SyncPanelProps) {
     ...overviewRows.map(row => [row.workspaceId, row.workspaceId] as const),
     ...workspaceOptions.map(option => [option.workspaceId, option.workspaceId] as const),
   ]).values()]
+  const selectedMapping = overviewRows.find(row => row.workspaceId === state.mappingWorkspaceId)
+  const incomingKey = state.incoming?.workspace.syncKey
+  const needsReplacement = selectedMapping?.syncKey !== undefined
+    && incomingKey !== undefined
+    && selectedMapping.syncKey !== incomingKey
 
   const refreshOverview = async (): Promise<void> => {
     const overview = await client.loadSyncOverview()
@@ -379,6 +384,7 @@ export function SyncPanel({ client }: SyncPanelProps) {
 
   const onConfirmMapping = async (): Promise<void> => {
     if (state.incoming === undefined || state.incomingName === undefined || !state.mappingConsent || state.mappingWorkspaceId === '') return
+    if (needsReplacement && !state.replaceConsent) return
     const seq = ++requestSeq.current
     dispatch({ type: 'pending', pending: true })
     try {
@@ -386,6 +392,7 @@ export function SyncPanel({ client }: SyncPanelProps) {
         workspaceId: state.mappingWorkspaceId,
         syncKey: state.incoming.workspace.syncKey,
         confirm: true,
+        ...(needsReplacement ? { replaceExisting: true } : {}),
       })
       if (seq !== requestSeq.current) return
       if (!outcome.ok) {
@@ -682,10 +689,10 @@ export function SyncPanel({ client }: SyncPanelProps) {
                   <option value="">—</option>
                   {mappingOptions.map(workspaceId => {
                     const mapped = overviewRows.find(row => row.workspaceId === workspaceId)
-                    const unavailable = mapped?.syncKey !== undefined && mapped.syncKey !== state.incoming!.workspace.syncKey
+                    const differentKey = mapped?.syncKey !== undefined && mapped.syncKey !== state.incoming!.workspace.syncKey
                     return (
-                      <option key={workspaceId} value={workspaceId} disabled={unavailable}>
-                        {workspaceLabel(workspaceId, workspaceOptions)}{unavailable ? ` — ${t('sync.import.mappingCurrent')}` : ''}
+                      <option key={workspaceId} value={workspaceId}>
+                        {workspaceLabel(workspaceId, workspaceOptions)}{differentKey ? ` — ${t('sync.import.mappingCurrent')}` : ''}
                       </option>
                     )
                   })}
@@ -700,14 +707,34 @@ export function SyncPanel({ client }: SyncPanelProps) {
                 />
                 <span>{t('sync.import.mappingConsent')}</span>
               </label>
+              {needsReplacement && (
+                <div className={classes.syncBulkConfirm} data-dsh-ideas-sync-replace="">
+                  <span className={classes.settingsRowTitle}>{t('sync.import.replaceTitle')}</span>
+                  <span>
+                    {t('sync.import.replaceWarning', {
+                      oldKey: selectedMapping?.syncKey ?? '',
+                      newKey: state.incoming.workspace.syncKey,
+                    })}
+                  </span>
+                  <label className={classes.syncConsent}>
+                    <input
+                      type="checkbox"
+                      checked={state.replaceConsent}
+                      disabled={state.pending}
+                      onChange={event => { dispatch({ type: 'replace-consent', consent: event.target.checked }) }}
+                    />
+                    <span>{t('sync.import.replaceConsent')}</span>
+                  </label>
+                </div>
+              )}
               <div className={classes.syncActions}>
                 <button
                   type="button"
                   className={classes.primaryButton}
-                  disabled={state.pending || !state.mappingConsent || state.mappingWorkspaceId === ''}
+                  disabled={state.pending || !state.mappingConsent || state.mappingWorkspaceId === '' || (needsReplacement && !state.replaceConsent)}
                   onClick={() => { void onConfirmMapping() }}
                 >
-                  {t('sync.import.mappingConfirm')}
+                  {needsReplacement ? t('sync.import.mappingReplaceConfirm') : t('sync.import.mappingConfirm')}
                 </button>
                 <button
                   type="button"

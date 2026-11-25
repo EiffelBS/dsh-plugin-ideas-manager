@@ -890,6 +890,10 @@ portable export into another restore:
    used as identity or matched automatically. The Host does not own the workspace
    registry, so an empty local workspace has no idea row to discover; literal
    confirmation of a registry-supplied id is sufficient to create that pairing.
+   Replacing a different key is a separate explicit act (`replaceExisting: true`):
+   the Host checks that the incoming key is not owned by another workspace, then
+   replaces the mapping and clears its base snapshot and ancestor cache. Idea
+   records are untouched.
 2. `idea.id` is the cross-machine identity and is preserved verbatim.
    `ideaNumber` is only a local display number. Import allocates fresh numbers
    from the destination's monotonic sequence and never keys a row by the source
@@ -1006,7 +1010,12 @@ cross-machine association is visible without inferring it from names or paths.
 An unknown portable key opens an explicit destination picker with no default
 selection. The picker unions ledger-known workspaces with the live DSH registry,
 so an empty destination workspace can be paired without creating a placeholder
-idea. Workspace titles are display hints only. Conflict values are rendered in
+idea. Workspace titles are display hints only. A workspace already paired with a
+different key remains selectable, but reveals a second warning and confirmation
+that names both keys and states that synchronization history will be cleared;
+both confirmations are required before the replacement request is sent. The
+Host remains the authority and still refuses a key already owned elsewhere.
+Conflict values are rendered in
 bounded side-by-side panes with an explicit truncation notice; the complete value
 still participates in the Host decision. Each choice re-plans, which can expose a
 new structural conflict, and stale decision ids are pruned by re-planning rather
@@ -1206,25 +1215,27 @@ carrying every field the ledger holds.
 
 `src/core/ideas-stats.ts` is the whole feature on the host side: a pure
 `buildIdeasStats(source, options)` over a `{revision, ideas}` slice, served by
-`GET /api/ideas/state?view=stats` and painted by `client/health-view.tsx`.
-Everything below is a decision that had to be taken before the code, and each
-one is a place where the obvious implementation would have lied.
+`GET /api/ideas/state?view=stats` and painted as a graphical dashboard by
+`client/health-view.tsx`. The dashboard deliberately exposes signals rather than
+one opaque score: workflow, triage, delivery flow, age, activity and data quality.
 
 ### Why a separate `view`, not a fold into `view=list`
 
 The board's poll is a 2.5 s `?view=list` fetch and the full snapshot is over a
 megabyte. Re-reducing a second copy of it in the browser on every paint is
-exactly the cost the list projection removed, so the aggregate is a **separate bounded
-read**: two hard-capped arrays and a handful of scalars, ~600 bytes on a
-14-idea board and provably under the 512 KiB wire cap at the 140-card fixture
-(`idea-110-stats.test.ts`). The poll URL, its payload and its cadence are
-untouched, and the panel asks for the aggregate only while the Health tab is
-open and only when the ledger revision or the workspace scope actually moved.
+exactly the cost the list projection removed, so the aggregate is a **separate
+bounded read**: hard-capped workspace/tag arrays, eight delivery buckets, a fixed
+84-day activity heatmap and a handful of scalars. It stays provably under the
+512 KiB wire cap at the 140-card fixture. The poll URL, its payload and its
+cadence are untouched, and the panel asks for the aggregate only while the
+Health tab is open and only when the ledger revision, workspace scope or selected
+period actually moved.
 
 `view=stats` deliberately does **not** run through `parseIdeasReadQuery`: it
-takes only `view` and `workspaceId`, and an unknown key is a `400` rather than
-a silently broader answer. Every key the row views take (`limit`, `fields`,
-`similar`, …) would be a second set of definitions for the same numbers.
+takes only `view`, `workspaceId` and the closed `range` union (`month`, `30d`,
+`90d`, `all`). An unknown key or period is a `400` rather than a silently broader
+answer. Every key the row views take (`limit`, `fields`, `similar`, …) would be a
+second set of definitions for the same numbers.
 
 ### Why `ledger.statsSource()` breaks the clone-on-read rule
 
@@ -1245,10 +1256,11 @@ the backlog is closed. A backlog whose ideas are dragged to Archived has no
 delivery data at all, and a median computed over that sample is a confident
 wrong number — worse than none. So:
 
-- **The sample is every idea carrying a real stamp** (`deliveredAt` present,
-  finite, and not before its own `createdAt`), across the WHOLE board, not just
-  this month. "How long does a delivery take here" is a property of the backlog,
-  not of the current calendar month.
+- **The sample is every usable delivery inside the selected window**
+  (`deliveredAt` present, finite, not before its own `createdAt`, and inside
+  `window`). The default month is intentionally local; `30d` and `90d` are
+  rolling windows, and `all` covers the whole ledger. The dashboard never mixes
+  a month delivery count with an all-time median under one unlabeled card.
 - **Below `IDEAS_STATS_MEDIAN_MIN_SAMPLES` (5) the response is
   `medianMs: null`** and the UI prints *Not enough deliveries yet (n / 5)*. The
   floor and the sample size both travel in the payload, so no surface can
@@ -1266,14 +1278,15 @@ wrong number — worse than none. So:
   reachable through a hand-edited or imported document; it is counted and
   excluded rather than silently folded into a median.
 
-### "This month" means the local calendar month, and says so
+### The period is part of the answer
 
-`window` is `{kind: 'calendarMonth', start, end}` with `start` the Host's LOCAL
-first instant of the month and `end` the instant the aggregate was measured. The
-label can therefore be checked against the data it claims, and the panel prints
-the month name it actually measured rather than "recently". A rolling window
-would have needed a different label ("last 30 days"); the words on the card mean
-this one.
+`window` is self-describing: `calendarMonth` uses the Host's LOCAL first instant
+of the month, `rollingDays` carries `days: 30 | 90`, and `allTime` starts at zero.
+`end` is always the instant the aggregate was measured. The panel prints the
+period it actually asked for, and the delivery histogram uses eight bounded
+buckets over that same window. The fixed activity heatmap remains the last 84
+local days regardless of the selected KPI period, because it answers a different
+question: recent creation/delivery cadence.
 
 ### Scoped, not global
 
@@ -1286,24 +1299,43 @@ and the id otherwise. The per-workspace breakdown is therefore "open per
 workspace *in scope*": eight rows when the scope is everything, one when it is
 narrowed, which is correct rather than a degradation.
 
+### Workflow, age, activity and quality are separate signals
+
+`workflow` keeps the two active status columns (`open`, `underReview`) separate
+from overlapping facts (`running`, `blocked`). A blocked signal is an active idea
+named by another scoped idea's `blocks`; the relation remains a statement, never
+a scheduling constraint. `aging` buckets OPEN ideas by local elapsed time and
+keeps the oldest age, so an old backlog cannot hide behind a healthy delivery
+median. `activity` is a fixed 84-day local-date heatmap built from `createdAt` and
+usable `deliveredAt`; it needs no persisted time-series table. `quality` groups
+facts kept separate from workflow numbers: unstamped archives, inconsistent
+stamps and ideas without a workspace. Only the first two are excluded from
+delivery statistics; a workspace-less idea remains a normal generic-group idea.
+
 ### What the view refuses to say
 
 - **Triage is work, not a score.** `missingRank` / `missingValue` count OPEN
-  ideas in scope, and the copy says so. A closed idea without a value is not
-  backlog triage — nothing is being decided about it.
+  ideas in scope, while `unique` counts each idea once when either field is
+  missing. The ring uses `unique`; the two detail bars keep the separate gaps
+  visible. A closed idea without a value is not backlog triage.
 - **Labels are counted on the open backlog only.** A label that only appears on
   closed work is history, not work to do. Counting is case-folded (first
   spelling wins) so `Perf` and `perf` are one row to a reader.
-- **The panel computes nothing.** `health-view.tsx` renders the Host's numbers
-  verbatim; the only computation it does is `durationParts()`, the shared helper
-  from the same module, which turns milliseconds into a value and a unit while
-  the dictionary supplies the words. An aggregate is the easiest thing in this
-  codebase to compute two different ways in two places, and a panel that
-  recomputed would be exactly that second place.
-- **The list-only affordances step aside.** The search box, the tag filter and
-  the selection bar are hidden on the Health tab: none of them can narrow an
-  aggregate computed on the host, and offering them would promise a narrowing
-  that never happens. The workspace selector stays — it IS the scope.
+- **The panel computes no domain numbers.** `health-view.tsx` renders the Host's
+  counts verbatim. It only turns counts into presentation geometry — donut dash
+  lengths, ring progress, bar widths/heights and heatmap intensity — and uses the
+  shared `durationParts()` helper for duration wording. CSS animates that geometry
+  on mount and whenever `computedAt` changes; the animation class is toggled on the
+  stable dashboard root instead of remounting focusable children, so keyboard
+  focus survives a refresh. `prefers-reduced-motion` disables it. The activity
+  heatmap is a focusable listbox with arrow-key navigation and a live day readout.
+  An aggregate is the easiest thing in this codebase to compute two different ways in two places,
+  and a panel that re-counted rows would be exactly that second place.
+- **The list-only affordances step aside, but the dashboard links back.** Search,
+  the tag filter and the selection bar remain hidden because they cannot narrow
+  a Host aggregate. The workspace selector stays as the scope. Workspace and
+  label bars are shortcuts into the real board: one applies the workspace scope,
+  the other applies the tag filter, and the triage action opens Priorities.
 
 ### An aggregate goes stale, and says so
 
@@ -1338,8 +1370,8 @@ figures that read as zero. `IdeasClient.loadStats` carries a supersession guard:
 switching the workspace selector while a request is in flight starts another
 one, and only the LAST may write, so a slow answer can never repaint the panel
 with numbers the reader is no longer asking for. The stored result also travels
-with the scope it was computed for, and the view renders nothing rather than
-another scope's figures while its own fetch is in flight.
+with both the scope and period it was computed for, and the view renders nothing
+rather than another scope's or period's figures while its own fetch is in flight.
 
 ## Deep-link to an idea
 

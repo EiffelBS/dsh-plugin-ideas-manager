@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import type { IdeasClient, IdeaClientPatch } from './ideas-client.ts'
 import { IDEA_COLUMNS, rankGroupKey, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type RankableIdea } from '../core/ideas.ts'
-import type { IdeaListRow, IdeasOpenOrdering } from '../protocol.ts'
+import type { IdeaListRow, IdeasOpenOrdering, IdeasStatsRange } from '../protocol.ts'
 import { t, interfaceLanguage, type IdeasKey } from './locales.ts'
 import { classes } from './style.ts'
 import { renderMarkdown } from './markdown.ts'
@@ -1883,6 +1883,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   const [mdMode, setMdMode] = useState(true)
   // Active panel tab (Overview kanban / Priorities ranking), persisted.
   const [activeTab, setActiveTab] = useState<BoardTab>(() => readActiveTab(activeTabStorage()))
+  const [healthRange, setHealthRange] = useState<IdeasStatsRange>('month')
   const switchTab = (tab: BoardTab): void => {
     setActiveTab(tab)
     writeActiveTab(activeTabStorage(), tab)
@@ -2332,8 +2333,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     }
     void client.loadStats(workspaceFilter === ''
       ? undefined
-      : workspaceFilter === NO_WORKSPACE_FILTER ? '' : workspaceFilter)
-  }, [client, activeTab, workspaceFilter, snapshot?.revision])
+      : workspaceFilter === NO_WORKSPACE_FILTER ? '' : workspaceFilter, healthRange)
+  }, [client, activeTab, workspaceFilter, healthRange, snapshot?.revision])
 
   /**
    * Select box click: a plain click toggles one row, a shift-click paints the
@@ -3337,6 +3338,19 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 scopeWorkspaceId={workspaceFilter}
                 workspaceTitle={workspaceTitle}
                 boardRevision={revision}
+                range={healthRange}
+                onRangeChange={setHealthRange}
+                onOpenIdeas={() => { switchTab('overview') }}
+                onWorkspace={(workspaceId) => {
+                  chooseWorkspaceScope(workspaceId ?? NO_WORKSPACE_FILTER)
+                  switchTab('overview')
+                }}
+                onTag={(name) => {
+                  client.clearFocus()
+                  setTagFilter(current => current.includes(name) ? current : [...current, name])
+                  switchTab('overview')
+                }}
+                onTriage={() => { switchTab('priorities') }}
               />
             )}
 

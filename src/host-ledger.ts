@@ -899,13 +899,35 @@ export class IdeasHostLedger {
     // registry id here. Literal confirmation is the authority for that pairing;
     // no name or path heuristic is involved.
     const existing = this.document.sync.workspaces.find(mapping => mapping.workspaceId === workspaceId)
+    const usedKeys = new Set(this.document.sync.workspaces.map(mapping => mapping.syncKey))
     if (existing !== undefined) {
-      if (request.syncKey === undefined || request.syncKey === existing.syncKey) {
+      if (request.syncKey === undefined) {
+        if (request.replaceExisting === true) {
+          return syncRefusal('invalid-sync-workspace', 'replacing a sync key requires the incoming portable key')
+        }
         return { ok: true, mapping: { ...existing } }
       }
-      return syncRefusal('sync-workspace-conflict', 'this local workspace already has a different confirmed sync key')
+      if (request.syncKey === existing.syncKey) return { ok: true, mapping: { ...existing } }
+      if (request.replaceExisting !== true) {
+        return syncRefusal('sync-workspace-conflict', 'this local workspace already has a different confirmed sync key')
+      }
+      if (usedKeys.has(request.syncKey)) {
+        return syncRefusal('sync-key-conflict', 'this sync key is already confirmed for another local workspace')
+      }
+      const mapping = {
+        syncKey: request.syncKey,
+        workspaceId,
+        confirmedAt: this.now(),
+        baseSnapshotId: null,
+        snapshots: [],
+      }
+      this.document.sync = {
+        ...this.document.sync,
+        workspaces: this.document.sync.workspaces.map(item => item.workspaceId === workspaceId ? mapping : item),
+      }
+      this.commit()
+      return { ok: true, mapping: { ...mapping } }
     }
-    const usedKeys = new Set(this.document.sync.workspaces.map(mapping => mapping.syncKey))
     let syncKey = request.syncKey
     if (syncKey !== undefined && usedKeys.has(syncKey)) {
       return syncRefusal('sync-key-conflict', 'this sync key is already confirmed for another local workspace')

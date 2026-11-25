@@ -225,6 +225,8 @@ export interface IdeasSyncWorkspaceRequest {
   syncKey?: string
   /** Must be literally true: names and paths are never matched automatically. */
   confirm: true
+  /** Replace a different existing key for this workspace and reset its sync history. */
+  replaceExisting?: boolean
 }
 
 /** Request body of POST /api/ideas/sync/export. */
@@ -249,7 +251,7 @@ const SYNC_STATE_KEYS = ['deviceId', 'workspaces'] as const
 const SYNC_MAPPING_KEYS = ['syncKey', 'workspaceId', 'confirmedAt', 'baseSnapshotId', 'snapshots'] as const
 const SYNC_SNAPSHOT_KEYS = ['snapshotId', 'ideas'] as const
 const RESOLUTION_KEYS = ['conflictId', 'choice'] as const
-const WORKSPACE_REQUEST_KEYS = ['workspaceId', 'syncKey', 'confirm'] as const
+const WORKSPACE_REQUEST_KEYS = ['workspaceId', 'syncKey', 'confirm', 'replaceExisting'] as const
 const EXPORT_REQUEST_KEYS = ['workspaceId'] as const
 const PLAN_REQUEST_KEYS = ['package', 'resolutions', 'expectedRevision'] as const
 
@@ -447,10 +449,12 @@ export function parseIdeasSyncWorkspaceRequest(value: unknown): IdeasSyncWorkspa
   if (row === undefined || !exactKeys(row, WORKSPACE_REQUEST_KEYS)) return undefined
   if (!isWorkspaceId(row.workspaceId) || row.confirm !== true) return undefined
   if (row.syncKey !== undefined && !isSyncKey(row.syncKey)) return undefined
+  if (row.replaceExisting !== undefined && typeof row.replaceExisting !== 'boolean') return undefined
   return {
     workspaceId: row.workspaceId.trim(),
     ...(row.syncKey === undefined ? {} : { syncKey: row.syncKey }),
     confirm: true,
+    ...(row.replaceExisting === true ? { replaceExisting: true } : {}),
   }
 }
 

@@ -21,6 +21,7 @@ import {
   type IdeasSnapshotInfo,
   type IdeasSnapshotReason,
   type IdeasStats,
+  type IdeasStatsRange,
 } from '../protocol.ts'
 import { runBulkPlan, type BulkItemResult, type BulkPlanItem, type BulkStepRunner } from './bulk.ts'
 import {
@@ -229,6 +230,8 @@ export class IdeasClient {
    * = every workspace; `''` = the workspace-less group.
    */
   statsScope: string | undefined
+  /** Period {@link stats} was computed for. */
+  statsRange: IdeasStatsRange = 'month'
   /** Whether a stats request is in flight (the view shows it is refreshing). */
   statsPending = false
   /** Last stats failure, verbatim; cleared on success. */
@@ -1257,8 +1260,9 @@ export class IdeasClient {
    * new label: a stale scope reads as "no data yet" until its own fetch lands.
    *
    * @param workspaceId - the scope; undefined = every workspace.
+   * @param range - the dashboard period; defaults to the current month.
    */
-  async loadStats(workspaceId?: string): Promise<void> {
+  async loadStats(workspaceId?: string, range: IdeasStatsRange = 'month'): Promise<void> {
     if (this.transport.stats === undefined) {
       this.stats = undefined
       this.statsError = undefined
@@ -1274,11 +1278,12 @@ export class IdeasClient {
     // with numbers the reader is no longer asking for.
     const seq = ++this.statsRequestSeq
     try {
-      const query = workspaceId === undefined ? {} : { workspaceId }
+      const query = workspaceId === undefined ? { range } : { workspaceId, range }
       const fresh = await this.transport.stats(query)
       if (seq !== this.statsRequestSeq) return
       this.stats = fresh
       this.statsScope = workspaceId
+      this.statsRange = range
     } catch (error) {
       if (seq === this.statsRequestSeq) {
         this.statsError = error instanceof Error ? error.message : String(error)
@@ -1294,6 +1299,7 @@ export class IdeasClient {
     if (this.stats === undefined && this.statsScope === undefined) return
     this.stats = undefined
     this.statsScope = undefined
+    this.statsRange = 'month'
     this.statsRequestSeq += 1
     this.emit()
   }

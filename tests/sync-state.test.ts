@@ -1,7 +1,7 @@
 /** Pure synchronization view-state guards and complete-plan counts. */
 
 import { describe, expect, it } from 'vitest'
-import { bulkSyncResolutions, canApplySync, initialSyncUiState, syncPlanCounts, type SyncUiState } from '../src/client/sync-state.ts'
+import { bulkSyncResolutions, canApplySync, initialSyncUiState, syncPlanCounts, syncUiReducer, type SyncUiState } from '../src/client/sync-state.ts'
 import type { IdeasSyncMergePlan, IdeasSyncPlanOperation } from '../src/sync-merge.ts'
 import type { IdeasSyncPlanResponse } from '../src/sync.ts'
 
@@ -47,6 +47,23 @@ describe('synchronization view state', () => {
       { conflictId: 'body', choice: 'local' },
       { conflictId: 'existence', choice: 'local' },
     ])
+  })
+
+  it('keeps replacement consent scoped to one selected destination mapping', () => {
+    const mapped = {
+      ...initialSyncUiState(),
+      phase: 'mapping' as const,
+      mappingWorkspaceId: 'workspace-a',
+      mappingConsent: true,
+      replaceConsent: true,
+    }
+    const changed = syncUiReducer(mapped, { type: 'mapping-workspace', workspaceId: 'workspace-b' })
+    expect(changed.mappingConsent).toBe(false)
+    expect(changed.replaceConsent).toBe(false)
+    const confirmed = syncUiReducer(changed, { type: 'mapping-consent', consent: true })
+    expect(syncUiReducer(confirmed, { type: 'replace-consent', consent: true }).replaceConsent).toBe(true)
+    const reset = syncUiReducer(mapped, { type: 'reset-import' })
+    expect(reset.replaceConsent).toBe(false)
   })
 
   it('requires a ready current preview and explicit consent before apply', () => {

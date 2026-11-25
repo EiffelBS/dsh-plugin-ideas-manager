@@ -183,6 +183,14 @@ describe('sync package contract', () => {
       workspaceId: 'workspace-a',
       confirm: true,
     })
+    expect(parseIdeasSyncWorkspaceRequest({
+      workspaceId: ' workspace-a ', syncKey: 'sync_12345678', confirm: true, replaceExisting: true,
+    })).toEqual({
+      workspaceId: 'workspace-a', syncKey: 'sync_12345678', confirm: true, replaceExisting: true,
+    })
+    expect(parseIdeasSyncWorkspaceRequest({
+      workspaceId: 'workspace-a', syncKey: 'sync_12345678', confirm: true, replaceExisting: 'true',
+    })).toBeUndefined()
     const mapping = {
       syncKey: 'sync_12345678',
       workspaceId: 'workspace-a',
@@ -585,5 +593,47 @@ describe('sync identity persistence and backup surface', () => {
     expect(workspaceConflict.ok).toBe(false)
     if (workspaceConflict.ok) throw new Error('expected a workspace conflict')
     expect(workspaceConflict.error).toBe('sync-workspace-conflict')
+  })
+
+  it('replaces an existing workspace key only with explicit consent and resets its sync history', () => {
+    const home = freshHome()
+    const workspaceId = randomUUID()
+    create(home.ledger, 'a', 'A', workspaceId)
+    confirm(home.ledger, workspaceId, 'sync_key0001')
+    const exported = home.ledger.exportSyncWorkspace({ workspaceId })
+    if (!exported.ok) throw new Error('expected export to succeed')
+    const before = home.ledger.snapshot().ideas
+
+    const missingKey = home.ledger.confirmSyncWorkspace({ workspaceId, confirm: true, replaceExisting: true })
+    expect(missingKey.ok).toBe(false)
+    if (missingKey.ok) throw new Error('expected a missing-key refusal')
+    expect(missingKey.error).toBe('invalid-sync-workspace')
+
+    const replaced = home.ledger.confirmSyncWorkspace({
+      workspaceId, syncKey: 'sync_key0002', confirm: true, replaceExisting: true,
+    })
+    expect(replaced.ok).toBe(true)
+    if (!replaced.ok) throw new Error('expected replacement to succeed')
+    expect(replaced.mapping).toMatchObject({ workspaceId, syncKey: 'sync_key0002', baseSnapshotId: null, snapshots: [] })
+    expect(home.ledger.syncOverview().workspaces).toHaveLength(1)
+    expect(home.ledger.syncOverview().workspaces[0]).toMatchObject({ workspaceId, syncKey: 'sync_key0002' })
+    expect(home.ledger.snapshot().ideas).toEqual(before)
+  })
+
+  it('never replaces a workspace key with one already owned by another workspace', () => {
+    const home = freshHome()
+    const workspaceA = randomUUID()
+    const workspaceB = randomUUID()
+    create(home.ledger, 'a', 'A', workspaceA)
+    create(home.ledger, 'b', 'B', workspaceB)
+    confirm(home.ledger, workspaceA, 'sync_key0001')
+    confirm(home.ledger, workspaceB, 'sync_key0002')
+    const outcome = home.ledger.confirmSyncWorkspace({
+      workspaceId: workspaceA, syncKey: 'sync_key0002', confirm: true, replaceExisting: true,
+    })
+    expect(outcome.ok).toBe(false)
+    if (outcome.ok) throw new Error('expected a key conflict')
+    expect(outcome.error).toBe('sync-key-conflict')
+    expect(home.ledger.syncOverview().workspaces.find(row => row.workspaceId === workspaceA)?.syncKey).toBe('sync_key0001')
   })
 })

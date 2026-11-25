@@ -47,7 +47,7 @@ Open · Under review · Archived · Declined.
   still covers every row the filter shows, drawn or not. The number in the column
   header is always the size of the column, and a column past **300** ideas says
   so above the list.
-- **Search** and a **conjunctive tag filter** narrow the whole board — the Overview columns, the Priorities ranking and the Delivered log all share both filters. The **Health** tab is the exception: it is one figure per question, not a list, so it has nothing to narrow and says which workspace it covers.
+- **Search** and a **conjunctive tag filter** narrow the whole board — the Overview columns, the Priorities ranking and the Delivered log all share both filters. The **Health** tab is an aggregate rather than a list, so it says which workspace it covers; its workspace and label bars are clickable shortcuts that apply the corresponding board scope or filter.
 - Click a card title or its description to open the **editor** (raw text or
   rendered markdown). It edits the whole body, fetched on demand, and is titled
   with the card number it is editing.
@@ -86,37 +86,42 @@ Open · Under review · Archived · Declined.
 - Restore, archive and delete are one click away on each card.
 
 ### Is this backlog healthy?
-A fourth tab, **Health**, answers five questions about the workspace you are
-looking at — and answers them **on the host**, in one small read the board asks
-for on its own. Your background refresh is not slowed by it, and the figures are
-never re-counted in the browser.
+The **Health** tab is a graphical dashboard for the workspace you are looking
+at. Every figure is computed **on the host** in one small, bounded read; the
+browser only draws the charts.
 
-- **How much is open**, and how that splits across workspaces.
-- **How many were delivered this month.** The label names the month it
-  measured — a calendar month on your machine's clock, not a vague "recently".
-- **The median time to deliver.** This one is deliberately cautious. Only ideas
-  that were really **delivered** count: an idea you dragged straight to Archived
-  closed without delivering anything, so there is no honest lead time to take
-  from it. Until there are **five** real deliveries the tab says *Not enough
-  deliveries yet (n / 5)* — with the count it has — instead of printing a
-  confident number computed from one or two rows. When a backlog is mostly
-  dragged away rather than delivered, the tab also tells you how many ideas left
-  it without a delivery stamp: that count is the reason a median may be missing,
-  and it is the honest answer rather than a zero.
-- **Your most used labels** on the open backlog.
-- **What is waiting to be triaged**: how many open ideas carry no rank, and how
-  many carry no value. It is work to do, not a score — nothing here judges an
-  idea or the person who wrote it.
+- **KPI band:** open backlog, ideas in review, deliveries in the selected
+  period, and median lead time. The median stays silent below five real
+  deliveries and says how many samples it has instead of printing a confident
+  number from one or two rows.
+- **Backlog flow:** a donut splits active work between Open and In review, with
+  overlapping signals for runs in progress and dependency-blocked ideas.
+- **Triage ring:** counts each idea once when it lacks a rank or a value, then
+  shows the two gaps separately. It is work to do, never a quality score.
+- **Delivery chart:** eight bounded bars cover the selected period — this
+  calendar month, the last 30 or 90 days, or all time.
+- **Backlog age:** open ideas are grouped into 0–7, 8–30, 31–90 and 90+ day
+  buckets, with the oldest idea called out.
+- **Workspace and label bars:** show relative weight at a glance. Click a
+  workspace to scope the board, or a label to filter the open backlog.
+- **Activity heatmap:** creations and timestamped deliveries over the last
+  12 weeks.
+- **Data quality:** archives without a delivery stamp, inconsistent timestamps
+  and ideas without a workspace are reported separately and never silently
+  averaged into the workflow figures.
 
-The workspace selector scopes all of it, exactly like the other tabs, and the
-figures follow your panel language. Nothing here is stored anywhere: closing the
-tab forgets it, and the next visit re-reads the host.
+The workspace selector scopes the whole dashboard. The period tabs re-read the
+Host aggregate, and **Refresh** asks for it again without waiting for the next
+board revision. Cards and charts animate in when the dashboard appears or
+refreshes; hover or keyboard-focus a donut segment or delivery bar for its exact
+reading. The activity heatmap is keyboard-scrollable with arrow keys and a live
+day readout. All motion is disabled when the system asks for reduced motion. If the
+board moves while figures are on screen, the dashboard names the revision they
+describe and whether a refresh is in flight or failed.
 
-The board refreshes and the Health tab refreshes on their own clock, so there is
-a moment where the figures describe a board that has just moved. The tab tells
-you: a quiet line under the numbers names the revision they came from and
-whether a refresh is on its way — or failed. You are never left reading stale
-figures as if they were current.
+Nothing here is stored: closing the tab forgets the aggregate, and the next
+visit re-reads the Host. There is deliberately **no global health score** — the
+charts show where to act without hiding the underlying facts.
 
 ### Run an idea
 An open idea that has a **workspace** and no run in flight offers a
@@ -429,6 +434,9 @@ replaces the whole board.
    source workspace, destination workspace and portable key explicitly.
 3. If the package's portable key is unknown, choose the local destination
    workspace and confirm the pairing. Workspace names are never used to guess.
+   If that workspace already carries a different portable key, it remains
+   selectable: a separate confirmation explicitly replaces the old pairing and
+   clears its synchronization history. The ideas themselves are not deleted.
 4. Review the counts and planned changes. Conflicts appear side by side; choose
    the local value, the incoming value, or clear an optional value. A deletion
    versus an edit requires an explicit side. **Use incoming for all** and **Keep
@@ -454,7 +462,9 @@ deterministic merge planner exposed by these routes:
 2. On the source, call `POST /api/ideas/sync/workspaces` with
    `{ workspaceId, confirm: true }`. The Host mints a portable `syncKey`; an
    existing key can be supplied instead. On the destination, confirm that same
-   key for its own local workspace UUID.
+   key for its own local workspace UUID. Replacing a different key requires
+   `{ workspaceId, syncKey, confirm: true, replaceExisting: true }` and resets the
+   destination mapping's ancestor cache.
 3. `POST /api/ideas/sync/export` with `{ workspaceId }` returns a package carrying
    the workspace's full portable idea content. Every idea **id** is unchanged.
 4. `POST /api/ideas/sync/plan` with `{ package, expectedRevision? }` returns a
@@ -702,7 +712,7 @@ read the state and write ideas without any UI:
 | `GET /api/ideas/state` | Full snapshot of the board |
 | `GET /api/ideas/state?view=summary` | Bounded reads: filters, pagination, selected fields, body-byte caps |
 | `GET /api/ideas/state?view=summary&similar=<id>` | The same, plus a cheap near-duplicate **flag** for one idea |
-| `GET /api/ideas/state?view=stats` | Bounded backlog health: one aggregate, optionally scoped to `workspaceId` |
+| `GET /api/ideas/state?view=stats` | Bounded backlog-health dashboard: one aggregate, optionally scoped to `workspaceId` and `range=month\|30d\|90d\|all` |
 | `GET /api/ideas/idea?id=<id>` | One complete idea |
 | `POST /api/ideas/action` | `create`, `update`, `move`, `decline`, `deliver`, `followUp`, `merge`, `triage`, `restore`, `delete`, `reanalyze`, `reorder`, `import`, `export` |
 | `POST /api/ideas/launch` | Start an idea's execution `{ ideaId, model?, reasoningEffort? }` — omit `model` and the run takes the workspace's default launch model, then the session default; omit `reasoningEffort` and the model keeps its own default |
@@ -712,7 +722,7 @@ read the state and write ideas without any UI:
 | `GET /api/ideas/backup/content?name=<snapshot>` | One snapshot's raw document, as a download |
 | `POST /api/ideas/backup/restore` | Adopt a snapshot `{ name }` or an imported document `{ document }` |
 | `GET /api/ideas/sync` | Device identity, known workspaces and explicitly confirmed sync keys |
-| `POST /api/ideas/sync/workspaces` | Confirm a portable key for a local workspace: `{ workspaceId, syncKey?, confirm: true }` |
+| `POST /api/ideas/sync/workspaces` | Confirm a portable key for a local workspace: `{ workspaceId, syncKey?, confirm: true, replaceExisting? }` |
 | `POST /api/ideas/sync/export` | Export one confirmed workspace as a versioned package: `{ workspaceId }` |
 | `POST /api/ideas/sync/plan` | Build a read-only merge plan: `{ package, resolutions?, expectedRevision? }`; the answer carries its `revision` |
 | `POST /api/ideas/sync/import` | Apply a conflict-free plan atomically: `{ package, resolutions?, expectedRevision? }` |
