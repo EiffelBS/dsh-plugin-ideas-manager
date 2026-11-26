@@ -109,6 +109,12 @@ class FakeTransport implements IdeasHostTransport {
 
   async action(): Promise<IdeasListSnapshot> { return await this.state() }
 
+  async idea(id: string): Promise<IdeaRecord> {
+    const found = this.hosted.find(idea => idea.id === id)
+    if (found === undefined) throw new Error(`missing ${id}`)
+    return found
+  }
+
   async read(query: IdeasReadQuery): Promise<IdeasReadSnapshot> {
     const matched = this.hosted.filter(idea =>
       (query.numbers === undefined || (idea.ideaNumber !== undefined && query.numbers.includes(idea.ideaNumber)))
@@ -307,10 +313,14 @@ describe('the median honesty rule reaches the screen', () => {
     await mount(transport)
     await act(async () => { click(tab('Health')) })
     const text = health()!.textContent ?? ''
-    expect(text).toContain('Remaining work, never a quality score')
+    expect(text).toContain('Open ideas without a rank and/or a value')
+    expect(text).toContain('to triage out of 3')
     expect(text).toContain('Ideas concerned2')
     expect(text).toContain('No rank1')
     expect(text).toContain('No value2')
+    const gaps = host.querySelectorAll('.dsh-ideas-health-mini-bar span')
+    expect((gaps[0] as HTMLElement).style.background).toContain('--dsh-ideas-chart-amber')
+    expect((gaps[1] as HTMLElement).style.background).toContain('--dsh-ideas-chart-purple')
   })
 
   it('renders four KPI cards and the graphical dashboard sections', async () => {
@@ -327,6 +337,10 @@ describe('the median honesty rule reaches the screen', () => {
     expect(host.querySelector('.dsh-ideas-health-heatmap')?.children).toHaveLength(84)
     expect((host.querySelector('.dsh-ideas-health-heatmap') as HTMLElement).tabIndex).toBe(0)
     expect(host.querySelector('.dsh-ideas-health-heat-readout')?.textContent).toContain('2026-')
+    expect(host.querySelector('.dsh-ideas-health-activity-panel')).not.toBeNull()
+    expect(host.querySelector('.dsh-ideas-health-heat-legend')?.textContent).toContain('Less activity')
+    expect(host.querySelector('.dsh-ideas-health-heat-legend')?.textContent).toContain('More activity')
+    expect(host.querySelectorAll('.dsh-ideas-health-activity-stat')).toHaveLength(3)
     expect(host.querySelectorAll('.dsh-ideas-health-sr-only tbody tr')).toHaveLength(92)
     expect((host.querySelector('.dsh-ideas-health-bar') as HTMLElement).style.height).toBe('0%')
     expect(host.querySelector('.dsh-ideas-health-heat-cell')?.hasAttribute('tabindex')).toBe(false)
@@ -385,8 +399,62 @@ describe('stale figures say so', () => {
     expect(host.querySelector('.dsh-ideas-health-donut-label')?.textContent).toBe('active ideas')
 
     expect(host.querySelector('.dsh-ideas-health-bar')?.getAttribute('data-tooltip')).toContain('· 0')
-    expect(host.querySelector('.dsh-ideas-health-rank-row')?.getAttribute('title')).toContain('ws-a')
+    expect(host.querySelector('.dsh-ideas-health-workspace-name')?.textContent).toBe('ws-a')
+    expect(host.querySelector('.dsh-ideas-health-rank-row')?.getAttribute('title')).toContain('perf')
     expect(host.querySelector('.dsh-ideas-health-heat-cell')?.getAttribute('data-tooltip')).toContain('2026-')
+  })
+
+  it('keeps scope and period controls available while the aggregate is loading', async () => {
+    const transport = new FakeTransport()
+    transport.holdStats = true
+    await mount(transport)
+    await act(async () => { click(tab('Health')) })
+    expect(host.querySelector('.dsh-ideas-health-tag-filter')).not.toBeNull()
+    expect(host.querySelector('.dsh-ideas-health-range-tabs')).not.toBeNull()
+    expect(host.querySelector('.dsh-ideas-health-refresh-button')).not.toBeNull()
+    expect(health()?.textContent).toContain('Working out the health view')
+    await act(async () => { transport.releaseStats() })
+  })
+
+  it('waits until the dashboard is visible before requesting Desktop-safe animations', async () => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+    const animate = vi.fn(() => ({ cancel: vi.fn() }))
+    let notify: (entries: Array<{ isIntersecting: boolean }>) => void = () => {}
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate })
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) { notify = callback }
+      observe(): void {}
+      disconnect(): void {}
+    })
+    try {
+      await mount(new FakeTransport())
+      await act(async () => { click(tab('Health')) })
+      expect(animate).not.toHaveBeenCalled()
+      expect(host.querySelector('[data-dsh-ideas-health]')?.getAttribute('data-dsh-ideas-health-motion')).toBe('waiting')
+      act(() => { notify([{ isIntersecting: true }]) })
+      expect(animate).toHaveBeenCalled()
+      expect(host.querySelector('[data-dsh-ideas-health]')?.getAttribute('data-dsh-ideas-health-motion')).toBe('played')
+    } finally {
+      Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: original?.value })
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('does not request motion when the system prefers reduced motion', async () => {
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, 'animate')
+    const animate = vi.fn(() => ({ cancel: vi.fn() }))
+    Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: animate })
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    try {
+      await mount(new FakeTransport())
+      await act(async () => { click(tab('Health')) })
+      expect(animate).not.toHaveBeenCalled()
+      expect(host.querySelector('[data-dsh-ideas-health]')?.getAttribute('data-dsh-ideas-health-motion')).toBe('reduced')
+    } finally {
+      Object.defineProperty(Element.prototype, 'animate', { configurable: true, value: original?.value })
+      vi.unstubAllGlobals()
+    }
   })
 
   it('navigates heatmap days with the keyboard and keeps a visible readout', async () => {
@@ -416,11 +484,11 @@ describe('stale figures say so', () => {
     expect(document.activeElement).toBe(bar)
   })
 
-  it('turns a workspace bar into a scoped Overview and a tag bar into a filter', async () => {
+  it('opens a workspace from its row and cross-filters Health by tag', async () => {
     const transport = new FakeTransport()
     await mount(transport)
     await act(async () => { click(tab('Health')) })
-    const workspaceRow = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-rank-row')]
+    const workspaceRow = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-workspace-name')]
       .find(row => row.textContent?.startsWith('ws-a'))
     if (workspaceRow === undefined) throw new Error('no ws-a health row')
     await act(async () => { click(workspaceRow) })
@@ -432,24 +500,68 @@ describe('stale figures say so', () => {
       .find(row => row.textContent?.includes('perf'))
     if (tagRow === undefined) throw new Error('no perf health row')
     await act(async () => { click(tagRow) })
+    expect(tab('Health').getAttribute('aria-selected')).toBe('true')
+    expect((host.querySelector('.dsh-ideas-health-tag-filter') as HTMLSelectElement).value).toBe('perf')
+    await act(async () => { await vi.waitFor(() => { expect(transport.statsQueries.at(-1)).toMatchObject({ workspaceId: 'ws-a', tag: 'perf' }) }) })
+    const flowCard = [...host.querySelectorAll<HTMLElement>('.dsh-ideas-health-card')]
+      .find(card => card.textContent?.includes('Backlog flow'))
+    const viewIdeas = [...(flowCard?.querySelectorAll('button') ?? [])]
+      .find(button => button.textContent === 'View ideas') as HTMLButtonElement
+    await act(async () => { click(viewIdeas) })
     expect(tab('Overview').getAttribute('aria-selected')).toBe('true')
+    expect((host.querySelector('.dsh-ideas-search') as HTMLInputElement).value).toBe('')
     expect(host.querySelector('.dsh-ideas-tag-filter-chips')?.textContent).toContain('perf')
+  })
 
+  it('shows flow balance, contextual empty delivery state, and workspace comparison', async () => {
+    const transport = new FakeTransport()
+    await mount(transport)
     await act(async () => { click(tab('Health')) })
-    const activeTagRow = [...host.querySelectorAll<HTMLButtonElement>('.dsh-ideas-health-rank-row')]
-      .find(row => row.textContent?.includes('perf'))
-    if (activeTagRow === undefined) throw new Error('no perf health row on return')
-    await act(async () => { click(activeTagRow) })
-    expect(host.querySelector('.dsh-ideas-tag-filter-chips')?.textContent).toContain('perf')
+    expect([...host.querySelectorAll('.dsh-ideas-health-flow-stat b')].map(node => node.textContent)).toEqual(['0', '0', '0'])
+    expect(host.querySelector('.dsh-ideas-health-context-note')?.textContent).toContain('6')
+
+    await act(async () => { click(healthRange('All')) })
+    expect([...host.querySelectorAll('.dsh-ideas-health-flow-stat b')].map(node => node.textContent)).toEqual(['9', '6', '+3'])
+    const genericRow = [...host.querySelectorAll<HTMLTableRowElement>('.dsh-ideas-health-workspace-table tbody tr')]
+      .find(row => row.cells[0]?.textContent !== 'ws-a' && row.cells[0]?.textContent !== 'ws-b')
+    expect(genericRow).toBeDefined()
+    expect(genericRow?.textContent).toContain('6')
+    expect(genericRow?.textContent).toContain('4 d')
+  })
+
+  it('provides guided reading and opens bounded quality samples', async () => {
+    const transport = new FakeTransport([
+      record('nostamp', { status: 'archived', workspaceId: 'ws-a' }),
+      record('badtime', { status: 'archived', workspaceId: 'ws-a', createdAt: NOW, deliveredAt: NOW - DAY }),
+      record('generic', { status: 'open' }),
+    ])
+    await mount(transport)
+    await act(async () => { click(tab('Health')) })
+    expect(host.querySelector('.dsh-ideas-health-guide')?.textContent).toContain('How to read this dashboard')
+    expect(host.querySelector('.dsh-ideas-health-guide')?.textContent).toContain('Period affects only creations')
+    expect(host.querySelector('.dsh-ideas-health-guide')?.textContent).toContain('can overlap')
+
+    const qualityRow = host.querySelector('.dsh-ideas-health-quality-row') as HTMLButtonElement
+    expect(qualityRow.querySelector('.dsh-ideas-health-quality-chevron')).not.toBeNull()
+    await act(async () => { click(qualityRow) })
+    expect(qualityRow.getAttribute('aria-expanded')).toBe('true')
+    const sample = host.querySelector('.dsh-ideas-health-quality-sample') as HTMLButtonElement
+    expect(sample.textContent).toBe('Idea nostamp')
+    await act(async () => { click(sample) })
+    expect(document.body.querySelector('.dsh-ideas-modal')).not.toBeNull()
+    expect((document.body.querySelector('#dsh-ideas-title') as HTMLInputElement).value).toBe('Idea nostamp')
   })
 
   it('sends the triage action to Priorities', async () => {
     const transport = new FakeTransport()
     await mount(transport)
     await act(async () => { click(tab('Health')) })
+    const tag = host.querySelector('.dsh-ideas-health-tag-filter') as HTMLSelectElement
+    await act(async () => { tag.value = 'perf'; tag.dispatchEvent(new Event('change', { bubbles: true })) })
     const cta = host.querySelector('.dsh-ideas-health-triage-cta') as HTMLButtonElement
     await act(async () => { click(cta) })
     expect(tab('Priorities').getAttribute('aria-selected')).toBe('true')
+    expect(host.querySelector('.dsh-ideas-tag-filter-chips')?.textContent).toContain('perf')
   })
 
   it('shows no staleness note when the board has not moved', async () => {
@@ -535,6 +647,6 @@ describe('a deployment without the health surface', () => {
     await act(async () => { click(tab('Health')) })
 
     expect(health()?.textContent).toContain('host exploded')
-    expect(health()?.querySelector('button')?.textContent).toBe('Retry')
+    expect([...health()!.querySelectorAll('button')].some(button => button.textContent === 'Retry')).toBe(true)
   })
 })

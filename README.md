@@ -96,28 +96,41 @@ browser only draws the charts.
   number from one or two rows.
 - **Backlog flow:** a donut splits active work between Open and In review, with
   overlapping signals for runs in progress and dependency-blocked ideas.
-- **Triage ring:** counts each idea once when it lacks a rank or a value, then
-  shows the two gaps separately. It is work to do, never a quality score.
-- **Delivery chart:** eight bounded bars cover the selected period — this
-  calendar month, the last 30 or 90 days, or all time.
+- **Triage ring:** the ring counts each open idea once when it lacks a rank or a
+  value. The two bars below show the separate gaps and may overlap; they are work
+  to do, never a quality score.
+- **Delivery chart:** creations, timestamped deliveries and the net backlog change
+  for the selected period, followed by eight bounded delivery bars. When the
+  current period has no delivery, the card says whether the previous one did.
 - **Backlog age:** open ideas are grouped into 0–7, 8–30, 31–90 and 90+ day
   buckets, with the oldest idea called out.
-- **Workspace and label bars:** show relative weight at a glance. Click a
-  workspace to scope the board, or a label to filter the open backlog.
+- **Workspace comparison:** open backlog, deliveries and median lead time per
+  workspace, with the same five-sample median floor. Click a workspace to open
+  its scoped board.
+- **Label bars:** show relative weight on the open backlog. Click a label to
+  cross-filter the whole Health page by that exact tag.
 - **Activity heatmap:** creations and timestamped deliveries over the last
-  12 weeks.
+  12 weeks, with a visible day grid, an explicit activity legend and a keyboard
+  day readout.
 - **Data quality:** archives without a delivery stamp, inconsistent timestamps
   and ideas without a workspace are reported separately and never silently
-  averaged into the workflow figures.
+  averaged into the workflow figures. Open a category to see bounded examples
+  and jump to the affected idea.
 
-The workspace selector scopes the whole dashboard. The period tabs re-read the
-Host aggregate, and **Refresh** asks for it again without waiting for the next
-board revision. Cards and charts animate in when the dashboard appears or
-refreshes; hover or keyboard-focus a donut segment or delivery bar for its exact
-reading. The activity heatmap is keyboard-scrollable with arrow keys and a live
-day readout. All motion is disabled when the system asks for reduced motion. If the
-board moves while figures are on screen, the dashboard names the revision they
-describe and whether a refresh is in flight or failed.
+The workspace selector and exact tag selector jointly scope every number on the
+page. The period tabs scope creations, deliveries, lead times and comparisons;
+backlog, triage, age and quality remain whole-scope, while activity always covers
+12 weeks. **How to read this dashboard** explains these boundaries and overlapping
+signals. Empty cards distinguish an empty scope from a scope that simply has no
+deliveries, labels or recent activity. **Refresh** asks for the aggregate again
+without waiting for the next board revision. Cards and charts animate in
+when the dashboard becomes visible or refreshes; hover or keyboard-focus a donut
+segment or delivery bar for its exact reading. The activity heatmap is keyboard-scrollable with arrow keys and a live
+day readout. Chart colors use a dedicated light/dark palette so a Desktop skin
+cannot turn a series or an empty heatmap cell into the panel background. All
+motion is disabled when the system asks for reduced motion. If the board moves
+while figures are on screen, the dashboard names the revision they describe and
+whether a refresh is in flight or failed.
 
 Nothing here is stored: closing the tab forgets the aggregate, and the next
 visit re-reads the Host. There is deliberately **no global health score** — the

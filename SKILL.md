@@ -182,25 +182,27 @@ For a workspace whose AGENTS.md still points at hand-maintained idea files:
 - `GET /api/ideas/state?view=stats` → the **bounded backlog-health dashboard
   aggregate**, a separate contract that is NOT one of the row views and accepts
   no row query key. It takes `workspaceId` (**absent** = every workspace,
-  **blank** = no workspace, real id = that workspace) and `range` (`month`,
-  `30d`, `90d`, `all`; omitted = `month`); anything else is `400 invalid-query`.
-  It is a READ — no `requestId`, no mutation — and never part of the board's
-  poll. Schema version 2 answers one object per scope and period:
+  **blank** = no workspace, real id = that workspace), optional exact `tag`
+  (trimmed, case-sensitive whole-name membership, conjunctive with workspace),
+  and `range` (`month`, `30d`, `90d`, `all`; omitted = `month`); anything else is
+  `400 invalid-query`. It is a READ — no `requestId`, no mutation — and never
+  part of the board's poll. Schema version 3 answers one object per scope and period:
 
   | field | meaning |
   |---|---|
   | `revision`, `computedAt`, `range` | provenance of the aggregate |
-  | `scope` | `{kind: 'all' \| 'generic' \| 'workspace', workspaceId?, ideas}` |
+  | `scope` | `{kind: 'all' \| 'generic' \| 'workspace', workspaceId?, tag?, ideas}` |
   | `window` | `{kind: 'calendarMonth' \| 'rollingDays' \| 'allTime', start, end, days?}` |
   | `openTotal`, `workflow` | open volume plus `{open, underReview, running, blocked}` signals |
   | `aging` | `{upTo7, upTo30, upTo90, over90, oldestMs}` for OPEN ideas |
-  | `openByWorkspace[]`, `workspacesTotal` | busiest first, capped at 8 rows |
-  | `deliveredInWindow` | deliveries stamped inside `window` |
+  | `openByWorkspace[]`, `workspacesTotal` | busiest first, capped at 8 rows; each row adds `deliveredInWindow`, `medianMs`, `sample` |
+  | `createdInWindow`, `deliveredInWindow`, `netBacklog` | selected-period flow; net is created minus delivered |
+  | `comparison` | `{created, delivered, medianMs}` for the adjoining previous window of equal duration; all-time returns zeros/null |
   | `delivery` | `{sample, withoutStamp, inconsistent, medianMs, minSamples, buckets[]}`; eight bounded bars |
   | `activity` | fixed 84-day local heatmap plus created/delivered/active-day totals |
   | `topTags[]`, `tagsTotal` | most used labels of the OPEN backlog, capped at 8 |
   | `triage` | `{open, missingRank, missingValue, unique}` — each idea counted once |
-  | `quality` | `{withoutStamp, inconsistent, withoutWorkspace}` |
+  | `quality` | numeric counts plus `withoutStampSamples`, `inconsistentSamples`, `withoutWorkspaceSamples`; each sample list capped at 5 `{id, title, workspaceId?}` |
 
   **`delivery.medianMs` is `null` — and only `null` — when `sample <
   minSamples`.** The sample and median cover the selected `window`; only a real

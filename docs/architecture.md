@@ -1225,16 +1225,18 @@ The board's poll is a 2.5 s `?view=list` fetch and the full snapshot is over a
 megabyte. Re-reducing a second copy of it in the browser on every paint is
 exactly the cost the list projection removed, so the aggregate is a **separate
 bounded read**: hard-capped workspace/tag arrays, eight delivery buckets, a fixed
-84-day activity heatmap and a handful of scalars. It stays provably under the
-512 KiB wire cap at the 140-card fixture. The poll URL, its payload and its
-cadence are untouched, and the panel asks for the aggregate only while the
-Health tab is open and only when the ledger revision, workspace scope or selected
-period actually moved.
+84-day activity heatmap, five examples per quality category and a handful of
+scalars. It stays provably under the 512 KiB wire cap at the 140-card fixture. The
+poll URL, its payload and its cadence are untouched, and the panel asks for the
+aggregate only while the Health tab is open and only when the ledger revision,
+workspace scope, exact tag or selected period actually moved.
 
 `view=stats` deliberately does **not** run through `parseIdeasReadQuery`: it
-takes only `view`, `workspaceId` and the closed `range` union (`month`, `30d`,
-`90d`, `all`). An unknown key or period is a `400` rather than a silently broader
-answer. Every key the row views take (`limit`, `fields`, `similar`, …) would be a
+takes only `view`, `workspaceId`, optional exact `tag` and the closed `range`
+union (`month`, `30d`, `90d`, `all`). An unknown key or period is a `400` rather
+than a silently broader answer. The tag is trimmed, case-sensitive whole-name
+membership and conjunctive with workspace scope, matching the board's own tag
+filter. Every key the row views take (`limit`, `fields`, `similar`, …) would be a
 second set of definitions for the same numbers.
 
 ### Why `ledger.statsSource()` breaks the clone-on-read rule
@@ -1290,14 +1292,14 @@ question: recent creation/delivery cadence.
 
 ### Scoped, not global
 
-The view follows the board's workspace selector like every other tab, so a
-number never answers a different question than the one on screen. The payload
-is self-describing — `scope.kind` is `all`, `generic` (the workspace-less
-group) or `workspace` — and the wire maps the board's three selector values onto
-them directly: the key is **absent** for all, **blank** for the generic group,
-and the id otherwise. The per-workspace breakdown is therefore "open per
-workspace *in scope*": eight rows when the scope is everything, one when it is
-narrowed, which is correct rather than a degradation.
+The view follows the board's workspace selector like every other tab, and the
+Health toolbar adds an exact tag selector. A number never answers a different
+question than the one on screen. The payload is self-describing — `scope.kind`
+is `all`, `generic` (the workspace-less group) or `workspace`, with optional
+`scope.tag` — and the wire maps the board's three workspace values directly: the
+key is **absent** for all, **blank** for the generic group, and the id otherwise.
+The per-workspace breakdown compares open backlog, selected-period deliveries and
+median lead time for up to eight rows; every median keeps the five-sample floor.
 
 ### Workflow, age, activity and quality are separate signals
 
@@ -1311,6 +1313,9 @@ usable `deliveredAt`; it needs no persisted time-series table. `quality` groups
 facts kept separate from workflow numbers: unstamped archives, inconsistent
 stamps and ideas without a workspace. Only the first two are excluded from
 delivery statistics; a workspace-less idea remains a normal generic-group idea.
+Each quality category carries up to five bounded `{id, title, workspaceId?}`
+examples so the UI can open the affected card without turning the aggregate into
+a second ledger.
 
 ### What the view refuses to say
 
@@ -1324,18 +1329,24 @@ delivery statistics; a workspace-less idea remains a normal generic-group idea.
 - **The panel computes no domain numbers.** `health-view.tsx` renders the Host's
   counts verbatim. It only turns counts into presentation geometry — donut dash
   lengths, ring progress, bar widths/heights and heatmap intensity — and uses the
-  shared `durationParts()` helper for duration wording. CSS animates that geometry
-  on mount and whenever `computedAt` changes; the animation class is toggled on the
-  stable dashboard root instead of remounting focusable children, so keyboard
-  focus survives a refresh. `prefers-reduced-motion` disables it. The activity
+  shared `durationParts()` helper for duration wording. The Web Animations API
+  plays entrance geometry after an IntersectionObserver sees the dashboard become
+  visible, and again whenever `computedAt` changes; the stable dashboard root is
+  never remounted, so keyboard focus survives a refresh. Waiting for visibility
+  covers the Desktop sidebar and a restored Health tab that mounts before its
+  panel is shown. This also bypasses shell/skin CSS that may suppress ordinary
+  animations in the Desktop WebView. `prefers-reduced-motion` disables it. Chart
+  colors come from a plugin-owned light/dark palette rather than semantic skin
+  tokens, which a skin may map to black or to its own background. The activity
   heatmap is a focusable listbox with arrow-key navigation and a live day readout.
   An aggregate is the easiest thing in this codebase to compute two different ways in two places,
   and a panel that re-counted rows would be exactly that second place.
-- **The list-only affordances step aside, but the dashboard links back.** Search,
-  the tag filter and the selection bar remain hidden because they cannot narrow
-  a Host aggregate. The workspace selector stays as the scope. Workspace and
-  label bars are shortcuts into the real board: one applies the workspace scope,
-  the other applies the tag filter, and the triage action opens Priorities.
+- **The list-only affordances step aside, but the dashboard links back.** Search
+  and the selection bar remain hidden because they cannot narrow a Host
+  aggregate. Workspace and exact-tag selectors stay available as conjunctive
+  scope controls. A workspace row opens its scoped board, a label bar narrows the
+  Health page to that tag, quality samples open the affected idea, and the triage
+  action opens Priorities.
 
 ### An aggregate goes stale, and says so
 

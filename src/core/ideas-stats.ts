@@ -15,7 +15,7 @@
 import type { IdeaRecord } from './ideas.ts'
 
 /** Wire version of the health aggregate (independent of the snapshot schema). */
-export const IDEAS_STATS_SCHEMA_VERSION = 2 as const
+export const IDEAS_STATS_SCHEMA_VERSION = 3 as const
 
 /** Minimum real deliveries before a median is printed. */
 export const IDEAS_STATS_MEDIAN_MIN_SAMPLES = 5
@@ -25,6 +25,9 @@ export const IDEAS_STATS_MAX_WORKSPACES = 8
 export const IDEAS_STATS_MAX_TAGS = 8
 export const IDEAS_STATS_DELIVERY_BUCKETS = 8
 export const IDEAS_STATS_ACTIVITY_DAYS = 84
+export const IDEAS_STATS_MAX_QUALITY_SAMPLES = 5
+/** Maximum length of the optional exact tag selector. */
+export const IDEAS_STATS_TAG_MAX_LENGTH = 128
 
 /** One day in milliseconds. */
 export const IDEAS_STATS_DAY_MS = 86_400_000
@@ -35,12 +38,33 @@ export type IdeasStatsRange = 'month' | '30d' | '90d' | 'all'
 /** Which workspace population the numbers cover. */
 export type IdeasStatsScopeKind = 'all' | 'generic' | 'workspace'
 
-/** One row of the open-per-workspace breakdown. */
+/** One row of the per-workspace breakdown. */
 export interface IdeasStatsWorkspaceRow {
   /** Absent for the workspace-less (generic) group. */
   workspaceId?: string
   open: number
   total: number
+  /** Usable deliveries inside the selected window. */
+  deliveredInWindow: number
+  /** Median lead time inside the selected window, or null below the floor. */
+  medianMs: number | null
+  /** Number of usable deliveries behind this row's median. */
+  sample: number
+}
+
+/** One bounded example behind a data-quality count. */
+export interface IdeasStatsQualitySample {
+  id: string
+  title: string
+  /** Absent for the workspace-less (generic) group. */
+  workspaceId?: string
+}
+
+/** Flow in the immediately preceding window of equal duration. */
+export interface IdeasStatsComparison {
+  created: number
+  delivered: number
+  medianMs: number | null
 }
 
 /** One row of the top-tags list. */
@@ -117,6 +141,10 @@ export interface IdeasStatsQuality {
   withoutStamp: number
   inconsistent: number
   withoutWorkspace: number
+  /** Up to five examples per category, in ledger order. */
+  withoutStampSamples: IdeasStatsQualitySample[]
+  inconsistentSamples: IdeasStatsQualitySample[]
+  withoutWorkspaceSamples: IdeasStatsQualitySample[]
 }
 
 /** The measured window, spelled so the UI can label it honestly. */
@@ -132,6 +160,8 @@ export interface IdeasStatsWindow {
 export interface IdeasStatsScope {
   kind: IdeasStatsScopeKind
   workspaceId?: string
+  /** Exact, case-sensitive tag name; absent = every tag. */
+  tag?: string
   ideas: number
 }
 
@@ -148,7 +178,13 @@ export interface IdeasStats {
   aging: IdeasStatsAging
   openByWorkspace: IdeasStatsWorkspaceRow[]
   workspacesTotal: number
+  /** Ideas created inside the selected window. */
+  createdInWindow: number
   deliveredInWindow: number
+  /** Created minus delivered inside the selected window. */
+  netBacklog: number
+  /** The immediately preceding window of equal duration; all-time has none. */
+  comparison: IdeasStatsComparison
   delivery: IdeasStatsDelivery
   activity: IdeasStatsActivity
   topTags: IdeasStatsTagRow[]
@@ -167,6 +203,8 @@ export interface IdeasStatsSource {
 export interface IdeasStatsOptions {
   /** Omitted = all, `''` = workspace-less, real id = one workspace. */
   workspaceId?: string
+  /** Exact, case-sensitive tag name; omitted = every tag. */
+  tag?: string
   /** Selected dashboard period; defaults to the current calendar month. */
   range?: IdeasStatsRange
   /** Instant the window is measured at (defaults to the Host clock). */
@@ -207,7 +245,7 @@ export function durationParts(ms: number): { value: number; unit: IdeasDurationU
 }
 
 /** Median of a non-empty sample. */
-function medianOf(samples: number[]): number {
+function medianOf(samples: readonly number[]): number {
   const sorted = [...samples].sort((a, b) => a - b)
   const middle = sorted.length >> 1
   const value = sorted.length % 2 === 1
@@ -276,25 +314,68 @@ function activityOf(source: IdeasStatsSource, inScope: (idea: IdeaRecord) => boo
   return { days, created, delivered, activeDays: days.filter(day => day.created + day.delivered > 0).length }
 }
 
+interface WorkspaceGroup {
+  open: number
+  total: number
+  deliveredInWindow: number
+  leadTimes: number[]
+}
+
+function emptyWorkspaceGroup(): WorkspaceGroup {
+  return { open: 0, total: 0, deliveredInWindow: 0, leadTimes: [] }
+}
+
+function qualitySampleOf(idea: IdeaRecord): IdeasStatsQualitySample {
+  return {
+    id: idea.id,
+    title: idea.title,
+    ...(idea.workspaceId === undefined || idea.workspaceId === '' ? {} : { workspaceId: idea.workspaceId }),
+  }
+}
+
+function appendQualitySample(samples: IdeasStatsQualitySample[], idea: IdeaRecord): void {
+  if (samples.length < IDEAS_STATS_MAX_QUALITY_SAMPLES) samples.push(qualitySampleOf(idea))
+}
+
+/** The adjoining earlier window has the same duration and an exclusive end. */
+function comparisonWindowOf(window: IdeasStatsWindow): { start: number; end: number } | undefined {
+  if (window.kind === 'allTime') return undefined
+  const duration = window.end - window.start
+  return { start: window.start - duration, end: window.start }
+}
+
+function medianOrNull(samples: readonly number[]): number | null {
+  return samples.length < IDEAS_STATS_MEDIAN_MIN_SAMPLES ? null : medianOf(samples)
+}
+
 /** Build the bounded health aggregate for one scope and period. */
 export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOptions = {}): IdeasStats {
   const now = options.now ?? Date.now()
   const range = options.range ?? 'month'
   const scopeId = options.workspaceId
+  const tag = options.tag?.trim()
+  if (tag !== undefined && (tag === '' || tag.length > IDEAS_STATS_TAG_MAX_LENGTH)) throw new Error('invalid-tag')
   const inScope = (idea: IdeaRecord): boolean =>
-    scopeId === undefined ? true : (idea.workspaceId ?? '') === scopeId
+    (scopeId === undefined || (idea.workspaceId ?? '') === scopeId)
+    && (tag === undefined || (idea.tags ?? []).some(entry => entry.name.trim() === tag))
   const window = windowOf(now, range)
+  const comparisonWindow = comparisonWindowOf(window)
 
-  const groups = new Map<string, { open: number; total: number }>()
+  const groups = new Map<string, WorkspaceGroup>()
   const tagCounts = new Map<string, { name: string; count: number }>()
   const deliveries: Array<{ at: number; ms: number }> = []
+  const currentLeadTimes: number[] = []
+  const comparisonLeadTimes: number[] = []
   const activeIds = new Set<string>()
 
   let ideas = 0
   let openTotal = 0
   let underReview = 0
   let running = 0
+  let createdInWindow = 0
   let deliveredInWindow = 0
+  let comparisonCreated = 0
+  let comparisonDelivered = 0
   let withoutStamp = 0
   let inconsistent = 0
   let withoutWorkspace = 0
@@ -307,15 +388,25 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
   let age30 = 0
   let age90 = 0
   let ageOver90 = 0
+  const withoutStampSamples: IdeasStatsQualitySample[] = []
+  const inconsistentSamples: IdeasStatsQualitySample[] = []
+  const withoutWorkspaceSamples: IdeasStatsQualitySample[] = []
 
   for (const idea of source.ideas) {
     if (!inScope(idea)) continue
     ideas += 1
     earliestActivity = Math.min(earliestActivity, idea.createdAt)
-    if (idea.workspaceId === undefined || idea.workspaceId === '') withoutWorkspace += 1
+    if (idea.createdAt >= window.start && idea.createdAt <= window.end) createdInWindow += 1
+    if (comparisonWindow !== undefined
+        && idea.createdAt >= comparisonWindow.start
+        && idea.createdAt < comparisonWindow.end) comparisonCreated += 1
+    if (idea.workspaceId === undefined || idea.workspaceId === '') {
+      withoutWorkspace += 1
+      appendQualitySample(withoutWorkspaceSamples, idea)
+    }
 
     const key = idea.workspaceId ?? ''
-    const group = groups.get(key) ?? { open: 0, total: 0 }
+    const group = groups.get(key) ?? emptyWorkspaceGroup()
     group.total += 1
     if (idea.status === 'open') {
       group.open += 1
@@ -333,8 +424,8 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
       if (lacksValue) missingValue += 1
       if (lacksRank || lacksValue) uniqueTriage += 1
       if (idea.runStatus === 'running') running += 1
-      for (const tag of idea.tags ?? []) {
-        const name = tag.name.trim()
+      for (const entryTag of idea.tags ?? []) {
+        const name = entryTag.name.trim()
         if (name === '') continue
         const folded = name.toLowerCase()
         const entry = tagCounts.get(folded)
@@ -350,17 +441,32 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
 
     const deliveredAt = idea.deliveredAt
     if (deliveredAt === undefined || !Number.isFinite(deliveredAt)) {
-      if (idea.status === 'archived') withoutStamp += 1
+      if (idea.status === 'archived') {
+        withoutStamp += 1
+        appendQualitySample(withoutStampSamples, idea)
+      }
       continue
     }
     earliestActivity = Math.min(earliestActivity, deliveredAt)
     const leadTime = deliveredAt - idea.createdAt
     if (leadTime < 0) {
       inconsistent += 1
+      appendQualitySample(inconsistentSamples, idea)
       continue
     }
     deliveries.push({ at: deliveredAt, ms: leadTime })
-    if (deliveredAt >= window.start && deliveredAt <= window.end) deliveredInWindow += 1
+    if (deliveredAt >= window.start && deliveredAt <= window.end) {
+      deliveredInWindow += 1
+      currentLeadTimes.push(leadTime)
+      group.deliveredInWindow += 1
+      group.leadTimes.push(leadTime)
+    }
+    if (comparisonWindow !== undefined
+        && deliveredAt >= comparisonWindow.start
+        && deliveredAt < comparisonWindow.end) {
+      comparisonDelivered += 1
+      comparisonLeadTimes.push(leadTime)
+    }
   }
 
   // A blocked signal is an active idea named by another scoped idea's `blocks`.
@@ -373,16 +479,14 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
     }
   }
 
-  const sampleLeadTimes = deliveries
-    .filter(item => item.at >= window.start && item.at <= window.end)
-    .map(item => item.ms)
-  const sample = sampleLeadTimes.length
-
   const openByWorkspace = [...groups.entries()]
     .map(([workspaceId, group]) => ({
       ...(workspaceId === '' ? {} : { workspaceId }),
       open: group.open,
       total: group.total,
+      deliveredInWindow: group.deliveredInWindow,
+      medianMs: medianOrNull(group.leadTimes),
+      sample: group.leadTimes.length,
     }))
     .sort((a, b) => b.open - a.open || b.total - a.total
       || (a.workspaceId ?? '').localeCompare(b.workspaceId ?? ''))
@@ -397,6 +501,7 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
     scope: {
       kind: scopeId === undefined ? 'all' : scopeId === '' ? 'generic' : 'workspace',
       ...(scopeId === undefined || scopeId === '' ? {} : { workspaceId: scopeId }),
+      ...(tag === undefined ? {} : { tag }),
       ideas,
     },
     window,
@@ -405,12 +510,19 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
     aging: { upTo7: age7, upTo30: age30, upTo90: age90, over90: ageOver90, oldestMs },
     openByWorkspace: openByWorkspace.slice(0, IDEAS_STATS_MAX_WORKSPACES),
     workspacesTotal: openByWorkspace.length,
+    createdInWindow,
     deliveredInWindow,
+    netBacklog: createdInWindow - deliveredInWindow,
+    comparison: {
+      created: comparisonCreated,
+      delivered: comparisonDelivered,
+      medianMs: medianOrNull(comparisonLeadTimes),
+    },
     delivery: {
-      sample,
+      sample: currentLeadTimes.length,
       withoutStamp,
       inconsistent,
-      medianMs: sample < IDEAS_STATS_MEDIAN_MIN_SAMPLES ? null : medianOf(sampleLeadTimes),
+      medianMs: medianOrNull(currentLeadTimes),
       minSamples: IDEAS_STATS_MEDIAN_MIN_SAMPLES,
       buckets: deliveryBuckets(deliveries, window, earliestActivity, now),
     },
@@ -418,6 +530,13 @@ export function buildIdeasStats(source: IdeasStatsSource, options: IdeasStatsOpt
     topTags: topTags.slice(0, IDEAS_STATS_MAX_TAGS),
     tagsTotal: topTags.length,
     triage: { open: openTotal, missingRank, missingValue, unique: uniqueTriage },
-    quality: { withoutStamp, inconsistent, withoutWorkspace },
+    quality: {
+      withoutStamp,
+      inconsistent,
+      withoutWorkspace,
+      withoutStampSamples,
+      inconsistentSamples,
+      withoutWorkspaceSamples,
+    },
   }
 }

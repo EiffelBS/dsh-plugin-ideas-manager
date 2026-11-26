@@ -6,14 +6,14 @@
  * sibling families without importing any of their code.
  */
 import { type IdeaMergeMode, type IdeaRecord, type IdeaSimilarReport, type IdeaStatus, type IdeaTag, type NewIdeaInput } from './core/ideas.ts';
-import type { IdeasStatsRange } from './core/ideas-stats.ts';
+import { type IdeasStatsRange } from './core/ideas-stats.ts';
 /**
  * The backlog-health aggregate lives in its own module so the
  * definition of every number it prints has exactly one home. The types are
  * re-exported here because `protocol.ts` is the ONE module both halves share,
  * and the browser bundle must reach the shape without importing the Host half.
  */
-export { IDEAS_STATS_ACTIVITY_DAYS, IDEAS_STATS_DAY_MS, IDEAS_STATS_DELIVERY_BUCKETS, IDEAS_STATS_MAX_TAGS, IDEAS_STATS_MAX_WORKSPACES, IDEAS_STATS_MEDIAN_MIN_SAMPLES, IDEAS_STATS_SCHEMA_VERSION, calendarDayStart, calendarMonthStart, durationParts, type IdeasDurationUnit, type IdeasStats, type IdeasStatsActivity, type IdeasStatsActivityDay, type IdeasStatsAging, type IdeasStatsDelivery, type IdeasStatsDeliveryBucket, type IdeasStatsOptions, type IdeasStatsQuality, type IdeasStatsRange, type IdeasStatsScope, type IdeasStatsScopeKind, type IdeasStatsTagRow, type IdeasStatsTriage, type IdeasStatsWindow, type IdeasStatsWorkflow, type IdeasStatsWorkspaceRow, } from './core/ideas-stats.ts';
+export { IDEAS_STATS_ACTIVITY_DAYS, IDEAS_STATS_DAY_MS, IDEAS_STATS_DELIVERY_BUCKETS, IDEAS_STATS_MAX_QUALITY_SAMPLES, IDEAS_STATS_MAX_TAGS, IDEAS_STATS_MAX_WORKSPACES, IDEAS_STATS_MEDIAN_MIN_SAMPLES, IDEAS_STATS_SCHEMA_VERSION, IDEAS_STATS_TAG_MAX_LENGTH, calendarDayStart, calendarMonthStart, durationParts, type IdeasDurationUnit, type IdeasStats, type IdeasStatsActivity, type IdeasStatsActivityDay, type IdeasStatsAging, type IdeasStatsComparison, type IdeasStatsDelivery, type IdeasStatsDeliveryBucket, type IdeasStatsOptions, type IdeasStatsQuality, type IdeasStatsQualitySample, type IdeasStatsRange, type IdeasStatsScope, type IdeasStatsScopeKind, type IdeasStatsTagRow, type IdeasStatsTriage, type IdeasStatsWindow, type IdeasStatsWorkflow, type IdeasStatsWorkspaceRow, } from './core/ideas-stats.ts';
 export declare const IDEAS_SCHEMA_VERSION: 1;
 export declare const IDEAS_API_PREFIX = "/api/ideas";
 /** Snapshot served by GET /api/ideas/state. */
@@ -175,12 +175,15 @@ export declare function ideasReadSearchParams(query: IdeasReadQuery): URLSearchP
  * Three scopes, spelled the way the board's own workspace selector spells them:
  * an ABSENT key answers for every workspace, a BLANK value answers for the
  * workspace-less (generic) group, and a real id answers for that workspace.
- * Nothing else is accepted — this view is one aggregate, and every key the
- * bounded rows take (`limit`, `fields`, `similar`, …) would be a second set of
- * definitions for the same numbers.
+ * An optional `tag` narrows every number to ideas carrying that exact,
+ * case-sensitive tag name. Nothing else is accepted — this view is one
+ * aggregate, and every key the bounded rows take (`limit`, `fields`,
+ * `similar`, …) would be a second set of definitions for the same numbers.
  */
 export interface IdeasStatsQuery {
     workspaceId?: string;
+    /** Exact, case-sensitive tag name; omitted = every tag. */
+    tag?: string;
     /** Dashboard period; omitted = current calendar month. */
     range?: IdeasStatsRange;
 }

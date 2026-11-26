@@ -188,6 +188,8 @@ export declare class IdeasClient {
      * = every workspace; `''` = the workspace-less group.
      */
     statsScope: string | undefined;
+    /** Exact tag filter {@link stats} was computed for, if any. */
+    statsTag: string | undefined;
     /** Period {@link stats} was computed for. */
     statsRange: IdeasStatsRange;
     /** Whether a stats request is in flight (the view shows it is refreshing). */
@@ -643,8 +645,9 @@ export declare class IdeasClient {
      *
      * @param workspaceId - the scope; undefined = every workspace.
      * @param range - the dashboard period; defaults to the current month.
+     * @param tag - optional exact tag filter applied across every aggregate.
      */
-    loadStats(workspaceId?: string, range?: IdeasStatsRange): Promise<void>;
+    loadStats(workspaceId?: string, range?: IdeasStatsRange, tag?: string): Promise<void>;
     /** Forget the aggregate (the Health tab was left): the next open refetches. */
     dropStats(): void;
 }

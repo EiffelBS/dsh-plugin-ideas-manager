@@ -311,8 +311,9 @@ export class HttpIdeasHostTransport implements IdeasHostTransport {
 
   /**
    * The health aggregate: its own small GET, never folded into the
-   * board poll. The scope mirrors the board's workspace selector — omitted for
-   * every workspace, a blank value for the workspace-less group.
+   * board poll. Scope mirrors the board's workspace selector and optional exact
+   * tag — omitted workspace for every workspace, blank for the workspace-less
+   * group.
    */
   async stats(query: IdeasStatsQuery = {}): Promise<IdeasStats> {
     return await this.request<IdeasStats>(`${IDEAS_API_PREFIX}/state?${ideasStatsSearchParams(query).toString()}`, { cache: 'no-store' })

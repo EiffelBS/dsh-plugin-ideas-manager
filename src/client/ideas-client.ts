@@ -21,6 +21,7 @@ import {
   type IdeasSnapshotInfo,
   type IdeasSnapshotReason,
   type IdeasStats,
+  type IdeasStatsQuery,
   type IdeasStatsRange,
 } from '../protocol.ts'
 import { runBulkPlan, type BulkItemResult, type BulkPlanItem, type BulkStepRunner } from './bulk.ts'
@@ -230,6 +231,8 @@ export class IdeasClient {
    * = every workspace; `''` = the workspace-less group.
    */
   statsScope: string | undefined
+  /** Exact tag filter {@link stats} was computed for, if any. */
+  statsTag: string | undefined
   /** Period {@link stats} was computed for. */
   statsRange: IdeasStatsRange = 'month'
   /** Whether a stats request is in flight (the view shows it is refreshing). */
@@ -1261,8 +1264,9 @@ export class IdeasClient {
    *
    * @param workspaceId - the scope; undefined = every workspace.
    * @param range - the dashboard period; defaults to the current month.
+   * @param tag - optional exact tag filter applied across every aggregate.
    */
-  async loadStats(workspaceId?: string, range: IdeasStatsRange = 'month'): Promise<void> {
+  async loadStats(workspaceId?: string, range: IdeasStatsRange = 'month', tag?: string): Promise<void> {
     if (this.transport.stats === undefined) {
       this.stats = undefined
       this.statsError = undefined
@@ -1278,12 +1282,15 @@ export class IdeasClient {
     // with numbers the reader is no longer asking for.
     const seq = ++this.statsRequestSeq
     try {
-      const query = workspaceId === undefined ? { range } : { workspaceId, range }
+      const query: IdeasStatsQuery = { range }
+      if (workspaceId !== undefined) query.workspaceId = workspaceId
+      if (tag !== undefined) query.tag = tag
       const fresh = await this.transport.stats(query)
       if (seq !== this.statsRequestSeq) return
       this.stats = fresh
       this.statsScope = workspaceId
       this.statsRange = range
+      this.statsTag = tag
     } catch (error) {
       if (seq === this.statsRequestSeq) {
         this.statsError = error instanceof Error ? error.message : String(error)
@@ -1300,6 +1307,7 @@ export class IdeasClient {
     this.stats = undefined
     this.statsScope = undefined
     this.statsRange = 'month'
+    this.statsTag = undefined
     this.statsRequestSeq += 1
     this.emit()
   }

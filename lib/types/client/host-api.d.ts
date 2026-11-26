@@ -145,8 +145,9 @@ export declare class HttpIdeasHostTransport implements IdeasHostTransport {
     syncImport(request: IdeasSyncImportRequest): Promise<IdeasSyncImportResponse>;
     /**
      * The health aggregate: its own small GET, never folded into the
-     * board poll. The scope mirrors the board's workspace selector — omitted for
-     * every workspace, a blank value for the workspace-less group.
+     * board poll. Scope mirrors the board's workspace selector and optional exact
+     * tag — omitted workspace for every workspace, blank for the workspace-less
+     * group.
      */
     stats(query?: IdeasStatsQuery): Promise<IdeasStats>;
     saveConfig(patch: IdeasSettingsPatch, expectedRevision?: number): Promise<IdeasSettingsView>;

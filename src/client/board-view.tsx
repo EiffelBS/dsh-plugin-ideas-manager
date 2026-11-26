@@ -1884,6 +1884,7 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
   // Active panel tab (Overview kanban / Priorities ranking), persisted.
   const [activeTab, setActiveTab] = useState<BoardTab>(() => readActiveTab(activeTabStorage()))
   const [healthRange, setHealthRange] = useState<IdeasStatsRange>('month')
+  const [healthTag, setHealthTag] = useState<string | undefined>(undefined)
   const switchTab = (tab: BoardTab): void => {
     setActiveTab(tab)
     writeActiveTab(activeTabStorage(), tab)
@@ -2333,8 +2334,8 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
     }
     void client.loadStats(workspaceFilter === ''
       ? undefined
-      : workspaceFilter === NO_WORKSPACE_FILTER ? '' : workspaceFilter, healthRange)
-  }, [client, activeTab, workspaceFilter, healthRange, snapshot?.revision])
+      : workspaceFilter === NO_WORKSPACE_FILTER ? '' : workspaceFilter, healthRange, healthTag)
+  }, [client, activeTab, workspaceFilter, healthRange, healthTag, snapshot?.revision])
 
   /**
    * Select box click: a plain click toggles one row, a shift-click paints the
@@ -3339,18 +3340,28 @@ export function IdeasBoard({ client }: { client: IdeasClient }) {
                 workspaceTitle={workspaceTitle}
                 boardRevision={revision}
                 range={healthRange}
+                tag={healthTag}
+                knownTags={knownTags}
                 onRangeChange={setHealthRange}
-                onOpenIdeas={() => { switchTab('overview') }}
+                onTagChange={setHealthTag}
+                onOpenIdea={openEditById}
+                onOpenIdeas={() => {
+                  setFilter('')
+                  setTagFilter(healthTag === undefined ? [] : [healthTag])
+                  switchTab('overview')
+                }}
                 onWorkspace={(workspaceId) => {
                   chooseWorkspaceScope(workspaceId ?? NO_WORKSPACE_FILTER)
+                  setFilter('')
+                  setTagFilter(healthTag === undefined ? [] : [healthTag])
                   switchTab('overview')
                 }}
-                onTag={(name) => {
-                  client.clearFocus()
-                  setTagFilter(current => current.includes(name) ? current : [...current, name])
-                  switchTab('overview')
+                onTag={setHealthTag}
+                onTriage={() => {
+                  setFilter('')
+                  setTagFilter(healthTag === undefined ? [] : [healthTag])
+                  switchTab('priorities')
                 }}
-                onTriage={() => { switchTab('priorities') }}
               />
             )}
 

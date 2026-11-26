@@ -34,9 +34,12 @@ import {
   IDEAS_STATS_ACTIVITY_DAYS,
   IDEAS_STATS_DAY_MS,
   IDEAS_STATS_DELIVERY_BUCKETS,
+  IDEAS_STATS_MAX_QUALITY_SAMPLES,
   IDEAS_STATS_MAX_TAGS,
   IDEAS_STATS_MAX_WORKSPACES,
   IDEAS_STATS_MEDIAN_MIN_SAMPLES,
+  IDEAS_STATS_SCHEMA_VERSION,
+  IDEAS_STATS_TAG_MAX_LENGTH,
   type IdeasStats,
 } from '../src/core/ideas-stats.ts'
 import {
@@ -78,6 +81,12 @@ function delivered(id: string, leadDays: number, extra: Partial<IdeaRecord> = {}
 }
 
 describe('the health dashboard aggregate', () => {
+  it('publishes schema version 3 without changing the ledger schema', () => {
+    const result = stats([])
+    expect(result.schemaVersion).toBe(3)
+    expect(result.schemaVersion).toBe(IDEAS_STATS_SCHEMA_VERSION)
+  })
+
   it('counts the open backlog per workspace, busiest first, with a generic group', () => {
     const result = stats([
       idea({ id: 'a1', status: 'open', workspaceId: 'ws-a', rank: 1, value: 3 }),
@@ -91,12 +100,35 @@ describe('the health dashboard aggregate', () => {
     expect(result.openTotal).toBe(4)
     expect(result.scope).toEqual({ kind: 'all', ideas: 6 })
     expect(result.openByWorkspace).toEqual([
-      { workspaceId: 'ws-a', open: 2, total: 2 },
+      { workspaceId: 'ws-a', open: 2, total: 2, deliveredInWindow: 0, medianMs: null, sample: 0 },
       // ws-b carries the under-review and archived rows, so its open count ties
       // the generic group's while its group size breaks the tie.
-      { workspaceId: 'ws-b', open: 1, total: 3 },
-      { open: 1, total: 1 },
+      { workspaceId: 'ws-b', open: 1, total: 3, deliveredInWindow: 0, medianMs: null, sample: 0 },
+      { open: 1, total: 1, deliveredInWindow: 0, medianMs: null, sample: 0 },
     ])
+  })
+
+  it('adds selected-window delivery metrics to every workspace row', () => {
+    const result = stats([
+      ...[1, 2, 3, 4, 5].map(days => delivered(`a-${days}`, 6 - days, {
+        workspaceId: 'ws-a',
+        createdAt: NOW - 6 * DAY,
+        deliveredAt: NOW - days * DAY,
+      })),
+      delivered('a-old', 10, { workspaceId: 'ws-a', deliveredAt: calendarMonthStart(NOW) - DAY }),
+      delivered('b-one', 9, { workspaceId: 'ws-b', createdAt: NOW - 10 * DAY, deliveredAt: NOW - DAY }),
+      delivered('generic-one', 9, { createdAt: NOW - 10 * DAY, deliveredAt: NOW - DAY }),
+      idea({ id: 'a-open', status: 'open', workspaceId: 'ws-a' }),
+      idea({ id: 'b-review', status: 'underReview', workspaceId: 'ws-b' }),
+      idea({ id: 'b-unstamped', status: 'archived', workspaceId: 'ws-b' }),
+    ])
+
+    expect(result.openByWorkspace).toEqual([
+      { workspaceId: 'ws-a', open: 1, total: 7, deliveredInWindow: 5, medianMs: 3 * DAY, sample: 5 },
+      { workspaceId: 'ws-b', open: 0, total: 3, deliveredInWindow: 1, medianMs: null, sample: 1 },
+      { open: 0, total: 1, deliveredInWindow: 1, medianMs: null, sample: 1 },
+    ])
+    expect(result.workspacesTotal).toBe(3)
   })
 
   it('measures "delivered this month" against the local CALENDAR month, not a rolling window', () => {
@@ -115,6 +147,56 @@ describe('the health dashboard aggregate', () => {
     expect(result.window).toEqual({ kind: 'calendarMonth', start: monthStart, end: NOW })
     // Last month's delivery is outside; a future-dated one cannot be "this month".
     expect(result.deliveredInWindow).toBe(2)
+  })
+
+  it('reports created, delivered and net flow for the selected rolling window', () => {
+    const currentStart = NOW - 30 * DAY
+    const result = stats([
+      ...[1, 2, 3, 4, 5].map(days => delivered(`previous-${days}`, days)),
+      ...[5, 4, 3, 2, 1].map(before => delivered(`current-${before}`, 20 - before, {
+        createdAt: NOW - 20 * DAY,
+        deliveredAt: NOW - before * DAY,
+      })),
+      idea({ id: 'created-on-start', status: 'open', createdAt: currentStart }),
+      idea({ id: 'created-before-start', status: 'open', createdAt: currentStart - 1 }),
+      idea({ id: 'created-in-future', status: 'open', createdAt: NOW + DAY }),
+      delivered('before-comparison', 1, { createdAt: NOW - 100 * DAY, deliveredAt: NOW - 61 * DAY }),
+      delivered('future-delivery', 1, { createdAt: NOW + DAY, deliveredAt: NOW + 2 * DAY }),
+      idea({ id: 'broken-stamp', status: 'archived', createdAt: NOW + DAY, deliveredAt: NOW - DAY }),
+    ], { range: '30d' })
+
+    expect(result.createdInWindow).toBe(6)
+    expect(result.deliveredInWindow).toBe(5)
+    expect(result.netBacklog).toBe(1)
+    expect(result.delivery.sample).toBe(5)
+    expect(result.delivery.medianMs).toBe(17 * DAY)
+    expect(result.comparison).toEqual({ created: 6, delivered: 5, medianMs: 3 * DAY })
+  })
+
+  it('compares a partial calendar month with the immediately preceding window of equal duration', () => {
+    const monthStart = calendarMonthStart(NOW)
+    const duration = NOW - monthStart
+    const previousStart = monthStart - duration
+    const result = stats([
+      idea({ id: 'current-start', status: 'open', createdAt: monthStart }),
+      idea({ id: 'previous-end', status: 'open', createdAt: monthStart - 1 }),
+      idea({ id: 'previous-start', status: 'open', createdAt: previousStart }),
+      idea({ id: 'too-old', status: 'open', createdAt: previousStart - 1 }),
+      delivered('previous-delivery', 1, { createdAt: previousStart - DAY, deliveredAt: previousStart + HOUR }),
+      delivered('current-delivery', 1, { createdAt: monthStart - DAY, deliveredAt: monthStart }),
+    ], { range: 'month' })
+
+    expect(result.createdInWindow).toBe(1)
+    expect(result.deliveredInWindow).toBe(1)
+    expect(result.comparison).toEqual({ created: 3, delivered: 1, medianMs: null })
+  })
+
+  it('uses zeros and a null median for the all-time comparison', () => {
+    const result = stats([delivered('only', 2)], { range: 'all' })
+    expect(result.createdInWindow).toBe(1)
+    expect(result.deliveredInWindow).toBe(1)
+    expect(result.netBacklog).toBe(0)
+    expect(result.comparison).toEqual({ created: 0, delivered: 0, medianMs: null })
   })
 
   it('takes the median over the selected all-time range, not only this month', () => {
@@ -174,7 +256,14 @@ describe('the health dashboard aggregate', () => {
     expect(result.activity.days).toHaveLength(IDEAS_STATS_ACTIVITY_DAYS)
     expect(result.activity.created).toBe(6)
     expect(result.activity.delivered).toBe(1)
-    expect(result.quality).toEqual({ withoutStamp: 1, inconsistent: 0, withoutWorkspace: 1 })
+    expect(result.quality).toEqual({
+      withoutStamp: 1,
+      inconsistent: 0,
+      withoutWorkspace: 1,
+      withoutStampSamples: [{ id: 'unstamped', title: 'Title unstamped' }],
+      inconsistentSamples: [],
+      withoutWorkspaceSamples: [{ id: 'unstamped', title: 'Title unstamped' }],
+    })
   })
 
   it('changes the measured window and median sample with the selected period', () => {
@@ -288,6 +377,51 @@ describe('the aggregate is scoped, and the scope is spelled in the answer', () =
     expect(generic.topTags.map(tag => tag.name)).toEqual(['gamma'])
   })
 
+  it('applies a trimmed exact, case-sensitive tag filter across the whole aggregate', () => {
+    const tagged = [
+      idea({ id: 'a-open', status: 'open', createdAt: NOW - DAY, workspaceId: 'ws-a', tags: [{ name: 'perf' }] }),
+      delivered('a-delivered', 2, { workspaceId: 'ws-a', createdAt: calendarMonthStart(NOW) - DAY, deliveredAt: NOW - DAY, tags: [{ name: 'perf' }] }),
+      idea({ id: 'b-open', status: 'open', workspaceId: 'ws-b', tags: [{ name: 'perf' }] }),
+      idea({ id: 'generic-open', status: 'open', tags: [{ name: 'perf' }] }),
+      idea({ id: 'wrong-case', status: 'open', workspaceId: 'ws-a', tags: [{ name: 'PERF' }] }),
+      idea({ id: 'partial-name', status: 'open', workspaceId: 'ws-a', tags: [{ name: 'performance' }] }),
+      idea({ id: 'other-tag', status: 'open', workspaceId: 'ws-b', tags: [{ name: 'ui' }] }),
+    ]
+    const result = stats(tagged, { tag: '  perf  ' })
+
+    expect(result.scope).toEqual({ kind: 'all', tag: 'perf', ideas: 4 })
+    expect(result.openTotal).toBe(3)
+    expect(result.createdInWindow).toBe(1)
+    expect(result.deliveredInWindow).toBe(1)
+    expect(result.topTags).toEqual([{ name: 'perf', count: 3 }])
+    expect(result.openByWorkspace).toEqual([
+      { workspaceId: 'ws-a', open: 1, total: 2, deliveredInWindow: 1, medianMs: null, sample: 1 },
+      { open: 1, total: 1, deliveredInWindow: 0, medianMs: null, sample: 0 },
+      { workspaceId: 'ws-b', open: 1, total: 1, deliveredInWindow: 0, medianMs: null, sample: 0 },
+    ])
+
+    const conjunctive = stats(tagged, { workspaceId: 'ws-a', tag: 'perf' })
+    expect(conjunctive.scope).toEqual({ kind: 'workspace', workspaceId: 'ws-a', tag: 'perf', ideas: 2 })
+    expect(conjunctive.openTotal).toBe(1)
+    expect(conjunctive.deliveredInWindow).toBe(1)
+  })
+
+  it('returns an empty scoped aggregate for an unmatched exact tag', () => {
+    const result = stats(board, { tag: 'alp' })
+    expect(result.scope).toEqual({ kind: 'all', tag: 'alp', ideas: 0 })
+    expect(result.openTotal).toBe(0)
+    expect(result.createdInWindow).toBe(0)
+    expect(result.deliveredInWindow).toBe(0)
+    expect(result.netBacklog).toBe(0)
+    expect(result.openByWorkspace).toEqual([])
+  })
+
+  it('refuses a blank or oversized direct tag option instead of broadening the scope', () => {
+    expect(() => stats(board, { tag: '   ' })).toThrow('invalid-tag')
+    expect(() => stats(board, { tag: 'x'.repeat(IDEAS_STATS_TAG_MAX_LENGTH + 1) })).toThrow('invalid-tag')
+    expect(stats(board, { tag: 'x'.repeat(IDEAS_STATS_TAG_MAX_LENGTH) }).scope.tag).toHaveLength(IDEAS_STATS_TAG_MAX_LENGTH)
+  })
+
   it('handles a scope holding nothing at all without inventing a zero median', () => {
     const empty = stats(board, { workspaceId: 'ws-missing' })
     expect(empty.scope.ideas).toBe(0)
@@ -308,6 +442,26 @@ describe('the aggregate is bounded whatever the ledger weighs', () => {
     expect(result.workspacesTotal).toBe(40)
     expect(result.topTags).toHaveLength(IDEAS_STATS_MAX_TAGS)
     expect(result.tagsTotal).toBe(40)
+  })
+
+  it('caps every quality sample array at five while retaining the full counts', () => {
+    const unstamped = Array.from({ length: 8 }, (_, index) =>
+      idea({ id: `unstamped-${index}`, status: 'archived', workspaceId: `ws-${index}` }))
+    const inconsistent = Array.from({ length: 8 }, (_, index) =>
+      idea({ id: `inconsistent-${index}`, status: 'archived', workspaceId: `ws-${index}`, createdAt: NOW, deliveredAt: NOW - DAY }))
+    const withoutWorkspace = Array.from({ length: 8 }, (_, index) =>
+      idea({ id: `generic-${index}`, status: 'open' }))
+    const result = stats([...unstamped, ...inconsistent, ...withoutWorkspace])
+
+    expect(result.quality).toMatchObject({ withoutStamp: 8, inconsistent: 8, withoutWorkspace: 8 })
+    expect(result.quality.withoutStampSamples).toHaveLength(IDEAS_STATS_MAX_QUALITY_SAMPLES)
+    expect(result.quality.inconsistentSamples).toHaveLength(IDEAS_STATS_MAX_QUALITY_SAMPLES)
+    expect(result.quality.withoutWorkspaceSamples).toHaveLength(IDEAS_STATS_MAX_QUALITY_SAMPLES)
+    expect(result.quality.withoutStampSamples[0]).toEqual({ id: 'unstamped-0', title: 'Title unstamped-0', workspaceId: 'ws-0' })
+    expect(result.quality.withoutStampSamples[4]).toEqual({ id: 'unstamped-4', title: 'Title unstamped-4', workspaceId: 'ws-4' })
+    expect(result.quality.inconsistentSamples[0]).toEqual({ id: 'inconsistent-0', title: 'Title inconsistent-0', workspaceId: 'ws-0' })
+    expect(result.quality.withoutWorkspaceSamples[0]).toEqual({ id: 'generic-0', title: 'Title generic-0' })
+    expect(result.quality.withoutWorkspaceSamples.every(sample => sample.workspaceId === undefined)).toBe(true)
   })
 
   it('keeps the 140-card fixture far inside the 512 KiB wire cap', () => {
@@ -342,28 +496,37 @@ describe('durationParts is the one formatting rule', () => {
 const MINUTE_MS = 60_000
 
 describe('the stats query parser', () => {
-  it('reads the three scopes and four dashboard periods', () => {
+  it('reads the three scopes, an exact tag, and four dashboard periods', () => {
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats'))).toEqual({})
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId=ws-a'))).toEqual({ workspaceId: 'ws-a' })
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId='))).toEqual({ workspaceId: '' })
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId=%20'))).toEqual({ workspaceId: '' })
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&tag=%20perf%20'))).toEqual({ tag: 'perf' })
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&range=30d'))).toEqual({ range: '30d' })
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&workspaceId=ws-a&range=all'))).toEqual({ workspaceId: 'ws-a', range: 'all' })
   })
 
-  it('refuses another view, an unknown key, a bad range and an oversized workspace id', () => {
+  it('refuses another view, an unknown key, a bad range and oversized selectors', () => {
     expect(parseIdeasStatsQuery(new URLSearchParams('view=summary'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&limit=10'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&fields=body'))).toBeUndefined()
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&tagName=perf'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&range=7d'))).toBeUndefined()
     expect(parseIdeasStatsQuery(new URLSearchParams(`view=stats&workspaceId=${'x'.repeat(257)}`))).toBeUndefined()
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&tag='))).toBeUndefined()
+    expect(parseIdeasStatsQuery(new URLSearchParams('view=stats&tag=%20%20'))).toBeUndefined()
+    expect(parseIdeasStatsQuery(new URLSearchParams(`view=stats&tag=${'x'.repeat(IDEAS_STATS_TAG_MAX_LENGTH + 1)}`))).toBeUndefined()
+    expect(parseIdeasStatsQuery(new URLSearchParams(`view=stats&tag=${'x'.repeat(IDEAS_STATS_TAG_MAX_LENGTH)}`)))
+      .toEqual({ tag: 'x'.repeat(IDEAS_STATS_TAG_MAX_LENGTH) })
   })
 
-  it('round-trips scope and period through the browser serializer', () => {
+  it('round-trips scope, exact tag and period through the browser serializer', () => {
     expect(ideasStatsSearchParams().toString()).toBe('view=stats')
     expect(ideasStatsSearchParams({ workspaceId: 'ws-a', range: '90d' }).toString()).toBe('view=stats&workspaceId=ws-a&range=90d')
-    const params = ideasStatsSearchParams({ workspaceId: 'ws-a', range: '90d' })
-    expect(parseIdeasStatsQuery(params)).toEqual({ workspaceId: 'ws-a', range: '90d' })
+    expect(ideasStatsSearchParams({ workspaceId: 'ws-a', tag: '  perf  ', range: '90d' }).toString())
+      .toBe('view=stats&workspaceId=ws-a&tag=perf&range=90d')
+    const params = ideasStatsSearchParams({ workspaceId: 'ws-a', tag: 'perf', range: '90d' })
+    expect(parseIdeasStatsQuery(params)).toEqual({ workspaceId: 'ws-a', tag: 'perf', range: '90d' })
   })
 })
 
@@ -420,6 +583,7 @@ describe('GET /api/ideas/state?view=stats', () => {
     const all = await get(`${base}${IDEAS_API_PREFIX}/state?view=stats`)
     expect(all.status).toBe(200)
     const payload = await all.json() as IdeasStats
+    expect(payload.schemaVersion).toBe(3)
     expect(payload.scope).toEqual({ kind: 'all', ideas: 2 })
     expect(payload.openTotal).toBe(2)
     expect(payload.delivery.medianMs).toBeNull()
@@ -440,9 +604,31 @@ describe('GET /api/ideas/state?view=stats', () => {
     expect(refused.status).toBe(403)
   })
 
+  it('passes the trimmed exact tag selector through to the Host aggregate', async () => {
+    const base = await serve()
+    service!.apply('c1', { kind: 'create', id: 'idea-1', input: { title: 'Alpha', body: 'B', workspaceId: 'ws-a', tags: [{ name: 'perf' }] } })
+    service!.apply('c2', { kind: 'create', id: 'idea-2', input: { title: 'Beta', body: 'B', workspaceId: 'ws-b', tags: [{ name: 'ui' }] } })
+    service!.apply('c3', { kind: 'create', id: 'idea-3', input: { title: 'Gamma', body: 'B', workspaceId: 'ws-a', tags: [{ name: 'PERF' }] } })
+
+    const params = ideasStatsSearchParams({ workspaceId: 'ws-a', tag: '  perf  ' })
+    const response = await get(`${base}${IDEAS_API_PREFIX}/state?${params}`)
+    expect(response.status).toBe(200)
+    const payload = await response.json() as IdeasStats
+    expect(payload.scope).toEqual({ kind: 'workspace', workspaceId: 'ws-a', tag: 'perf', ideas: 1 })
+    expect(payload.openTotal).toBe(1)
+    expect(payload.topTags).toEqual([{ name: 'perf', count: 1 }])
+  })
+
   it('refuses a bad query rather than answering a different question', async () => {
     const base = await serve()
-    for (const query of ['view=stats&limit=5', 'view=stats&fields=body', 'view=stats&range=7d', `view=stats&workspaceId=${'x'.repeat(300)}`]) {
+    for (const query of [
+      'view=stats&limit=5',
+      'view=stats&fields=body',
+      'view=stats&range=7d',
+      `view=stats&workspaceId=${'x'.repeat(300)}`,
+      'view=stats&tag=',
+      `view=stats&tag=${'x'.repeat(IDEAS_STATS_TAG_MAX_LENGTH + 1)}`,
+    ]) {
       const response = await get(`${base}${IDEAS_API_PREFIX}/state?${query}`)
       expect({ query, status: response.status }).toEqual({ query, status: 400 })
       expect(await response.json()).toMatchObject({ ok: false, error: 'invalid-query' })
@@ -564,16 +750,18 @@ describe('the browser transport asks for it separately from the poll', () => {
     await transport.stats({ workspaceId: 'ws-a' })
     await transport.stats({ workspaceId: '' })
     await transport.stats({ workspaceId: 'ws-a', range: '90d' })
+    await transport.stats({ workspaceId: 'ws-a', tag: 'perf', range: '30d' })
     await transport.state()
 
-    expect(urls.slice(0, 4)).toEqual([
+    expect(urls.slice(0, 5)).toEqual([
       '/api/ideas/state?view=stats',
       '/api/ideas/state?view=stats&workspaceId=ws-a',
       '/api/ideas/state?view=stats&workspaceId=',
       '/api/ideas/state?view=stats&workspaceId=ws-a&range=90d',
+      '/api/ideas/state?view=stats&workspaceId=ws-a&tag=perf&range=30d',
     ])
     // The 2.5 s poll is byte-identical to what it has always requested: this
     // feature has no reason to appear in it.
-    expect(urls[4]).toBe('/api/ideas/state?view=list')
+    expect(urls[5]).toBe('/api/ideas/state?view=list')
   })
 })

@@ -95,6 +95,12 @@ describe('injected sheet parse (what the browser keeps)', () => {
     }
   })
 
+  it('keeps delivery columns wide enough to scroll instead of overlapping', () => {
+    expect(CSS_TEXT).toMatch(/\.dsh-ideas-health-bar-col \{[^}]*min-width: 34px/)
+    expect(CSS_TEXT).not.toMatch(/\.dsh-ideas-health-bar-col \{[^}]*min-width: 0/)
+    expect(CSS_TEXT).toMatch(/\.dsh-ideas-health-workspace-scroll \{[^}]*overflow-x: auto/)
+  })
+
   it('keeps a disabled button looking disabled', () => {
     // A ghost button with no :disabled rule kept the pointer cursor AND its
     // hover fill, so a gesture the modal refuses — the launch modal's "save as

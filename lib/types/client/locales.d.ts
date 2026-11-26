@@ -96,6 +96,12 @@ export declare const fr: {
     'health.refreshing': string;
     'health.staleError': string;
     'health.rangeAria': string;
+    'health.tagFilter': string;
+    'health.allTags': string;
+    'health.guideTitle': string;
+    'health.guideScope': string;
+    'health.guideTriage': string;
+    'health.guideQuality': string;
     'health.rangeMonth': string;
     'health.range30d': string;
     'health.range90d': string;
@@ -140,6 +146,8 @@ export declare const fr: {
     'health.missingValue': string;
     'health.deliveryTitle': string;
     'health.deliverySub': string;
+    'health.netBacklog': string;
+    'health.noDeliveriesPrevious': string;
     'health.deliveryChartAria': string;
     'health.chartDate': string;
     'health.chartCount': string;
@@ -155,8 +163,10 @@ export declare const fr: {
     'health.age90': string;
     'health.age90Plus': string;
     'health.workspacesTitle': string;
+    'health.workspaceColumn': string;
     'health.workspacesSub': string;
     'health.workspacesEmpty': string;
+    'health.emptyScope': string;
     'health.workspaceRow': string;
     'health.moreWorkspaces': string;
     'health.tagsTitle': string;
@@ -165,7 +175,11 @@ export declare const fr: {
     'health.moreTags': string;
     'health.activityTitle': string;
     'health.activitySub': string;
+    'health.activityEmpty': string;
     'health.activityAria': string;
+    'health.activityWeeks': string;
+    'health.lessActivity': string;
+    'health.moreActivity': string;
     'health.less': string;
     'health.more': string;
     'health.created': string;
@@ -177,6 +191,7 @@ export declare const fr: {
     'health.qualityInconsistent': string;
     'health.qualityWithoutWorkspace': string;
     'health.qualityFoot': string;
+    'health.moreQuality': string;
     'health.withoutStamp': string;
     'health.inconsistent': string;
     'health.noDeliveries': string;
@@ -713,6 +728,12 @@ export declare const en: {
     'health.refreshing': string;
     'health.staleError': string;
     'health.rangeAria': string;
+    'health.tagFilter': string;
+    'health.allTags': string;
+    'health.guideTitle': string;
+    'health.guideScope': string;
+    'health.guideTriage': string;
+    'health.guideQuality': string;
     'health.rangeMonth': string;
     'health.range30d': string;
     'health.range90d': string;
@@ -757,6 +778,8 @@ export declare const en: {
     'health.missingValue': string;
     'health.deliveryTitle': string;
     'health.deliverySub': string;
+    'health.netBacklog': string;
+    'health.noDeliveriesPrevious': string;
     'health.deliveryChartAria': string;
     'health.chartDate': string;
     'health.chartCount': string;
@@ -772,8 +795,10 @@ export declare const en: {
     'health.age90': string;
     'health.age90Plus': string;
     'health.workspacesTitle': string;
+    'health.workspaceColumn': string;
     'health.workspacesSub': string;
     'health.workspacesEmpty': string;
+    'health.emptyScope': string;
     'health.workspaceRow': string;
     'health.moreWorkspaces': string;
     'health.tagsTitle': string;
@@ -782,7 +807,11 @@ export declare const en: {
     'health.moreTags': string;
     'health.activityTitle': string;
     'health.activitySub': string;
+    'health.activityEmpty': string;
     'health.activityAria': string;
+    'health.activityWeeks': string;
+    'health.lessActivity': string;
+    'health.moreActivity': string;
     'health.less': string;
     'health.more': string;
     'health.created': string;
@@ -794,6 +823,7 @@ export declare const en: {
     'health.qualityInconsistent': string;
     'health.qualityWithoutWorkspace': string;
     'health.qualityFoot': string;
+    'health.moreQuality': string;
     'health.withoutStamp': string;
     'health.inconsistent': string;
     'health.noDeliveries': string;
@@ -1336,6 +1366,12 @@ export declare const zh: {
     'health.refreshing': string;
     'health.staleError': string;
     'health.rangeAria': string;
+    'health.tagFilter': string;
+    'health.allTags': string;
+    'health.guideTitle': string;
+    'health.guideScope': string;
+    'health.guideTriage': string;
+    'health.guideQuality': string;
     'health.rangeMonth': string;
     'health.range30d': string;
     'health.range90d': string;
@@ -1380,6 +1416,8 @@ export declare const zh: {
     'health.missingValue': string;
     'health.deliveryTitle': string;
     'health.deliverySub': string;
+    'health.netBacklog': string;
+    'health.noDeliveriesPrevious': string;
     'health.deliveryChartAria': string;
     'health.chartDate': string;
     'health.chartCount': string;
@@ -1395,8 +1433,10 @@ export declare const zh: {
     'health.age90': string;
     'health.age90Plus': string;
     'health.workspacesTitle': string;
+    'health.workspaceColumn': string;
     'health.workspacesSub': string;
     'health.workspacesEmpty': string;
+    'health.emptyScope': string;
     'health.workspaceRow': string;
     'health.moreWorkspaces': string;
     'health.tagsTitle': string;
@@ -1405,7 +1445,11 @@ export declare const zh: {
     'health.moreTags': string;
     'health.activityTitle': string;
     'health.activitySub': string;
+    'health.activityEmpty': string;
     'health.activityAria': string;
+    'health.activityWeeks': string;
+    'health.lessActivity': string;
+    'health.moreActivity': string;
     'health.less': string;
     'health.more': string;
     'health.created': string;
@@ -1417,6 +1461,7 @@ export declare const zh: {
     'health.qualityInconsistent': string;
     'health.qualityWithoutWorkspace': string;
     'health.qualityFoot': string;
+    'health.moreQuality': string;
     'health.withoutStamp': string;
     'health.inconsistent': string;
     'health.noDeliveries': string;

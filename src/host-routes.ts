@@ -189,7 +189,7 @@ export function makeIdeasRoutes(
           writeJson(res, 400, { ok: false, error: 'invalid-query' }, { 'cache-control': 'no-store' })
           return
         }
-        writeJson(res, 200, service.ideasStats({ workspaceId: query.workspaceId, range: query.range }), { 'cache-control': 'no-store' })
+        writeJson(res, 200, service.ideasStats({ workspaceId: query.workspaceId, tag: query.tag, range: query.range }), { 'cache-control': 'no-store' })
         return
       }
       if (view === 'summary' || view === 'detail') {

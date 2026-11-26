@@ -1,6 +1,6 @@
 /** Graphical backlog-health dashboard, rendered from one bounded Host aggregate. */
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useCallback, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import type { IdeasClient } from './ideas-client.ts'
 import { durationParts, type IdeasDurationUnit, type IdeasStats, type IdeasStatsRange } from '../core/ideas-stats.ts'
 import { t } from './locales.ts'
@@ -15,7 +15,11 @@ export interface HealthViewProps {
   workspaceTitle: (workspaceId: string) => string
   boardRevision: number | undefined
   range: IdeasStatsRange
+  tag?: string
+  knownTags: readonly string[]
   onRangeChange: (range: IdeasStatsRange) => void
+  onTagChange: (tag: string | undefined) => void
+  onOpenIdea: (ideaId: string) => void
   onOpenIdeas: () => void
   onWorkspace: (workspaceId: string | undefined) => void
   onTag: (name: string) => void
@@ -47,7 +51,7 @@ function toneStyle(tone: string): CSSProperties {
   return { '--dsh-ideas-health-tone': `var(${tone})` } as CSSProperties
 }
 
-function HealthIcon({ name }: { name: 'backlog' | 'review' | 'delivered' | 'clock' | 'refresh' | 'warning' | 'check' | 'info' }) {
+function HealthIcon({ name }: { name: 'backlog' | 'review' | 'delivered' | 'clock' | 'refresh' | 'warning' | 'check' | 'info' | 'chevron' }) {
   const paths = {
     backlog: <><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h5"/></>,
     review: <><path d="M4 5h16v14H4zM8 9h8M8 13h5"/></>,
@@ -57,6 +61,7 @@ function HealthIcon({ name }: { name: 'backlog' | 'review' | 'delivered' | 'cloc
     warning: <path d="M12 9v4M12 17h.01M10.3 4.3 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z"/>,
     check: <path d="m5 12 4 4L19 6"/>,
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></>,
+    chevron: <path d="m9 5 7 7-7 7"/>,
   }
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -142,10 +147,10 @@ function FlowDonut({ stats }: { stats: IdeasStats }) {
         </div>
       </div>
       <div className={classes.healthLegend}>
-        <Legend color="--dsh-ideas-fb-accent" label={t('health.workflowOpen')} value={stats.workflow.open} active={hovered === 'open'} onHover={setHovered}/>
-        <Legend color="--dsw-alias-state-accent-secondary, var(--dsh-ideas-fb-purple)" label={t('health.workflowReview')} value={stats.workflow.underReview} active={hovered === 'review'} onHover={setHovered}/>
-        <Legend color="--dsw-alias-state-success-primary, var(--dsh-ideas-fb-green)" label={t('health.workflowRunning')} value={stats.workflow.running}/>
-        <Legend color="--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-amber)" label={t('health.workflowBlocked')} value={stats.workflow.blocked}/>
+        <Legend color="--dsh-ideas-chart-blue" label={t('health.workflowOpen')} value={stats.workflow.open} active={hovered === 'open'} onHover={setHovered}/>
+        <Legend color="--dsh-ideas-chart-purple" label={t('health.workflowReview')} value={stats.workflow.underReview} active={hovered === 'review'} onHover={setHovered}/>
+        <Legend color="--dsh-ideas-chart-green" label={t('health.workflowRunning')} value={stats.workflow.running}/>
+        <Legend color="--dsh-ideas-chart-amber" label={t('health.workflowBlocked')} value={stats.workflow.blocked}/>
       </div>
     </div>
   )
@@ -187,8 +192,8 @@ function TriageRing({ stats, onTriage }: { stats: IdeasStats; onTriage: () => vo
           </div>
         </div>
         <div className={classes.healthTriageDetails}>
-          <MiniStat label={t('health.missingRank')} value={stats.triage.missingRank} max={stats.triage.open} color="--dsh-ideas-fb-accent"/>
-          <MiniStat label={t('health.missingValue')} value={stats.triage.missingValue} max={stats.triage.open} color="--dsw-alias-state-accent-secondary, var(--dsh-ideas-fb-purple)"/>
+          <MiniStat label={t('health.missingRank')} value={stats.triage.missingRank} max={stats.triage.open} color="--dsh-ideas-chart-amber"/>
+          <MiniStat label={t('health.missingValue')} value={stats.triage.missingValue} max={stats.triage.open} color="--dsh-ideas-chart-purple"/>
           <div className={classes.healthMiniStat}>
             <span className={classes.healthMiniStatLabel}>{t('health.triageUnique')}</span>
             <span className={classes.healthMiniStatValue}>{stats.triage.unique}</span>
@@ -218,6 +223,16 @@ function DeliveryChart({ stats }: { stats: IdeasStats }) {
   const max = Math.max(1, ...stats.delivery.buckets.map(bucket => bucket.count))
   return (
     <>
+      <div className={classes.healthFlowStats}>
+        <div className={classes.healthFlowStat}><span>{t('health.created')}</span><b>{stats.createdInWindow}</b></div>
+        <div className={classes.healthFlowStat}><span>{t('health.delivered')}</span><b>{stats.deliveredInWindow}</b></div>
+        <div className={`${classes.healthFlowStat} ${stats.netBacklog > 0 ? classes.healthFlowStatWarn : classes.healthFlowStatOk}`}>
+          <span>{t('health.netBacklog')}</span><b>{stats.netBacklog > 0 ? '+' : ''}{stats.netBacklog}</b>
+        </div>
+      </div>
+      {stats.deliveredInWindow === 0 && stats.comparison.delivered > 0 && (
+        <div className={classes.healthContextNote}>{t('health.noDeliveriesPrevious', { count: stats.comparison.delivered })}</div>
+      )}
       <div className={classes.healthBarChart} role="img" aria-label={t('health.deliveryChartAria')}>
         {stats.delivery.buckets.map((bucket, index) => (
           <div className={classes.healthBarCol} key={`${bucket.start}-${index}`}>
@@ -253,10 +268,10 @@ function DeliveryChart({ stats }: { stats: IdeasStats }) {
 function Aging({ stats }: { stats: IdeasStats }) {
   const total = stats.aging.upTo7 + stats.aging.upTo30 + stats.aging.upTo90 + stats.aging.over90
   const rows = [
-    { label: t('health.age7'), value: stats.aging.upTo7, color: '--dsw-alias-state-success-primary, var(--dsh-ideas-fb-green)' },
-    { label: t('health.age30'), value: stats.aging.upTo30, color: '--dsh-ideas-fb-accent' },
-    { label: t('health.age90'), value: stats.aging.upTo90, color: '--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-amber)' },
-    { label: t('health.age90Plus'), value: stats.aging.over90, color: '--dsw-alias-state-danger-primary, var(--dsh-ideas-fb-red)' },
+    { label: t('health.age7'), value: stats.aging.upTo7, color: '--dsh-ideas-chart-green' },
+    { label: t('health.age30'), value: stats.aging.upTo30, color: '--dsh-ideas-chart-blue' },
+    { label: t('health.age90'), value: stats.aging.upTo90, color: '--dsh-ideas-chart-amber' },
+    { label: t('health.age90Plus'), value: stats.aging.over90, color: '--dsh-ideas-chart-red' },
   ]
   return (
     <>
@@ -282,22 +297,31 @@ function Aging({ stats }: { stats: IdeasStats }) {
 
 function Workspaces({ stats, workspaceTitle, onWorkspace }: { stats: IdeasStats; workspaceTitle: (id: string) => string; onWorkspace: (id: string | undefined) => void }) {
   const max = Math.max(1, ...stats.openByWorkspace.map(row => row.open))
+  const medianLabel = (row: IdeasStats['openByWorkspace'][number]): string => {
+    if (row.medianMs === null) return `${row.sample} / ${stats.delivery.minSamples}`
+    const median = durationParts(row.medianMs)
+    return `${median.value} ${durationUnitLabel(median.unit)}`
+  }
   return (
     <>
-      <div className={classes.healthRankList}>
-        {stats.openByWorkspace.map(row => (
-          <button
-            type="button"
-            className={classes.healthRankRow}
-            key={row.workspaceId ?? ''}
-            title={`${row.workspaceId === undefined ? t('board.noWorkspace') : workspaceTitle(row.workspaceId)} · ${row.open} · ${stats.openTotal === 0 ? 0 : Math.round(row.open / stats.openTotal * 100)}%`}
-            onClick={() => { onWorkspace(row.workspaceId) }}
-          >
-            <span className={classes.healthRankLabel}>{row.workspaceId === undefined ? t('board.noWorkspace') : workspaceTitle(row.workspaceId)}</span>
-            <span className={classes.healthRankTrack}><span className={classes.healthRankFill} style={{ width: `${row.open / max * 100}%`, background: 'var(--dsh-ideas-fb-accent)' }}/></span>
-            <span className={classes.healthRankValue}>{row.open}</span>
-          </button>
-        ))}
+      <div className={classes.healthWorkspaceScroll}>
+        <table className={classes.healthWorkspaceTable}>
+        <thead><tr><th>{t('health.workspaceColumn')}</th><th>{t('health.openTitle')}</th><th>{t('health.deliveredTitle')}</th><th>{t('health.medianTitle')}</th></tr></thead>
+        <tbody>
+          {stats.openByWorkspace.map(row => (
+            <tr key={row.workspaceId ?? ''}>
+              <td>
+                <button type="button" className={classes.healthWorkspaceName} onClick={() => { onWorkspace(row.workspaceId) }}>
+                  {row.workspaceId === undefined ? t('board.noWorkspace') : workspaceTitle(row.workspaceId)}
+                </button>
+              </td>
+              <td><span className={classes.healthWorkspaceOpen}><i><span style={{ width: `${row.open / max * 100}%` }}/></i><b>{row.open}</b></span></td>
+              <td className={classes.healthWorkspaceMetric}>{row.deliveredInWindow}</td>
+              <td className={classes.healthWorkspaceMetric}>{medianLabel(row)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       </div>
       {stats.workspacesTotal > stats.openByWorkspace.length && <div className={classes.healthMore}>{t('health.moreWorkspaces', { count: stats.workspacesTotal - stats.openByWorkspace.length })}</div>}
     </>
@@ -345,107 +369,283 @@ function Activity({ stats }: { stats: IdeasStats }) {
   }
   return (
     <>
-      <div className={classes.healthHeatmapHead}>
-        <span>{days[0]?.date ?? ''}</span>
-        <div className={classes.healthHeatLegend}><span>{t('health.less')}</span><i/><i/><i/><i/><i/><span>{t('health.more')}</span></div>
-        <span>{days.at(-1)?.date ?? ''}</span>
-      </div>
-      <div
-        className={classes.healthHeatmap}
-        role="listbox"
-        tabIndex={0}
-        aria-label={t('health.activityAria')}
-        aria-activedescendant={activeDay === undefined ? undefined : `health-heat-${activeDay.date}`}
-        onKeyDown={onKeyDown}
-      >
-        {days.map((day, index) => {
-          const value = day.created + day.delivered
-          const level = value === 0 ? 0 : Math.max(1, Math.ceil(value / max * 4))
-          return (
-            <span
-              key={day.date}
-              id={`health-heat-${day.date}`}
-              role="option"
-              aria-selected={index === activeIndex}
-              className={`${classes.healthHeatCell}${index === activeIndex ? ` ${classes.healthHeatCellActive}` : ''}`}
-              data-level={level}
-              title={`${day.date} : +${day.created} · ✓${day.delivered}`}
-              data-tooltip={`${day.date} · +${day.created} · ✓${day.delivered}`}
-              style={{ '--health-index': index } as CSSProperties}
-              onMouseEnter={() => { setActiveIndex(index) }}
-            />
-          )
-        })}
-      </div>
-      {activeDay !== undefined && (
-        <div className={classes.healthHeatReadout} role="status" aria-live="polite">
-          <b>{activeDay.date}</b>
-          {' · '}+{activeDay.created} {t('health.created')}
-          {' · '}✓{activeDay.delivered} {t('health.delivered')}
-        </div>
+      {stats.activity.created + stats.activity.delivered === 0 && (
+        <div className={classes.healthContextNote}>{t('health.activityEmpty')}</div>
       )}
+      <div className={classes.healthActivityLayout}>
+        <div className={classes.healthActivityHeat}>
+          <div className={classes.healthHeatmapHead}>
+            <span>{days[0]?.date ?? ''}</span>
+            <span>{t('health.activityWeeks')}</span>
+            <span>{days.at(-1)?.date ?? ''}</span>
+          </div>
+          <div
+            className={classes.healthHeatmap}
+            role="listbox"
+            tabIndex={0}
+            aria-label={t('health.activityAria')}
+            aria-activedescendant={activeDay === undefined ? undefined : `health-heat-${activeDay.date}`}
+            onKeyDown={onKeyDown}
+          >
+            {days.map((day, index) => {
+              const value = day.created + day.delivered
+              const level = value === 0 ? 0 : Math.max(1, Math.ceil(value / max * 4))
+              return (
+                <span
+                  key={day.date}
+                  id={`health-heat-${day.date}`}
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  className={`${classes.healthHeatCell}${index === activeIndex ? ` ${classes.healthHeatCellActive}` : ''}`}
+                  data-level={level}
+                  title={`${day.date} : +${day.created} · ✓${day.delivered}`}
+                  data-tooltip={`${day.date} · +${day.created} · ✓${day.delivered}`}
+                  style={{ '--health-index': index } as CSSProperties}
+                  onMouseEnter={() => { setActiveIndex(index) }}
+                />
+              )
+            })}
+          </div>
+          {activeDay !== undefined && (
+            <div className={classes.healthHeatReadout} role="status" aria-live="polite">
+              <b>{activeDay.date}</b>
+              {' · '}+{activeDay.created} {t('health.created')}
+              {' · '}✓{activeDay.delivered} {t('health.delivered')}
+            </div>
+          )}
+        </div>
+        <div className={classes.healthActivityPanel}>
+          <div className={classes.healthHeatLegend}>
+            <span>{t('health.lessActivity')}</span><i/><i/><i/><i/><i/><span>{t('health.moreActivity')}</span>
+          </div>
+          <div className={classes.healthActivityStats}>
+            <div className={classes.healthActivityStat}><b>{stats.activity.created}</b><span>{t('health.created')}</span></div>
+            <div className={classes.healthActivityStat}><b>{stats.activity.delivered}</b><span>{t('health.delivered')}</span></div>
+            <div className={classes.healthActivityStat}><b>{stats.activity.activeDays}</b><span>{t('health.activeDays')}</span></div>
+          </div>
+        </div>
+      </div>
       <table className={classes.healthSrOnly}>
         <caption>{t('health.activityAria')}</caption>
         <thead><tr><th>{t('health.chartDate')}</th><th>{t('health.created')}</th><th>{t('health.delivered')}</th></tr></thead>
         <tbody>{days.map(day => <tr key={day.date}><td>{day.date}</td><td>{day.created}</td><td>{day.delivered}</td></tr>)}</tbody>
       </table>
-      <div className={classes.healthActivitySummary}>
-        <span><b>{stats.activity.created}</b> {t('health.created')}</span>
-        <span><b>{stats.activity.delivered}</b> {t('health.delivered')}</span>
-        <span><b>{stats.activity.activeDays}</b> {t('health.activeDays')}</span>
-      </div>
     </>
   )
 }
 
-function Quality({ stats }: { stats: IdeasStats }) {
+type QualityKey = 'withoutStamp' | 'inconsistent' | 'withoutWorkspace'
+
+function Quality({ stats, onOpenIdea }: { stats: IdeasStats; onOpenIdea: (ideaId: string) => void }) {
+  const [selected, setSelected] = useState<QualityKey | undefined>()
   const rows: Array<{
-    key: keyof IdeasStats['quality']
+    key: QualityKey
     label: string
     icon: 'warning' | 'check' | 'info'
     tone: 'warn' | 'ok' | 'info'
+    samples: IdeasStats['quality']['withoutStampSamples']
   }> = [
-    { key: 'withoutStamp', label: t('health.qualityWithoutStamp'), icon: 'warning' as const, tone: stats.quality.withoutStamp > 0 ? 'warn' : 'ok' },
-    { key: 'inconsistent', label: t('health.qualityInconsistent'), icon: stats.quality.inconsistent > 0 ? 'warning' : 'check' as const, tone: stats.quality.inconsistent > 0 ? 'warn' : 'ok' },
-    { key: 'withoutWorkspace', label: t('health.qualityWithoutWorkspace'), icon: 'info' as const, tone: 'info' },
+    { key: 'withoutStamp', label: t('health.qualityWithoutStamp'), icon: 'warning' as const, tone: stats.quality.withoutStamp > 0 ? 'warn' : 'ok', samples: stats.quality.withoutStampSamples },
+    { key: 'inconsistent', label: t('health.qualityInconsistent'), icon: stats.quality.inconsistent > 0 ? 'warning' : 'check' as const, tone: stats.quality.inconsistent > 0 ? 'warn' : 'ok', samples: stats.quality.inconsistentSamples },
+    { key: 'withoutWorkspace', label: t('health.qualityWithoutWorkspace'), icon: 'info' as const, tone: 'info', samples: stats.quality.withoutWorkspaceSamples },
   ]
+  const active = rows.find(row => row.key === selected)
   return (
     <>
       <div className={classes.healthQualityList}>
         {rows.map(row => (
-          <div className={`${classes.healthQualityRow} ${row.tone === 'warn' ? classes.healthQualityWarn : row.tone === 'ok' ? classes.healthQualityOk : classes.healthQualityInfo}`} key={row.key}>
+          <button
+            type="button"
+            className={`${classes.healthQualityRow} ${row.tone === 'warn' ? classes.healthQualityWarn : row.tone === 'ok' ? classes.healthQualityOk : classes.healthQualityInfo}`}
+            key={row.key}
+            disabled={row.samples.length === 0}
+            aria-expanded={selected === row.key}
+            onClick={() => { setSelected(current => current === row.key ? undefined : row.key) }}
+          >
             <span className={classes.healthQualityIcon}><HealthIcon name={row.icon}/></span>
             <span className={classes.healthQualityName}>{row.label}</span>
-            <span className={classes.healthQualityValue}>{stats.quality[row.key as keyof IdeasStats['quality']]}</span>
-          </div>
+            <span className={classes.healthQualityValue}>{stats.quality[row.key]}</span>
+            <span className={classes.healthQualityChevron}><HealthIcon name="chevron"/></span>
+          </button>
         ))}
       </div>
+      {active !== undefined && (
+        <div className={classes.healthQualitySamples}>
+          {active.samples.map(sample => (
+            <button type="button" key={sample.id} className={classes.healthQualitySample} onClick={() => { onOpenIdea(sample.id) }}>
+              {sample.title || sample.id}
+            </button>
+          ))}
+          {stats.quality[active.key] > active.samples.length && <div className={classes.healthMore}>{t('health.moreQuality', { count: stats.quality[active.key] - active.samples.length })}</div>}
+        </div>
+      )}
       <div className={classes.healthQualityFoot}>{t('health.qualityFoot')}</div>
     </>
   )
 }
 
-export function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevision, range, onRangeChange, onOpenIdeas, onWorkspace, onTag, onTriage }: HealthViewProps) {
+export function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevision, range, tag, knownTags, onRangeChange, onTagChange, onOpenIdea, onOpenIdeas, onWorkspace, onTag, onTriage }: HealthViewProps) {
   const stats: IdeasStats | undefined = client.stats
   const scope = wireScopeOf(scopeWorkspaceId)
-  const current = stats !== undefined && client.statsScope === scope && client.statsRange === range ? stats : undefined
-  const healthRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const node = healthRef.current
+  const current = stats !== undefined && client.statsScope === scope && client.statsRange === range && client.statsTag === tag ? stats : undefined
+  const runningRef = useRef<Animation[]>([])
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const fallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const healthRef = useCallback((node: HTMLDivElement | null): void => {
+    for (const animation of runningRef.current) animation.cancel()
+    runningRef.current = []
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    if (fallbackRef.current !== null) {
+      globalThis.clearTimeout(fallbackRef.current)
+      fallbackRef.current = null
+    }
     if (node === null || current === undefined) return
-    node.classList.remove(classes.healthAnimating)
-    void node.offsetWidth
-    node.classList.add(classes.healthAnimating)
+    if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true) {
+      node.dataset.dshIdeasHealthMotion = 'reduced'
+      return
+    }
+    node.dataset.dshIdeasHealthMotion = 'waiting'
+    const play = (): void => {
+      const running: Animation[] = []
+      const animate = (
+        selector: string,
+        keyframes: Keyframe[],
+        duration: number,
+        stagger = 0,
+        baseDelay = 0,
+      ): void => {
+        node.querySelectorAll(selector).forEach((element, index) => {
+          if (typeof element.animate !== 'function') return
+          running.push(element.animate(keyframes, {
+            duration,
+            delay: baseDelay + index * stagger,
+            easing: 'cubic-bezier(.2, .8, .2, 1)',
+            fill: 'backwards',
+          }))
+        })
+      }
+      animate(`.${classes.healthKpi}`, [
+        { opacity: 0, transform: 'translateY(10px)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ], 650, 70)
+      animate(`.${classes.healthCard}`, [
+        { opacity: 0, transform: 'translateY(12px)' },
+        { opacity: 1, transform: 'translateY(0)' },
+      ], 750, 80)
+      animate(`.${classes.healthDonut}, .${classes.healthProgressRing}`, [
+        { opacity: 0, transform: 'scale(.88)' },
+        { opacity: 1, transform: 'scale(1)' },
+      ], 900)
+      animate(`.${classes.healthBar}`, [
+        { transform: 'scaleY(0)' },
+        { transform: 'scaleY(1)' },
+      ], 750, 65)
+      animate(`.${classes.healthRankFill}, .${classes.healthMiniBar} span, .${classes.healthSegment}`, [
+        { transform: 'scaleX(0)' },
+        { transform: 'scaleX(1)' },
+      ], 750)
+      animate(`.${classes.healthHeatCell}`, [
+        { opacity: 0, transform: 'scale(.55)' },
+        { opacity: 1, transform: 'scale(1)' },
+      ], 380, 7)
+      runningRef.current = running
+      node.dataset.dshIdeasHealthMotion = 'played'
+    }
+    let played = false
+    const playOnce = (): void => {
+      if (played) return
+      played = true
+      observerRef.current?.disconnect()
+      observerRef.current = null
+      if (fallbackRef.current !== null) {
+        globalThis.clearTimeout(fallbackRef.current)
+        fallbackRef.current = null
+      }
+      play()
+    }
+    if (typeof globalThis.IntersectionObserver === 'function') {
+      const observer = new IntersectionObserver(entries => {
+        if (!entries.some(entry => entry.isIntersecting)) return
+        playOnce()
+      }, { threshold: 0.01 })
+      observerRef.current = observer
+      observer.observe(node)
+    }
+    fallbackRef.current = globalThis.setTimeout(playOnce, 500)
   }, [current?.computedAt])
 
   if (!client.statsAvailable) {
     return <div className={classes.health} data-dsh-ideas-health=""><div className={classes.healthNote} role="status">{t('health.unavailable')}</div></div>
   }
+
+  const scopeLabel = scopeWorkspaceId === ''
+    ? t('health.scopeAll')
+    : scopeWorkspaceId === NO_WORKSPACE_FILTER ? t('health.scopeGeneric') : workspaceTitle(scopeWorkspaceId)
+  const scopeWithTag = tag === undefined ? scopeLabel : `${scopeLabel} · ${tag}`
+  const rangeLabel = range === 'month' ? t('health.rangeMonth') : range === '30d' ? t('health.range30d') : range === '90d' ? t('health.range90d') : t('health.rangeAll')
+  const tagOptions = tag === undefined ? knownTags : [...new Set([tag, ...knownTags])]
+  const header = (
+    <header className={classes.healthHeader}>
+      <div>
+        <div className={classes.healthEyebrow}>{t('health.eyebrow')}</div>
+        <h1 className={classes.healthTitle}>{t('health.title')}</h1>
+        <p className={classes.healthDesc}>{t('health.desc')}</p>
+      </div>
+      <div className={classes.healthScope}><span className={classes.healthScopeDot}/>{scopeWithTag}</div>
+    </header>
+  )
+  const toolbar = (
+    <div className={classes.healthToolbar}>
+      <select
+        className={classes.healthTagFilter}
+        aria-label={t('health.tagFilter')}
+        value={tag ?? ''}
+        onChange={event => { onTagChange(event.target.value === '' ? undefined : event.target.value) }}
+      >
+        <option value="">{t('health.allTags')}</option>
+        {tagOptions.map(name => <option key={name} value={name}>{name}</option>)}
+      </select>
+      <div className={classes.healthRangeTabs} role="group" aria-label={t('health.rangeAria')}>
+        {(['month', '30d', '90d', 'all'] as const).map(item => (
+          <button
+            key={item}
+            type="button"
+            className={classes.healthRangeTab}
+            aria-pressed={range === item}
+            onClick={() => { onRangeChange(item) }}
+          >
+            {item === 'month' ? t('health.rangeMonth') : item === '30d' ? t('health.range30d') : item === '90d' ? t('health.range90d') : t('health.rangeAll')}
+          </button>
+        ))}
+      </div>
+      <div className={classes.healthRefresh}>
+        {current !== undefined && <span>{t('health.updatedAt', { time: timeLabelOf(current.computedAt) })}</span>}
+        <button type="button" className={classes.healthRefreshButton} onClick={() => { void client.loadStats(scope, range, tag) }}>
+          <HealthIcon name="refresh"/>{t('health.refresh')}
+        </button>
+      </div>
+    </div>
+  )
+  const guide = (
+    <details className={classes.healthGuide}>
+      <summary><HealthIcon name="info"/>{t('health.guideTitle')}</summary>
+      <div className={classes.healthGuideBody}>
+        <p>{t('health.guideScope')}</p>
+        <p>{t('health.guideTriage')}</p>
+        <p>{t('health.guideQuality')}</p>
+      </div>
+    </details>
+  )
+
   if (current === undefined) {
     return (
-      <div className={classes.health} data-dsh-ideas-health="">
+      <div ref={healthRef} className={classes.health} data-dsh-ideas-health="">
+        {header}
+        {toolbar}
+        {guide}
         {client.statsError !== undefined
-          ? <div className={classes.healthNote} role="status">{t('health.error', { error: client.statsError })} <button type="button" className={classes.ghostButton} onClick={() => { void client.loadStats(scope, range) }}>{t('health.retry')}</button></div>
+          ? <div className={classes.healthNote} role="status">{t('health.error', { error: client.statsError })} <button type="button" className={classes.ghostButton} onClick={() => { void client.loadStats(scope, range, tag) }}>{t('health.retry')}</button></div>
           : <div className={classes.healthNote} role="status">{t('health.loading')}</div>}
       </div>
     )
@@ -453,54 +653,23 @@ export function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevi
 
   const median = current.delivery.medianMs === null ? null : durationParts(current.delivery.medianMs)
   const stale = boardRevision !== undefined && current.revision !== boardRevision
-  const scopeLabel = current.scope.kind === 'workspace'
-    ? workspaceTitle(current.scope.workspaceId ?? '')
-    : t(current.scope.kind === 'generic' ? 'health.scopeGeneric' : 'health.scopeAll')
-  const rangeLabel = range === 'month' ? t('health.rangeMonth') : range === '30d' ? t('health.range30d') : range === '90d' ? t('health.range90d') : t('health.rangeAll')
 
   return (
-    <div ref={healthRef} className={`${classes.health} ${classes.healthAnimating}`} data-dsh-ideas-health="">
-      <header className={classes.healthHeader}>
-        <div>
-          <div className={classes.healthEyebrow}>{t('health.eyebrow')}</div>
-          <h1 className={classes.healthTitle}>{t('health.title')}</h1>
-          <p className={classes.healthDesc}>{t('health.desc')}</p>
-        </div>
-        <div className={classes.healthScope}><span className={classes.healthScopeDot}/>{scopeLabel}</div>
-      </header>
-
-      <div className={classes.healthToolbar}>
-        <div className={classes.healthRangeTabs} role="group" aria-label={t('health.rangeAria')}>
-          {(['month', '30d', '90d', 'all'] as const).map(item => (
-            <button
-              key={item}
-              type="button"
-              className={classes.healthRangeTab}
-              aria-pressed={range === item}
-              onClick={() => { onRangeChange(item) }}
-            >
-              {item === 'month' ? t('health.rangeMonth') : item === '30d' ? t('health.range30d') : item === '90d' ? t('health.range90d') : t('health.rangeAll')}
-            </button>
-          ))}
-        </div>
-        <div className={classes.healthRefresh}>
-          <span>{t('health.updatedAt', { time: timeLabelOf(current.computedAt) })}</span>
-          <button type="button" className={classes.healthRefreshButton} onClick={() => { void client.loadStats(scope, range) }}>
-            <HealthIcon name="refresh"/>{t('health.refresh')}
-          </button>
-        </div>
-      </div>
+    <div ref={healthRef} className={classes.health} data-dsh-ideas-health="">
+      {header}
+      {toolbar}
+      {guide}
 
       <section className={classes.healthFigures} aria-label={t('health.kpiAria')} data-dsh-ideas-health-figures="">
-        <Kpi label={t('health.openTitle')} value={`${current.workflow.open} / ${current.scope.ideas}`} hint={t('health.openHint', { review: current.workflow.underReview })} icon="backlog" tone="--dsh-ideas-fb-accent"/>
-        <Kpi label={t('health.reviewTitle')} value={String(current.workflow.underReview)} hint={t('health.reviewHint', { running: current.workflow.running })} icon="review" tone="--dsw-alias-state-accent-secondary, var(--dsh-ideas-fb-purple)"/>
-        <Kpi label={t('health.deliveredTitle')} value={String(current.deliveredInWindow)} hint={range === 'month' ? monthLabelOf(current.window.start) : rangeLabel} icon="delivered" tone="--dsw-alias-state-success-primary, var(--dsh-ideas-fb-green)"/>
+        <Kpi label={t('health.openTitle')} value={`${current.workflow.open} / ${current.scope.ideas}`} hint={t('health.openHint', { review: current.workflow.underReview })} icon="backlog" tone="--dsh-ideas-chart-blue"/>
+        <Kpi label={t('health.reviewTitle')} value={String(current.workflow.underReview)} hint={t('health.reviewHint', { running: current.workflow.running })} icon="review" tone="--dsh-ideas-chart-purple"/>
+        <Kpi label={t('health.deliveredTitle')} value={String(current.deliveredInWindow)} hint={range === 'month' ? monthLabelOf(current.window.start) : rangeLabel} icon="delivered" tone="--dsh-ideas-chart-green"/>
         <Kpi
           label={t('health.medianTitle')}
           value={median === null ? `${current.delivery.sample} / ${current.delivery.minSamples}` : `${median.value} ${durationUnitLabel(median.unit)}`}
           hint={median === null ? t('health.medianThinHint', { min: current.delivery.minSamples }) : t('health.medianHint', { count: current.delivery.sample })}
           icon="clock"
-          tone="--dsw-alias-state-warn-primary, var(--dsh-ideas-fb-amber)"
+          tone="--dsh-ideas-chart-amber"
         />
       </section>
 
@@ -534,14 +703,14 @@ export function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevi
           <Aging stats={current}/>
         </article>
 
-        <article className={`${classes.healthCard} ${classes.healthSpan6}`}>
+        <article className={`${classes.healthCard} ${classes.healthSpan7}`}>
           <CardHead title={t('health.workspacesTitle')} sub={t('health.workspacesSub')}/>
-          {current.openByWorkspace.length === 0 ? <div className={classes.empty}>{t('health.workspacesEmpty')}</div> : <Workspaces stats={current} workspaceTitle={workspaceTitle} onWorkspace={onWorkspace}/>}
+          {current.openByWorkspace.length === 0 ? <div className={classes.empty}>{current.scope.ideas === 0 ? t('health.emptyScope') : t('health.workspacesEmpty')}</div> : <Workspaces stats={current} workspaceTitle={workspaceTitle} onWorkspace={onWorkspace}/>}
         </article>
 
-        <article className={`${classes.healthCard} ${classes.healthSpan6}`}>
+        <article className={`${classes.healthCard} ${classes.healthSpan5}`}>
           <CardHead title={t('health.tagsTitle')} sub={t('health.tagsSub')}/>
-          {current.topTags.length === 0 ? <div className={classes.empty}>{t('health.tagsEmpty')}</div> : <Tags stats={current} onTag={onTag}/>}
+          {current.topTags.length === 0 ? <div className={classes.empty}>{current.scope.ideas === 0 ? t('health.emptyScope') : t('health.tagsEmpty')}</div> : <Tags stats={current} onTag={onTag}/>}
         </article>
 
         <article className={`${classes.healthCard} ${classes.healthSpan8}`}>
@@ -551,7 +720,7 @@ export function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevi
 
         <article className={`${classes.healthCard} ${classes.healthSpan4}`}>
           <CardHead title={t('health.qualityTitle')} sub={t('health.qualitySub')}/>
-          <Quality stats={current}/>
+          <Quality stats={current} onOpenIdea={onOpenIdea}/>
         </article>
       </section>
     </div>

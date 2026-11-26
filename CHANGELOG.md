@@ -6,6 +6,36 @@ end-to-end API contract lives in [`SKILL.md`](SKILL.md).
 
 Versions before 0.3.0 predate this file.
 
+## 0.13.0 - 2026-11-26
+
+### Added
+
+- **Health flow and workspace comparison.** The delivery card now shows
+  creations, deliveries and net backlog change, with previous-period context
+  when nothing was delivered. Workspace rows compare open backlog, deliveries
+  and median lead time under the same five-sample floor.
+- **Cross-filtering, guided reading and actionable quality.** Workspace and exact
+  tag jointly scope every Health measure; period scopes the time-based measures.
+  A built-in guide explains those boundaries and overlapping signals, empty
+  states distinguish an empty scope from missing activity, and each data-quality
+  category opens bounded examples of the affected ideas.
+
+### Fixed
+
+- **Health charts stay visible under Desktop skins.** The dashboard now uses its
+  own light/dark chart palette instead of semantic skin tokens that could resolve
+  to black or to the panel background.
+- **Health animations play in DSH Desktop.** Entrance and refresh motion now uses
+  the Web Animations API after the dashboard becomes visible, including from the
+  Desktop sidebar or a restored Health tab, while still respecting the system's
+  reduced-motion preference and preserving keyboard focus.
+- **The activity heatmap reads as a grid.** Empty days have visible borders,
+  activity levels use the dedicated palette, the legend says less/more activity,
+  and the right side now carries the period totals instead of empty space.
+- **The triage card no longer reuses one color for two meanings.** The ring is
+  explicitly labeled as ideas to triage, while missing-rank and missing-value
+  bars use separate colors and the subtitle names both criteria.
+
 ## 0.12.0 - 2026-11-25
 
 ### Added

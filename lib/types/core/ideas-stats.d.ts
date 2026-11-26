@@ -13,7 +13,7 @@
  */
 import type { IdeaRecord } from './ideas.ts';
 /** Wire version of the health aggregate (independent of the snapshot schema). */
-export declare const IDEAS_STATS_SCHEMA_VERSION: 2;
+export declare const IDEAS_STATS_SCHEMA_VERSION: 3;
 /** Minimum real deliveries before a median is printed. */
 export declare const IDEAS_STATS_MEDIAN_MIN_SAMPLES = 5;
 /** Hard caps keep the aggregate bounded. */
@@ -21,18 +21,40 @@ export declare const IDEAS_STATS_MAX_WORKSPACES = 8;
 export declare const IDEAS_STATS_MAX_TAGS = 8;
 export declare const IDEAS_STATS_DELIVERY_BUCKETS = 8;
 export declare const IDEAS_STATS_ACTIVITY_DAYS = 84;
+export declare const IDEAS_STATS_MAX_QUALITY_SAMPLES = 5;
+/** Maximum length of the optional exact tag selector. */
+export declare const IDEAS_STATS_TAG_MAX_LENGTH = 128;
 /** One day in milliseconds. */
 export declare const IDEAS_STATS_DAY_MS = 86400000;
 /** Period selected by the dashboard. */
 export type IdeasStatsRange = 'month' | '30d' | '90d' | 'all';
 /** Which workspace population the numbers cover. */
 export type IdeasStatsScopeKind = 'all' | 'generic' | 'workspace';
-/** One row of the open-per-workspace breakdown. */
+/** One row of the per-workspace breakdown. */
 export interface IdeasStatsWorkspaceRow {
     /** Absent for the workspace-less (generic) group. */
     workspaceId?: string;
     open: number;
     total: number;
+    /** Usable deliveries inside the selected window. */
+    deliveredInWindow: number;
+    /** Median lead time inside the selected window, or null below the floor. */
+    medianMs: number | null;
+    /** Number of usable deliveries behind this row's median. */
+    sample: number;
+}
+/** One bounded example behind a data-quality count. */
+export interface IdeasStatsQualitySample {
+    id: string;
+    title: string;
+    /** Absent for the workspace-less (generic) group. */
+    workspaceId?: string;
+}
+/** Flow in the immediately preceding window of equal duration. */
+export interface IdeasStatsComparison {
+    created: number;
+    delivered: number;
+    medianMs: number | null;
 }
 /** One row of the top-tags list. */
 export interface IdeasStatsTagRow {
@@ -100,6 +122,10 @@ export interface IdeasStatsQuality {
     withoutStamp: number;
     inconsistent: number;
     withoutWorkspace: number;
+    /** Up to five examples per category, in ledger order. */
+    withoutStampSamples: IdeasStatsQualitySample[];
+    inconsistentSamples: IdeasStatsQualitySample[];
+    withoutWorkspaceSamples: IdeasStatsQualitySample[];
 }
 /** The measured window, spelled so the UI can label it honestly. */
 export interface IdeasStatsWindow {
@@ -113,6 +139,8 @@ export interface IdeasStatsWindow {
 export interface IdeasStatsScope {
     kind: IdeasStatsScopeKind;
     workspaceId?: string;
+    /** Exact, case-sensitive tag name; absent = every tag. */
+    tag?: string;
     ideas: number;
 }
 /** Whole bounded health aggregate served by `GET /api/ideas/state?view=stats`. */
@@ -128,7 +156,13 @@ export interface IdeasStats {
     aging: IdeasStatsAging;
     openByWorkspace: IdeasStatsWorkspaceRow[];
     workspacesTotal: number;
+    /** Ideas created inside the selected window. */
+    createdInWindow: number;
     deliveredInWindow: number;
+    /** Created minus delivered inside the selected window. */
+    netBacklog: number;
+    /** The immediately preceding window of equal duration; all-time has none. */
+    comparison: IdeasStatsComparison;
     delivery: IdeasStatsDelivery;
     activity: IdeasStatsActivity;
     topTags: IdeasStatsTagRow[];
@@ -145,6 +179,8 @@ export interface IdeasStatsSource {
 export interface IdeasStatsOptions {
     /** Omitted = all, `''` = workspace-less, real id = one workspace. */
     workspaceId?: string;
+    /** Exact, case-sensitive tag name; omitted = every tag. */
+    tag?: string;
     /** Selected dashboard period; defaults to the current calendar month. */
     range?: IdeasStatsRange;
     /** Instant the window is measured at (defaults to the Host clock). */

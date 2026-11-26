@@ -24,7 +24,7 @@ import {
   type IdeaTag,
   type NewIdeaInput,
 } from './core/ideas.ts'
-import type { IdeasStatsRange } from './core/ideas-stats.ts'
+import { IDEAS_STATS_TAG_MAX_LENGTH, type IdeasStatsRange } from './core/ideas-stats.ts'
 
 /**
  * The backlog-health aggregate lives in its own module so the
@@ -36,10 +36,12 @@ export {
   IDEAS_STATS_ACTIVITY_DAYS,
   IDEAS_STATS_DAY_MS,
   IDEAS_STATS_DELIVERY_BUCKETS,
+  IDEAS_STATS_MAX_QUALITY_SAMPLES,
   IDEAS_STATS_MAX_TAGS,
   IDEAS_STATS_MAX_WORKSPACES,
   IDEAS_STATS_MEDIAN_MIN_SAMPLES,
   IDEAS_STATS_SCHEMA_VERSION,
+  IDEAS_STATS_TAG_MAX_LENGTH,
   calendarDayStart,
   calendarMonthStart,
   durationParts,
@@ -48,10 +50,12 @@ export {
   type IdeasStatsActivity,
   type IdeasStatsActivityDay,
   type IdeasStatsAging,
+  type IdeasStatsComparison,
   type IdeasStatsDelivery,
   type IdeasStatsDeliveryBucket,
   type IdeasStatsOptions,
   type IdeasStatsQuality,
+  type IdeasStatsQualitySample,
   type IdeasStatsRange,
   type IdeasStatsScope,
   type IdeasStatsScopeKind,
@@ -339,17 +343,20 @@ export function ideasReadSearchParams(query: IdeasReadQuery): URLSearchParams {
  * Three scopes, spelled the way the board's own workspace selector spells them:
  * an ABSENT key answers for every workspace, a BLANK value answers for the
  * workspace-less (generic) group, and a real id answers for that workspace.
- * Nothing else is accepted — this view is one aggregate, and every key the
- * bounded rows take (`limit`, `fields`, `similar`, …) would be a second set of
- * definitions for the same numbers.
+ * An optional `tag` narrows every number to ideas carrying that exact,
+ * case-sensitive tag name. Nothing else is accepted — this view is one
+ * aggregate, and every key the bounded rows take (`limit`, `fields`,
+ * `similar`, …) would be a second set of definitions for the same numbers.
  */
 export interface IdeasStatsQuery {
   workspaceId?: string
+  /** Exact, case-sensitive tag name; omitted = every tag. */
+  tag?: string
   /** Dashboard period; omitted = current calendar month. */
   range?: IdeasStatsRange
 }
 
-const STATS_QUERY_KEYS = new Set(['view', 'workspaceId', 'range'])
+const STATS_QUERY_KEYS = new Set(['view', 'workspaceId', 'tag', 'range'])
 const STATS_RANGES = new Set<IdeasStatsRange>(['month', '30d', '90d', 'all'])
 
 /**
@@ -369,6 +376,11 @@ export function parseIdeasStatsQuery(params: URLSearchParams): IdeasStatsQuery |
     if (workspaceId.length > 256) return undefined
     query.workspaceId = workspaceId
   }
+  if (params.has('tag')) {
+    const tag = params.get('tag')?.trim()
+    if (tag === undefined || tag === '' || tag.length > IDEAS_STATS_TAG_MAX_LENGTH) return undefined
+    query.tag = tag
+  }
   if (params.has('range')) {
     const range = params.get('range')
     if (range === null || !STATS_RANGES.has(range as IdeasStatsRange)) return undefined
@@ -382,6 +394,7 @@ export function ideasStatsSearchParams(query: IdeasStatsQuery = {}): URLSearchPa
   const params = new URLSearchParams()
   params.set('view', 'stats')
   if (query.workspaceId !== undefined) params.set('workspaceId', query.workspaceId)
+  if (query.tag !== undefined) params.set('tag', query.tag.trim())
   if (query.range !== undefined) params.set('range', query.range)
   return params
 }

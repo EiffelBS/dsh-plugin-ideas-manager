@@ -8,10 +8,14 @@ export interface HealthViewProps {
     workspaceTitle: (workspaceId: string) => string;
     boardRevision: number | undefined;
     range: IdeasStatsRange;
+    tag?: string;
+    knownTags: readonly string[];
     onRangeChange: (range: IdeasStatsRange) => void;
+    onTagChange: (tag: string | undefined) => void;
+    onOpenIdea: (ideaId: string) => void;
     onOpenIdeas: () => void;
     onWorkspace: (workspaceId: string | undefined) => void;
     onTag: (name: string) => void;
     onTriage: () => void;
 }
-export declare function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevision, range, onRangeChange, onOpenIdeas, onWorkspace, onTag, onTriage }: HealthViewProps): import("react").JSX.Element;
+export declare function HealthView({ client, scopeWorkspaceId, workspaceTitle, boardRevision, range, tag, knownTags, onRangeChange, onTagChange, onOpenIdea, onOpenIdeas, onWorkspace, onTag, onTriage }: HealthViewProps): import("react").JSX.Element;
